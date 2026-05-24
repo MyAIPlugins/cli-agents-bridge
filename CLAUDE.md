@@ -74,7 +74,7 @@ Vendor-agnostic IPC bridge between CLI agent sessions (Claude Code, Codex, Aider
 - Package naming: short, lowercase, no underscores (`session`, not `session_manager`)
 - Error handling: explicit `if err != nil { return fmt.Errorf("context: %w", err) }`. NO panic in library code.
 - Context propagation: `context.Context` first arg in long-running operations. `defer cancel()` after `context.WithCancel`.
-- Goroutine discipline: every goroutine must respect `ctx.Done()`. No leaked goroutines (test with `goleak` optional).
+- Goroutine discipline: every goroutine must respect `ctx.Done()`. No leaked goroutines (test with `goleak` optional). **Idiom canonical** (verificato Sprint 1 `Manager.StartHeartbeat`): la funzione che spawn la goroutine ritorna `<-chan struct{}` (done channel) — caller può fare `<-done` per attendere shutdown pulito dopo `cancel()`. Pattern: `done := make(chan struct{}); go func() { defer close(done); ... ; for { select { case <-ctx.Done(): return; case <-ticker.C: ... } } }(); return done`.
 - File length: <600 lines per file. Split package if larger.
 - Comments: only for non-obvious WHY. Don't repeat what code already says.
 - Test naming: `TestXxx_Scenario` pattern. Table-driven where >3 cases.
@@ -117,6 +117,9 @@ Durante Sprint 0 Day 0 spike, ESC ha confutato un'inferenza VAL (verdict B impli
 
 **LL-5 (2026-05-24)** — Day 0 spike empirical-first paga
 Sprint 0 Day 0 spike (time-box 4h) ha scoperto layout Patil-style mandatory PRIMA di scrivere codice produzione. Senza spike, layout refactor sarebbe emerso in Sprint 3+ con cost 4-6h rework codice già scritto. Pattern: per ogni hypothesis architetturale flaggata "DA VERIFICARE" in un PLAN, schedulare spike empirical PRIMA dei bug fix / feature code. Time-box stretto + escalation path se hit blocker. Vedi `docs/spike-fix4-distribution.md` per template.
+
+**LL-6 (2026-05-24)** — Velocity Sprint N+1 > Sprint N quando pattern stabilito
+Sprint 1 reale: ~1h vs stima 1-1.5 giorni (10-15x più rapido). Cause: (1) Sprint 0 ha stabilito pattern test idiomatic Go + testify + cross-compile, riusabili; (2) refactor layout era file move + json edit, non rewrite logico; (3) ESC ha già caricato dom mental model Go pattern (heartbeat goroutine + lock O_EXCL + atomic write) dal PLAN.md §4.5 componenti. Implicazione planning: stime PLAN.md §5 day-by-day vanno calibrate verso optimistic-realistic post-Sprint 1 (5-7 giorni → probabile 4-5 effettivi). NON ridurre buffer aggressivamente in roadmap pubblica — buffer assorbe surprise spike/blocker, non scope creep. Mantenere 5-7 in PLAN come committed range, segnalare velocità accelerata come bonus interno.
 
 ---
 

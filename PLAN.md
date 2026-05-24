@@ -111,7 +111,7 @@ Gli stessi 8 deliverable di v2 §3.2, ma con **Day 0 FIX-4 spike OBBLIGATORIO pr
 3. **Fix BUG-3** Manifest schema v2 minimale: `schemaVersion`, `role`, `agentName`, `pid` (vedi §4.3 trimmed)
 4. **Fix BUG-4** `cab cleanup` default scope=my-session, --scope=global opt-in con confirm prompt
 5. **Fix BUG-5** `cab register` longest-prefix-match con tracking `BEST_MATCH_LEN`
-6. **Fix BUG-6** Lock file PID safe (`O_EXCL` semantics + `kill -0` check + stale recovery) + `--force-new` flag
+6. **Fix BUG-6** Lock file PID safe (`O_EXCL` semantics + `kill -0` check + stale recovery) + `--force-new` flag. **Sprint 1 finding**: semantica esposta `ErrSessionExistsForProject` (con holder PID nel msg) introduce concetto "live session per project" — da documentare in `docs/multi-esc-patterns.md` Sprint 3 per pattern multi-ESC concorrenti.
 7. **Enabling**: config loader centralizzato (`~/.claude/cli-agents-bridge/config.json` + env override) — risolve BUG-8 + elimina hardcoded
 8. **Enabling**: `cab send --file <path>` flag (FRIC-2) + JSON schema validation pre-write (via `encoding/json` strict mode `DisallowUnknownFields`)
 
@@ -337,7 +337,7 @@ cli-agents-bridge/                       ← Go module root (top-level)
 | `config` | Load `config/default.json` + override `~/.claude/cli-agents-bridge/config.json` + env vars | BUG-8, hardcoded |
 | `session/manager` | Register + longest-prefix lookup + heartbeat goroutine | BUG-1, BUG-5, BUG-9 |
 | `session/lock` | PID lock `O_EXCL` + stale recovery (`kill -0`) + `--force-new` flag | BUG-6 |
-| `transport/fs` | Atomic write (mktemp same-dir + `fdatasync` + rename via `golang.org/x/sys/unix`), polling con `time.Ticker` | BUG-2, atomic write FIX-7 |
+| `transport/fs` | Atomic write (mktemp same-dir + `f.Sync()` + rename, EXDEV explicit "config bug not transient"), polling con `time.Ticker`. **Sprint 1**: `atomic.go` 106 righe + 6 sub-test green. Polling resterà Sprint 2 (transport message v2). | BUG-2, atomic write FIX-7 |
 | `message/schema` | Marshal/Unmarshal v2, strict validation via `encoding/json` `DisallowUnknownFields` + regex constraints | FRIC-7, BUG-3 |
 | `routing` | Role-based compat check pre-send (default: val↔esc, `--allow-mesh` per esc↔esc) | BUG-3 |
 | `security/perms` | umask 077 syscall, chmod 700/600 enforce, ownership check, session ID regex validation | §9 SC-1..SC-5 |
