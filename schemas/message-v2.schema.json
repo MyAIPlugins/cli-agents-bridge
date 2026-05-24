@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/myAIPlugins/cli-agents-bridge/schemas/message-v2.schema.json",
+  "title": "cli-agents-bridge message v2",
+  "description": "On-disk JSON shape of inbox/outbox/*.json. Trimmed YAGNI per PLAN §4.4. inReplyTo is *string (null vs absent are equivalent in Go decode path).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "schemaVersion",
+    "from",
+    "fromRole",
+    "fromAgentName",
+    "to",
+    "toRole",
+    "type",
+    "timestamp",
+    "status",
+    "content",
+    "inReplyTo",
+    "metadata"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^msg-[a-z0-9]{12}$",
+      "description": "GenerateMessageID format: 'msg-' + 12 hex chars (2^48 entropy)."
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "enum": [1, 2]
+    },
+    "from": {
+      "type": "string",
+      "pattern": "^[a-z0-9]{6,32}$",
+      "description": "SC-4 validated session ID."
+    },
+    "fromRole": {
+      "type": "string",
+      "enum": ["val", "esc", "architect", "observer", "neutral"]
+    },
+    "fromAgentName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "to": {
+      "type": "string",
+      "pattern": "^[a-z0-9]{6,32}$"
+    },
+    "toRole": {
+      "type": "string",
+      "enum": ["val", "esc", "architect", "observer", "neutral"]
+    },
+    "type": {
+      "type": "string",
+      "enum": ["query", "response", "ping", "notify", "event"]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["pending", "processing", "completed", "failed"]
+    },
+    "content": {
+      "type": "string",
+      "description": "Message body. Size bounded by cfg.MaxMessageBytes (default 65536)."
+    },
+    "inReplyTo": {
+      "anyOf": [
+        { "type": "null" },
+        { "type": "string", "pattern": "^msg-[a-z0-9]{12}$" }
+      ],
+      "description": "null for original queries / pings / notifies; msg-... ID for replies."
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fromProject", "processingState"],
+      "properties": {
+        "fromProject": { "type": "string" },
+        "processingState": {
+          "type": "string",
+          "enum": ["pending", "processing", "completed", "failed"]
+        }
+      }
+    }
+  }
+}

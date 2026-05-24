@@ -16,7 +16,7 @@ import (
 	transportfs "github.com/myAIPlugins/cli-agents-bridge/internal/transport/fs"
 )
 
-const version = "0.2.0-dev"
+const version = "0.2.0"
 
 func init() {
 	syscall.Umask(0o077)
@@ -46,6 +46,8 @@ func main() {
 		exitFromErr(runListen(os.Args[2:]))
 	case "ask":
 		exitFromErr(runAsk(os.Args[2:]))
+	case "connect":
+		exitFromErr(runConnect(os.Args[2:]))
 	case "receive":
 		exitFromErr(runReceive(os.Args[2:]))
 	case "peers":
@@ -100,6 +102,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  register             Register a new session for the current project")
 	fmt.Fprintln(os.Stderr, "  listen               Poll inbox emitting messages as JSON until SIGINT or MaxBlocking timeout")
 	fmt.Fprintln(os.Stderr, "  ask                  Send a message to a peer (--to, --content, --file, --in-reply-to, --allow-mesh)")
+	fmt.Fprintln(os.Stderr, "  connect <peer-id>    Refresh own heartbeat (BUG-9) + validate peer reachable")
 	fmt.Fprintln(os.Stderr, "  receive              Long-poll wait for a reply to a specific message ID")
 	fmt.Fprintln(os.Stderr, "  peers                List known peers (table or --json) with role/agent/PID/heartbeat age")
 	fmt.Fprintln(os.Stderr, "  cleanup              Cleanup own session (default) or --scope=global (BUG-4 scoped)")

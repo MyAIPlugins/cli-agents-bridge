@@ -1,28 +1,82 @@
-# Privacy Notice
+# Privacy Notice — cli-agents-bridge
 
-> Stub Sprint 0. Full GDPR checklist in [PLAN.md §9.6](./PLAN.md#96-gdpr--eu-compliance-checklist-local-only-data).
+`cli-agents-bridge` is a **local-only single-user** IPC tool. This document describes what data is stored on disk, where, for how long, and how to remove it.
 
-## TL;DR
+**TL;DR**: No data leaves your machine. Zero telemetry, zero analytics, zero network calls. All state is plaintext JSON in `~/.claude/cli-agents-bridge/` with Unix permissions 600 (file) / 700 (directory).
 
-**No data leaves the local machine.** `cli-agents-bridge` is a local IPC tool. All messages, manifests, and state are stored exclusively in `~/.claude/cli-agents-bridge/` on the user's filesystem with permissions 600/700.
+---
 
-## Data flow
+## What gets stored
 
-| Data | Storage | Retention | Erasure |
+| Data | Location | Created by | Removed by |
 |---|---|---|---|
-| Session manifest (sessionId, role, agentName, projectPath, pid, timestamps) | `~/.claude/cli-agents-bridge/sessions/<id>/manifest.json` | Until cleanup (default 7d retention) | `cab purge --session <id>` |
-| Inbox/outbox messages (JSON payload with content) | `~/.claude/cli-agents-bridge/sessions/<id>/{inbox,outbox}/*.json` | Until processed + retention window | `cab purge --session <id>` o `cab cleanup --retention=0` |
-| Config | `~/.claude/cli-agents-bridge/config.json` | Persistent | Manual `rm` |
-| Migration backup (one-time) | `~/.claude/cli-agents-bridge/migration-backup-<date>/` | Indefinito (utente decide) | Manual `rm -rf` |
+| Session manifest | `~/.claude/cli-agents-bridge/sessions/<id>/manifest.json` | `register` | `cleanup` (own/global) |
+| Incoming messages | `~/.claude/cli-agents-bridge/sessions/<id>/inbox/*.json` | peer `ask` | `listen` (move to `processed/`) |
+| Outgoing messages | `~/.claude/cli-agents-bridge/sessions/<id>/outbox/*.json` | n/a in v0.2 (reserved) | `cleanup` |
+| Consumed messages | `~/.claude/cli-agents-bridge/sessions/<id>/processed/*.json` | `listen` post-consume | `cleanup` (move to `archive/`) |
+| Archived messages | `~/.claude/cli-agents-bridge/archive/<YYYY-MM-DD>/<id>/*.json` | `cleanup` pre-delete | retention sweep (`RetentionDays`, default 7) |
+| PID lock | `~/.claude/cli-agents-bridge/sessions/<id>/lock` | `register` | session exit / `cleanup` |
+| Config | `~/.claude/cli-agents-bridge/config.json` | user (optional) | manual `rm` |
+| Migration backup | `~/.claude/cli-agents-bridge/migration-backup-<ts>/` | `migrate-from-patil` | manual `rm` (user retains audit copy) |
+
+---
 
 ## GDPR controls
 
-- **Data minimization**: default `BRIDGE_RETENTION_DAYS=7`, configurable
-- **Right to erasure**: `cab purge --session <id>` rm -rf safeguarded
-- **Data localization**: zero data transfer over network. Zero telemetry. Zero analytics.
-- **Logging minimal opt-in**: persistent transcripts default OFF, opt-in via config flag (v0.3+ candidate)
-- **Transparent processing**: this document + SECURITY.md describe all data handling
+### GDPR-1 Data minimization
 
-## Caveat
+`config.RetentionDays` (default `7`) caps how long archived messages live on disk. After that, retention sweep at every `cleanup` run removes archive folders older than the window.
 
-Messages are stored in **plaintext** JSON files. Do not send credentials, secrets, or sensitive PII through the bridge. The file permissions (600) protect against other-UID readers but not against malware running as the same user (intrinsic Unix single-user model limit).
+Override via `CAB_RETENTION_DAYS=N` env var, or in `~/.claude/cli-agents-bridge/config.json`:
+
+```json
+{"retention_days": 14}
+```
+
+### GDPR-2 Right to erasure
+
+Remove a single session and all its data:
+
+```bash
+cab-bridge cleanup --session-id=<id>
+```
+
+Remove every stale session (interactive confirmation required):
+
+```bash
+cab-bridge cleanup --scope=global
+```
+
+Remove everything cli-agents-bridge has ever stored:
+
+```bash
+rm -rf ~/.claude/cli-agents-bridge/
+```
+
+### GDPR-3 Data localization
+
+No data leaves your machine. The binary makes zero network connections. Verifiable with `lsof -p <pid>` or `tcpdump` while a session is active — no sockets opened beyond the standard process tooling.
+
+### GDPR-4 Logging is opt-in
+
+Persistent transcripts (proposal feature for v0.3.0) will be **off by default**. The only logs in v0.2.0 are stderr warnings during runtime (printed to terminal, never persisted).
+
+### GDPR-5 Trasparency
+
+This document plus [SECURITY.md](./SECURITY.md) describe the complete data lifecycle. No DPA is required for a single-user developer tool.
+
+---
+
+## Caveat — plaintext storage
+
+Messages are stored in **plaintext JSON files**. They are protected against other-UID readers by file permissions (`chmod 600`), but a malware running as the same user as cli-agents-bridge can read them. This is the inherent Unix single-user model limit — only OS-level sandboxing (e.g. `sandbox-exec` on macOS) can mitigate.
+
+**Recommendation**: do not send credentials, secrets, or sensitive PII through the bridge. Use it for code, briefings, and design context as intended.
+
+For encryption-at-rest (a v1.0+ candidate), see PLAN.md §5 v1.0.
+
+---
+
+## Contact
+
+Privacy questions: advertalis@gmail.com

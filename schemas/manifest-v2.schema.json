@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/myAIPlugins/cli-agents-bridge/schemas/manifest-v2.schema.json",
+  "title": "cli-agents-bridge session manifest v2",
+  "description": "On-disk JSON shape of ~/.claude/cli-agents-bridge/sessions/<id>/manifest.json. Trimmed YAGNI per PLAN §4.3.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sessionId",
+    "schemaVersion",
+    "projectName",
+    "projectPath",
+    "agentName",
+    "role",
+    "pid",
+    "startedAt",
+    "lastHeartbeat",
+    "status",
+    "capabilities"
+  ],
+  "properties": {
+    "sessionId": {
+      "type": "string",
+      "pattern": "^[a-z0-9]{6,32}$",
+      "description": "SC-4 regex. 8 hex chars produced by generateSessionID in Sprint 1."
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "enum": [1, 2],
+      "description": "v1 read with ApplyV1Defaults; writes always emit 2."
+    },
+    "projectName": {
+      "type": "string",
+      "minLength": 1,
+      "description": "filepath.Base(projectPath) by default; informational."
+    },
+    "projectPath": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Absolute path of the session's working directory. RC-3 rejects '..' during migrate."
+    },
+    "agentName": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable agent identifier (e.g. 'VAL-main', 'ESC-analysis')."
+    },
+    "role": {
+      "type": "string",
+      "enum": ["val", "esc", "architect", "observer", "neutral"],
+      "description": "Routing role (BUG-3). 'neutral' is the v1-read default."
+    },
+    "pid": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Process ID of the registering Claude Code session. 0 = legacy v1 read (no live PID inferable)."
+    },
+    "startedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "lastHeartbeat": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Refreshed every cfg.HeartbeatTickMs by Manager.StartHeartbeat (BUG-1) or on demand via Manager.Touch (BUG-9)."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active"],
+      "description": "MVP uses only 'active'. v0.3+ may add idle/paused/terminating."
+    },
+    "capabilities": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 0,
+      "description": "Informational capability tags. Routing does not consult these yet (Sprint 2+ candidate)."
+    }
+  }
+}
