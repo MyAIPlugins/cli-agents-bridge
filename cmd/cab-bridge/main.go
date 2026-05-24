@@ -8,9 +8,12 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"syscall"
+
+	transportfs "github.com/myAIPlugins/cli-agents-bridge/internal/transport/fs"
 )
 
 const version = "0.2.0-dev"
@@ -37,6 +40,17 @@ func main() {
 		fmt.Println(version)
 	case "--help", "-h", "help":
 		printUsage()
+	case "receive":
+		if err := runReceive(os.Args[2:]); err != nil {
+			// BUG-7 fix: errors go to stderr, never stdout. Timeout maps
+			// to exit code 124 (coreutils timeout(1) convention), other
+			// failures exit 1.
+			fmt.Fprintln(os.Stderr, err.Error())
+			if errors.Is(err, transportfs.ErrTimeout) {
+				os.Exit(124)
+			}
+			os.Exit(1)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "cab-bridge: unknown subcommand %q\n", cmd)
 		printUsage()
@@ -50,12 +64,12 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "Usage:")
 	fmt.Fprintln(os.Stderr, "  cab-bridge <subcommand> [args...]")
 	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "Subcommands (Sprint 0 baseline — not yet implemented):")
-	fmt.Fprintln(os.Stderr, "  register             Register current session (Sprint 1)")
-	fmt.Fprintln(os.Stderr, "  listen               Listen for incoming messages (Sprint 1)")
-	fmt.Fprintln(os.Stderr, "  ask <id> <msg>       Send query to peer (Sprint 2)")
-	fmt.Fprintln(os.Stderr, "  receive <id>         Wait for response (Sprint 2)")
-	fmt.Fprintln(os.Stderr, "  peers                List known peers (Sprint 3)")
+	fmt.Fprintln(os.Stderr, "Subcommands:")
+	fmt.Fprintln(os.Stderr, "  receive              Wait long-poll for reply to a message (Sprint 2, IMPLEMENTED)")
+	fmt.Fprintln(os.Stderr, "  register             Register current session (Sprint 3 planned)")
+	fmt.Fprintln(os.Stderr, "  listen               Listen for incoming messages (Sprint 3 planned)")
+	fmt.Fprintln(os.Stderr, "  ask <id> <msg>       Send query to peer (Sprint 3 planned)")
+	fmt.Fprintln(os.Stderr, "  peers                List known peers (Sprint 3 planned)")
 	fmt.Fprintln(os.Stderr, "  cleanup              Cleanup own session (Sprint 3)")
 	fmt.Fprintln(os.Stderr, "  status               Show session status (Sprint 3)")
 	fmt.Fprintln(os.Stderr, "  inspect <id> --json  Inspect session manifest (Sprint 3)")

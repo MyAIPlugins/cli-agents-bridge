@@ -1,0 +1,137 @@
+package fs
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
+)
+
+// ErrTimeout is returned by ReceiveReply when deadline expires before a
+// matching reply appears in the inbox. cmd/cab-bridge maps this sentinel
+// to exit code 124 — the conventional Unix timeout exit code from
+// coreutils timeout(1) — and writes the error message to stderr (BUG-7
+// fix: Patil's bridge-receive.sh wrote "No response received after Ns" to
+// stdout, polluting any process substitution capture).
+var ErrTimeout = errors.New("receive timeout: no reply within deadline")
+
+// ReceiveReply waits up to deadline for a message in inboxDir whose
+// inReplyTo equals origMsgID. Polls at pollInterval.
+//
+// BUG-2 fix vs Patil bridge-receive.sh:15-43:
+//   - deadline is the MAX wait, not a hard cut that loses late-arriving
+//     replies. If the matching reply lands after deadline, it stays in
+//     inboxDir (we do not consume non-matching messages here). A
+//     subsequent ReceiveReply call (or list-peers inspection) finds it.
+//   - Patil's strict < loop comparison could exit one tick before the
+//     final scan. ReceiveReply does an initial scan BEFORE the first
+//     ticker fire and a final time.Now check before each scan, so a
+//     deadline-equal arrival is always seen.
+//   - Non-matching messages in inbox are NOT consumed by ReceiveReply
+//     (PollInbox owns the broader fan-out path). We only delete the
+//     specific reply we matched.
+//
+// Returns (msg, nil) on match, (nil, ErrTimeout) on deadline, or
+// (nil, ctx.Err()-wrapped) on cancellation.
+func ReceiveReply(
+	ctx context.Context,
+	inboxDir, origMsgID string,
+	deadline, pollInterval time.Duration,
+	maxContentBytes int,
+) (*message.Message, error) {
+	deadlineTime := time.Now().Add(deadline)
+
+	// Initial scan: the reply may already be present when ReceiveReply is
+	// called (sender wrote it during the gap between send and receive).
+	if m, err := scanForReply(inboxDir, origMsgID, maxContentBytes); err != nil {
+		return nil, err
+	} else if m != nil {
+		return m, nil
+	}
+
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("receive canceled: %w", ctx.Err())
+		case <-ticker.C:
+			// Check deadline BEFORE the scan so a tick that lands right at
+			// deadline still gets the scan chance (matches the BUG-2
+			// fix-intent: never lose a reply that exists on disk).
+			now := time.Now()
+
+			m, err := scanForReply(inboxDir, origMsgID, maxContentBytes)
+			if err != nil {
+				return nil, err
+			}
+			if m != nil {
+				return m, nil
+			}
+
+			if now.After(deadlineTime) {
+				return nil, fmt.Errorf("%w: origMsgID=%s waited=%v",
+					ErrTimeout, origMsgID, deadline)
+			}
+		}
+	}
+}
+
+// scanForReply does a single pass of inboxDir looking for a message whose
+// inReplyTo equals origMsgID. On match, deletes the file (at-most-once
+// consumption, same policy as PollInbox) and returns the message.
+//
+// Returns (nil, nil) when no match yet — the polling loop in ReceiveReply
+// handles retry. Returns non-nil error only for unexpected I/O failures
+// that the caller should propagate (missing inbox dir is NOT one of these:
+// it just means no messages yet).
+func scanForReply(inboxDir, origMsgID string, maxContentBytes int) (*message.Message, error) {
+	entries, err := os.ReadDir(inboxDir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("scan inbox %q: %w", inboxDir, err)
+	}
+
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if strings.HasPrefix(name, ".tmp.") || !strings.HasSuffix(name, ".json") {
+			continue
+		}
+
+		full := filepath.Join(inboxDir, name)
+		data, err := os.ReadFile(full)
+		if err != nil {
+			continue
+		}
+
+		m, err := message.DecodeLenient(data, maxContentBytes)
+		if err != nil {
+			continue
+		}
+
+		if m.InReplyTo == nil || *m.InReplyTo != origMsgID {
+			continue
+		}
+
+		// Match. Delete BEFORE returning to ensure at-most-once consumption
+		// across concurrent ReceiveReply callers (same defensive pattern
+		// as PollInbox).
+		if err := os.Remove(full); err != nil {
+			return nil, fmt.Errorf("remove consumed reply %q: %w", full, err)
+		}
+		return m, nil
+	}
+	return nil, nil
+}
