@@ -93,7 +93,7 @@ Vendor-agnostic IPC bridge between CLI agent sessions (Claude Code, Codex, Aider
 PLAN.md §3.5 + §12. Time-box 4h. Esito determina distribution path (self-marketplace vs pure-PATH fallback). NO codice produzione prima di spike outcome documented in `docs/spike-fix4-distribution.md`.
 
 ### Commit discipline
-- Commit messages: `<type>(<scope>): <subject>` — types: `feat`, `fix`, `chore`, `docs`, `test`, `refactor`
+- Commit messages: `<type>(<scope>): <subject>` — types: `feat`, `fix`, `chore`, `docs`, `test`, `refactor`, `release` (per version bump commits es. `release(v0.2.0): ...`)
 - Co-author trailer: `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>` mandatory
 - NO emoji in commit messages, code, or docs (unless explicitly requested by Alan)
 - Commit one logical unit at a time. NOT one commit per micro-change.
@@ -123,6 +123,9 @@ Durante Sprint 0 Day 0 spike, ESC ha confutato un'inferenza VAL (verdict B impli
 
 **LL-5 (2026-05-24)** — Day 0 spike empirical-first paga
 Sprint 0 Day 0 spike (time-box 4h) ha scoperto layout Patil-style mandatory PRIMA di scrivere codice produzione. Senza spike, layout refactor sarebbe emerso in Sprint 3+ con cost 4-6h rework codice già scritto. Pattern: per ogni hypothesis architetturale flaggata "DA VERIFICARE" in un PLAN, schedulare spike empirical PRIMA dei bug fix / feature code. Time-box stretto + escalation path se hit blocker. Vedi `docs/spike-fix4-distribution.md` per template.
+
+**LL-8 (2026-05-24)** — Cumulative velocity compounding via patterns established
+MVP cli-agents-bridge consegnato in ~10h focus session totali (Sprint 0 ~6-7h con spike inclusa, Sprint 1 ~1h, Sprint 2 ~50min, Sprint 3 ~1h45, Sprint 4 ~1h30) vs commitment esterno 5-7gg (35-49h calendar) → **3.5-5x speedup**. Cause: (1) Sprint 0 spike + scaffolding piazza pattern test/build/security riusabili; (2) ogni sprint successivo riusa idioms del precedente (heartbeat goroutine pattern, atomic write, exitFromErr, DecodeStrict/Lenient, flag.ContinueOnError); (3) ESC mental model precaricato dal PLAN evita context-switch ogni sprint; (4) VAL audit gate stretto previene rework debug. Implicazione per planning futuri: per progetti con design rigoroso pre-Sprint-0 + ESC context-fresh disciplinato, stimare 3-4x speedup vs calendar quote. NON ridurre commitment esterno (assorbire surprise spike), MA pianificare workload internal aggressivamente.
 
 **LL-7 (2026-05-24)** — Structural invariants vs overridable defaults
 Sprint 3 BUG-3 routing implementation distingue chiaramente: `observer` cannot send è invariante architetturale (read-only by design, NO flag override possibile, fail fast pre-check), mentre `esc→esc forbidden` è default convenience (override `--allow-mesh` esplicito ammesso per scenari speciali documentati). Pattern: chiediti "questa restrizione esiste perché concettualmente impossibile da rilassare in design, o perché è raccomandazione UX che può essere bypassata da power-user consapevole?". Categoria 1 → hardcoded early-return + sentinel error senza flag override. Categoria 2 → conditional check con flag override + sentinel error wrap. Mescolarli (mettere flag su invariante) corrompe il modello semantico.

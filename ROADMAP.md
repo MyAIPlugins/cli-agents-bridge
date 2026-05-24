@@ -7,7 +7,7 @@
 
 ## Status corrente — 2026-05-24
 
-**Fase**: 🟢 **Sprint 3 DONE** — MVP feature-complete (commit `0e9f39a` + `f81599d` + `224e438`) → 🟡 **Pre-Sprint 4** (release readiness)
+**Fase**: 🟢 **Sprint 4 DONE** — v0.2.0 RELEASE CANDIDATE (commit `9e56b72`) → 🟡 **Pre-tag** (smoke test Alan + VAL gate finale + tag v0.2.0)
 
 **Sprint 0 deliverable** (commit `c142c8d`):
 - Day 0 FIX-4 spike → Esito A definitivo (self-marketplace Claude Code 2.1.150)
@@ -54,7 +54,24 @@
 
 **Bug status**: ✅ **9/9 FIXED** + regression test green. MVP feature-complete.
 
-**Sblocco Sprint 4**: nessuno. Sprint 4 = release readiness pure: integration test (PLAN §7.3 5 scenari multi-process) + docs production (README+PRIVACY+SECURITY content vs Sprint 0 stub) + smoke test Alan checklist `tests/smoke-test.md` ~45 min + tag v0.2.0.
+**Sprint 4 deliverable** (commit `9e56b72` release-coherent single audit point):
+- 6 integration test scenari (5 PLAN §7.3 + 1 connect BUG-9 end-to-end)
+- 8 docs production grade (README + PRIVACY + SECURITY + 5 docs/*) — 1089 LOC totali, no stub
+- `tests/smoke-test.md` 275 LOC, 15 step Alan-executable con pass criteria specifici + sign-off block
+- `cmd/cab-bridge/connect.go` 109 LOC — BUG-9 cmd-level wiring end-to-end
+- `schemas/{manifest,message}-v2.schema.json` JSON Schema draft 2020-12 con regex/enum constraints
+- Version bump `cmd/cab-bridge/main.go` const version = `0.2.0`
+- CHANGELOG.md [0.2.0] release entry con cumulative bug coverage
+- Single release-coherent commit (vs 1-3 raggruppati permessi) — review-friendly single audit point
+- Velocità Sprint 4: ~1h30 vs stima 3-4h
+
+**Sblocco tag v0.2.0**:
+1. ⏳ Alan esegue `tests/smoke-test.md` (~45 min, 2 finestre VS Code reali)
+2. ⏳ Alan firma sign-off block PASS o segnala FAIL
+3. ⏳ Se PASS → VAL aggiorna ROADMAP a "M3 DONE" + memory + crea tag v0.2.0 + (opzionale) push remote + GitHub Release con notes da CHANGELOG.md [0.2.0]
+4. Se FAIL → Sprint 5 fixup, no tag
+
+**Caveat tag protocol**: nessun remote git configurato. Setup `myAIPlugins/cli-agents-bridge` GitHub repo pre-tag necessario per push + release publication. Tag locale possibile come fallback (commit history mantenuta, tag pushabile post-creazione remoto).
 
 ---
 
@@ -67,7 +84,8 @@
 | **M2a** Sprint 1 — Layout refactor + BUG-1/5/6 | ✅ DONE | 2026-05-24 | commit `57a5db3` + `c38612e`. Layout Patil-style, heartbeat goroutine, longest-prefix, lock O_EXCL. 28 sub-test green |
 | **M2b** Sprint 2 — BUG-2/7 + message v2 schema | ✅ DONE | 2026-05-24 | commit `f4d0d44` + `5774cdf`. Long-poll receive, stderr+exit 124, DecodeStrict/Lenient gateway. 27 nuovi sub-test |
 | **M2c** Sprint 3 — BUG-3/4/8/9 + cmd suite + policy A→B + migrate | ✅ DONE | 2026-05-24 | commit `0e9f39a` + `f81599d` + `224e438`. 9/9 BUG fixed, MVP feature-complete. 29 nuovi sub-test |
-| **M3** Sprint 4 — Release readiness + tag v0.2.0 | ⏳ NEXT | ~1 giorno | Integration test 5 scenari + docs production + smoke test Alan ~45min + tag release |
+| **M3a** Sprint 4 — Release readiness | ✅ DONE | 2026-05-24 | commit `9e56b72`. 6 integration scenari + 8 docs production + smoke checklist. v0.2.0 RC ready |
+| **M3b** Smoke test Alan + tag v0.2.0 | ⏳ NEXT | ~45 min smoke + tag | tests/smoke-test.md 15 step + sign-off. Se PASS → VAL tagga v0.2.0 |
 | **M3** Smoke test Alan + release v0.2.0 | 🔒 BLOCKED on M2 | +1 giorno post-M2 | ~45 min Alan-time + docs (README/PRIVACY/SECURITY) |
 | **M4** v0.3.0 — quality of life | 🔮 FUTURE | 1-2 settimane post-M3 | notification, transcript, retry, background-listen (gated da validation reale) |
 | **M5** v0.4.0 — daemon Unix socket | 🔮 FUTURE GATED | 1-2 settimane post-M4 | GATE: G1 latency >200ms ∧ G2 peer >3. Se non si verifica → daemon NON si fa |
