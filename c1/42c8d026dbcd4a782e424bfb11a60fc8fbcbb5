@@ -1,0 +1,63 @@
+.claude-plugin/plugin.json
+  s_d1f0ecd26a6f8a::t_64a30a561e1787 1-16
+internal/security/perms_test.go
+  s_d1f0ecd26a6f8a::t_6a45e6be6eca4e 1-164
+ARCHITECTURE.md
+  s_d1f0ecd26a6f8a::t_7e42d13ee13cd9 1-15
+.github/workflows/ci.yml
+  s_d1f0ecd26a6f8a::t_3f234138d894d3 1-62
+internal/security/perms.go
+  s_d1f0ecd26a6f8a::t_fa0fc6e5afef47 1-123
+.gitignore
+  s_d1f0ecd26a6f8a::t_f26915608c1d83 19-26
+CHANGELOG.md
+  s_d1f0ecd26a6f8a::t_709269c6324725 1-22
+SECURITY.md
+  s_d1f0ecd26a6f8a::t_c6c0b69fafee48 1-43
+PRIVACY.md
+  s_d1f0ecd26a6f8a::t_e03ee958d91acc 1-28
+README.md
+  s_d1f0ecd26a6f8a::t_77976ba0cfca0d 1-28
+internal/config/config.go
+  s_d1f0ecd26a6f8a::t_81ea7bf1f32852 1-13,15-114,116-191
+  s_d1f0ecd26a6f8a::t_a960049432bb0a 115
+  s_d1f0ecd26a6f8a::t_0aab3f9dc5d814 14
+config/default.json
+  s_d1f0ecd26a6f8a::t_a25374f5d0b874 1-10
+go.mod
+  s_d1f0ecd26a6f8a::t_1eee11db5cd808 1-4,7-11
+  s_d1f0ecd26a6f8a::t_c2179cc441c730 5-6
+LICENSE
+  s_d1f0ecd26a6f8a::t_76dd6737aa77e6 1-24
+Makefile
+  s_d1f0ecd26a6f8a::t_d67986dcf34818 1-51
+docs/spike-fix4-distribution.md
+  s_d1f0ecd26a6f8a::t_f1dc73bc2b7927 231-232
+  s_d1f0ecd26a6f8a::t_deeb624146c7fd 112-126
+  s_d1f0ecd26a6f8a::t_79f4821d624b81 226,228-230
+  s_d1f0ecd26a6f8a::t_9ea80e21627947 137-222
+  s_d1f0ecd26a6f8a::t_1c1728c06eaac1 128-133
+  s_d1f0ecd26a6f8a::t_688c50cea23795 243
+  s_d1f0ecd26a6f8a::t_6781dd69cbaa41 1-98,100,102,109,111,127,134-136,223-225,227,233-242,244-247
+cmd/cab-bridge/main.go
+  s_d1f0ecd26a6f8a::t_6b9c34aeeb202c 1-21,28-65
+  s_d1f0ecd26a6f8a::t_77a17a54eb8c1d 22-27
+.claude-plugin/marketplace.json
+  s_d1f0ecd26a6f8a::t_94a2b158e6a337 1-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "c142c8d026dbcd4a782e424bfb11a60fc8fbcbb5",
+  "prompts": {},
+  "sessions": {
+    "s_d1f0ecd26a6f8a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9b8c33c8-a784-430f-b60b-54e83a4c0d81",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
