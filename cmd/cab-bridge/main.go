@@ -40,21 +40,53 @@ func main() {
 		fmt.Println(version)
 	case "--help", "-h", "help":
 		printUsage()
+	case "register":
+		exitFromErr(runRegister(os.Args[2:]))
+	case "listen":
+		exitFromErr(runListen(os.Args[2:]))
+	case "ask":
+		exitFromErr(runAsk(os.Args[2:]))
 	case "receive":
-		if err := runReceive(os.Args[2:]); err != nil {
-			// BUG-7 fix: errors go to stderr, never stdout. Timeout maps
-			// to exit code 124 (coreutils timeout(1) convention), other
-			// failures exit 1.
-			fmt.Fprintln(os.Stderr, err.Error())
-			if errors.Is(err, transportfs.ErrTimeout) {
-				os.Exit(124)
-			}
-			os.Exit(1)
-		}
+		exitFromErr(runReceive(os.Args[2:]))
+	case "peers":
+		exitFromErr(runPeers(os.Args[2:]))
+	case "cleanup":
+		exitFromErr(runCleanup(os.Args[2:]))
+	case "status":
+		exitFromErr(runStatus(os.Args[2:]))
+	case "inspect":
+		exitFromErr(runInspect(os.Args[2:]))
+	case "migrate-from-patil":
+		exitFromErr(runMigrate(os.Args[2:]))
 	default:
 		fmt.Fprintf(os.Stderr, "cab-bridge: unknown subcommand %q\n", cmd)
 		printUsage()
 		os.Exit(2)
+	}
+}
+
+// exitFromErr centralizes subcommand error -> exit code mapping. Exit codes:
+//
+//	  0  success (err == nil)
+//	  1  general failure
+//	  2  validation / routing forbidden
+//	  3  cleanup global requires confirm (non-tty)
+//	124  receive / listen timeout (coreutils timeout(1) convention)
+//
+// Errors are always written to stderr (BUG-7 fix carried across all
+// subcommands, not just receive).
+func exitFromErr(err error) {
+	if err == nil {
+		return
+	}
+	fmt.Fprintln(os.Stderr, err.Error())
+	switch {
+	case errors.Is(err, transportfs.ErrTimeout):
+		os.Exit(124)
+	case errors.Is(err, ErrConfirmRequired):
+		os.Exit(3)
+	default:
+		os.Exit(1)
 	}
 }
 
@@ -65,15 +97,15 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  cab-bridge <subcommand> [args...]")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Subcommands:")
-	fmt.Fprintln(os.Stderr, "  receive              Wait long-poll for reply to a message (Sprint 2, IMPLEMENTED)")
-	fmt.Fprintln(os.Stderr, "  register             Register current session (Sprint 3 planned)")
-	fmt.Fprintln(os.Stderr, "  listen               Listen for incoming messages (Sprint 3 planned)")
-	fmt.Fprintln(os.Stderr, "  ask <id> <msg>       Send query to peer (Sprint 3 planned)")
-	fmt.Fprintln(os.Stderr, "  peers                List known peers (Sprint 3 planned)")
-	fmt.Fprintln(os.Stderr, "  cleanup              Cleanup own session (Sprint 3)")
-	fmt.Fprintln(os.Stderr, "  status               Show session status (Sprint 3)")
-	fmt.Fprintln(os.Stderr, "  inspect <id> --json  Inspect session manifest (Sprint 3)")
-	fmt.Fprintln(os.Stderr, "  migrate-from-patil   Migrate sessions from Patil upstream (Sprint 3)")
+	fmt.Fprintln(os.Stderr, "  register             Register a new session for the current project")
+	fmt.Fprintln(os.Stderr, "  listen               Poll inbox emitting messages as JSON until SIGINT or MaxBlocking timeout")
+	fmt.Fprintln(os.Stderr, "  ask                  Send a message to a peer (--to, --content, --file, --in-reply-to, --allow-mesh)")
+	fmt.Fprintln(os.Stderr, "  receive              Long-poll wait for a reply to a specific message ID")
+	fmt.Fprintln(os.Stderr, "  peers                List known peers (table or --json) with role/agent/PID/heartbeat age")
+	fmt.Fprintln(os.Stderr, "  cleanup              Cleanup own session (default) or --scope=global (BUG-4 scoped)")
+	fmt.Fprintln(os.Stderr, "  status               Show own session status (heartbeat age, inbox/outbox/processed counts)")
+	fmt.Fprintln(os.Stderr, "  inspect <id>         Print session manifest JSON (replaces jq dep)")
+	fmt.Fprintln(os.Stderr, "  migrate-from-patil   Migrate ~/.claude/session-bridge/ sessions to v2 namespace")
 	fmt.Fprintln(os.Stderr, "  version              Show version")
 	fmt.Fprintln(os.Stderr, "  help                 Show this help")
 }
