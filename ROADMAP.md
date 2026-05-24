@@ -7,7 +7,7 @@
 
 ## Status corrente — 2026-05-24
 
-**Fase**: 🟢 **Sprint 1 DONE** (commit `57a5db3` + `c38612e`) → 🟡 **Pre-Sprint 2**
+**Fase**: 🟢 **Sprint 2 DONE** (commit `f4d0d44` + `5774cdf`) → 🟡 **Pre-Sprint 3**
 
 **Sprint 0 deliverable** (commit `c142c8d`):
 - Day 0 FIX-4 spike → Esito A definitivo (self-marketplace Claude Code 2.1.150)
@@ -28,9 +28,20 @@
 - HeartbeatTickMs 30000 in config + env override `CAB_HEARTBEAT_TICK_MS`
 - Velocità: ~1h reale vs stima 1-1.5 giorni (vedi CLAUDE.md LL-6)
 
-**Bug status**: BUG-1, BUG-5, BUG-6 ✅ fixed + tested. Restanti per Sprint 2-3: BUG-2, BUG-3, BUG-4, BUG-7, BUG-8, BUG-9.
+**Sprint 2 deliverable** (commit `f4d0d44` feat message + `5774cdf` feat transport):
+- **BUG-2** long-poll `ReceiveReply`: preserve non-matching messages in inbox (recovery superior a Patil che li perdeva), ErrTimeout sentinel
+- **BUG-7** stderr + exit code 124 timeout (coreutils convention), 1 validation error, 2 unknown subcommand (distinct caller branching)
+- Message schema v2 (`schema.go` 111 LOC) + validation gateway (`validate.go` 161 LOC) con `DecodeStrict`/`DecodeLenient` pattern
+- Filesystem polling (`poll.go` 109 LOC) con `time.Ticker` + ctx + done chan idiom
+- `cab-bridge receive --msg-id=X --max-deadline=N` subcommand funzionante manual smoke
+- 27 nuovi sub-test green con -race (14 message + 5 poll + 6 receive + 2 regression BUG-2/7)
+- 55+ sub-test totali cumulati Sprint 0+1+2
+- Velocità Sprint 2: ~50 min vs stima 3-4h (LL-6 trend continua, atomic.go pre-esistente + idiom Sprint 1)
+- Inbox cleanup policy: A (delete post-read) implementato Sprint 2 come da brief. **Migration a B (move-to-processed/) schedulata Sprint 3** parte del BUG-4 cleanup scope-aware work.
 
-**Sblocco Sprint 2**: nessuno. Sprint 2 task = BUG-2 long-poll receive + BUG-7 stderr exit 124 + transport message v2 + schema validation `DisallowUnknownFields`.
+**Bug status**: BUG-1, BUG-2, BUG-5, BUG-6, BUG-7 ✅ fixed + tested. Restanti Sprint 3: BUG-3 (routing role), BUG-4 (cleanup scope + inbox migration A→B), BUG-8 (STALE_SECONDS unified check), BUG-9 (connect heartbeat).
+
+**Sblocco Sprint 3**: nessuno. Sprint 3 task = BUG-3/4/8/9 + cmd subcommand suite (register/listen/ask/peers/cleanup/status/inspect/migrate-from-patil) + inbox policy migration A→B.
 
 ---
 
@@ -41,7 +52,8 @@
 | **M0** Planning ratification | ✅ DONE | 2026-05-24 | PLAN v3 RATIFIED (synthesis ESC v2 + ultraplan + VAL gate) |
 | **M1** Sprint 0 — Day 0 spike + Go baseline | ✅ DONE | 2026-05-24 | commit `c142c8d`, Esito A definitivo, security P0 + Go module + CI cross-compile |
 | **M2a** Sprint 1 — Layout refactor + BUG-1/5/6 | ✅ DONE | 2026-05-24 | commit `57a5db3` + `c38612e`. Layout Patil-style, heartbeat goroutine, longest-prefix, lock O_EXCL. 28 sub-test green |
-| **M2b** Sprint 2-4 — Restanti bug + integration tests | ⏳ NEXT | +2-3 giorni | BUG-2/3/4/7/8/9 + 5 scenario integration + migration subcommand |
+| **M2b** Sprint 2 — BUG-2/7 + message v2 schema | ✅ DONE | 2026-05-24 | commit `f4d0d44` + `5774cdf`. Long-poll receive, stderr+exit 124, DecodeStrict/Lenient gateway. 27 nuovi sub-test |
+| **M2c** Sprint 3 — BUG-3/4/8/9 + cmd suite + policy A→B | ⏳ NEXT | +1-2 giorni | Routing role, cleanup scoped, config check, connect heartbeat + 8 cmd subcommand restanti + inbox cleanup policy migration |
 | **M3** Smoke test Alan + release v0.2.0 | 🔒 BLOCKED on M2 | +1 giorno post-M2 | ~45 min Alan-time + docs (README/PRIVACY/SECURITY) |
 | **M4** v0.3.0 — quality of life | 🔮 FUTURE | 1-2 settimane post-M3 | notification, transcript, retry, background-listen (gated da validation reale) |
 | **M5** v0.4.0 — daemon Unix socket | 🔮 FUTURE GATED | 1-2 settimane post-M4 | GATE: G1 latency >200ms ∧ G2 peer >3. Se non si verifica → daemon NON si fa |

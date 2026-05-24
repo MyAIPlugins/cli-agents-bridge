@@ -107,7 +107,7 @@ Gli stessi 8 deliverable di v2 §3.2, ma con **Day 0 FIX-4 spike OBBLIGATORIO pr
 
 **Bug fix deliverable (Day 1-5)**:
 1. **Fix BUG-1** Heartbeat goroutine in `cab listen` (Go `time.Ticker` + atomic manifest update)
-2. **Fix BUG-2 + BUG-7** `cab receive` long-poll fino a `--max-deadline` (default 30 min) + errore su stderr + exit code 124 timeout
+2. **Fix BUG-2 + BUG-7** `cab receive` long-poll fino a `--max-deadline` (default 30 min) + errore su stderr + exit code 124 timeout. **Sprint 2 finding**: BUG-2 fix preserva non-matching messages in inbox (Patil li perdeva forever) → late reply recuperabile in chiamata successiva. Exit codes distinti: 124 timeout, 1 validation error, 2 unknown subcommand. Inbox cleanup policy: Sprint 2 default A (delete post-read), **Sprint 3 migration a B (move-to-processed/)** come parte di BUG-4 cleanup scope-aware work (audit trail + foundation transcript v0.3 + recovery semantics).
 3. **Fix BUG-3** Manifest schema v2 minimale: `schemaVersion`, `role`, `agentName`, `pid` (vedi §4.3 trimmed)
 4. **Fix BUG-4** `cab cleanup` default scope=my-session, --scope=global opt-in con confirm prompt
 5. **Fix BUG-5** `cab register` longest-prefix-match con tracking `BEST_MATCH_LEN`
@@ -330,6 +330,8 @@ cli-agents-bridge/                       ← Go module root (top-level)
 
 **Rimosso vs v1**: `threadId`. Nessuna view threading in MVP → dead field. Riconfermare in v0.3 quando entra `cab thread <id>` view.
 
+**Sprint 2 note**: `inReplyTo` implementato come `*string` (pointer) per Go-idiomatic null semantics — JSON `null` ↔ Go `nil`, JSON `"msg-..."` ↔ Go `&"msg-..."`. Evita ambiguità "campo mancante" vs "campo presente con valore vuoto". Pattern replicato per altri optional fields futuri (es. `category`, `priority` se introdotti).
+
 ### 4.5 Componenti core + responsabilità
 
 | Package Go (`internal/`) | Responsabilità | Risolve |
@@ -338,7 +340,8 @@ cli-agents-bridge/                       ← Go module root (top-level)
 | `session/manager` | Register + longest-prefix lookup + heartbeat goroutine | BUG-1, BUG-5, BUG-9 |
 | `session/lock` | PID lock `O_EXCL` + stale recovery (`kill -0`) + `--force-new` flag | BUG-6 |
 | `transport/fs` | Atomic write (mktemp same-dir + `f.Sync()` + rename, EXDEV explicit "config bug not transient"), polling con `time.Ticker`. **Sprint 1**: `atomic.go` 106 righe + 6 sub-test green. Polling resterà Sprint 2 (transport message v2). | BUG-2, atomic write FIX-7 |
-| `message/schema` | Marshal/Unmarshal v2, strict validation via `encoding/json` `DisallowUnknownFields` + regex constraints | FRIC-7, BUG-3 |
+| `message/schema` + `message/validate` | Marshal/Unmarshal v2 minimal (`schema.go` 111 LOC), strict validation gateway (`DecodeStrict` con `DisallowUnknownFields`) + lenient runtime (`DecodeLenient` forward-compat schema additive) + SC-4 regex su path-component fields + size limit MaxMessageBytes. **Sprint 2**: 506 LOC totali + 14 sub-test green. | FRIC-7, BUG-3 partial (routing role check arriva Sprint 3) |
+| `transport/fs/poll` + `transport/fs/receive` | Filesystem polling con `time.Ticker` + `context.Context` cancellation + done channel; long-poll receive con non-matching message preserve (recovery superior vs Patil) + ErrTimeout sentinel + exit code 124 caller-side. **Sprint 2**: 246 LOC + 11 sub-test green. | BUG-2, BUG-7 |
 | `routing` | Role-based compat check pre-send (default: val↔esc, `--allow-mesh` per esc↔esc) | BUG-3 |
 | `security/perms` | umask 077 syscall, chmod 700/600 enforce, ownership check, session ID regex validation | §9 SC-1..SC-5 |
 | `cleanup` | Scope-aware: my-session default, --scope=global con confirm, pre-delete inbox archive | BUG-4 |
