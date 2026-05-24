@@ -65,6 +65,15 @@ type Config struct {
 	// Default: 7.
 	// Env override: CAB_RETENTION_DAYS
 	RetentionDays int `json:"retention_days"`
+
+	// HeartbeatTickMs is the interval at which the session manager updates
+	// lastHeartbeat in the manifest. Must stay well below StaleSeconds*1000
+	// to avoid false stale detection.
+	// Default: 30000 (30s — gives 3x safety buffer vs <90s test threshold,
+	// and 10x vs default 300s StaleSeconds).
+	// Env override: CAB_HEARTBEAT_TICK_MS (use small values like 100 in
+	// tests to compress wall-clock).
+	HeartbeatTickMs int `json:"heartbeat_tick_ms"`
 }
 
 // DefaultConfig returns the source-of-truth default values. The DataDir is
@@ -79,6 +88,7 @@ func DefaultConfig() Config {
 		MaxInboxSize:       100,
 		MaxMessageBytes:    65536,
 		RetentionDays:      7,
+		HeartbeatTickMs:    30000,
 	}
 }
 
@@ -140,6 +150,9 @@ func applyUserFile(cfg *Config, path string) error {
 	if override.RetentionDays != 0 {
 		cfg.RetentionDays = override.RetentionDays
 	}
+	if override.HeartbeatTickMs != 0 {
+		cfg.HeartbeatTickMs = override.HeartbeatTickMs
+	}
 	return nil
 }
 
@@ -167,6 +180,9 @@ func applyEnv(cfg *Config) []string {
 		warnings = append(warnings, w)
 	}
 	if w := envInt("CAB_RETENTION_DAYS", &cfg.RetentionDays); w != "" {
+		warnings = append(warnings, w)
+	}
+	if w := envInt("CAB_HEARTBEAT_TICK_MS", &cfg.HeartbeatTickMs); w != "" {
 		warnings = append(warnings, w)
 	}
 

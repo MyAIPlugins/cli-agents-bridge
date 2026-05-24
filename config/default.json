@@ -6,5 +6,6 @@
   "max_blocking_seconds": 540,
   "max_inbox_size": 100,
   "max_message_bytes": 65536,
-  "retention_days": 7
+  "retention_days": 7,
+  "heartbeat_tick_ms": 30000
 }
