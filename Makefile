@@ -7,11 +7,12 @@
 BINARY      := cab-bridge
 PKG         := github.com/myAIPlugins/cli-agents-bridge/cmd/cab-bridge
 BIN_DIR     := bin
+PLUGIN_DIR  := plugins/cli-agents-bridge
 VERSION     := $(shell go run ./cmd/cab-bridge --version 2>/dev/null || echo 0.2.0-dev)
 
 GO_FLAGS    := -trimpath -ldflags="-s -w"
 
-.PHONY: help build test test-race cross-compile-all install-dev lint clean
+.PHONY: help build test test-race cross-compile-all install-dev install-plugin lint clean
 
 help: ## Show this help
 	@echo "cli-agents-bridge — make targets"
@@ -42,6 +43,15 @@ install-dev: build ## Symlink local binary into ~/.local/bin for --plugin-dir de
 	@ln -sf $(PWD)/$(BIN_DIR)/$(BINARY) $$HOME/.local/bin/$(BINARY)
 	@echo "symlinked: $$HOME/.local/bin/$(BINARY) -> $(PWD)/$(BIN_DIR)/$(BINARY)"
 	@echo "ensure \$$HOME/.local/bin is in your PATH"
+
+install-plugin: build ## Copy binary into plugins/cli-agents-bridge/bin/ for marketplace install (cp, NOT symlink — Claude Code cache install copies files, symlink targets would dangle)
+	@mkdir -p $(PLUGIN_DIR)/bin
+	@cp -f $(BIN_DIR)/$(BINARY) $(PLUGIN_DIR)/bin/$(BINARY)
+	@chmod +x $(PLUGIN_DIR)/bin/$(BINARY)
+	@echo "installed: $(PLUGIN_DIR)/bin/$(BINARY) ($(VERSION))"
+	@echo "next: from a fresh Claude Code session, run:"
+	@echo "  /plugin marketplace add $(PWD)"
+	@echo "  /plugin install cli-agents-bridge@cli-agents-bridge-marketplace"
 
 lint: ## Run go vet (staticcheck optional — install with: go install honnef.co/go/tools/cmd/staticcheck@latest)
 	go vet ./...

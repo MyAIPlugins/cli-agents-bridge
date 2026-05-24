@@ -1,5 +1,6 @@
 {
   "name": "cli-agents-bridge-marketplace",
+  "description": "Self-marketplace for cli-agents-bridge — fork of PatilShreyas/claude-code-session-bridge",
   "owner": {
     "name": "myAIPlugins",
     "email": "advertalis@gmail.com",
@@ -8,8 +9,15 @@
   "plugins": [
     {
       "name": "cli-agents-bridge",
-      "source": ".",
-      "description": "Robust multi-peer IPC bridge between CLI agent sessions. Fork of PatilShreyas/claude-code-session-bridge with role-based routing, security baseline, scoped cleanup, namespace separation."
+      "version": "0.2.0-dev",
+      "description": "Robust multi-peer IPC bridge between CLI agent sessions (Claude Code, Codex, Aider, Cline). Role-based routing, scoped cleanup, namespace separation, security baseline.",
+      "author": {
+        "name": "Alan",
+        "email": "advertalis@gmail.com"
+      },
+      "source": "./plugins/cli-agents-bridge",
+      "category": "productivity",
+      "keywords": ["ipc", "multi-session", "bridge", "val-esc", "multi-agent", "claude-code"]
     }
   ]
 }
