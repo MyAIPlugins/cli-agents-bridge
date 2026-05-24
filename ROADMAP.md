@@ -71,7 +71,9 @@
 3. ⏳ Se PASS → VAL aggiorna ROADMAP a "M3 DONE" + memory + crea tag v0.2.0 + (opzionale) push remote + GitHub Release con notes da CHANGELOG.md [0.2.0]
 4. Se FAIL → Sprint 5 fixup, no tag
 
-**Caveat tag protocol**: nessun remote git configurato. Setup `myAIPlugins/cli-agents-bridge` GitHub repo pre-tag necessario per push + release publication. Tag locale possibile come fallback (commit history mantenuta, tag pushabile post-creazione remoto).
+**Remote setup completato 2026-05-24**: `git@github.com:MyAIPlugins/cli-agents-bridge.git` (public, MIT, descrizione + homepage set). Push iniziale `origin/main` = commit `4f8f42f` (12 commit storia completa Sprint 0-4 visibili).
+
+**Tag v0.2.0 NON ancora creato** — disciplina protocol: tag dopo smoke test PASS, mai prima.
 
 ---
 
