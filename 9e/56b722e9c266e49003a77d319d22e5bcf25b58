@@ -1,0 +1,64 @@
+tests/integration/scenario1_test.go
+  s_d1f0ecd26a6f8a::t_075eac5cc43175 1-80
+PRIVACY.md
+  s_d1f0ecd26a6f8a::t_d1a4734df1d03d 1,3,5,7,9,11,13-22,26-78,80,82
+docs/migration-from-patil.md
+  s_d1f0ecd26a6f8a::t_3d53d8f79e7e11 1-137
+tests/integration/manifest_helpers_test.go
+  s_d1f0ecd26a6f8a::t_2be668c00376e4 1-38
+docs/security-model.md
+  s_d1f0ecd26a6f8a::t_c5c6e820e35b52 1-119
+docs/dev-conventions.md
+  s_d1f0ecd26a6f8a::t_a4432a7e5f20a5 1-203
+tests/smoke-test.md
+  s_d1f0ecd26a6f8a::t_ba90951a69ab01 1-275
+README.md
+  s_d1f0ecd26a6f8a::t_ff359bbc5322ed 3,5,7,9,11,13,15-159,163
+schemas/message-v2.schema.json
+  s_d1f0ecd26a6f8a::t_303e2235efd4e9 1-90
+tests/integration/helpers_test.go
+  s_d1f0ecd26a6f8a::t_061f4067cd896b 1-116
+tests/integration/scenario5_test.go
+  s_d1f0ecd26a6f8a::t_271913cadca99c 1-132
+cmd/cab-bridge/main.go
+  s_d1f0ecd26a6f8a::t_248febc926278c 19
+  s_d1f0ecd26a6f8a::t_cbe056b82fae57 49-50
+  s_d1f0ecd26a6f8a::t_876596b86169ad 105
+schemas/manifest-v2.schema.json
+  s_d1f0ecd26a6f8a::t_c0a6584dff49ad 1-78
+tests/integration/scenario2_test.go
+  s_d1f0ecd26a6f8a::t_749284be6e2511 1-83
+docs/troubleshooting.md
+  s_d1f0ecd26a6f8a::t_2b18aedb700e6c 1-151
+tests/integration/scenario4_test.go
+  s_d1f0ecd26a6f8a::t_dcfc765f3bb103 1-77
+tests/integration/scenario_connect_test.go
+  s_d1f0ecd26a6f8a::t_814d370c954553 88
+  s_d1f0ecd26a6f8a::t_b134489e21e440 1-50,52-87,89-92
+  s_d1f0ecd26a6f8a::t_e687822769c851 51
+cmd/cab-bridge/connect.go
+  s_d1f0ecd26a6f8a::t_5de1dca90b90da 1-50,52-109
+  s_d1f0ecd26a6f8a::t_fc27f1429a9535 51
+SECURITY.md
+  s_d1f0ecd26a6f8a::t_1c8398d7690f1f 1,3,5,7,9,11,13-18,20-52,56-78,80-82
+docs/multi-esc-patterns.md
+  s_d1f0ecd26a6f8a::t_6e192ecfd2a7b6 1-119
+tests/integration/scenario3_test.go
+  s_d1f0ecd26a6f8a::t_3a15a27b964187 1-77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "9e56b722e9c266e49003a77d319d22e5bcf25b58",
+  "prompts": {},
+  "sessions": {
+    "s_d1f0ecd26a6f8a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9b8c33c8-a784-430f-b60b-54e83a4c0d81",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
