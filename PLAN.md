@@ -212,19 +212,33 @@ Transport: filesystem polling JSON (MVP). Daemon Unix socket: assente in MVP, op
 
 ### 4.2 Repo structure
 
+**AGGIORNATO post-Sprint 0 (Day 0 spike finding)**: layout Patil-style mandatory per marketplace install Claude Code 2.1.150. Refactor applicato Sprint 1 day 1 (~1-2h pre bug fix). Source `.` non supportato — plugin tree va in subdir dedicata.
+
 ```
-cli-agents-bridge/
+cli-agents-bridge/                       ← Go module root (top-level)
 ├── README.md                          # Quickstart + features + diff vs Patil
 ├── CHANGELOG.md                       # v0.2.0 → v1.0
 ├── LICENSE                            # MIT (compat upstream)
 ├── ARCHITECTURE.md                    # Design records (this PLAN.md merged post-release)
 ├── PRIVACY.md                         # GDPR data flow doc (§9.6)
 ├── SECURITY.md                        # Threat model + reporting (§9)
-├── go.mod / go.sum                    # Go module (path: github.com/<TBD-org>/cli-agents-bridge)
-├── Makefile                           # build/test/cross-compile/install
+├── go.mod / go.sum                    # Go module (path: github.com/myAIPlugins/cli-agents-bridge)
+├── Makefile                           # build/test/cross-compile/install/install-plugin
 ├── .claude-plugin/
-│   ├── plugin.json                    # Manifest (schema 2026)
-│   └── marketplace.json               # Self-marketplace registration
+│   └── marketplace.json               # source: "./plugins/cli-agents-bridge" (Patil-style)
+├── plugins/                           # Plugin tree (mandatory subdir layout)
+│   └── cli-agents-bridge/
+│       ├── .claude-plugin/
+│       │   └── plugin.json            # Manifest (schema 2026)
+│       ├── commands/                  # Slash command markdown
+│       │   ├── cab.md
+│       │   ├── cab-listen.md
+│       │   ├── cab-ask.md
+│       │   ├── cab-peers.md
+│       │   ├── cab-stop.md
+│       │   └── cab-status.md
+│       └── bin/
+│           └── cab-bridge             # Binary distribuibile (copy da bin/ via Makefile target)
 ├── .github/workflows/
 │   ├── ci.yml                         # go vet + test -race + cross-compile
 │   └── release.yml                    # GoReleaser su tag push
@@ -239,13 +253,6 @@ cli-agents-bridge/
 │   ├── routing/                       # Role-based routing rules
 │   ├── security/                      # umask, perms, ownership check, regex validation
 │   └── cleanup/                       # Scope-aware cleanup + archive
-├── commands/                          # Slash command markdown
-│   ├── cab.md                         # Multiplexer doc
-│   ├── cab-listen.md
-│   ├── cab-ask.md
-│   ├── cab-peers.md
-│   ├── cab-stop.md
-│   └── cab-status.md
 ├── bin/                               # Build output (cross-compile artifacts, .gitignore-d)
 ├── config/
 │   └── default.json                   # Config template
@@ -258,6 +265,7 @@ cli-agents-bridge/
 │   ├── integration/                   # Multi-process via subprocess
 │   └── smoke-test.md                  # Checklist manuale Alan
 └── docs/
+    ├── spike-fix4-distribution.md     # Sprint 0 finding (immutable post-spike)
     ├── migration-from-patil.md
     ├── multi-esc-patterns.md          # Role routing esempi
     ├── security-model.md              # Threat model dettagliato
@@ -265,7 +273,10 @@ cli-agents-bridge/
     └── troubleshooting.md
 ```
 
-**NB**: nessun `scripts/migrate-from-patil.sh` bash wrapper. La migration è subcommand Go del binary (`cab-bridge migrate-from-patil`). Riduce surface code, evita doppio path.
+**NB**:
+- Nessun `scripts/migrate-from-patil.sh` bash wrapper. La migration è subcommand Go del binary (`cab-bridge migrate-from-patil`). Riduce surface code, evita doppio path.
+- Layout pre-Sprint-0 aveva `.claude-plugin/plugin.json` + `commands/` + `bin/` a root del repo. **Non funzionante** per `/plugin marketplace add` (Claude Code 2.1.150 errore: "source type not supported"). Sprint 1 day 1 refactor sposta plugin tree in `plugins/cli-agents-bridge/` subdir. Vedi `docs/spike-fix4-distribution.md` §4.1-4.2.
+- Makefile target `install-plugin`: copia `bin/cab-bridge` (build output cross-compile) → `plugins/cli-agents-bridge/bin/cab-bridge` (artifact distribuibile). Cp invece di symlink per evitare path resolution issue durante cache install Claude Code.
 
 ### 4.3 Schema manifest v2 (trimmed YAGNI) [FIX-2]
 
@@ -354,7 +365,14 @@ cli-agents-bridge/
 }
 ```
 
-**Note**: `dependencies` field non incluso (schema 2026 da verificare Day 0 spike). `bin/cab-bridge` auto-added a PATH dal plugin system **DA VERIFICARE** (FIX-4 spike). `${CLAUDE_PLUGIN_DATA}` runtime env var per state persistente **DA VERIFICARE** (FIX-4 spike).
+**Note (aggiornate post-Sprint 0 Day 0 spike)**:
+- `dependencies` field non incluso (schema 2026 funzionante senza in Claude Code 2.1.150)
+- `bin/cab-bridge` auto-added a PATH dal plugin system ✅ **VERIFICATO** marketplace mode (argv stringa nuda = PATH lookup riuscito, cache path `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/bin/`)
+- `${CLAUDE_PLUGIN_DATA}` runtime env var **NON disponibile** ❌ — hypothesis falsificata empiricamente (EMPTY in marketplace mode + dev mode 2.1.150). Zero impatto architetturale: §3.4 namespace separato è `$HOME`-derived, indipendente da env Claude Code.
+- `${CLAUDE_PLUGIN_ROOT}` runtime env var **NON disponibile** ❌ — stesso esito, stesso non-impatto.
+- **Layout mandatory**: source `.` non supportato. Marketplace.json deve referenziare subdir `./plugins/<name>/` (Patil-style). Vedi §4.2 e `docs/spike-fix4-distribution.md`.
+
+Riferimento dettaglio empirico: `docs/spike-fix4-distribution.md` §3-4 (verificato Claude Code 2.1.150, 2026-05-24).
 
 ---
 

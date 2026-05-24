@@ -112,6 +112,12 @@ ESC v1 had auto-classifier hypothesis FALSE (mea culpa). v2 with VAL rework + em
 **LL-3 (2026-05-24)** — Naming triage senior
 Eliminare `claude-bridge` (trademark) e `cc-bridge` (collision github + nome-squatting) prima del repo init. Verificare collision GitHub/npm/PyPI/cargo PRIMA di affezionarsi a un nome.
 
+**LL-4 (2026-05-24)** — ESC pushback motivato > VAL deference
+Durante Sprint 0 Day 0 spike, ESC ha confutato un'inferenza VAL (verdict B implicito) con argomentazione punto-per-punto basata su evidenza (citazioni PLAN.md §3.4 + behavior `internal/config/config.go::DefaultConfig()` + 5/7 criteri PASS reali vs 2/7 nice-to-have FAIL). Verdict corretto era A definitivo, VAL ha accettato. Pattern senior che vogliamo incentivare: il senior gerarchico (VAL) non significa rubber-stamp dell'altro senior (ESC). Quando ESC presenta argomentazione con file:linee e citazioni decisione architetturale, VAL valuta merito tecnico, non posizione. Nessuna sanzione per pushback, riconoscimento esplicito quando l'altro ha ragione.
+
+**LL-5 (2026-05-24)** — Day 0 spike empirical-first paga
+Sprint 0 Day 0 spike (time-box 4h) ha scoperto layout Patil-style mandatory PRIMA di scrivere codice produzione. Senza spike, layout refactor sarebbe emerso in Sprint 3+ con cost 4-6h rework codice già scritto. Pattern: per ogni hypothesis architetturale flaggata "DA VERIFICARE" in un PLAN, schedulare spike empirical PRIMA dei bug fix / feature code. Time-box stretto + escalation path se hit blocker. Vedi `docs/spike-fix4-distribution.md` per template.
+
 ---
 
 ## When in doubt
