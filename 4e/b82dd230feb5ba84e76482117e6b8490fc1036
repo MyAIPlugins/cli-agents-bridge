@@ -1,0 +1,19 @@
+iterations/PLAN_v1_ESC.md
+  s_da508dd14cf7fe::t_6516cda9e5ec33 1-399
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "4eb82dd230feb5ba84e76482117e6b8490fc1036",
+  "prompts": {},
+  "sessions": {
+    "s_da508dd14cf7fe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "04afe0d5-69d7-4ebf-829d-0e5bd111d8ae",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
