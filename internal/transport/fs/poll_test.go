@@ -65,9 +65,17 @@ func TestPollInbox_EmitsExistingMessages(t *testing.T) {
 		t.Fatal("PollInbox did not emit existing message within 500ms")
 	}
 
-	// File must have been deleted post-read (delete-after-read policy)
+	// File must have been moved from inbox/ to sibling processed/
+	// (Sprint 3 inbox policy A→B: move-to-processed instead of delete).
 	_, err := os.Stat(filepath.Join(inbox, want.ID+".json"))
-	assert.True(t, os.IsNotExist(err), "PollInbox must delete consumed messages")
+	assert.True(t, os.IsNotExist(err), "PollInbox must remove consumed messages from inbox/")
+
+	processedDir := filepath.Join(filepath.Dir(inbox), "processed")
+	processedEntries, err := os.ReadDir(processedDir)
+	require.NoError(t, err, "processed/ must exist after consumption")
+	require.Len(t, processedEntries, 1, "processed/ must contain exactly the consumed message")
+	assert.Contains(t, processedEntries[0].Name(), want.ID,
+		"processed file name must reference original message ID")
 }
 
 func TestPollInbox_EmitsMessagesArrivingMidLoop(t *testing.T) {

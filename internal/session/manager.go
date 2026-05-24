@@ -272,7 +272,8 @@ func (m *Manager) StartHeartbeat(ctx context.Context, sessionID string) <-chan s
 }
 
 // touchHeartbeat reads manifest, sets LastHeartbeat = now, atomic-writes back.
-// Internal; the public surface is StartHeartbeat.
+// Internal; the public surface is StartHeartbeat for the goroutine path
+// and Touch for the single-shot path.
 func (m *Manager) touchHeartbeat(sessionID string) error {
 	manifest, err := m.LoadManifest(sessionID)
 	if err != nil {
@@ -280,6 +281,18 @@ func (m *Manager) touchHeartbeat(sessionID string) error {
 	}
 	manifest.LastHeartbeat = m.now()
 	return m.SaveManifest(manifest)
+}
+
+// Touch refreshes the lastHeartbeat field of sessionID's manifest to "now"
+// without launching a goroutine. Used by the connect-peer subcommand to
+// guarantee the sender's heartbeat is fresh at handshake time (BUG-9 fix:
+// Patil's connect-peer.sh did not refresh sender heartbeat, so a long-idle
+// peer could appear stale to the remote at the very moment of connect).
+//
+// Returns the underlying load/save errors if either fails — caller decides
+// whether to abort the connect attempt.
+func (m *Manager) Touch(sessionID string) error {
+	return m.touchHeartbeat(sessionID)
 }
 
 // sessionDir returns the absolute filesystem path of the per-session

@@ -14,20 +14,26 @@ import (
 
 // PollInbox launches a goroutine that scans inboxDir at the given interval
 // and emits every well-formed Message file to the returned channel. Each
-// emitted message is deleted from disk BEFORE being sent on the channel,
-// guaranteeing at-most-once delivery to the consumer.
+// emitted message is moved to a sibling processed/ directory BEFORE being
+// sent on the channel, guaranteeing at-most-once delivery to the consumer
+// AND preserving an audit trail of consumed messages.
 //
-// Cleanup policy (Sprint 2 decision per VAL open-question): delete after
-// read. Rationale:
-//   - audit trail / transcript persistence is a Sprint 3 candidate
-//     (PLAN §5 v0.3.0 transcript log feature). MVP keeps inbox lean.
-//   - eliminates inbox bloat in long-run sessions where a chat may exchange
-//     hundreds of messages.
-//   - structurally prevents the Patil-original "double consume" race: a
-//     second polling cycle cannot re-emit a message whose file is gone.
-//   - move-to-processed/<id>.json was the alternative; rejected because it
-//     trades disk pressure for an extra rename(2) per message without
-//     enabling any Sprint 2 use case.
+// Cleanup policy (Sprint 3 migration A→B from VAL brief): move to processed
+// instead of delete. Rationale:
+//   - audit trail: Sprint 4 transcript feature (PLAN §5 v0.3.0) reads
+//     processed/ directly with chronological lexical order via RFC3339
+//     timestamp prefix. Zero re-sort overhead.
+//   - GDPR-1 data minimization: cleanup.sh sweeps processed/ -> archive/
+//     pre-delete, with RetentionDays default 7. processed/ stays bounded.
+//   - structurally prevents the Patil "double consume" race: file is
+//     moved before the next poll cycle (same atomicity as old delete path).
+//
+// The processedDir is computed as a sibling of inboxDir (inboxDir/../processed).
+// Both share the same filesystem in any realistic config, so the rename(2)
+// inside MoveToProcessed stays atomic. EXDEV surfaces as an explicit
+// error from MoveToProcessed and we leave the source file on disk —
+// silently rolling back to delete-and-emit would violate "no fallback
+// impliciti" (CLAUDE.md).
 //
 // The output channel closes when ctx is canceled. The goroutine respects
 // ctx during emit as well — a slow consumer cannot pin a canceled poller
@@ -55,10 +61,10 @@ func PollInbox(ctx context.Context, inboxDir string, interval time.Duration, max
 }
 
 // emitInboxOnce performs a single sweep of inboxDir. Decoded messages are
-// removed from disk then sent to out. Errors are swallowed silently: a
-// transient read failure should not crash the polling goroutine — the next
-// tick will retry. (Persistent failures surface elsewhere via the manifest
-// status lifecycle, Sprint 3+.)
+// moved to a sibling processed/ directory then sent to out. Errors are
+// swallowed silently: a transient read failure should not crash the
+// polling goroutine — the next tick will retry. (Persistent failures
+// surface elsewhere via the manifest status lifecycle, Sprint 4+.)
 func emitInboxOnce(ctx context.Context, out chan<- *message.Message, inboxDir string, maxContentBytes int) {
 	entries, err := os.ReadDir(inboxDir)
 	if err != nil {
@@ -68,6 +74,8 @@ func emitInboxOnce(ctx context.Context, out chan<- *message.Message, inboxDir st
 		}
 		return
 	}
+
+	processedDir := filepath.Join(filepath.Dir(inboxDir), "processed")
 
 	for _, e := range entries {
 		if e.IsDir() {
@@ -86,17 +94,21 @@ func emitInboxOnce(ctx context.Context, out chan<- *message.Message, inboxDir st
 
 		m, err := message.DecodeLenient(data, maxContentBytes)
 		if err != nil {
-			// Malformed — leave on disk so a Sprint 3 forensics command
-			// (cab-bridge inspect-corrupt) can review it later. Do NOT
-			// emit to consumer — at-most-once delivery requires we never
-			// hand a partially-decoded payload to the caller.
+			// Malformed — leave on disk so a forensics command can review
+			// it later. Do NOT emit to consumer — at-most-once delivery
+			// requires we never hand a partially-decoded payload to the
+			// caller.
 			continue
 		}
 
-		// Delete BEFORE emit. If the consumer is in another process and
+		// Move BEFORE emit. If the consumer is in another process and
 		// the channel send blocks, we still guarantee that no second
-		// poller sees this file.
-		if err := os.Remove(full); err != nil {
+		// poller sees this file in inbox/.
+		if err := MoveToProcessed(full, processedDir); err != nil {
+			// EXDEV or permission issue — leave file in inbox, the next
+			// poll cycle will retry. Surfacing the error to the caller
+			// would require a richer channel type; for Sprint 3 silent
+			// retry matches the prior delete-error behavior.
 			continue
 		}
 
