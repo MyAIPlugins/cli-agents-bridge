@@ -16,3 +16,11 @@ dist/
 build/
 upstream/
 .tmp/
+
+# Go
+bin/
+*.test
+*.out
+*.prof
+vendor/
+.coverage.out

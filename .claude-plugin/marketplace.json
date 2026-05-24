@@ -1,0 +1,15 @@
+{
+  "name": "cli-agents-bridge-marketplace",
+  "owner": {
+    "name": "myAIPlugins",
+    "email": "advertalis@gmail.com",
+    "url": "https://github.com/myAIPlugins"
+  },
+  "plugins": [
+    {
+      "name": "cli-agents-bridge",
+      "source": ".",
+      "description": "Robust multi-peer IPC bridge between CLI agent sessions. Fork of PatilShreyas/claude-code-session-bridge with role-based routing, security baseline, scoped cleanup, namespace separation."
+    }
+  ]
+}

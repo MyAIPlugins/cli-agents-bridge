@@ -1,0 +1,10 @@
+{
+  "_comment": "Reference defaults for cli-agents-bridge. Source of truth at runtime is internal/config.DefaultConfig() — keep this file in sync. Users can copy this to ~/.claude/cli-agents-bridge/config.json and override fields.",
+  "data_dir": "~/.claude/cli-agents-bridge",
+  "stale_seconds": 300,
+  "poll_interval_ms": 1000,
+  "max_blocking_seconds": 540,
+  "max_inbox_size": 100,
+  "max_message_bytes": 65536,
+  "retention_days": 7
+}

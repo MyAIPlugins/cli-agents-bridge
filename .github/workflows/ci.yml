@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (lint + race)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+      - name: go vet
+        run: go vet ./...
+      - name: go test -race
+        run: go test -race ./...
+
+  cross-compile:
+    name: Cross-compile (${{ matrix.goos }}-${{ matrix.goarch }})
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: darwin
+            goarch: arm64
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+      - name: Build static binary (CGO_ENABLED=0)
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          mkdir -p bin
+          go build -trimpath -ldflags="-s -w" \
+            -o bin/cab-bridge-${{ matrix.goos }}-${{ matrix.goarch }} \
+            ./cmd/cab-bridge
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cab-bridge-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: bin/cab-bridge-${{ matrix.goos }}-${{ matrix.goarch }}
+          retention-days: 30

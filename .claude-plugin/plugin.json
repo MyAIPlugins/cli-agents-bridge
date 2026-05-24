@@ -1,0 +1,16 @@
+{
+  "name": "cli-agents-bridge",
+  "displayName": "CLI Agents Bridge",
+  "version": "0.2.0-dev",
+  "description": "Robust multi-peer IPC bridge between CLI agent sessions (Claude Code, etc.) — fork of PatilShreyas/claude-code-session-bridge",
+  "author": {
+    "name": "Alan",
+    "email": "advertalis@gmail.com",
+    "url": "https://github.com/myAIPlugins/cli-agents-bridge"
+  },
+  "homepage": "https://github.com/myAIPlugins/cli-agents-bridge",
+  "repository": "https://github.com/myAIPlugins/cli-agents-bridge",
+  "license": "MIT",
+  "keywords": ["ipc", "multi-session", "bridge", "val-esc", "multi-agent", "claude-code"],
+  "commands": ["./commands/"]
+}
