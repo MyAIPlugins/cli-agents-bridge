@@ -1,0 +1,45 @@
+internal/transport/fs/process_test.go
+  s_d1f0ecd26a6f8a::t_defff78c7e950c 1-114
+internal/routing/role_test.go
+  s_d1f0ecd26a6f8a::t_586655a91aaa2d 1-71
+tests/regression/bug9_test.go
+  s_d1f0ecd26a6f8a::t_44d40d36ad9698 1-63
+internal/cleanup/scope_test.go
+  s_d1f0ecd26a6f8a::t_7041e727ac51ad 1-170
+internal/cleanup/scope.go
+  s_d1f0ecd26a6f8a::t_78183510d8af41 1-65,68-204
+  s_d1f0ecd26a6f8a::t_182c7d294a699a 66-67
+tests/regression/bug8_test.go
+  s_d1f0ecd26a6f8a::t_ad5eac8e5d9800 5
+  s_d1f0ecd26a6f8a::t_26f40424701589 1-4,6-74,76-85
+  s_d1f0ecd26a6f8a::t_6790a49a2f21c5 75
+internal/transport/fs/process.go
+  s_d1f0ecd26a6f8a::t_199c57f644609b 1-47
+tests/regression/bug4_test.go
+  s_d1f0ecd26a6f8a::t_1a534b39c9e19b 1-75
+internal/routing/role.go
+  s_d1f0ecd26a6f8a::t_75547e6b35dc03 1-56
+internal/session/manager.go
+  s_d1f0ecd26a6f8a::t_b76623d3ddcd9a 275-276,286-295
+internal/transport/fs/poll.go
+  s_d1f0ecd26a6f8a::t_cc2a79fa9fb410 64-67,78-79,97-100,104,106-111
+  s_d1f0ecd26a6f8a::t_d5252401239caa 17-19,21-36
+internal/transport/fs/poll_test.go
+  s_d1f0ecd26a6f8a::t_77fc88096745e3 68-69,71-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "0e9f39a50d27d7a9c923a6c5953750ea8d0bbcf7",
+  "prompts": {},
+  "sessions": {
+    "s_d1f0ecd26a6f8a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9b8c33c8-a784-430f-b60b-54e83a4c0d81",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
