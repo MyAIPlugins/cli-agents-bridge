@@ -1,7 +1,7 @@
 # MISSION BRIEF — ESPLORAZIONE FORK BRIDGE PLUGIN
 
-**Da**: VALUTATORE (Opus 4.7, claude-bridge project)
-**A**: ESECUTORE (sessione fresh, claude-bridge project)
+**Da**: VALUTATORE (Opus 4.7, cli-agents-bridge project)
+**A**: ESECUTORE (sessione fresh, cli-agents-bridge project)
 **Data**: 2026-05-24
 **Tipo**: ESPLORATIVA — produrre PIANO, NON codice
 **Output atteso**: `PLAN.md` strutturato che io possa valutare
@@ -50,7 +50,7 @@ I 3 VAL divergono su queste. Tu devi proporre UNA scelta motivata, NON sintetizz
 Definisci cosa entra in v0.2.0 (MVP fork) e cosa va deferred a v0.3/v1.0. Massimo 5-7 features in MVP. KISS.
 
 ### 3.3 Naming
-3 proposte sul tavolo: `session-bus`, `ac-bridge`, `claude-bridge-pro`. Argomenta UNA scelta o proponi alternativa.
+**RISOLTO 2026-05-24**: `cli-agents-bridge`. Motivazione: vendor-agnostic (no "claude" trademark), kebab-case standard, plurale "agents" comunica multi-instance, zero collision GitHub/npm/PyPI/cargo verificato. Scartati: `claude-bridge` (trademark Anthropic), `cc-bridge` (collision diretta con `ranaroussi/cc-bridge` 49⭐ stesso dominio), `session-bus` (mismatch semantico polling vs bus), `ac-bridge` (vendor lock-in), `claude-bridge-pro` (marketing-speak). Non rimettere in discussione.
 
 ### 3.4 Backward compatibility
 - Drop-in replacement del plugin Patil (same file layout, same slash commands)?
@@ -89,7 +89,7 @@ Plugin Claude Code marketplace? Custom plugin install? Standalone repo con insta
 Struttura attesa (sezioni minime, puoi aggiungere):
 
 ```
-# PLAN.md — Fork claude-bridge
+# PLAN.md — Fork cli-agents-bridge
 
 ## 1. Executive summary (max 200 parole)
 ## 2. Validazione bug upstream
