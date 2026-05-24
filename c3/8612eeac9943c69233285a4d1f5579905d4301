@@ -1,0 +1,45 @@
+tests/regression/bug6_test.go
+  s_d1f0ecd26a6f8a::t_0d91afcc70b48d 1-65
+config/default.json
+  s_d1f0ecd26a6f8a::t_4c9e2a757d37a3 9-10
+internal/session/lock.go
+  s_d1f0ecd26a6f8a::t_7ad41812f1ff49 1-138
+internal/config/config.go
+  s_d1f0ecd26a6f8a::t_db0c6567845c62 91
+  s_d1f0ecd26a6f8a::t_2136b2fd73509e 185-187
+  s_d1f0ecd26a6f8a::t_b5f3747eb3ee3c 153-155
+internal/session/manager_test.go
+  s_d1f0ecd26a6f8a::t_4fd7c5b0c27310 1-295
+internal/session/manager.go
+  s_d1f0ecd26a6f8a::t_74a20b724f4ac7 1-77,95-235,241-341
+  s_d1f0ecd26a6f8a::t_aa1c15fff02bd2 78-94
+  s_d1f0ecd26a6f8a::t_59b8bae16accdd 236-240
+internal/transport/fs/atomic_test.go
+  s_d1f0ecd26a6f8a::t_6e9dfa6cc47d10 1-115
+internal/session/lock_test.go
+  s_d1f0ecd26a6f8a::t_a2a089d1027099 1-151
+tests/regression/bug1_test.go
+  s_d1f0ecd26a6f8a::t_d076200edbf62b 1-65
+tests/regression/bug5_test.go
+  s_d1f0ecd26a6f8a::t_af0b9c76b77421 1-65
+internal/transport/fs/atomic.go
+  s_d1f0ecd26a6f8a::t_e6f4f38808010f 1-106
+internal/session/manifest.go
+  s_d1f0ecd26a6f8a::t_d6027935d9718d 1-82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "c38612eeac9943c69233285a4d1f5579905d4301",
+  "prompts": {},
+  "sessions": {
+    "s_d1f0ecd26a6f8a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9b8c33c8-a784-430f-b60b-54e83a4c0d81",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
