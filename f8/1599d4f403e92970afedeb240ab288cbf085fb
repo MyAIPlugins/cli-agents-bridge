@@ -1,0 +1,37 @@
+cmd/cab-bridge/ask.go
+  s_d1f0ecd26a6f8a::t_6f9849e3d61bfd 1-126
+cmd/cab-bridge/peers.go
+  s_d1f0ecd26a6f8a::t_e0b3f1934270e8 1-109
+cmd/cab-bridge/status.go
+  s_d1f0ecd26a6f8a::t_3a8c42a3998cf9 1-97
+cmd/cab-bridge/cleanup.go
+  s_d1f0ecd26a6f8a::t_45b413927ba56b 1-90
+cmd/cab-bridge/inspect.go
+  s_d1f0ecd26a6f8a::t_4946b1215d60c3 1-60
+cmd/cab-bridge/common.go
+  s_d1f0ecd26a6f8a::t_94c549989a193a 1-58
+cmd/cab-bridge/main.go
+  s_d1f0ecd26a6f8a::t_8f7bfd7b13f0f6 105-108
+  s_d1f0ecd26a6f8a::t_c6fae08ac69482 100-104
+  s_d1f0ecd26a6f8a::t_174dfbf5570edf 43-48,50-60,68-89
+cmd/cab-bridge/register.go
+  s_d1f0ecd26a6f8a::t_5e0ea322647f5d 1-69
+cmd/cab-bridge/listen.go
+  s_d1f0ecd26a6f8a::t_1f5316fb627fa6 1-95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "f81599d4f403e92970afedeb240ab288cbf085fb",
+  "prompts": {},
+  "sessions": {
+    "s_d1f0ecd26a6f8a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9b8c33c8-a784-430f-b60b-54e83a4c0d81",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
