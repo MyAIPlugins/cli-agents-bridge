@@ -1,0 +1,36 @@
+tests/regression/bug7_test.go
+  s_d1f0ecd26a6f8a::t_7cf406e8bc3586 1-119
+cmd/cab-bridge/main.go
+  s_d1f0ecd26a6f8a::t_83adee583290ad 43-53
+  s_d1f0ecd26a6f8a::t_58ef76ae14d2dc 11,15-16
+  s_d1f0ecd26a6f8a::t_edb38fb91e570a 67-72
+internal/transport/fs/poll.go
+  s_d1f0ecd26a6f8a::t_c295fbd1fc160d 1-109
+internal/transport/fs/receive.go
+  s_d1f0ecd26a6f8a::t_80228c67cf3329 1-137
+cmd/cab-bridge/receive.go
+  s_d1f0ecd26a6f8a::t_1c039cfba0802f 46-48
+  s_d1f0ecd26a6f8a::t_1747500d2955ac 1-45,49-114
+tests/regression/bug2_test.go
+  s_d1f0ecd26a6f8a::t_060e0240960c5f 1-114
+internal/transport/fs/receive_test.go
+  s_d1f0ecd26a6f8a::t_d8123b8209629a 1-137
+internal/transport/fs/poll_test.go
+  s_d1f0ecd26a6f8a::t_1cab471f157974 1-165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "5774cdfbdf34b901e3891fe93e61d7bd197b217e",
+  "prompts": {},
+  "sessions": {
+    "s_d1f0ecd26a6f8a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9b8c33c8-a784-430f-b60b-54e83a4c0d81",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
