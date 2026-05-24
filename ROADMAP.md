@@ -7,7 +7,7 @@
 
 ## Status corrente — 2026-05-24
 
-**Fase**: 🟢 **Sprint 2 DONE** (commit `f4d0d44` + `5774cdf`) → 🟡 **Pre-Sprint 3**
+**Fase**: 🟢 **Sprint 3 DONE** — MVP feature-complete (commit `0e9f39a` + `f81599d` + `224e438`) → 🟡 **Pre-Sprint 4** (release readiness)
 
 **Sprint 0 deliverable** (commit `c142c8d`):
 - Day 0 FIX-4 spike → Esito A definitivo (self-marketplace Claude Code 2.1.150)
@@ -39,9 +39,22 @@
 - Velocità Sprint 2: ~50 min vs stima 3-4h (LL-6 trend continua, atomic.go pre-esistente + idiom Sprint 1)
 - Inbox cleanup policy: A (delete post-read) implementato Sprint 2 come da brief. **Migration a B (move-to-processed/) schedulata Sprint 3** parte del BUG-4 cleanup scope-aware work.
 
-**Bug status**: BUG-1, BUG-2, BUG-5, BUG-6, BUG-7 ✅ fixed + tested. Restanti Sprint 3: BUG-3 (routing role), BUG-4 (cleanup scope + inbox migration A→B), BUG-8 (STALE_SECONDS unified check), BUG-9 (connect heartbeat).
+**Sprint 3 deliverable** (commit `0e9f39a` feat backend + `f81599d` feat cmd + `224e438` feat migrate):
+- **BUG-3** `internal/routing/role.go`: `ValidateSendPair` hub-and-spoke val-centric + `--allow-mesh` override + observer-cannot-send STRUTTURALE (no flag override)
+- **BUG-4** `internal/cleanup/scope.go`: scope=my-session default + scope=global TTY confirm + ErrConfirmRequired exit 3 non-tty + pre-delete archive + retention sweep
+- **BUG-8** strutturale: `config.StaleSeconds` unica fonte verità per peers + cleanup
+- **BUG-9** `Manager.Touch`: single-shot heartbeat refresh per connect-peer path
+- **Inbox policy A→B migration**: `poll.go` refactor `os.Remove` → `MoveToProcessed(processedDir)` con RFC3339 timestamp prefix
+- **CMD suite 8 subcommand**: register/listen/ask/peers/cleanup/status/inspect/migrate-from-patil + `cmd/cab-bridge/common.go::exitFromErr` centralized err→exit mapping
+- **migrate-from-patil subcommand Go**: backup + dry-run + idempotent + `--patil-dir` test injection + SC-4 path validation RC-3
+- 29 nuovi sub-test green con -race (15 routing + 6 cleanup + 4 process + 4 regression BUG-3/4/8/9)
+- ~90+ sub-test totali cumulati Sprint 0+1+2+3
+- 9/9 regression test BUG-1..BUG-9 green
+- Velocità Sprint 3: ~1h45 vs stima 5-7h (LL-6 trend continua, pattern Sprint 1-2 riutilizzati al massimo)
 
-**Sblocco Sprint 3**: nessuno. Sprint 3 task = BUG-3/4/8/9 + cmd subcommand suite (register/listen/ask/peers/cleanup/status/inspect/migrate-from-patil) + inbox policy migration A→B.
+**Bug status**: ✅ **9/9 FIXED** + regression test green. MVP feature-complete.
+
+**Sblocco Sprint 4**: nessuno. Sprint 4 = release readiness pure: integration test (PLAN §7.3 5 scenari multi-process) + docs production (README+PRIVACY+SECURITY content vs Sprint 0 stub) + smoke test Alan checklist `tests/smoke-test.md` ~45 min + tag v0.2.0.
 
 ---
 
@@ -53,7 +66,8 @@
 | **M1** Sprint 0 — Day 0 spike + Go baseline | ✅ DONE | 2026-05-24 | commit `c142c8d`, Esito A definitivo, security P0 + Go module + CI cross-compile |
 | **M2a** Sprint 1 — Layout refactor + BUG-1/5/6 | ✅ DONE | 2026-05-24 | commit `57a5db3` + `c38612e`. Layout Patil-style, heartbeat goroutine, longest-prefix, lock O_EXCL. 28 sub-test green |
 | **M2b** Sprint 2 — BUG-2/7 + message v2 schema | ✅ DONE | 2026-05-24 | commit `f4d0d44` + `5774cdf`. Long-poll receive, stderr+exit 124, DecodeStrict/Lenient gateway. 27 nuovi sub-test |
-| **M2c** Sprint 3 — BUG-3/4/8/9 + cmd suite + policy A→B | ⏳ NEXT | +1-2 giorni | Routing role, cleanup scoped, config check, connect heartbeat + 8 cmd subcommand restanti + inbox cleanup policy migration |
+| **M2c** Sprint 3 — BUG-3/4/8/9 + cmd suite + policy A→B + migrate | ✅ DONE | 2026-05-24 | commit `0e9f39a` + `f81599d` + `224e438`. 9/9 BUG fixed, MVP feature-complete. 29 nuovi sub-test |
+| **M3** Sprint 4 — Release readiness + tag v0.2.0 | ⏳ NEXT | ~1 giorno | Integration test 5 scenari + docs production + smoke test Alan ~45min + tag release |
 | **M3** Smoke test Alan + release v0.2.0 | 🔒 BLOCKED on M2 | +1 giorno post-M2 | ~45 min Alan-time + docs (README/PRIVACY/SECURITY) |
 | **M4** v0.3.0 — quality of life | 🔮 FUTURE | 1-2 settimane post-M3 | notification, transcript, retry, background-listen (gated da validation reale) |
 | **M5** v0.4.0 — daemon Unix socket | 🔮 FUTURE GATED | 1-2 settimane post-M4 | GATE: G1 latency >200ms ∧ G2 peer >3. Se non si verifica → daemon NON si fa |
