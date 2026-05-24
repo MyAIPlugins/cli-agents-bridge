@@ -1,0 +1,23 @@
+internal/message/schema.go
+  s_d1f0ecd26a6f8a::t_435cc6be6ce8cd 1-111
+internal/message/validate_test.go
+  s_d1f0ecd26a6f8a::t_804f82575fbed5 1-234
+internal/message/validate.go
+  s_d1f0ecd26a6f8a::t_7c3544b1be35bd 1-161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "f4d0d4438003221068410b4d4fec7fc61b87a2af",
+  "prompts": {},
+  "sessions": {
+    "s_d1f0ecd26a6f8a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9b8c33c8-a784-430f-b60b-54e83a4c0d81",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
