@@ -1,0 +1,21 @@
+MISSION_BRIEF.md
+  s_da508dd14cf7fe::t_f546967e7bf56f 1-151
+.gitignore
+  s_da508dd14cf7fe::t_60c1530b29ca4f 1-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "348e6ff4833fc06ef91f7ed9e7da0ca7531785a7",
+  "prompts": {},
+  "sessions": {
+    "s_da508dd14cf7fe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "04afe0d5-69d7-4ebf-829d-0e5bd111d8ae",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
