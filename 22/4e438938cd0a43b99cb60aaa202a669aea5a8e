@@ -1,0 +1,19 @@
+cmd/cab-bridge/migrate.go
+  s_d1f0ecd26a6f8a::t_01305ae26c7780 1-267
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "224e438938cd0a43b99cb60aaa202a669aea5a8e",
+  "prompts": {},
+  "sessions": {
+    "s_d1f0ecd26a6f8a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9b8c33c8-a784-430f-b60b-54e83a4c0d81",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
