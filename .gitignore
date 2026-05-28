@@ -24,3 +24,7 @@ bin/
 *.prof
 vendor/
 .coverage.out
+
+# Bridge session artifacts (session-bridge plugin scratch, not project state)
+.claude/
+docs/.claude/

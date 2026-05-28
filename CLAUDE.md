@@ -94,7 +94,7 @@ PLAN.md §3.5 + §12. Time-box 4h. Esito determina distribution path (self-marke
 
 ### Commit discipline
 - Commit messages: `<type>(<scope>): <subject>` — types: `feat`, `fix`, `chore`, `docs`, `test`, `refactor`, `release` (per version bump commits es. `release(v0.2.0): ...`)
-- Co-author trailer: `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>` mandatory
+- Co-author trailer: `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>` mandatory (modello aggiornato 2026-05-28 da Opus 4.7 a 4.8; i commit storici Sprint 0-5 portano il trailer 4.7 e NON vanno riscritti — git history immutabile)
 - NO emoji in commit messages, code, or docs (unless explicitly requested by Alan)
 - Commit one logical unit at a time. NOT one commit per micro-change.
 - VAL commits docs separately from ESC code commits (audit clarity)
@@ -123,6 +123,9 @@ Durante Sprint 0 Day 0 spike, ESC ha confutato un'inferenza VAL (verdict B impli
 
 **LL-5 (2026-05-24)** — Day 0 spike empirical-first paga
 Sprint 0 Day 0 spike (time-box 4h) ha scoperto layout Patil-style mandatory PRIMA di scrivere codice produzione. Senza spike, layout refactor sarebbe emerso in Sprint 3+ con cost 4-6h rework codice già scritto. Pattern: per ogni hypothesis architetturale flaggata "DA VERIFICARE" in un PLAN, schedulare spike empirical PRIMA dei bug fix / feature code. Time-box stretto + escalation path se hit blocker. Vedi `docs/spike-fix4-distribution.md` per template.
+
+**LL-9 (2026-05-28)** — Audit pre-tag pubblico cattura security-model su carta
+Prima del tag v0.2.0 (release pubblico MIT), una rilettura adversarial del codice riga-per-riga (Opus 4.8) + security-sentinel + doppia verifica ESC ha scoperto che SC-7 (boot check) era dichiarato in CLAUDE.md/SECURITY.md/PLAN §9 come controllo P1 obbligatorio MVP ma NON era implementato in nessun file, e SC-3 (CheckOwnership) era un primitivo orfano mai chiamato. I gate Sprint precedenti erano "report-based + grep keyword" — non lettura codice. Lesson: per un RELEASE PUBBLICO, il gate VAL finale DEVE includere lettura codice riga-per-riga dei controlli di sicurezza dichiarati + verifica che ogni claim in SECURITY.md sia sulla live code path. Pattern tri-verifica (subagent automatico + VAL diretto + ESC adversarial con ricerca best-practice) ha ridimensionato 5/13 finding gonfiati dal solo subagent e trovato 4 finding nuovi (NEW-1..4). Mai pubblicare un SECURITY.md che asserisce controlli non sulla code path — under-claim > over-claim. Fix: Sprint 5 hardening 3 MUST (~1-2h) PRIMA del tag, non dopo.
 
 **LL-8 (2026-05-24)** — Cumulative velocity compounding via patterns established
 MVP cli-agents-bridge consegnato in ~10h focus session totali (Sprint 0 ~6-7h con spike inclusa, Sprint 1 ~1h, Sprint 2 ~50min, Sprint 3 ~1h45, Sprint 4 ~1h30) vs commitment esterno 5-7gg (35-49h calendar) → **3.5-5x speedup**. Cause: (1) Sprint 0 spike + scaffolding piazza pattern test/build/security riusabili; (2) ogni sprint successivo riusa idioms del precedente (heartbeat goroutine pattern, atomic write, exitFromErr, DecodeStrict/Lenient, flag.ContinueOnError); (3) ESC mental model precaricato dal PLAN evita context-switch ogni sprint; (4) VAL audit gate stretto previene rework debug. Implicazione per planning futuri: per progetti con design rigoroso pre-Sprint-0 + ESC context-fresh disciplinato, stimare 3-4x speedup vs calendar quote. NON ridurre commitment esterno (assorbire surprise spike), MA pianificare workload internal aggressivamente.

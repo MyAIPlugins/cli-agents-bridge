@@ -7,7 +7,18 @@
 
 ## Status corrente — 2026-05-24
 
-**Fase**: 🟢 **Sprint 4 DONE** — v0.2.0 RELEASE CANDIDATE (commit `9e56b72`) → 🟡 **Pre-tag** (smoke test Alan + VAL gate finale + tag v0.2.0)
+**Fase**: 🟢 **Sprint 5 DONE** — security hardening pre-tag (commit `208c4b2`) → 🟡 **Pre-tag** (smoke test Alan + tag v0.2.0)
+
+**Sprint 5 — security hardening pre-tag** (commit `208c4b2`, audit VAL PASS):
+Triadic security audit (security-sentinel + VAL rilettura codice Opus 4.8 + ESC doppia-verifica adversarial) ha scoperto gap tra security model dichiarato e implementato. 3 MUST chiusi PRIMA del tag pubblico MIT (decisione Alan):
+- **SC-7 boot check** (era dichiarato P1 MVP, era ASSENTE): `common.go::bootstrapDataDir` Lstat-based wired in tutti i 10 subcommand. first-run→mkdir 0700, symlink/non-dir/owner→FATAL, perms→warn+chmod. Keystone TM-5.
+- **DataDir assoluto** (FINDING-11): `config.Load` → `filepath.Abs` + warning. Prereq SC-7.
+- **migrate integrity** (FINDING-4/NEW-1/NEW-2): `mf.SessionID==dirname` + `ValidateSessionID` + `mf.Validate()` pre-write fail-closed + `LongestPrefixLookup` ritorna `e.Name()` (chiude traversal latente).
+- +12 test (153 PASS/0 FAIL -race, conferma indipendente VAL). File <600 (max manager 358).
+- **DEFER v0.2.1**: SC-3 ownership wiring via fstat-fd, os.Root symlink-safe, inbox bound, scanForReply idempotente. **ACCEPT no-action**: #5/#9/#10/#13.
+- **VAL doc reconciliation (NEW-3)**: SECURITY.md aggiornato — SC-7 ora dichiarato come wired (vero), SC-3 spostato onestamente a P2 deferred (primitivo presente, wiring v0.2.1) con honesty note. Under-claim > over-claim.
+
+**Sprint 4 — release readiness** (commit `9e56b72`): 6 integration scenari + 8 docs production + smoke checklist. (dettaglio storico sotto)
 
 **Sprint 0 deliverable** (commit `c142c8d`):
 - Day 0 FIX-4 spike → Esito A definitivo (self-marketplace Claude Code 2.1.150)
@@ -87,7 +98,8 @@
 | **M2b** Sprint 2 — BUG-2/7 + message v2 schema | ✅ DONE | 2026-05-24 | commit `f4d0d44` + `5774cdf`. Long-poll receive, stderr+exit 124, DecodeStrict/Lenient gateway. 27 nuovi sub-test |
 | **M2c** Sprint 3 — BUG-3/4/8/9 + cmd suite + policy A→B + migrate | ✅ DONE | 2026-05-24 | commit `0e9f39a` + `f81599d` + `224e438`. 9/9 BUG fixed, MVP feature-complete. 29 nuovi sub-test |
 | **M3a** Sprint 4 — Release readiness | ✅ DONE | 2026-05-24 | commit `9e56b72`. 6 integration scenari + 8 docs production + smoke checklist. v0.2.0 RC ready |
-| **M3b** Smoke test Alan + tag v0.2.0 | ⏳ NEXT | ~45 min smoke + tag | tests/smoke-test.md 15 step + sign-off. Se PASS → VAL tagga v0.2.0 |
+| **M3b** Sprint 5 — Security hardening pre-tag | ✅ DONE | 2026-05-28 | commit `208c4b2`. Triadic audit → 3 MUST (SC-7 boot check, DataDir abs, migrate integrity). 153 test green. SECURITY.md riconciliato (NEW-3) |
+| **M3c** Smoke test Alan + tag v0.2.0 | ⏳ NEXT | ~45 min smoke + tag | tests/smoke-test.md 15 step + sign-off. Se PASS → VAL tagga v0.2.0 |
 | **M3** Smoke test Alan + release v0.2.0 | 🔒 BLOCKED on M2 | +1 giorno post-M2 | ~45 min Alan-time + docs (README/PRIVACY/SECURITY) |
 | **M4** v0.3.0 — quality of life | 🔮 FUTURE | 1-2 settimane post-M3 | notification, transcript, retry, background-listen (gated da validation reale) |
 | **M5** v0.4.0 — daemon Unix socket | 🔮 FUTURE GATED | 1-2 settimane post-M4 | GATE: G1 latency >200ms ∧ G2 peer >3. Se non si verifica → daemon NON si fa |

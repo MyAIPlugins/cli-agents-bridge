@@ -36,18 +36,20 @@ Explicitly NOT defended against in v0.2.0, with rationale:
 
 - **SC-1 umask 077**: `syscall.Umask(0o077)` set in `cmd/cab-bridge/main.go init()` before any file/dir creation. Every file created by the binary is 0o600, every directory 0o700.
 - **SC-2 dir perms 700**: `internal/session/manager.go::Register` enforces `os.MkdirAll(sessionDir, 0o700)` plus explicit `os.Chmod` for pre-existing dirs. Same enforcement in `internal/transport/fs/process.go::MoveToProcessed` for `processed/` and in cleanup archive paths.
-- **SC-3 ownership check**: `internal/security/perms.go::CheckOwnership` returns `ErrOwnershipMismatch` when a file's UID differs from `os.Getuid()`. Root caller (UID 0) gets a stderr warning + skip — root can read anything regardless.
-- **SC-4 session-ID regex**: `internal/security/perms.go::ValidateSessionID` enforces `^[a-z0-9]{6,32}$`. Applied on every field that becomes a path component (`sessionId`, `from`, `to`, `inReplyTo`) at message validation gateway.
+- **SC-4 session-ID regex**: `internal/security/perms.go::ValidateSessionID` enforces `^[a-z0-9]{6,32}$`. Applied on every field that becomes a path component (`sessionId`, `from`, `to`, `inReplyTo`) at the message validation gateway and on every session-resolution path (`resolveSessionID`, `receive.go`, `migrate-from-patil`).
 - **SC-5 atomic write**: `internal/transport/fs/atomic.go::AtomicWriteBytes` uses `os.CreateTemp(filepath.Dir(target), ...)` (same-filesystem guarantee) + `f.Sync()` + `os.Rename`. EXDEV surfaces as explicit error (no silent copy-fallback).
 
 ### P1 — included in v0.2.0
 
 - **SC-6 PID lock O_EXCL**: `internal/session/lock.go::AcquireLock` uses `os.OpenFile(lockPath, O_CREATE|O_EXCL|O_WRONLY, 0o600)`. Stale recovery via `syscall.Kill(pid, 0)`: `ESRCH` → remove + retry once; `EPERM`/`nil` → treat as live (ErrLockHeld). Re-entrant acquire from same PID returns a no-op release.
-- **SC-7 base dir integrity check at boot**: `os.Lstat(baseDir)` to reject symlinks, verify perms 700, owner == Getuid(). Wired into cab-bridge subcommand entry paths via the standard Manager construction.
+- **SC-7 base dir integrity check at boot**: `cmd/cab-bridge/common.go::bootstrapDataDir` runs on every subcommand (via `loadConfigOrFail`, plus an explicit call in `receive.go`) before any session file is touched. It `os.Lstat`-s the base dir and: creates it 0o700 on first run; FATAL on symlink (TM-5, never auto-repaired); FATAL on non-directory; FATAL on owner mismatch; WARN + chmod 0o700 on loose perms. Operates on the absolute `DataDir` resolved by `config.Load` (`filepath.Abs`), so the check and every `filepath.Join` target the intended directory.
 
-### P2 — deferred to v0.3+
+### P2 — deferred to v0.2.1+
 
+- **SC-3 ownership check (primitive present, wiring deferred)**: `internal/security/perms.go::CheckOwnership` exists and returns `ErrOwnershipMismatch` on UID mismatch, but in v0.2.0 it is **not yet invoked at the manifest/message read call-sites** — it is defined, tested, and ready, but the wiring into `LoadManifest`/inbox reads lands in v0.2.1 (via an `fstat`-on-fd helper to also close the `Stat`-vs-`Lstat` TOCTOU). In v0.2.0 the **primary defense** against TM-1 (other-UID read) and TM-6 (manifest spoofing) is SC-1 (umask 077) + SC-2 (dir perms 700) + SC-7 (base-dir integrity), all of which are active and prevent another UID from reading the inbox or planting a spoofed manifest under a correctly-permissioned home. SC-3 adds defense-in-depth only when those perms are weakened or the data dir sits on a shared mount.
 - **SC-8 PII detection**: explicitly NOT implemented. Regex on content for "looks like credit card / email" is false-positive prone and adds runtime cost without addressing the actual threat (same-UID malware reading plaintext). PRIVACY.md warns users not to send secrets.
+
+> **Honesty note (v0.2.0)**: this document describes controls as actually wired in the shipped binary. SC-3 is intentionally listed under "deferred" rather than "implemented" because, although the primitive exists, it is not yet called at runtime. We would rather under-claim than assert a control that is not on the live code path.
 
 ---
 
