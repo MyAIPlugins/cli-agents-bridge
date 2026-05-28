@@ -5,7 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] — 2026-05-29
+
+First public release of cli-agents-bridge — fork of `PatilShreyas/claude-code-session-bridge` v0.1.0. The 9 confirmed upstream bugs fixed structurally (BUG-1..BUG-9), plus role-based routing, namespace-isolated storage, a security baseline (SC-1/2/4/5/6/7), and a single static Go binary distributed via self-marketplace GitHub.
+
+Hardened pre-release across two gate passes: a triadic security audit (Sprint 5: SC-7 boot check, absolute DataDir, migrate integrity) and a manual smoke test (Sprint 6: BUG-A session-liveness PID model, BUG-B JSON hygiene). 158 tests pass under `-race`. SECURITY.md describes only controls actually on the live code path (SC-3 ownership wiring is honestly deferred to v0.2.1).
+
+Sprint-by-sprint detail below (newest first).
 
 ### Sprint 6 — 2026-05-29 (fixup post-smoke, pre-tag)
 
@@ -49,25 +55,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Changed
 - `cmd/cab-bridge/main.go` version bump 0.2.0-dev → **0.2.0** (release-ready)
-
-## [0.2.0] — 2026-05-25
-
-First public release of cli-agents-bridge — fork of `PatilShreyas/claude-code-session-bridge` v0.1.0 with 9 confirmed bugs fixed structurally, role-based routing, namespace-isolated storage, security baseline P0/P1, single Go static binary distribution via self-marketplace GitHub.
-
-Cumulative bug coverage (BUG-1..BUG-9 all FIXED with regression tests):
-- BUG-1 heartbeat dead in listen loop → Manager.StartHeartbeat goroutine
-- BUG-2 receive timeout secco → ReceiveReply long-poll + late reply recoverable
-- BUG-3 multi-peer routing senza role → routing.ValidateSendPair hub-and-spoke
-- BUG-4 cleanup globale cross-project → namespace separato + scope-aware cleanup
-- BUG-5 get-session-id parent fallback → LongestPrefixLookup with bestLen tracking
-- BUG-6 session ID collision per cwd → O_EXCL lock + ErrSessionExistsForProject
-- BUG-7 errore stdout invece stderr → exitFromErr stderr + exit 124 timeout
-- BUG-8 STALE_SECONDS inconsistente → cfg.StaleSeconds unica fonte
-- BUG-9 connect-peer no heartbeat → Manager.Touch + connect subcommand
-
-Test stats: 100+ sub-tests across 8 packages, all pass with `-race` detector. 5 integration scenarios end-to-end + 9 regression tests (one per BUG).
-
-See [PLAN.md](./PLAN.md) for full design rationale, [SECURITY.md](./SECURITY.md) for threat model, [PRIVACY.md](./PRIVACY.md) for GDPR data flow.
 
 ### Sprint 3 — 2026-05-24 (MVP feature-complete)
 
