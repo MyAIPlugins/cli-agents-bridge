@@ -1,0 +1,25 @@
+cmd/cab-bridge/listen.go
+  s_f8cca4ac5b209d::t_63eda5ec322282 40-47
+tests/integration/scenario_buga_test.go
+  s_f8cca4ac5b209d::t_949470f0194bfa 1-65
+internal/session/manager.go
+  s_f8cca4ac5b209d::t_75905e7044eb41 302-318
+internal/session/manager_test.go
+  s_f8cca4ac5b209d::t_1290c2f76d6dbb 201-228
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "2404ebe36bca770e81d6e78ebc6169116908335b",
+  "prompts": {},
+  "sessions": {
+    "s_f8cca4ac5b209d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3535f40b-0cdd-4b5b-b78c-4d80b7d6a86f",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
