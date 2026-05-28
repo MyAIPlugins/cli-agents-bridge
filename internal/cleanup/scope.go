@@ -75,7 +75,9 @@ func Run(_ context.Context, opts Options) (*Result, error) {
 	if opts.Now == nil {
 		opts.Now = func() time.Time { return time.Now().UTC() }
 	}
-	res := &Result{}
+	// BUG-B: initialise slices to empty (not nil) so JSON output emits [] rather
+	// than null, keeping `jq '... | length'` consumers from breaking.
+	res := &Result{SessionsRemoved: []string{}, ArchivesPurged: []string{}}
 
 	switch opts.Scope {
 	case ScopeMySession:
@@ -115,7 +117,7 @@ func globalSweep(opts Options) ([]string, error) {
 	entries, err := os.ReadDir(sessionsRoot)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, nil
+			return []string{}, nil // BUG-B: empty, not nil, for JSON []
 		}
 		return nil, fmt.Errorf("cleanup global: read sessions root: %w", err)
 	}
@@ -123,7 +125,7 @@ func globalSweep(opts Options) ([]string, error) {
 	cutoff := opts.Now().Add(-time.Duration(opts.StaleSeconds) * time.Second)
 	mgr := session.NewManager(opts.DataDir, time.Second) // interval irrelevant — we only LoadManifest
 
-	var removed []string
+	removed := []string{} // BUG-B: empty, not nil, for JSON []
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
@@ -177,13 +179,13 @@ func purgeOldArchives(dataDir string, retentionDays int, now func() time.Time) (
 	entries, err := os.ReadDir(archRoot)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, nil
+			return []string{}, nil // BUG-B: empty, not nil, for JSON []
 		}
 		return nil, err
 	}
 
 	cutoff := now().Add(-time.Duration(retentionDays) * 24 * time.Hour)
-	var purged []string
+	purged := []string{} // BUG-B: empty, not nil, for JSON []
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue

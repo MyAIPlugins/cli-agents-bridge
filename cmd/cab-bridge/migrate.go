@@ -78,7 +78,14 @@ func runMigrate(args []string) error {
 		return fmt.Errorf("migrate: stat source %q: %w", src, err)
 	}
 
-	rep := migrateReport{DryRun: *dryRun}
+	// BUG-B: empty (not nil) slices so the JSON report emits [] rather than null.
+	rep := migrateReport{
+		DryRun:          *dryRun,
+		Migrated:        []string{},
+		SkippedExisting: []string{},
+		SkippedInvalid:  []string{},
+		Errors:          []string{},
+	}
 
 	if !*dryRun {
 		ts := time.Now().UTC().Format("2006-01-02-150405")

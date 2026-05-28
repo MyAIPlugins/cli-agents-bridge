@@ -76,13 +76,13 @@ func collectPeers(mgr *session.Manager, dataDir string, staleSeconds int, includ
 	entries, err := os.ReadDir(sessionsRoot)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, nil
+			return []peerSummary{}, nil // BUG-B: empty, not nil, for JSON []
 		}
 		return nil, fmt.Errorf("peers: read sessions root: %w", err)
 	}
 
 	cutoff := time.Now().UTC().Add(-time.Duration(staleSeconds) * time.Second)
-	var out []peerSummary
+	out := []peerSummary{} // BUG-B: empty, not nil, so peers --json emits [] not null
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue

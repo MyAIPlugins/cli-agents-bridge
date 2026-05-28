@@ -6,21 +6,32 @@ Pre-release checklist Alan runs (~45 min) before VAL tags `v0.2.0`. Each step ha
 
 ---
 
-## Pre-flight (1 min)
+## Pre-flight (2 min)
 
 ```bash
 # Verify Claude Code + Go
 claude --version       # >= 2.1.150
 go version             # >= 1.25.0
 
+# Build a fresh binary and symlink it into ~/.local/bin. The plugin's
+# PATH-injection only applies INSIDE Claude Code, NOT in this zsh shell — the
+# CLI steps below run cab-bridge directly from the shell, so it must be on
+# $PATH. Re-run this after ANY code change (the binary is not auto-rebuilt).
+make build && make install-dev
+# ensure ~/.local/bin is on $PATH, then verify:
+cab-bridge --version   # 0.2.0
+
 # Backup existing data
 cp -r ~/.claude/cli-agents-bridge ~/.claude/cli-agents-bridge-smoketest-backup-$(date +%Y%m%d) 2>/dev/null || true
 
-# Use isolated dev sandbox to avoid touching production data
-export CAB_DATA_DIR=/tmp/cab-smoke-$$
+# Use an isolated dev sandbox to avoid touching production data.
+# IMPORTANT: use this SAME literal value in EVERY window — do NOT use $$, which
+# is the shell PID and differs per window, giving each window an isolated
+# namespace where VAL and ESC would never see each other.
+export CAB_DATA_DIR=/tmp/cab-smoke-shared
 ```
 
-All subsequent steps assume `CAB_DATA_DIR` is set.
+All subsequent steps assume `CAB_DATA_DIR` is set to the same literal value in every window.
 
 ---
 
