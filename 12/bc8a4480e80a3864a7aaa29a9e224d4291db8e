@@ -1,0 +1,40 @@
+internal/cleanup/scope.go
+  s_f8cca4ac5b209d::t_0dc903a1b5b67e 182
+  s_f8cca4ac5b209d::t_eb054a6fd46ebe 120
+  s_f8cca4ac5b209d::t_30b76074b3011f 188
+  s_f8cca4ac5b209d::t_f328fbf8b6ef24 128
+  s_f8cca4ac5b209d::t_c467f4f5d2dabb 78-80
+.claude-plugin/marketplace.json
+  s_f8cca4ac5b209d::t_cc3715493d169f 12
+tests/smoke-test.md
+  s_f8cca4ac5b209d::t_e480d4d2838446 9,16-23,27-31,34
+internal/cleanup/jsonhygiene_test.go
+  s_f8cca4ac5b209d::t_7b0acbcc8c59e0 1-33
+tests/integration/scenario_json_hygiene_test.go
+  s_f8cca4ac5b209d::t_ee265945285be5 1-39
+plugins/cli-agents-bridge/commands/cab.md
+  s_f8cca4ac5b209d::t_6e61cb71b31b25 2,9
+cmd/cab-bridge/peers.go
+  s_f8cca4ac5b209d::t_cfee5bfaae4565 85
+  s_f8cca4ac5b209d::t_c70af2051974f7 79
+plugins/cli-agents-bridge/.claude-plugin/plugin.json
+  s_f8cca4ac5b209d::t_c9f6b151205af2 4
+cmd/cab-bridge/migrate.go
+  s_f8cca4ac5b209d::t_454921ed1731d0 81-88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "12bc8a4480e80a3864a7aaa29a9e224d4291db8e",
+  "prompts": {},
+  "sessions": {
+    "s_f8cca4ac5b209d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3535f40b-0cdd-4b5b-b78c-4d80b7d6a86f",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
