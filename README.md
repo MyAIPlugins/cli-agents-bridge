@@ -90,12 +90,12 @@ cab-bridge cleanup --scope=global # cross-project (interactive confirm)
 | Multi-peer role routing | hub-and-spoke val↔esc + --allow-mesh | no role field |
 | Cross-project cleanup safety | scope=my-session default | global wipe by default |
 | Session ID lookup | longest-prefix-match | first-found, non-deterministic |
-| Lock on register | O_EXCL + stale recovery + --force-new | silent reuse, dup IDs |
+| Lock on register | O_EXCL + stale recovery + --force-new; unique random IDs that never merge; collision detection vs a live `listen` owner (best-effort, see troubleshooting) | silent reuse, dup IDs sharing one inbox |
 | Stderr discipline | errors→stderr, exit 124 on timeout | errors→stdout |
 | Inbox audit trail | move-to-processed/ + retention | delete on consume |
 | Distribution | single static Go binary | bash + jq runtime |
 | Storage namespace | `~/.claude/cli-agents-bridge/` | shared with upstream |
-| Security baseline | umask 077, perms 700/600, ownership check, regex validation | user defaults |
+| Security baseline | umask 077, perms 700/600, SC-7 base-dir integrity, session-ID regex validation | user defaults |
 | Migration | `migrate-from-patil` subcommand | n/a |
 | JSON validation | DisallowUnknownFields gateway + lenient runtime read | none |
 

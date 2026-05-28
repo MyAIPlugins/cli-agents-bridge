@@ -31,7 +31,14 @@ Common issues and their fixes.
 Error: project "/repo/analysis" already has active session abc123 (pid 4567), use --force-new to override
 ```
 
-**Why this happens**: BUG-6 protection (Sprint 1) — `cli-agents-bridge` refuses to silently create a duplicate session for the same `projectPath`. Patil v0.1 reused `.claude/bridge-session` silently and ended with two sessions sharing one inbox.
+**Why this happens**: BUG-6 protection — `cli-agents-bridge` refuses to silently create a duplicate session for the same `projectPath` **while a live owner holds it**. Patil v0.1 reused `.claude/bridge-session` silently and ended with two sessions sharing one inbox.
+
+**Ownership model (important)**: a session is "owned" by a long-running `cab-bridge listen` process, which adopts the manifest PID at startup (Sprint 6 BUG-A fix). Collision detection is therefore *best-effort by design*:
+
+- If a `listen` is **active** for that project, a second `register` in the same cwd **fails** (the live PID is detected) — this is the case above.
+- If **no `listen`** is active (you only ran `register`, whose one-shot PID dies immediately), the session is treated as **abandoned** and a new `register` is **allowed** — it gets a fresh unique ID, so the two never merge (unlike Patil). You may accumulate orphan sessions; clean them with `cab-bridge cleanup`.
+
+This is intentional: liveness is tied to an active listener, not to a manifest that outlives its process.
 
 **Fix**:
 

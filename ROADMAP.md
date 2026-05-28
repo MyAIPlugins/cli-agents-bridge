@@ -5,9 +5,19 @@
 
 ---
 
-## Status corrente — 2026-05-24
+## Status corrente — 2026-05-29
 
-**Fase**: 🟢 **Sprint 5 DONE** — security hardening pre-tag (commit `208c4b2`) → 🟡 **Pre-tag** (smoke test Alan + tag v0.2.0)
+**Fase**: 🟢 **Sprint 6 DONE** — fixup post-smoke (commit `2404ebe` + `12bc8a4`) → 🟡 **Pre-tag** (ri-smoke PASS, push + tag v0.2.0)
+
+**Sprint 6 — fixup post-smoke** (commit `2404ebe` BUG-A + `12bc8a4` BUG-B/chore, audit VAL PASS + repro empirico):
+Lo smoke test manuale (step 1-15) ha scoperto 2 bug che i test unit/integration NON coglievano (loro simulano il long-running con tick accelerato; lo smoke usa il CLI reale one-shot):
+- **BUG-A** (architetturale): `register` one-shot scriveva `pid` effimero (morto a fine comando) → collision check BUG-6 non scattava mai + sessioni STALE fuori da `listen`. Fix (a): `Manager.AdoptPID` + `listen.go` lo chiama all'avvio → il processo listen long-running adotta il PID vivo. **Repro empirico VAL**: con listen attivo, register stessa cwd ora FALLISCE collision (era il fallimento smoke step 11). `Touch` lasciata invariata (connect one-shot, solo un vero listen prende possesso).
+- **BUG-B** (JSON hygiene): `cleanup.Result`/`migrateReport`/`collectPeers` emettevano slice nil → JSON `null` invece di `[]`. Fix: init `[]T{}` + correzione 3 early-return `ErrNotExist` che sovrascrivevano l'init con nil (catch ESC, brief sottostimava).
+- Finding cosmetici: `cab.md` (rimossi refs Sprint 1/3), `smoke-test.md` (`CAB_DATA_DIR=$$`→fisso `/tmp/cab-smoke-shared` + pre-flight `make install-dev`), version `0.2.0-dev`→`0.2.0` in plugin.json/marketplace.json.
+- +5 test (158 PASS/0 FAIL -race, conferma indipendente VAL `-count=1`). File <600 (max manager 375).
+- **VAL doc (c)**: declassata garanzia BUG-6 a best-effort in SECURITY.md SC-6 + README features + troubleshooting (collision efficace vs listen owner attivo; register-senza-listen → re-register permesso, ID unici, no merge). Corretta anche riga README "Security baseline" (rimosso "ownership check" → SC-3 è deferred v0.2.1).
+
+**Sprint 5 — security hardening pre-tag** (commit `208c4b2`): SC-7 boot check + DataDir abs + migrate integrity. (dettaglio storico sotto)
 
 **Sprint 5 — security hardening pre-tag** (commit `208c4b2`, audit VAL PASS):
 Triadic security audit (security-sentinel + VAL rilettura codice Opus 4.8 + ESC doppia-verifica adversarial) ha scoperto gap tra security model dichiarato e implementato. 3 MUST chiusi PRIMA del tag pubblico MIT (decisione Alan):
@@ -99,7 +109,9 @@ Triadic security audit (security-sentinel + VAL rilettura codice Opus 4.8 + ESC 
 | **M2c** Sprint 3 — BUG-3/4/8/9 + cmd suite + policy A→B + migrate | ✅ DONE | 2026-05-24 | commit `0e9f39a` + `f81599d` + `224e438`. 9/9 BUG fixed, MVP feature-complete. 29 nuovi sub-test |
 | **M3a** Sprint 4 — Release readiness | ✅ DONE | 2026-05-24 | commit `9e56b72`. 6 integration scenari + 8 docs production + smoke checklist. v0.2.0 RC ready |
 | **M3b** Sprint 5 — Security hardening pre-tag | ✅ DONE | 2026-05-28 | commit `208c4b2`. Triadic audit → 3 MUST (SC-7 boot check, DataDir abs, migrate integrity). 153 test green. SECURITY.md riconciliato (NEW-3) |
-| **M3c** Smoke test Alan + tag v0.2.0 | ⏳ NEXT | ~45 min smoke + tag | tests/smoke-test.md 15 step + sign-off. Se PASS → VAL tagga v0.2.0 |
+| **M3c** Smoke test (step 1-15) | ✅ DONE | 2026-05-29 | Alan step 1-12 + VAL step 13-15. 13/15 PASS → scoperti BUG-A (register one-shot PID) + BUG-B (JSON null) + 3 finding doc/test |
+| **M3d** Sprint 6 — fixup post-smoke | ✅ DONE | 2026-05-29 | commit `2404ebe` + `12bc8a4`. BUG-A (listen adopts PID, repro PASS) + BUG-B ([] non null) + cab.md/smoke/version. 158 test green |
+| **M3e** Push + ri-smoke + tag v0.2.0 | ⏳ NEXT | push + tag | ri-smoke mirato (step 11 collision + 15 JSON) già PASS via repro VAL. Push commits + tag v0.2.0 |
 | **M3** Smoke test Alan + release v0.2.0 | 🔒 BLOCKED on M2 | +1 giorno post-M2 | ~45 min Alan-time + docs (README/PRIVACY/SECURITY) |
 | **M4** v0.3.0 — quality of life | 🔮 FUTURE | 1-2 settimane post-M3 | notification, transcript, retry, background-listen (gated da validation reale) |
 | **M5** v0.4.0 — daemon Unix socket | 🔮 FUTURE GATED | 1-2 settimane post-M4 | GATE: G1 latency >200ms ∧ G2 peer >3. Se non si verifica → daemon NON si fa |
