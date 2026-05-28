@@ -63,6 +63,11 @@ func runReceive(args []string) error {
 	for _, w := range warnings {
 		fmt.Fprintln(os.Stderr, "config warning:", w)
 	}
+	// SC-7: receive loads config directly (custom warning handling) rather than
+	// via loadConfigOrFail, so it runs the base-dir integrity check explicitly.
+	if err := bootstrapDataDir(cfg.DataDir); err != nil {
+		return fmt.Errorf("receive: %w", err)
+	}
 
 	mgr := session.NewManager(cfg.DataDir, time.Duration(cfg.HeartbeatTickMs)*time.Millisecond)
 

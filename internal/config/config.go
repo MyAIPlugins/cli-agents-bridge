@@ -110,6 +110,20 @@ func Load() (Config, []string, error) {
 
 	warnings = append(warnings, applyEnv(&cfg)...)
 
+	// FINDING-11: DataDir must be absolute. A relative data_dir (from a
+	// relative CAB_DATA_DIR or config.json value) would make every
+	// filepath.Join CWD-relative and would let the SC-7 boot check inspect
+	// the wrong directory. We resolve rather than hard-fail to keep first-run
+	// ergonomics, but a relative path is almost always a user error so we warn.
+	if !filepath.IsAbs(cfg.DataDir) {
+		abs, err := filepath.Abs(cfg.DataDir)
+		if err != nil {
+			return cfg, warnings, fmt.Errorf("resolve data dir %q to absolute: %w", cfg.DataDir, err)
+		}
+		warnings = append(warnings, fmt.Sprintf("data_dir %q was relative, resolved to absolute %q", cfg.DataDir, abs))
+		cfg.DataDir = abs
+	}
+
 	return cfg, warnings, nil
 }
 

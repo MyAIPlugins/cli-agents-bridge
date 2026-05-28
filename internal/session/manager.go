@@ -219,7 +219,11 @@ func (m *Manager) LongestPrefixLookup(cwd string) (string, error) {
 		}
 		if len(mf.ProjectPath) > bestLen {
 			bestLen = len(mf.ProjectPath)
-			bestMatch = mf.SessionID
+			// NEW-1: return the directory name (the real, single-component
+			// identity we just loaded by) rather than mf.SessionID, which is
+			// an attacker-influenceable manifest field. Prevents a crafted
+			// sessionId from flowing out as an unvalidated path component.
+			bestMatch = e.Name()
 		}
 	}
 

@@ -120,6 +120,21 @@ func runMigrate(args []string) error {
 			continue
 		}
 
+		// FINDING-4 / NEW-1: the directory name (sid, SC-4 validated above) is
+		// the real session identity. Reject any manifest whose internal
+		// sessionId diverges from it (manual rename or hand-crafted import) and
+		// re-validate the internal value defensively. Prevents writing an
+		// incoherent manifest whose sessionId could later be propagated as a
+		// path component by LongestPrefixLookup.
+		if mf.SessionID != sid {
+			rep.SkippedInvalid = append(rep.SkippedInvalid, sid+" (manifest sessionId "+mf.SessionID+" != dir name)")
+			continue
+		}
+		if err := security.ValidateSessionID(mf.SessionID); err != nil {
+			rep.SkippedInvalid = append(rep.SkippedInvalid, sid+" (manifest sessionId invalid)")
+			continue
+		}
+
 		// RC-3 (security audit Sprint 0): legacy manifests may carry
 		// hand-crafted projectPath. Reject anything that looks like a
 		// traversal attempt. We accept absolute paths under $HOME but
@@ -196,6 +211,12 @@ func migrateOne(srcSessionDir, dstSessionDir string, mf *session.Manifest) error
 		}
 	}
 
+	// NEW-2: replicate session.Manager.SaveManifest's fail-closed guarantee —
+	// never write a manifest that does not pass Validate (migrateOne uses
+	// AtomicWriteJSON directly to avoid a Manager dependency).
+	if err := mf.Validate(); err != nil {
+		return fmt.Errorf("manifest failed validation, refusing to write: %w", err)
+	}
 	if err := transportfs.AtomicWriteJSON(filepath.Join(dstSessionDir, "manifest.json"), mf); err != nil {
 		return fmt.Errorf("write manifest: %w", err)
 	}

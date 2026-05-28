@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -162,6 +163,39 @@ func TestLongestPrefixLookup_NoSessionsDirYet(t *testing.T) {
 	mgr := NewManager(t.TempDir(), time.Second)
 	_, err := mgr.LongestPrefixLookup("/any/path")
 	assert.ErrorIs(t, err, ErrNoSessionForCwd)
+}
+
+// TestLongestPrefixLookup_ReturnsDirNameNotManifestField is the NEW-1
+// regression: when a session's directory name diverges from the sessionId
+// field inside its manifest (manual rename / hand-crafted import), the lookup
+// must return the directory name (the real, single-component identity) and
+// never the attacker-influenceable manifest field.
+func TestLongestPrefixLookup_ReturnsDirNameNotManifestField(t *testing.T) {
+	t.Parallel()
+
+	dataDir := t.TempDir()
+	mgr := NewManager(dataDir, time.Second)
+	projDir := t.TempDir()
+
+	dirName := "realdir1"
+	sessionDir := filepath.Join(dataDir, "sessions", dirName)
+	require.NoError(t, os.MkdirAll(sessionDir, 0o700))
+	mf := &Manifest{
+		SessionID:     "spoofedi",
+		SchemaVersion: SchemaVersionV2,
+		ProjectName:   filepath.Base(projDir),
+		ProjectPath:   projDir,
+		Role:          RoleVal,
+		Status:        StatusActive,
+	}
+	data, err := json.MarshalIndent(mf, "", "  ")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "manifest.json"), data, 0o600))
+
+	got, err := mgr.LongestPrefixLookup(projDir)
+	require.NoError(t, err)
+	assert.Equal(t, dirName, got, "lookup must return the directory name, not the manifest sessionId field")
+	assert.NotEqual(t, "spoofedi", got, "the manifest sessionId field must never be returned")
 }
 
 func TestStartHeartbeat_UpdatesManifestPeriodically(t *testing.T) {
