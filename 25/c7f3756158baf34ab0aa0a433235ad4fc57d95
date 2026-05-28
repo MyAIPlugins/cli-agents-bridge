@@ -1,0 +1,31 @@
+CHANGELOG.md
+  s_da508dd14cf7fe::t_1bf640a617a62d 10-24
+README.md
+  s_da508dd14cf7fe::t_6dbe11961245e6 93,98
+docs/troubleshooting.md
+  s_da508dd14cf7fe::t_5d140a781a492b 34-41
+SECURITY.md
+  s_da508dd14cf7fe::t_23ff6cbdacafb0 45
+ROADMAP.md
+  s_da508dd14cf7fe::t_a9f6beb4430fc8 10-20
+  s_da508dd14cf7fe::t_f06165e11c3873 112-114
+  s_da508dd14cf7fe::t_b8ade1382c4855 8
+CLAUDE.md
+  ai_agent 127-129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "25c7f3756158baf34ab0aa0a433235ad4fc57d95",
+  "prompts": {},
+  "sessions": {
+    "s_da508dd14cf7fe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "04afe0d5-69d7-4ebf-829d-0e5bd111d8ae",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
