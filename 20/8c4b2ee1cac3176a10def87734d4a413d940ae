@@ -1,0 +1,41 @@
+cmd/cab-bridge/common_test.go
+  s_f8cca4ac5b209d::t_7ff1c68dc80203 1-87
+cmd/cab-bridge/receive.go
+  s_f8cca4ac5b209d::t_0e6d7d60927c48 66-70
+internal/config/config.go
+  s_f8cca4ac5b209d::t_e88d8e0ea81a7b 113-126
+cmd/cab-bridge/migrate.go
+  s_f8cca4ac5b209d::t_301b014bd27d34 123-137
+  s_f8cca4ac5b209d::t_b651b26a564004 214-219
+internal/session/manager.go
+  s_f8cca4ac5b209d::t_52078de90a4aa3 222-226
+internal/config/config_test.go
+  s_f8cca4ac5b209d::t_7fb80df06f2aa1 1-55
+tests/integration/scenario_sc7_test.go
+  s_f8cca4ac5b209d::t_1953e3f14f9e72 1-43
+tests/integration/scenario_migrate_integrity_test.go
+  s_f8cca4ac5b209d::t_1492ae00ef62df 1-93
+internal/session/manager_test.go
+  s_f8cca4ac5b209d::t_af2f5c0d0c3efb 5
+  s_f8cca4ac5b209d::t_74801d351656b8 168-200
+cmd/cab-bridge/common.go
+  s_f8cca4ac5b209d::t_48348dfba7176e 6,8
+  s_f8cca4ac5b209d::t_282d40c196f0cb 16-19,28-30,34-86
+  s_f8cca4ac5b209d::t_9f2509bb2a375b 118-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "208c4b2ee1cac3176a10def87734d4a413d940ae",
+  "prompts": {},
+  "sessions": {
+    "s_f8cca4ac5b209d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3535f40b-0cdd-4b5b-b78c-4d80b7d6a86f",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
