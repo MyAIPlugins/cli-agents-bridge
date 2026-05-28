@@ -198,6 +198,34 @@ func TestLongestPrefixLookup_ReturnsDirNameNotManifestField(t *testing.T) {
 	assert.NotEqual(t, "spoofedi", got, "the manifest sessionId field must never be returned")
 }
 
+// TestAdoptPID_WritesCurrentPID is the Sprint 6 BUG-A unit: AdoptPID must
+// overwrite the manifest PID with the calling (long-running listen) process's
+// PID, so that BUG-6 collision detection and stale detection see a live owner
+// instead of the dead ephemeral PID written by the one-shot register command.
+func TestAdoptPID_WritesCurrentPID(t *testing.T) {
+	t.Parallel()
+
+	dataDir := t.TempDir()
+	mgr := NewManager(dataDir, time.Second)
+	projDir := t.TempDir()
+
+	mf, rel, err := mgr.Register(context.Background(), RegisterOpts{ProjectPath: projDir, ForceNew: true})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = rel() })
+
+	// Simulate the ephemeral register PID having been overwritten by a stale
+	// value on disk (as if the register process had died).
+	mf.PID = 1
+	require.NoError(t, mgr.SaveManifest(mf))
+
+	require.NoError(t, mgr.AdoptPID(mf.SessionID))
+
+	reloaded, err := mgr.LoadManifest(mf.SessionID)
+	require.NoError(t, err)
+	assert.Equal(t, os.Getpid(), reloaded.PID, "AdoptPID must write the current process PID")
+	assert.False(t, reloaded.LastHeartbeat.IsZero(), "AdoptPID must also refresh the heartbeat")
+}
+
 func TestStartHeartbeat_UpdatesManifestPeriodically(t *testing.T) {
 	t.Parallel()
 

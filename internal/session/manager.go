@@ -299,6 +299,23 @@ func (m *Manager) Touch(sessionID string) error {
 	return m.touchHeartbeat(sessionID)
 }
 
+// AdoptPID claims sessionID for the current process by writing its PID into the
+// manifest (and refreshing the heartbeat). The long-running listen command
+// calls this at startup so collision detection (BUG-6) and stale detection
+// observe a LIVE owner — unlike the one-shot register command, whose PID dies
+// the moment it returns (Sprint 6 BUG-A). Touch deliberately does NOT adopt the
+// PID: connect.go calls Touch from a short-lived process whose PID would be
+// just as ephemeral as register's, so only a real listen owner takes ownership.
+func (m *Manager) AdoptPID(sessionID string) error {
+	manifest, err := m.LoadManifest(sessionID)
+	if err != nil {
+		return err
+	}
+	manifest.PID = os.Getpid()
+	manifest.LastHeartbeat = m.now()
+	return m.SaveManifest(manifest)
+}
+
 // sessionDir returns the absolute filesystem path of the per-session
 // directory under DataDir. Does not validate sessionID — callers must do so
 // via security.ValidateSessionID before passing untrusted input (SC-4).

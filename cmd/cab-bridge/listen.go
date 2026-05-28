@@ -37,6 +37,14 @@ func runListen(args []string) error {
 		return err
 	}
 
+	// BUG-A: take ownership of the session for this long-running listen
+	// process. register wrote an ephemeral PID that has already died; without
+	// this, BUG-6 collision detection and stale detection never observe a live
+	// owner. The heartbeat goroutine below keeps lastHeartbeat fresh thereafter.
+	if err := mgr.AdoptPID(sid); err != nil {
+		return fmt.Errorf("listen: adopt session PID: %w", err)
+	}
+
 	// MaxBlockingSeconds bounds the wall-clock duration of listen so the
 	// Claude Code agent harness 10-min subprocess timeout never kills us
 	// silently. On hit we exit 124 — the same convention as receive — so
