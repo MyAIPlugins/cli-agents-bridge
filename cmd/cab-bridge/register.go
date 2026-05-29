@@ -32,6 +32,12 @@ func runRegister(args []string) error {
 	}
 	mgr := newSessionManager(cfg)
 
+	// Auto-gc orphan sessions before creating a new one (v0.2.1, F10). Sweeps
+	// sessions whose owning PID is dead AND heartbeat is older than AutoGCHours
+	// (no daemon — the sweep piggybacks on a command the user already runs).
+	// Logged on stderr so the manifest JSON on stdout stays clean.
+	runAutoGC(cfg, os.Stderr)
+
 	pp := *projectPath
 	if pp == "" {
 		var werr error

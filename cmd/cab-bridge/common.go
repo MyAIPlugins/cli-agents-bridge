@@ -3,11 +3,13 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"syscall"
 	"time"
 
+	"github.com/myAIPlugins/cli-agents-bridge/internal/cleanup"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
@@ -90,6 +92,32 @@ func bootstrapDataDir(dataDir string) error {
 // subcommands that touch sessions share this constructor for consistency.
 func newSessionManager(cfg config.Config) *session.Manager {
 	return session.NewManager(cfg.DataDir, time.Duration(cfg.HeartbeatTickMs)*time.Millisecond)
+}
+
+// runAutoGC sweeps orphan sessions (v0.2.1, F10) and logs each removal to logw.
+// It is the cmd-side glue around cleanup.GCOrphans: the library returns the
+// removed sessions, this wrapper owns the explicit stderr log so the cleanup
+// is observable and never silent (anti-pattern AP-fork-2: hidden cleanup as a
+// side effect). Disabled when cfg.AutoGCHours <= 0.
+//
+// Failures are non-fatal by design: a broken gc pass must never block the
+// register/listen the user actually asked for, so the error is logged and the
+// caller proceeds. Returns the removed orphans (nil when disabled) so callers
+// and tests can inspect what was swept.
+func runAutoGC(cfg config.Config, logw io.Writer) []cleanup.Orphan {
+	if cfg.AutoGCHours <= 0 {
+		return nil
+	}
+	removed, err := cleanup.GCOrphans(cfg.DataDir, cfg.AutoGCHours, nil)
+	if err != nil {
+		fmt.Fprintf(logw, "cab-bridge: auto-gc failed (non-fatal): %v\n", err)
+		return nil
+	}
+	for _, o := range removed {
+		fmt.Fprintf(logw, "cab-bridge: auto-gc removed orphan session %s (pid %d dead, idle %s)\n",
+			o.SessionID, o.PID, o.IdleAge.Round(time.Hour))
+	}
+	return removed
 }
 
 // resolveSessionID returns the session ID to operate on. If flagValue is

@@ -85,7 +85,7 @@ func (m *Manager) Register(ctx context.Context, opts RegisterOpts) (*Manifest, f
 		if existingID, lerr := m.LongestPrefixLookup(absProj); lerr == nil {
 			if existing, merr := m.LoadManifest(existingID); merr == nil &&
 				filepath.Clean(existing.ProjectPath) == absProj &&
-				isProcessAlive(existing.PID) {
+				IsProcessAlive(existing.PID) {
 				return nil, nil, fmt.Errorf("%w: project %q already has active session %s (pid %d), use --force-new to override",
 					ErrSessionExistsForProject, absProj, existingID, existing.PID)
 			}

@@ -137,15 +137,15 @@ func TestIsProcessAlive(t *testing.T) {
 	t.Parallel()
 
 	// Self is always alive
-	assert.True(t, isProcessAlive(os.Getpid()))
+	assert.True(t, IsProcessAlive(os.Getpid()))
 
 	// PID 1 (init) is always alive on Unix
-	assert.True(t, isProcessAlive(1))
+	assert.True(t, IsProcessAlive(1))
 
 	// PID 0 / negative are invalid
-	assert.False(t, isProcessAlive(0))
-	assert.False(t, isProcessAlive(-1))
+	assert.False(t, IsProcessAlive(0))
+	assert.False(t, IsProcessAlive(-1))
 
 	// Very high PID is unlikely to exist (see test note in TestAcquireLock_StaleRecovery)
-	assert.False(t, isProcessAlive(999999))
+	assert.False(t, IsProcessAlive(999999))
 }

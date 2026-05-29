@@ -74,6 +74,19 @@ type Config struct {
 	// Env override: CAB_HEARTBEAT_TICK_MS (use small values like 100 in
 	// tests to compress wall-clock).
 	HeartbeatTickMs int `json:"heartbeat_tick_ms"`
+
+	// AutoGCHours is the age threshold (in hours) above which an orphan
+	// session (owning PID dead AND heartbeat older than this) is swept by the
+	// auto-gc pass that runs at register startup (v0.2.1, F10). The double
+	// condition is deliberate: a just-registered session already has a dead
+	// PID (the one-shot register process exited), so PID-death alone is not
+	// enough — only a stale heartbeat confirms abandonment (LL-10).
+	// Default: 24 (generous — only sweeps sessions abandoned for >24h).
+	// Set to 0 to disable auto-gc entirely (manual `cab-bridge cleanup` only).
+	// Env override: CAB_AUTO_GC_HOURS. NOTE: 0 disables, but a 0 in the user
+	// config.json is ignored (applyUserFile skips zero-values) — disable via
+	// the env var instead.
+	AutoGCHours int `json:"auto_gc_hours"`
 }
 
 // DefaultConfig returns the source-of-truth default values. The DataDir is
@@ -89,6 +102,7 @@ func DefaultConfig() Config {
 		MaxMessageBytes:    65536,
 		RetentionDays:      7,
 		HeartbeatTickMs:    30000,
+		AutoGCHours:        24,
 	}
 }
 
@@ -167,6 +181,9 @@ func applyUserFile(cfg *Config, path string) error {
 	if override.HeartbeatTickMs != 0 {
 		cfg.HeartbeatTickMs = override.HeartbeatTickMs
 	}
+	if override.AutoGCHours != 0 {
+		cfg.AutoGCHours = override.AutoGCHours
+	}
 	return nil
 }
 
@@ -197,6 +214,9 @@ func applyEnv(cfg *Config) []string {
 		warnings = append(warnings, w)
 	}
 	if w := envInt("CAB_HEARTBEAT_TICK_MS", &cfg.HeartbeatTickMs); w != "" {
+		warnings = append(warnings, w)
+	}
+	if w := envInt("CAB_AUTO_GC_HOURS", &cfg.AutoGCHours); w != "" {
 		warnings = append(warnings, w)
 	}
 

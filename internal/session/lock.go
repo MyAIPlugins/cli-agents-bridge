@@ -61,7 +61,7 @@ func AcquireLock(lockPath string, forceNew bool) (release func() error, err erro
 		return func() error { return nil }, nil
 	}
 
-	if isProcessAlive(existingPID) {
+	if IsProcessAlive(existingPID) {
 		return nil, fmt.Errorf("%w: lockPath=%q holder pid=%d (use --force-new to override)",
 			ErrLockHeld, lockPath, existingPID)
 	}
@@ -106,8 +106,13 @@ func readPIDFromLock(lockPath string) (int, error) {
 	return strconv.Atoi(s)
 }
 
-// isProcessAlive returns true if a process with pid exists. Uses kill(pid, 0)
+// IsProcessAlive returns true if a process with pid exists. Uses kill(pid, 0)
 // which is a no-op signal that only checks process existence + sendability.
+//
+// Exported because the auto-gc orphan sweep (internal/cleanup.GCOrphans, v0.2.1)
+// shares this liveness probe: an orphan is a session whose owning PID is no
+// longer alive AND whose heartbeat is stale (the double condition guards the
+// register-then-die window, LL-10).
 //
 // Return semantics:
 //   - nil err: process exists and we have permission to signal it.
@@ -118,7 +123,7 @@ func readPIDFromLock(lockPath string) (int, error) {
 //
 // Negative or zero pid is treated as not-alive (PID=0 cannot be killed,
 // PID<0 means "process group" which we never write).
-func isProcessAlive(pid int) bool {
+func IsProcessAlive(pid int) bool {
 	if pid <= 0 {
 		return false
 	}

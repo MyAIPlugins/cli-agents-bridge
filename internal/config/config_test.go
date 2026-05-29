@@ -53,3 +53,35 @@ func TestLoad_AbsoluteDataDirUnchanged(t *testing.T) {
 		}
 	}
 }
+
+// TestDefaultConfig_AutoGCHours pins the v0.2.1 default: auto-gc ON at 24h.
+func TestDefaultConfig_AutoGCHours(t *testing.T) {
+	if got := DefaultConfig().AutoGCHours; got != 24 {
+		t.Errorf("default AutoGCHours = %d, want 24", got)
+	}
+}
+
+// TestLoad_AutoGCHoursEnvOverride covers the env override path, including the
+// disable case (0). Unlike the user config.json (which ignores zero-values),
+// CAB_AUTO_GC_HOURS=0 must take effect so users can turn auto-gc off.
+func TestLoad_AutoGCHoursEnvOverride(t *testing.T) {
+	t.Setenv("CAB_DATA_DIR", filepath.Join(t.TempDir(), "cab-data"))
+
+	t.Setenv("CAB_AUTO_GC_HOURS", "48")
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.AutoGCHours != 48 {
+		t.Errorf("AutoGCHours = %d, want 48 (env override)", cfg.AutoGCHours)
+	}
+
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	cfg, _, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.AutoGCHours != 0 {
+		t.Errorf("AutoGCHours = %d, want 0 (env must disable, overriding default 24)", cfg.AutoGCHours)
+	}
+}
