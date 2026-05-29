@@ -142,7 +142,20 @@ Videogame "Flusso Perfetto" **6/6 fasi consegnabile** (engine+render+UI+leaderbo
 - **F-1/F-7 confermati** dall'arco lungo. F-1 mitigato da CAB_MAX_BLOCKING_SECONDS=1800 (ESC). F-7: tutto il bootstrap/recovery guidato dal VAL.
 - **Soglia di autonomia VAL** (workflow, non prodotto): i ~6 gate "go FASE N?" per-fase sono il tempo morto comprimibile lato umano. Fix: soglia esplicita al kickoff (VAL autonomo su eng/fix/docs; go umano solo per brand/lock-critici/scope). Skill FIXED.
 - **Fuori scope cab-bridge** (noto): git-ai bg riscrive gli hash async → hash citato nelle docs diventa orfano. Workaround adottato dalle coppie: citare i **tag**, non gli hash, nelle docs.
-- **Pilastri confermati solidi**: `ask --file`, wake via receive-in-background, e "ground truth = git+inbox" (mai fidarsi del return di receive).
+- **Pilastri confermati solidi**: `ask --file` e "ground truth = git+inbox" (mai fidarsi del return di receive).
+
+### Quadro definitivo — entrambe le coppie chiuse (videogame 6/6 + links 4 PR prod)
+
+Report finali da VAL-flusso, VAL-links, ESC-links. Findings cab-bridge consolidati e RI-PRIORITIZZATI:
+
+- **F-10 (NUOVO, PRIORITÀ #1 v0.2.2): il wake "event-driven al messaggio" NON funziona con Bash run_in_background** — notifica solo all'EXIT del comando (timeout 124), non all'arrivo. Con finestra lunga (1800s) i messaggi urgenti restano invisibili fino a 30min → dipendenza da ping umano (ESC-links non vedeva il GO Fase B già arrivato; VAL receive si svegliava ~20-30min dopo il commit di ESC). È la **causa reale della latenza** sofferta da entrambe le coppie. **Mea culpa VAL-bridge**: la skill raccomandava run_in_background+finestra-lunga per il wake — sbagliato, lo peggiorava. **Fix skill**: ✅ (Monitor per wake immediato, o finestra breve ri-loopata; mai finestra lunga se aspetti messaggi urgenti). **Fix prodotto**: `cab listen --wait-one` che esce al primo messaggio (→ run_in_background notifica all'arrivo), e/o documentare l'uso di Monitor; `cab ask --wait` per il lato VAL.
+- **F-5 confermato da ENTRAMBE le coppie (priorità #2)**: data dir globale → `peers` cross-progetto → confusione identità reale (VAL-links stava per pulire VAL-flusso; ESC-links si è identificato in ESC-flusso — "tutti i segnali combaciavano"). Fix immediato: data dir per coppia. Fix prodotto v0.3: teamId, o `cab whoami`/`status` che mostra projectPath COMPLETO + `peers --project` filtro.
+- **F-9 (NUOVO): `ask` non popola l'outbox del mittente** → un agente non può verificare i propri invii guardando le proprie sessioni (deve ispezionare inbox+processed del destinatario). Ha confuso il debugging (incluso il mio di ieri). Fix prodotto: log in outbox o `cab history/sent --session-id`.
+- **F-11 (NUOVO): race cleanup/GC vs delivery** — un `cleanup --scope=global`/auto-gc può rimuovere un messaggio appena scritto (ESC-links: `ask` con msg-id ritornato ma file sparito). Mitigato da F-5 (isolamento). Fix prodotto: lock/grace-period su sessioni che ricevono.
+- **F-6 confermato + fix-projectName INCOMPLETO**: VAL (cwd root, `projectName=ac-links`) ed ESC (cwd subdir, `projectName=src`) della stessa coppia NON condividono projectName → filtrare per projectName non identifica la coppia. Serve teamId (F-5).
+- **F-8 RITIRATO**: il "brief mai mandato" della coppia links era un artefatto di osservazione (snapshot pre-invio + `ask` non popola outbox, F-9), NON azione-dichiarata-non-eseguita. VAL-links ha provato la consegna (msg-2d2325d136a8 in processed di ESC). Non promuovere.
+- **Confermati solidi**: `ask --file`, "verifica inbox/git non il return" (grazie a questo ESC-links ha scoperto un ask perso da F-11), modello PID/heartbeat.
+- **Costo dei problemi su entrambe le coppie**: BASSO — zero rework sul codice consegnato. Le frizioni sono costate comunicazione extra + cicli d'attesa (la latenza F-10). Tempo morto videogame ~14%, quasi tutto F-10 (bridge), non attesa-umano.
 | **M3** Smoke test Alan + release v0.2.0 | 🔒 BLOCKED on M2 | +1 giorno post-M2 | ~45 min Alan-time + docs (README/PRIVACY/SECURITY) |
 | **M4** v0.3.0 — quality of life | 🔮 FUTURE | 1-2 settimane post-M3 | notification, transcript, retry, background-listen (gated da validation reale) |
 | **M5** v0.4.0 — daemon Unix socket | 🔮 FUTURE GATED | 1-2 settimane post-M4 | GATE: G1 latency >200ms ∧ G2 peer >3. Se non si verifica → daemon NON si fa |
