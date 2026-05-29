@@ -1,0 +1,44 @@
+internal/cleanup/gc.go
+  s_281db1c8665bc7::t_74fc7d9c79e149 1-92
+config/default.json
+  s_281db1c8665bc7::t_e29c9abdd4d80a 10-11
+cmd/cab-bridge/register_test.go
+  s_281db1c8665bc7::t_7b61e15af06e72 1-142
+cmd/cab-bridge/common.go
+  s_281db1c8665bc7::t_2ceaa03644e711 6,12
+  s_281db1c8665bc7::t_1e7c4a17ff238d 97-122
+internal/session/lock_test.go
+  s_281db1c8665bc7::t_2ceb73d2a188f1 140,143,146-147,150
+cmd/cab-bridge/register.go
+  s_281db1c8665bc7::t_a511a6683f31bb 35-40
+internal/cleanup/gc_test.go
+  s_281db1c8665bc7::t_52cf5c4cf72011 1-135
+internal/session/lock.go
+  s_281db1c8665bc7::t_6cb93f4e44775f 64
+  s_281db1c8665bc7::t_5135e03391d16d 109,112-116,126
+internal/session/manager.go
+  s_281db1c8665bc7::t_8eb1843cd74900 88
+internal/config/config_test.go
+  s_281db1c8665bc7::t_e60169fa7ce30a 56-87
+internal/config/config.go
+  s_281db1c8665bc7::t_869b33bbdbc57b 219-221
+  s_281db1c8665bc7::t_1536a7098c20bd 77-89
+  s_281db1c8665bc7::t_8b59cdd0efef75 105
+  s_281db1c8665bc7::t_330770dc9255b4 184-186
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "52388001f7e4d863de4c0f8d903f5c06602027aa",
+  "prompts": {},
+  "sessions": {
+    "s_281db1c8665bc7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9173056b-4734-4c0a-b05d-f99478acb59c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
