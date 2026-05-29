@@ -25,6 +25,15 @@ import (
 // Resolution order (defaults → user file → env). All fields exposed for
 // observability (cab status, cab inspect-config in later sprints).
 type Config struct {
+	// Comment is a no-op field that exists solely so config/default.json —
+	// which carries a "_comment" key documenting itself — can be copied
+	// verbatim to ~/.claude/cli-agents-bridge/config.json without the
+	// DisallowUnknownFields decoder (applyUserFile) rejecting it (MUST-2/F-A:
+	// the documented "copy this file" path used to fail with "unknown field
+	// _comment"). It is never read at runtime and never written back
+	// (omitempty), so it stays out of any generated config.
+	Comment string `json:"_comment,omitempty"`
+
 	// DataDir is the root of all bridge state.
 	// Default: ~/.claude/cli-agents-bridge/
 	// Env override: CAB_DATA_DIR
@@ -113,6 +122,14 @@ func DefaultConfig() Config {
 func Load() (Config, []string, error) {
 	cfg := DefaultConfig()
 	var warnings []string
+
+	// F-B: resolve CAB_DATA_DIR before computing the user-config path, so that
+	// CAB_DATA_DIR=/custom reads config.json from /custom rather than from the
+	// compiled-in default dir. applyEnv re-applies it idempotently below, so
+	// env still wins over the file for data_dir (and every other field).
+	if v := os.Getenv("CAB_DATA_DIR"); v != "" {
+		cfg.DataDir = v
+	}
 
 	userFile := filepath.Join(cfg.DataDir, "config.json")
 	if err := applyUserFile(&cfg, userFile); err != nil {
