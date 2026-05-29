@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] — 2026-05-29
+
+First feature release after v0.2.0. Adds automatic orphan-session GC and closes a data-loss gap in session cleanup. Built end-to-end via the cli-agents-bridge dogfooding workflow (VAL↔ESC over the fork itself).
+
+### Added
+- **Auto-GC of orphan sessions** (`internal/cleanup/gc.go::GCOrphans`, F10): a session is removed only when **certainly orphaned** — owning PID dead (`session.IsProcessAlive`==false) **AND** `lastHeartbeat` older than `AutoGCHours`. The double condition (LL-10) is load-bearing: a just-`register`-ed session already has a dead PID (one-shot), so only a stale heartbeat distinguishes "abandoned" from "born seconds ago"; a session inside `listen` keeps a live PID (AdoptPID) and is never swept. Hooked into `register` (before creating the new session), opt-out via `AutoGCHours=0`. Every removal is logged to stderr (`auto-gc removed orphan session X (pid N dead, idle Hh)`) — no silent cleanup.
+- Config `AutoGCHours` (json `auto_gc_hours`, env `CAB_AUTO_GC_HOURS`, default **24**).
+
+### Fixed
+- **Data-loss on session removal** (AUDIT-1, closes upstream pain §1.6): `archiveAndRemoveSession` previously archived only `processed/`, so `inbox/` + `outbox/` pending messages were deleted unarchived by `RemoveAll`. Now archives all three (`inbox`/`outbox`/`processed`) into `archive/<date>/<id>/<subdir>/` before removal. Applies to **all** cleanup paths (auto-gc, `--scope=my-session`, `--scope=global`). Verified: an orphan with an unread inbox message has it archived, not lost.
+- **`default.json` not copyable to `config.json`** (F-A): the file carried a `"_comment"` key but the loader used `DisallowUnknownFields`, so copying it (as the comment itself suggested) failed with "unknown field". Added a no-op `Comment` field (`json:"_comment,omitempty"`) so the documented path works.
+- **Config path ignored `CAB_DATA_DIR`** (F-B): `config.json` user-file path is now resolved from the env-overridden DataDir.
+
+### Notes
+- `peers` rejecting `--session-id` is intentional (it is a global command, not session-scoped) — kept as-is per LL-7. Backlog: a clearer error message + per-subcommand flag docs.
+
 ## [0.2.0] — 2026-05-29
 
 First public release of cli-agents-bridge — fork of `PatilShreyas/claude-code-session-bridge` v0.1.0. The 9 confirmed upstream bugs fixed structurally (BUG-1..BUG-9), plus role-based routing, namespace-isolated storage, a security baseline (SC-1/2/4/5/6/7), and a single static Go binary distributed via self-marketplace GitHub.

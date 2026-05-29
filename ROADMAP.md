@@ -112,7 +112,8 @@ Triadic security audit (security-sentinel + VAL rilettura codice Opus 4.8 + ESC 
 | **M3c** Smoke test (step 1-15) | ✅ DONE | 2026-05-29 | Alan step 1-12 + VAL step 13-15. 13/15 PASS → scoperti BUG-A (register one-shot PID) + BUG-B (JSON null) + 3 finding doc/test |
 | **M3d** Sprint 6 — fixup post-smoke | ✅ DONE | 2026-05-29 | commit `2404ebe` + `12bc8a4`. BUG-A (listen adopts PID, repro PASS) + BUG-B ([] non null) + cab.md/smoke/version. 158 test green |
 | **M3e** Push + ri-smoke + tag v0.2.0 | ✅ DONE 🚀 | 2026-05-29 | Pushed + tag `v0.2.0` + GitHub Release live. ri-smoke (step 11 collision + 15 JSON) PASS via repro VAL |
-| **M4** v0.2.1 — distribution + deferred hardening | 🔮 NEXT | TBD | GoReleaser multi-OS binaries su tag (release v0.2.0 e' source-first, bin/ gitignored) + SC-3 ownership wiring fstat-fd + os.Root + inbox bound + scanForReply idempotente |
+| **M4** v0.2.1 — auto-gc + AUDIT-1 fix (dogfooding) | ✅ DONE | 2026-05-29 | commit `5238800`+`c56f4f8`+`14d94c6`+`e2db0b7`. Auto-gc orphan sessions + data-loss fix (§1.6) + F-A/F-B. Primo task interamente via cli-agents-bridge (dogfooding). 158+ test green |
+| **M5** v0.2.2+ — distribution + deferred hardening | 🔮 NEXT | TBD | GoReleaser multi-OS binaries (release source-first, bin/ gitignored) + SC-3 ownership wiring fstat-fd + os.Root symlink-safe + inbox backpressure bound + scanForReply idempotente + skill cab-bridge-awareness + `cab ask --wait` |
 | **M3** Smoke test Alan + release v0.2.0 | 🔒 BLOCKED on M2 | +1 giorno post-M2 | ~45 min Alan-time + docs (README/PRIVACY/SECURITY) |
 | **M4** v0.3.0 — quality of life | 🔮 FUTURE | 1-2 settimane post-M3 | notification, transcript, retry, background-listen (gated da validation reale) |
 | **M5** v0.4.0 — daemon Unix socket | 🔮 FUTURE GATED | 1-2 settimane post-M4 | GATE: G1 latency >200ms ∧ G2 peer >3. Se non si verifica → daemon NON si fa |
