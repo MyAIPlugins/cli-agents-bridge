@@ -1,0 +1,24 @@
+internal/cleanup/gc_test.go
+  s_281db1c8665bc7::t_d6924a9cd5b8c7 96-100,107,109,111-112,123-131,133
+internal/cleanup/scope.go
+  s_281db1c8665bc7::t_3350898938bbc2 15-18
+  s_281db1c8665bc7::t_93607d1c35d98f 151-170,173-187,189-191
+internal/cleanup/scope_test.go
+  s_281db1c8665bc7::t_913073ef29b3d8 134-135,143-185
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c56f4f839675251fb9e2139b2bf1faeeea53d10f",
+  "prompts": {},
+  "sessions": {
+    "s_281db1c8665bc7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9173056b-4734-4c0a-b05d-f99478acb59c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
