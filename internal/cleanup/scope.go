@@ -12,8 +12,10 @@
 //     gated the prompt.
 //
 // Cleanup pipeline per session:
-//  1. Move processed/* into archive/<YYYY-MM-DD>/<sessionID>/ preserving
-//     filenames (rename(2) atomic same-fs).
+//  1. Move inbox/, outbox/ and processed/ contents into
+//     archive/<YYYY-MM-DD>/<sessionID>/<subdir>/ preserving filenames
+//     (rename(2) atomic same-fs). AUDIT-1: all three subdirs are archived,
+//     not just processed/, so unread inbox messages are never silently lost.
 //  2. RemoveAll session dir (sessions/<sessionID>/).
 //
 // After per-session pass, retention sweep removes archive/<YYYY-MM-DD>/
@@ -146,22 +148,47 @@ func globalSweep(opts Options) ([]string, error) {
 	return removed, nil
 }
 
-// archiveAndRemoveSession moves processed/* into archive/<date>/<sid>/
-// then RemoveAll-s the session dir. Failures inside the archive copy are
-// silenced so a missing/empty processed/ does not block delete.
+// messageSubdirs are the per-session subdirectories that hold message files
+// and must be preserved before a session is deleted. ORDER is not significant
+// (each is archived independently into its own archive subdir).
+var messageSubdirs = []string{"inbox", "outbox", "processed"}
+
+// archiveAndRemoveSession archives every message-bearing subdir (inbox/,
+// outbox/, processed/) into archive/<date>/<sid>/<subdir>/ then RemoveAll-s
+// the session dir. Failures inside the archive copy are silenced so a missing
+// or empty subdir does not block delete (best-effort).
+//
+// AUDIT-1 fix: previously only processed/ was archived, so RemoveAll silently
+// dropped any UNREAD inbox messages (and sent outbox copies) — reintroducing
+// the Patil §1.6 "inbox loss on cleanup" pain this fork exists to kill. That
+// loss is worse under auto-gc, where removal is automatic. Archiving all three
+// subdirs closes the gap for every cleanup path (gc + my-session + global),
+// since they all funnel through this helper.
+//
+// Subdir layout (vs a flat dir) keeps provenance explicit and removes any
+// name-collision risk between a message that sits in inbox/ and a same-named
+// copy in processed/.
 func archiveAndRemoveSession(dataDir, sid string, now func() time.Time) error {
 	sessionDir := filepath.Join(dataDir, "sessions", sid)
-	processedDir := filepath.Join(sessionDir, "processed")
+	dateDir := now().UTC().Format("2006-01-02")
 
-	if entries, err := os.ReadDir(processedDir); err == nil && len(entries) > 0 {
-		dateDir := now().UTC().Format("2006-01-02")
-		archDir := filepath.Join(dataDir, "archive", dateDir, sid)
-		if err := os.MkdirAll(archDir, 0o700); err == nil {
-			for _, e := range entries {
-				src := filepath.Join(processedDir, e.Name())
-				dst := filepath.Join(archDir, e.Name())
-				_ = os.Rename(src, dst) // best-effort
+	for _, sub := range messageSubdirs {
+		srcDir := filepath.Join(sessionDir, sub)
+		entries, err := os.ReadDir(srcDir)
+		if err != nil || len(entries) == 0 {
+			continue // missing or empty subdir — nothing to archive
+		}
+		archDir := filepath.Join(dataDir, "archive", dateDir, sid, sub)
+		if err := os.MkdirAll(archDir, 0o700); err != nil {
+			continue // best-effort: a failed archive must not block the rest
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue // message files only; no nested dirs expected
 			}
+			src := filepath.Join(srcDir, e.Name())
+			dst := filepath.Join(archDir, e.Name())
+			_ = os.Rename(src, dst) // best-effort, same-fs rename
 		}
 	}
 

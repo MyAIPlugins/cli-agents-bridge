@@ -131,13 +131,58 @@ func TestRun_ArchivesProcessedBeforeDelete(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{sid}, res.SessionsRemoved)
 
-	// Archive must exist at archive/2026-05-24/<sid>/
-	archDir := filepath.Join(dataDir, "archive", "2026-05-24", sid)
+	// Archive must exist at archive/2026-05-24/<sid>/processed/ (AUDIT-1: subdir layout)
+	archDir := filepath.Join(dataDir, "archive", "2026-05-24", sid, "processed")
 	entries, err := os.ReadDir(archDir)
 	require.NoError(t, err, "archive dir must exist after pre-delete move")
 	require.Len(t, entries, 1, "archived file count must match processed/ contents")
 	assert.Contains(t, entries[0].Name(), "msg-aaaaaaaaaaaa",
 		"archived filename preserves original message ID for audit")
+}
+
+// TestRun_ArchivesInboxAndOutboxBeforeDelete is the AUDIT-1 regression: unread
+// inbox/ messages (and outbox/ copies) must be archived, not silently wiped by
+// RemoveAll. Before the fix, only processed/ survived — pending inbox was lost.
+func TestRun_ArchivesInboxAndOutboxBeforeDelete(t *testing.T) {
+	t.Parallel()
+
+	dataDir := t.TempDir()
+	sid, _ := registerSession(t, dataDir, 0)
+
+	inboxDir := filepath.Join(dataDir, "sessions", sid, "inbox")
+	outboxDir := filepath.Join(dataDir, "sessions", sid, "outbox")
+	require.NoError(t, os.MkdirAll(inboxDir, 0o700))
+	require.NoError(t, os.MkdirAll(outboxDir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(inboxDir, "msg-pending0001.json"),
+		[]byte(`{"content":"unread"}`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(outboxDir, "msg-sent00000001.json"),
+		[]byte(`{"content":"sent"}`), 0o600))
+
+	now := time.Date(2026, 5, 24, 18, 0, 0, 0, time.UTC)
+	res, err := Run(context.Background(), Options{
+		DataDir:       dataDir,
+		Scope:         ScopeMySession,
+		OwnSessionID:  sid,
+		StaleSeconds:  300,
+		RetentionDays: 7,
+		Now:           fixedClock(now),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []string{sid}, res.SessionsRemoved)
+
+	base := filepath.Join(dataDir, "archive", "2026-05-24", sid)
+	assertArchivedFileContains(t, filepath.Join(base, "inbox"), "msg-pending0001",
+		"unread inbox message must survive cleanup (AUDIT-1, Patil §1.6 regression)")
+	assertArchivedFileContains(t, filepath.Join(base, "outbox"), "msg-sent00000001",
+		"sent outbox message must survive cleanup")
+}
+
+func assertArchivedFileContains(t *testing.T, archSubdir, wantName, msg string) {
+	t.Helper()
+	entries, err := os.ReadDir(archSubdir)
+	require.NoError(t, err, "archive subdir %q must exist: %s", archSubdir, msg)
+	require.Len(t, entries, 1, msg)
+	assert.Contains(t, entries[0].Name(), wantName, msg)
 }
 
 func TestRun_RetentionSweepPurgesOldArchives(t *testing.T) {

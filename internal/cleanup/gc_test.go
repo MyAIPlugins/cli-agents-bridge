@@ -93,17 +93,23 @@ func TestGCOrphans_MissingSessionsRootIsClean(t *testing.T) {
 	assert.Empty(t, removed)
 }
 
-// TestGCOrphans_ArchivesProcessedBeforeDelete verifies the pre-delete archive
-// is reused (no silent data loss) for a gc'd orphan, mirroring cleanup.Run.
-func TestGCOrphans_ArchivesProcessedBeforeDelete(t *testing.T) {
+// TestGCOrphans_ArchivesInboxAndProcessedBeforeDelete verifies the pre-delete
+// archive is reused (no silent data loss) for a gc'd orphan. AUDIT-1: both the
+// unread inbox message AND the processed message must land in archive/ under
+// their respective subdirs — not just processed/.
+func TestGCOrphans_ArchivesInboxAndProcessedBeforeDelete(t *testing.T) {
 	t.Parallel()
 
 	dataDir := t.TempDir()
 	base := time.Date(2026, 5, 29, 12, 0, 0, 0, time.UTC)
 	plantSession(t, dataDir, "orphan01", deadPID, base.Add(-48*time.Hour))
 
+	inboxDir := filepath.Join(dataDir, "sessions", "orphan01", "inbox")
 	processedDir := filepath.Join(dataDir, "sessions", "orphan01", "processed")
+	require.NoError(t, os.MkdirAll(inboxDir, 0o700))
 	require.NoError(t, os.MkdirAll(processedDir, 0o700))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(inboxDir, "msg-aaaaaaaaaaaa.json"), []byte(`{"unread":true}`), 0o600))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(processedDir, "20260527T100000.000Z-msg-bbbbbbbbbbbb.json"),
 		[]byte(`{"ok":true}`), 0o600))
@@ -114,11 +120,17 @@ func TestGCOrphans_ArchivesProcessedBeforeDelete(t *testing.T) {
 
 	assertGone(t, dataDir, "orphan01")
 
-	archDir := filepath.Join(dataDir, "archive", "2026-05-29", "orphan01")
-	entries, err := os.ReadDir(archDir)
-	require.NoError(t, err, "archive dir must exist after pre-delete move")
+	base2 := filepath.Join(dataDir, "archive", "2026-05-29", "orphan01")
+	assertArchived(t, filepath.Join(base2, "inbox"), "msg-aaaaaaaaaaaa")       // AUDIT-1: unread inbox preserved
+	assertArchived(t, filepath.Join(base2, "processed"), "msg-bbbbbbbbbbbb")
+}
+
+func assertArchived(t *testing.T, archSubdir, wantName string) {
+	t.Helper()
+	entries, err := os.ReadDir(archSubdir)
+	require.NoError(t, err, "archive subdir %q must exist after pre-delete move", archSubdir)
 	require.Len(t, entries, 1)
-	assert.Contains(t, entries[0].Name(), "msg-bbbbbbbbbbbb",
+	assert.Contains(t, entries[0].Name(), wantName,
 		"archived filename preserves original message ID for audit")
 }
 
