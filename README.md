@@ -158,6 +158,17 @@ See [docs/dev-conventions.md](./docs/dev-conventions.md) for Go style, commit fo
 
 ---
 
+## Authors & credits
+
+- **Idea, direction & review** — [Alan Curtis](https://www.alancurtisagency.com), AC Agency
+- **Implementation** — Claude Opus 4.7 & 4.8 (Anthropic)
+
+Built as a triadic VAL/ESC workflow: Alan drove the vision and gated every plan and commit; Claude designed and wrote the code. *The idea is Alan's, the code is Claude's.*
+
+Forked from [`PatilShreyas/claude-code-session-bridge`](https://github.com/PatilShreyas/claude-code-session-bridge) (MIT) — full credit to Shreyas Patil for the original session-bridge design that this builds on.
+
+---
+
 ## License
 
 MIT — see [LICENSE](./LICENSE). Compatible with upstream Patil license.
