@@ -1,0 +1,19 @@
+tests/integration/scenario4_test.go
+  s_281db1c8665bc7::t_776f7bf73ee3ee 70-72,74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "e2db0b7f504c954e051d2e4b695268de0546557d",
+  "prompts": {},
+  "sessions": {
+    "s_281db1c8665bc7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9173056b-4734-4c0a-b05d-f99478acb59c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
