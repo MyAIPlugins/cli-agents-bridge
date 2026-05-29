@@ -1,0 +1,29 @@
+.claude-plugin/marketplace.json
+  s_da508dd14cf7fe::t_07193298da6dff 12
+cmd/cab-bridge/main.go
+  s_da508dd14cf7fe::t_7bf9263fd434d7 19
+CHANGELOG.md
+  s_da508dd14cf7fe::t_cb93e69401dad4 8-23
+CLAUDE.md
+  s_da508dd14cf7fe::t_604088606f1ef3 127-129
+plugins/cli-agents-bridge/.claude-plugin/plugin.json
+  s_da508dd14cf7fe::t_ddb5b65428ad9b 4
+ROADMAP.md
+  s_da508dd14cf7fe::t_56596e8d72a1bf 115-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "48a46a3eab6c2395def0f894fdcdd907c1f39190",
+  "prompts": {},
+  "sessions": {
+    "s_da508dd14cf7fe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "04afe0d5-69d7-4ebf-829d-0e5bd111d8ae",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
