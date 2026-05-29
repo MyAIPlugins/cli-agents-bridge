@@ -67,10 +67,11 @@ func TestScenario4_CleanupCrossProjectSafety(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, dateDirs, "archive/ must contain a date dir")
 
-	// Walk archive/<date>/<idA>/ — must contain the staged processed file
-	archA := filepath.Join(archRoot, dateDirs[0].Name(), idA)
+	// Walk archive/<date>/<idA>/processed/ — must contain the staged processed
+	// file (AUDIT-1: archive layout is per-subdir inbox/outbox/processed, not flat).
+	archA := filepath.Join(archRoot, dateDirs[0].Name(), idA, "processed")
 	archEntries, err := os.ReadDir(archA)
-	require.NoError(t, err, "archive/<date>/<idA>/ must exist")
+	require.NoError(t, err, "archive/<date>/<idA>/processed/ must exist")
 	require.Len(t, archEntries, 1, "archive must contain exactly the staged processed file")
 	assert.Contains(t, archEntries[0].Name(), "msg-aaaaaaaaaaaa",
 		"archived filename preserves original message id")
