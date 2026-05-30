@@ -4,15 +4,15 @@ Robust multi-peer IPC bridge between CLI agent sessions (Claude Code, Codex, Aid
 
 Fork of [`PatilShreyas/claude-code-session-bridge`](https://github.com/PatilShreyas/claude-code-session-bridge) v0.1.0 (MIT) with 9 confirmed upstream bugs fixed structurally, role-based routing, namespace-isolated storage, security baseline, and a single Go binary distribution.
 
-**Status**: v0.2.0 release candidate. See [CHANGELOG.md](./CHANGELOG.md) for full details.
+**Status**: v0.2.2 (shipped). See [CHANGELOG.md](./CHANGELOG.md) and [Releases](https://github.com/MyAIPlugins/cli-agents-bridge/releases) for details.
 
 ---
 
 ## What it is
 
-A peer-to-peer message bus for AI coding agent sessions on the same machine. One Claude Code window registers as VAL (planner/orchestrator), another as ESC (executor); they exchange JSON messages via files in `~/.claude/cli-agents-bridge/sessions/<id>/{inbox,outbox}/`. Each agent polls its inbox and responds from its live conversation context — no external API calls, no approximation.
+A peer-to-peer message bus for AI coding agent sessions on the same machine. Two sessions register and exchange JSON messages via files in `~/.claude/cli-agents-bridge/sessions/<id>/{inbox,outbox}/`; each agent reads its inbox and responds from its live conversation context — no external API calls, no approximation. The common shape is an **orchestrator** and an **executor** (the built-in role names are `val` and `esc`), but **roles are free-form** — register any role name you like (see [Roles](#roles)).
 
-Designed for the workflow triadic VAL ↔ ESC cross-VS-Code, with scaling to 1 VAL + N ESC.
+Designed for an orchestrator ↔ executor workflow across separate windows, scaling to 1 orchestrator + N executors. For the in-agent operating guide, this plugin bundles the **`/cli-agents-bridge:bridge-workflow`** skill (PID/heartbeat model, instant wake with `listen --wait-one`, team isolation, delivery receipts).
 
 ---
 
@@ -78,6 +78,19 @@ cab-bridge receive --msg-id=msg-abc123def456 --max-deadline=1800
 cab-bridge cleanup                # own session only (default)
 cab-bridge cleanup --scope=global # cross-project (interactive confirm)
 ```
+
+---
+
+## Roles
+
+`register --role=<name>` accepts **any** role. Built-ins: `val` (orchestrator), `esc` (executor), plus `architect`, `observer`, `neutral`. Routing is permissive — custom roles (`planner`, `coder`, `peer`, ...) are accepted as-is. Two structural rules:
+
+- `observer` cannot send (read-only sink) — no flag overrides this.
+- `esc → esc` is rejected by default (route through the orchestrator); pass `--allow-mesh` to override.
+
+Two equal agents with no hierarchy can both register `--role=peer` — `peer ↔ peer` is allowed out of the box.
+
+When several pairs share one data dir, isolate them with `--team=<name>` and filter via `peers --team=<name>` (or give each pair a separate `CAB_DATA_DIR`).
 
 ---
 
