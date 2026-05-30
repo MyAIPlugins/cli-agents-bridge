@@ -22,6 +22,14 @@ type peerSummary struct {
 	PID           int       `json:"pid"`
 	LastHeartbeat time.Time `json:"lastHeartbeat"`
 	Stale         bool      `json:"stale"`
+	// InboxCount is the number of un-consumed messages in the peer's inbox
+	// (consumed ones are already moved to processed/), so it doubles as the
+	// pending count. LastConsumedMsgID is the id of the most recently consumed
+	// message. Together they let an orchestrator tell an idle peer from one
+	// actively draining its inbox (F-12), without relying on heartbeat - which
+	// only proves the listen process is alive, not that work is happening.
+	InboxCount        int    `json:"inboxCount"`
+	LastConsumedMsgID string `json:"lastConsumedMsgId,omitempty"`
 }
 
 func runPeers(args []string) error {
@@ -57,7 +65,7 @@ func runPeers(args []string) error {
 	}
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "SESSION_ID\tROLE\tAGENT_NAME\tPROJECT\tPID\tHEARTBEAT_AGE\tSTALE")
+	fmt.Fprintln(tw, "SESSION_ID\tROLE\tAGENT_NAME\tPROJECT\tPID\tHEARTBEAT_AGE\tSTALE\tINBOX\tLAST_CONSUMED")
 	now := time.Now().UTC()
 	for _, p := range peers {
 		age := now.Sub(p.LastHeartbeat).Truncate(time.Second)
@@ -65,8 +73,12 @@ func runPeers(args []string) error {
 		if p.Stale {
 			stale = "STALE"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
-			p.SessionID, p.Role, p.AgentName, p.ProjectName, p.PID, age, stale)
+		lastConsumed := p.LastConsumedMsgID
+		if lastConsumed == "" {
+			lastConsumed = "-"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\t%d\t%s\n",
+			p.SessionID, p.Role, p.AgentName, p.ProjectName, p.PID, age, stale, p.InboxCount, lastConsumed)
 	}
 	return tw.Flush()
 }
@@ -96,13 +108,15 @@ func collectPeers(mgr *session.Manager, dataDir string, staleSeconds int, includ
 			continue
 		}
 		out = append(out, peerSummary{
-			SessionID:     mf.SessionID,
-			Role:          mf.Role,
-			AgentName:     mf.AgentName,
-			ProjectName:   mf.ProjectName,
-			PID:           mf.PID,
-			LastHeartbeat: mf.LastHeartbeat,
-			Stale:         stale,
+			SessionID:         mf.SessionID,
+			Role:              mf.Role,
+			AgentName:         mf.AgentName,
+			ProjectName:       mf.ProjectName,
+			PID:               mf.PID,
+			LastHeartbeat:     mf.LastHeartbeat,
+			Stale:             stale,
+			InboxCount:        countJSON(filepath.Join(sessionsRoot, e.Name(), "inbox")),
+			LastConsumedMsgID: mf.LastConsumedMsgID,
 		})
 	}
 	return out, nil

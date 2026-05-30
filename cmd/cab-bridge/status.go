@@ -23,6 +23,12 @@ type statusReport struct {
 	OutboxCount   int       `json:"outboxCount"`
 	ProcessedCount int      `json:"processedCount"`
 	Stale         bool      `json:"stale"`
+	// LastConsumedMsgID is the id of the most recently consumed inbox message
+	// (F-12). Combined with inboxCount (== pending, since consumed messages are
+	// moved to processed/) it distinguishes an idle session from one actively
+	// draining its inbox. Empty (omitted) until the session consumes its first
+	// message - see the manifest field doc for the VAL-orchestrator case.
+	LastConsumedMsgID string `json:"lastConsumedMsgId,omitempty"`
 }
 
 func runStatus(args []string) error {
@@ -60,10 +66,11 @@ func runStatus(args []string) error {
 		StartedAt:      mf.StartedAt,
 		LastHeartbeat:  mf.LastHeartbeat,
 		HeartbeatAge:   time.Since(mf.LastHeartbeat).Truncate(time.Second).String(),
-		InboxCount:     countJSON(filepath.Join(sessionDir, "inbox")),
-		OutboxCount:    countJSON(filepath.Join(sessionDir, "outbox")),
-		ProcessedCount: countJSON(filepath.Join(sessionDir, "processed")),
-		Stale:          time.Since(mf.LastHeartbeat) > time.Duration(cfg.StaleSeconds)*time.Second,
+		InboxCount:        countJSON(filepath.Join(sessionDir, "inbox")),
+		OutboxCount:       countJSON(filepath.Join(sessionDir, "outbox")),
+		ProcessedCount:    countJSON(filepath.Join(sessionDir, "processed")),
+		Stale:             time.Since(mf.LastHeartbeat) > time.Duration(cfg.StaleSeconds)*time.Second,
+		LastConsumedMsgID: mf.LastConsumedMsgID,
 	}
 
 	out, err := json.MarshalIndent(report, "", "  ")
