@@ -1,0 +1,23 @@
+plugins/cli-agents-bridge/.claude-plugin/plugin.json
+  s_da508dd14cf7fe::t_87f474ff6fe42a 4
+.claude-plugin/marketplace.json
+  s_da508dd14cf7fe::t_3989504e87a7b9 12
+CHANGELOG.md
+  s_da508dd14cf7fe::t_1ae573dfb2540a 8-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "df2d66125497a2ccbd68d4bb80a273a20bc3259f",
+  "prompts": {},
+  "sessions": {
+    "s_da508dd14cf7fe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "04afe0d5-69d7-4ebf-829d-0e5bd111d8ae",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
