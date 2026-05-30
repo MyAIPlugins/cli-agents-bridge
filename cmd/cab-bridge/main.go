@@ -16,7 +16,10 @@ import (
 	transportfs "github.com/myAIPlugins/cli-agents-bridge/internal/transport/fs"
 )
 
-const version = "0.2.2"
+// version is injected at build time via -ldflags "-X main.version=<tag>"
+// (GoReleaser from the git tag, Makefile from `git describe`). The "dev"
+// default applies only to builds without ldflags (e.g. plain `go build`).
+var version = "dev"
 
 func init() {
 	syscall.Umask(0o077)
