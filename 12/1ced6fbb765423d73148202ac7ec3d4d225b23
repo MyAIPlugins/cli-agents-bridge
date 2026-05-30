@@ -1,0 +1,32 @@
+ROADMAP.md
+  s_da508dd14cf7fe::t_8ff2bd4e674781 17-20
+  s_da508dd14cf7fe::t_a0638fa0f0d415 8,11-16,21
+  s_da508dd14cf7fe::t_6e80b79d44d188 10
+docs/v0.2.2-plan.md
+  s_da508dd14cf7fe::t_f43504287c1e34 35-36
+  s_da508dd14cf7fe::t_788320769910c1 54
+  s_da508dd14cf7fe::t_709e2c1efb5e87 57-58
+  s_da508dd14cf7fe::t_524e7c511a41d0 66-68
+  s_da508dd14cf7fe::t_2cb5ef8cfa39a2 25-27
+  s_da508dd14cf7fe::t_9ff9f9841047cb 23
+  s_da508dd14cf7fe::t_c368b0af67b298 43-45
+SECURITY.md
+  s_da508dd14cf7fe::t_195ca226a6ee69 50
+  s_da508dd14cf7fe::t_c1d4b8e4904726 53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "121ced6fbb765423d73148202ac7ec3d4d225b23",
+  "prompts": {},
+  "sessions": {
+    "s_da508dd14cf7fe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "04afe0d5-69d7-4ebf-829d-0e5bd111d8ae",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
