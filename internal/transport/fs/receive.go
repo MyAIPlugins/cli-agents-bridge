@@ -125,6 +125,15 @@ func scanForReply(inboxDir, origMsgID string, maxContentBytes int) (*message.Mes
 			continue
 		}
 
+		// F-12 §3.3: an auto-ack carries inReplyTo=<origMsgID> for correlation,
+		// but it is NOT the response a receive is waiting for. Skip type=ack so
+		// the ack stays in inbox as the observable F-12 state signal and receive
+		// keeps waiting for the real reply. Any other reply type still matches
+		// (e.g. a legitimate notify reply), per the agreed semantics.
+		if m.Type == message.TypeAck {
+			continue
+		}
+
 		// Match. Delete BEFORE returning to ensure at-most-once consumption
 		// across concurrent ReceiveReply callers (same defensive pattern
 		// as PollInbox).

@@ -110,6 +110,12 @@ func runReceive(args []string) error {
 		return err
 	}
 
+	// F-12: record the matched reply as the last consumed message (best-effort;
+	// a failure here must not turn a successful receive into an error).
+	if serr := mgr.SetLastConsumed(sid, m.ID); serr != nil {
+		fmt.Fprintf(os.Stderr, "receive: record lastConsumed for %s: %v\n", m.ID, serr)
+	}
+
 	out, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return fmt.Errorf("receive: marshal output: %w", err)

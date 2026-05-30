@@ -19,6 +19,7 @@ func runListen(args []string) error {
 	fs := flag.NewFlagSet("listen", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	sessionIDFlag := fs.String("session-id", "", "session ID (default: longest-prefix lookup from cwd)")
+	noAutoAck := fs.Bool("no-auto-ack", false, "disable the automatic delivery receipt sent to a query's sender on consume (F-12)")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -94,6 +95,15 @@ func runListen(args []string) error {
 			// pipe to jq -c or process with a loop on the caller side).
 			if err := enc.Encode(m); err != nil {
 				return fmt.Errorf("listen: encode message: %w", err)
+			}
+			// F-12: record consumption (observability) then auto-ack the
+			// sender. Both are best-effort — a failure here must not break the
+			// listen loop, so we log and continue.
+			if err := mgr.SetLastConsumed(sid, m.ID); err != nil {
+				fmt.Fprintf(os.Stderr, "cab-bridge: listen: record lastConsumed for %s: %v\n", m.ID, err)
+			}
+			if !*noAutoAck {
+				maybeAutoAck(cfg, mgr, sid, m)
 			}
 		case <-ctx.Done():
 			// Loop continues — the next iteration will hit the closed

@@ -128,6 +128,32 @@ func TestReceiveReply_IgnoresNonMatchingMessages(t *testing.T) {
 	assert.NoError(t, sterr, "non-matching messages must NOT be consumed by ReceiveReply")
 }
 
+// TestReceiveReply_IgnoresAckReply is the F-12 §3.3 regression: an auto-ack
+// carries inReplyTo=<origID> for correlation, but it is NOT the response a
+// receive is waiting for. ReceiveReply must skip type=ack — leaving the ack in
+// inbox as the observable F-12 state signal — and keep waiting (timing out here
+// since no real reply ever arrives).
+func TestReceiveReply_IgnoresAckReply(t *testing.T) {
+	t.Parallel()
+
+	inbox := filepath.Join(t.TempDir(), "inbox")
+	require.NoError(t, os.MkdirAll(inbox, 0o700))
+
+	origID := "msg-aaaaaaaaaaaa"
+	ack := validReplyMessage(t, "msg-bbbbbbbbbbbb", "esc12345", "val12345", origID)
+	ack.Type = message.TypeAck // an auto-ack, not the awaited response
+	ack.Content = "ACK msg-aaaaaaaaaaaa: received"
+	writeMessage(t, inbox, ack)
+
+	_, err := ReceiveReply(context.Background(), inbox, origID, 80*time.Millisecond, 30*time.Millisecond, 65536)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrTimeout, "ReceiveReply must ignore an ack and keep waiting for the real reply")
+
+	// The ack must remain in inbox (not consumed) as the observable signal.
+	_, sterr := os.Stat(filepath.Join(inbox, ack.ID+".json"))
+	assert.NoError(t, sterr, "an ack reply must NOT be consumed by ReceiveReply")
+}
+
 func TestReceiveReply_MissingInboxDir_TimesOutCleanly(t *testing.T) {
 	t.Parallel()
 
