@@ -156,6 +156,19 @@ Report finali da VAL-flusso, VAL-links, ESC-links. Findings cab-bridge consolida
 - **F-8 RITIRATO**: il "brief mai mandato" della coppia links era un artefatto di osservazione (snapshot pre-invio + `ask` non popola outbox, F-9), NON azione-dichiarata-non-eseguita. VAL-links ha provato la consegna (msg-2d2325d136a8 in processed di ESC). Non promuovere.
 - **Confermati solidi**: `ask --file`, "verifica inbox/git non il return" (grazie a questo ESC-links ha scoperto un ask perso da F-11), modello PID/heartbeat.
 - **Costo dei problemi su entrambe le coppie**: BASSO — zero rework sul codice consegnato. Le frizioni sono costate comunicazione extra + cicli d'attesa (la latenza F-10). Tempo morto videogame ~14%, quasi tutto F-10 (bridge), non attesa-umano.
+
+### F-12 (post-mortem "stallo pnpm", VAL-flusso) — osservabilità dello stato-task: il fix più maturo
+
+Classe NUOVA, distinta da affidabilità (i dati non si perdono mai) e da F-10 (latenza wake): **l'orchestrator non sa lo STATO del task dell'executor**. Al timeout di `receive` i 3 casi sono indistinguibili — ESC lavora-lentamente / non ha preso il brief / ha finito ma reply persa. E `heartbeat`/`stale:false` indica solo che il processo listen è vivo, NON che l'agente stia agendo (può essere idle-in-listen). Lo "stallo pnpm" fu uno stallo di PERCEZIONE (escalation a vuoto), non di perdita: il commit `4a7ff64` era corretto.
+
+- **Fix #1 (ACK leggero) — quick-win, zero codice**: macchina a stati `inviato → ack(working) → done`. ESC manda `--type=notify` "ACK ricevuto/in-lavorazione" appena prende il brief, poi `--type=response` col commit a fine. VAL al timeout: ACK visto → lavora (aspetta), nessun ACK → non preso (re-invia). Adottabile SUBITO via convenzione (`notify` è già nello schema). Skill FIXED. **Fix prodotto v0.2.2**: `--type=ack` dedicato + auto-ack del binario su listen-emit.
+- **Fix #2 (osservabilità senza ACK)**: `peers`/`status` espongano `inboxPending` + `lastConsumedMsgId` per sessione → "1 pending non-consumato" = non l'ha preso; "0 pending, lastConsumed=brief" = ci lavora. Più: spostare il brief in `processed/` appena ESC lo legge (consumato = working).
+- **Fix #3 (re-ingaggio executor concluso)**: dopo un "esco dal listen", un brief nuovo NON sveglia l'executor spento (~minuti a re-ingaggiarsi). Skill FIXED (concordare a fine-fase se resta in listen; o `--type=wake`). 
+- **Fix #4 (igiene inbox orchestrator)**: marcare "gestito" (spostare in processed/) anche le reply lette a mano → inbox = solo non-gestiti. Skill FIXED.
+
+**Priorità v0.2.2 definitiva**: (1) ACK/F-12 — quick-win convenzione + fix-prodotto leggero, massimo impatto su stalli-di-percezione; (2) F-10 wake immediato (Monitor / finestra breve); (3) F-5 isolamento coppia (teamId / data-dir). Poi F-9/F-11/F-6 + distribution GoReleaser + hardening deferred.
+
+**Confermato da VAL-flusso — NON toccare (la base regge)**: zero data-loss (git+inbox preservati sempre), `ask --file` impeccabile, disciplina "verifica-non-assumere" ha retto in entrambe le direzioni. Il lavoro v0.2.2 è tutto OSSERVABILITÀ + REATTIVITÀ, zero su affidabilità.
 | **M3** Smoke test Alan + release v0.2.0 | 🔒 BLOCKED on M2 | +1 giorno post-M2 | ~45 min Alan-time + docs (README/PRIVACY/SECURITY) |
 | **M4** v0.3.0 — quality of life | 🔮 FUTURE | 1-2 settimane post-M3 | notification, transcript, retry, background-listen (gated da validation reale) |
 | **M5** v0.4.0 — daemon Unix socket | 🔮 FUTURE GATED | 1-2 settimane post-M4 | GATE: G1 latency >200ms ∧ G2 peer >3. Se non si verifica → daemon NON si fa |
