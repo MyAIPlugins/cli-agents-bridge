@@ -1,0 +1,21 @@
+.goreleaser.yml
+  s_17cf9974503425::t_c4657b3e5b077b 1-52
+.github/workflows/release.yml
+  s_17cf9974503425::t_3ef314d24398ea 1-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "d1eea3a6a10c012c567f5b33648fb6120842aeb7",
+  "prompts": {},
+  "sessions": {
+    "s_17cf9974503425": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "396e3cd6-3d2b-4eb8-bd31-c1eaf244833a",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
