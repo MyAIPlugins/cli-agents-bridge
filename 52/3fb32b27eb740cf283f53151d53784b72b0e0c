@@ -1,0 +1,26 @@
+cmd/cab-bridge/status.go
+  s_281db1c8665bc7::t_1a8b6650a68376 69-73
+  s_281db1c8665bc7::t_d12c697461fbb3 26-31
+cmd/cab-bridge/peers.go
+  s_281db1c8665bc7::t_083e182d263008 111-119
+  s_281db1c8665bc7::t_ffd5f81dc6fa8d 68,76-81
+  s_281db1c8665bc7::t_a183e837c3eb9f 25-32
+tests/integration/scenario_observe_test.go
+  s_281db1c8665bc7::t_3a192c665fd626 1-114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "523fb32b27eb740cf283f53151d53784b72b0e0c",
+  "prompts": {},
+  "sessions": {
+    "s_281db1c8665bc7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9173056b-4734-4c0a-b05d-f99478acb59c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
