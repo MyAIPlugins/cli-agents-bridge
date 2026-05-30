@@ -1,6 +1,6 @@
 # Security — cli-agents-bridge
 
-Threat model, implemented controls, reporting policy, and known limitations for cli-agents-bridge v0.2.0.
+Threat model, implemented controls, reporting policy, and known limitations for cli-agents-bridge (current through v0.2.2).
 
 ---
 
@@ -47,10 +47,10 @@ Explicitly NOT defended against in v0.2.0, with rationale:
 
 ### P2 — deferred to v0.2.1+
 
-- **SC-3 ownership check (primitive present, wiring deferred)**: `internal/security/perms.go::CheckOwnership` exists and returns `ErrOwnershipMismatch` on UID mismatch, but in v0.2.0 it is **not yet invoked at the manifest/message read call-sites** — it is defined, tested, and ready, but the wiring into `LoadManifest`/inbox reads lands in v0.2.1 (via an `fstat`-on-fd helper to also close the `Stat`-vs-`Lstat` TOCTOU). In v0.2.0 the **primary defense** against TM-1 (other-UID read) and TM-6 (manifest spoofing) is SC-1 (umask 077) + SC-2 (dir perms 700) + SC-7 (base-dir integrity), all of which are active and prevent another UID from reading the inbox or planting a spoofed manifest under a correctly-permissioned home. SC-3 adds defense-in-depth only when those perms are weakened or the data dir sits on a shared mount.
+- **SC-3 ownership check (primitive present, wiring still deferred)**: `internal/security/perms.go::CheckOwnership` exists and returns `ErrOwnershipMismatch` on UID mismatch, but it is **still not invoked at the manifest/message read call-sites** as of v0.2.2 — it is defined, tested, and ready, but the wiring into `LoadManifest`/inbox reads **remains deferred through v0.2.1 and v0.2.2** (target v0.2.3, via an `fstat`-on-fd helper to also close the `Stat`-vs-`Lstat` TOCTOU). Neither v0.2.1 (auto-gc + data-loss fix) nor v0.2.2 (observability + wake + team isolation) introduced it; we list it as deferred rather than claim a control not on the live path. The **primary defense** against TM-1 (other-UID read) and TM-6 (manifest spoofing) is SC-1 (umask 077) + SC-2 (dir perms 700) + SC-7 (base-dir integrity), all of which are active and prevent another UID from reading the inbox or planting a spoofed manifest under a correctly-permissioned home. SC-3 adds defense-in-depth only when those perms are weakened or the data dir sits on a shared mount.
 - **SC-8 PII detection**: explicitly NOT implemented. Regex on content for "looks like credit card / email" is false-positive prone and adds runtime cost without addressing the actual threat (same-UID malware reading plaintext). PRIVACY.md warns users not to send secrets.
 
-> **Honesty note (v0.2.0)**: this document describes controls as actually wired in the shipped binary. SC-3 is intentionally listed under "deferred" rather than "implemented" because, although the primitive exists, it is not yet called at runtime. We would rather under-claim than assert a control that is not on the live code path.
+> **Honesty note (through v0.2.2)**: this document describes controls as actually wired in the shipped binary. SC-3 stays under "deferred" (not "implemented") through v0.2.2 because, although the primitive exists, it is still not called at runtime. We would rather under-claim than assert a control that is not on the live code path.
 
 ---
 

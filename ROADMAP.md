@@ -5,9 +5,20 @@
 
 ---
 
-## Status corrente — 2026-05-29
+## Status corrente — 2026-05-30
 
-**Fase**: 🟢 **Sprint 6 DONE** — fixup post-smoke (commit `2404ebe` + `12bc8a4`) → 🟡 **Pre-tag** (ri-smoke PASS, push + tag v0.2.0)
+**Fase**: v0.2.2 — **codice COMPLETO** su `feat/v0.2.2` (8 commit: F-12×4 + F-10 `f52addc` + F-5 `54d4e36` + F-9 `3a69ca3` + release `8b5a751` bump→0.2.2). Gate VAL `-race -count=1` verde 10/10 indipendente + smoke reale PASS + lettura test critici + SECURITY.md SC-3 reso onesto (v0.2.1/v0.2.2 non l'hanno wirato). **PRONTO PER IL TAG** (con ok Alan; doc VAL non ancora committati, branch non pushato). Deferred → v0.2.3: F-11 race cleanup, GoReleaser binari multi-OS, SC-3 wiring.
+
+**v0.2.2 MUST #1 — F-12 ACK/osservabilità** (2026-05-30, coppia VAL-bridge/ESC-bridge, dogfooding via cab-bridge):
+- 4 commit `feat/v0.2.2`: `9e0c6c6` ack type + lenient forward-compat (solo type, status strict), `f565985` lastConsumedMsgId + manifest mutex su OGNI RMW, `1605835` auto-ack on listen emit (allow-list {query}, anti-loop strutturale) + scanForReply skip-ack + `--no-auto-ack`, `523fb32` inboxCount + lastConsumedMsgId in peers/status.
+- Gate VAL `go test -race -count=1 ./...` VERDE 10/10 indipendente (nessun cached, LL-11) + lettura riga-per-riga delle parti critiche. NON pushato; binario in PATH ancora 0.2.1 (F-12 non installato per il dogfooding → ACK ancora manuale).
+- 3 finding di metodo (dettaglio in `docs/v0.2.2-plan.md`): F-14 executor-sordo-durante-lavoro, F-15 ACK-semantico-sciatto→falso-allarme, F-16 (madre) verifica-ground-truth-su-disco-NON-resoconto. ESC degradato a fine sessione (4 allucinazioni: id/finding/campo-schema/gate inesistenti) → resettato; codice impeccabile, resoconto no.
+
+**v0.2.2 MUST #2 — F-10 wake immediato** (2026-05-30, ESC fresco post-reset):
+- Commit `f52addc`: `listen --wait-one` esce (exit 0) dopo il primo sweep non-vuoto via nuova `DrainInboxOnce` (sincrona, zero-perdita per costruzione — non perde i msg che `PollInbox` pre-sposta in `processed/` prima dell'emit bloccante). Helper `consumeInboxEntry` DRY (`poll_test.go` invariato). Fix deadlock teardown (`cancel()` esplicito, catch ESC oltre il brief). Exit 0/124, default invariato. Gate VAL `-race -count=1` verde indipendente + lettura riga-per-riga.
+- **F-14 riconfermato sul campo**: dopo aver concluso il turno F-10, ESC "dorme" (stale, fuori listen) e il brief F-5 NON lo sveglia finché Alan non lo riattiva → conferma il bisogno di `--wait-one` nel binario in PATH (oggi 0.2.1) + disciplina "executor mantiene ascolto attivo tra i task".
+
+**Fase storica v0.2.0**: 🟢 **Sprint 6 DONE** — fixup post-smoke (commit `2404ebe` + `12bc8a4`) → 🟡 **Pre-tag** (ri-smoke PASS, push + tag v0.2.0)
 
 **Sprint 6 — fixup post-smoke** (commit `2404ebe` BUG-A + `12bc8a4` BUG-B/chore, audit VAL PASS + repro empirico):
 Lo smoke test manuale (step 1-15) ha scoperto 2 bug che i test unit/integration NON coglievano (loro simulano il long-running con tick accelerato; lo smoke usa il CLI reale one-shot):
