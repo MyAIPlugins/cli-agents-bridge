@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
@@ -18,12 +19,20 @@ func runRegister(args []string) error {
 	agentName := fs.String("agent-name", "", "human-readable name (default: project basename)")
 	projectPath := fs.String("project-path", "", "project root path (default: cwd)")
 	forceNew := fs.Bool("force-new", false, "override existing live session for the same project (BUG-6)")
+	team := fs.String("team", "", "team label isolating this pair from others in the same data dir (F-5); peers --team filters on it")
 	asJSON := fs.Bool("json", true, "emit registration manifest as JSON on stdout (default true)")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
 		return err
+	}
+
+	// Validate the team label only when provided — empty is valid ("no team").
+	if *team != "" {
+		if err := security.ValidateTeamID(*team); err != nil {
+			return err
+		}
 	}
 
 	cfg, err := loadConfigOrFail()
@@ -52,6 +61,7 @@ func runRegister(args []string) error {
 		AgentName:   *agentName,
 		Role:        *role,
 		ForceNew:    *forceNew,
+		TeamID:      *team,
 	})
 	if err != nil {
 		return err

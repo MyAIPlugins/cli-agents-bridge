@@ -69,6 +69,10 @@ type RegisterOpts struct {
 	Role         string
 	ForceNew     bool
 	Capabilities []string
+	// TeamID isolates this session's pair from others in the same data dir
+	// (F-5). Empty means "no team"; the caller validates a non-empty value
+	// (security.ValidateTeamID) before passing it here.
+	TeamID string
 }
 
 // Register creates a new session: generates a session ID, writes manifest.json
@@ -146,6 +150,7 @@ func (m *Manager) Register(ctx context.Context, opts RegisterOpts) (*Manifest, f
 		LastHeartbeat: now,
 		Status:        StatusActive,
 		Capabilities:  defaultCapabilities(opts.Capabilities),
+		TeamID:        opts.TeamID, // empty = no team; omitempty drops it from JSON
 	}
 
 	if err := m.SaveManifest(manifest); err != nil {

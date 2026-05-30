@@ -45,6 +45,18 @@ var ErrInvalidSessionID = errors.New("invalid session ID: must match ^[a-z0-9]{6
 // not match the calling process UID. Treated as a hard security failure.
 var ErrOwnershipMismatch = errors.New("ownership mismatch: file not owned by current user")
 
+// teamIDPattern validates the F-5 team label. Unlike a session ID this is NOT
+// used to build a filesystem path (it is only a manifest field), so the rule is
+// hygienic rather than security-critical: 1-32 chars, must start with a
+// lowercase alphanumeric, then lowercase alphanumeric / '-' / '_'. Lowercase
+// only — consistency with sessionIDPattern beats the convenience of mixed case.
+var teamIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
+
+// ErrInvalidTeamID is returned by ValidateTeamID when a non-empty team label
+// does not match teamIDPattern. A hard failure (exit 1) — the user passed a
+// malformed --team value.
+var ErrInvalidTeamID = errors.New("invalid team ID: must match ^[a-z0-9][a-z0-9_-]{0,31}$")
+
 // ValidateSessionID applies sessionIDPattern to id and returns
 // ErrInvalidSessionID if it does not match. Apply this BEFORE using id in any
 // filepath.Join or os.Open call — see threat TM-2.
@@ -54,6 +66,18 @@ var ErrOwnershipMismatch = errors.New("ownership mismatch: file not owned by cur
 func ValidateSessionID(id string) error {
 	if !sessionIDPattern.MatchString(id) {
 		return fmt.Errorf("%w: got %q", ErrInvalidSessionID, id)
+	}
+	return nil
+}
+
+// ValidateTeamID applies teamIDPattern to a NON-EMPTY team label and returns
+// ErrInvalidTeamID if it does not match. The caller must only invoke this when
+// --team was actually provided: an empty team is valid ("no team") and must NOT
+// reach here. Whitespace, uppercase, path separators and a leading '-'/'_' all
+// fail.
+func ValidateTeamID(id string) error {
+	if !teamIDPattern.MatchString(id) {
+		return fmt.Errorf("%w: got %q", ErrInvalidTeamID, id)
 	}
 	return nil
 }

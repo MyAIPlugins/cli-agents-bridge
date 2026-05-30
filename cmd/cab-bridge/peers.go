@@ -30,6 +30,9 @@ type peerSummary struct {
 	// only proves the listen process is alive, not that work is happening.
 	InboxCount        int    `json:"inboxCount"`
 	LastConsumedMsgID string `json:"lastConsumedMsgId,omitempty"`
+	// TeamID is the F-5 isolation label. Empty (omitted) for sessions
+	// registered without --team. peers --team=<x> filters on it.
+	TeamID string `json:"teamId,omitempty"`
 }
 
 func runPeers(args []string) error {
@@ -37,6 +40,7 @@ func runPeers(args []string) error {
 	fs.SetOutput(os.Stderr)
 	asJSON := fs.Bool("json", false, "emit JSON array on stdout (default: human tabwriter)")
 	includeStale := fs.Bool("include-stale", true, "include sessions whose lastHeartbeat exceeds StaleSeconds")
+	team := fs.String("team", "", "show only sessions whose teamId matches (F-5 isolation); default: all sessions")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -50,7 +54,7 @@ func runPeers(args []string) error {
 	}
 	mgr := newSessionManager(cfg)
 
-	peers, err := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, *includeStale)
+	peers, err := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, *includeStale, *team)
 	if err != nil {
 		return err
 	}
@@ -65,7 +69,7 @@ func runPeers(args []string) error {
 	}
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "SESSION_ID\tROLE\tAGENT_NAME\tPROJECT\tPID\tHEARTBEAT_AGE\tSTALE\tINBOX\tLAST_CONSUMED")
+	fmt.Fprintln(tw, "SESSION_ID\tROLE\tAGENT_NAME\tPROJECT\tTEAM\tPID\tHEARTBEAT_AGE\tSTALE\tINBOX\tLAST_CONSUMED")
 	now := time.Now().UTC()
 	for _, p := range peers {
 		age := now.Sub(p.LastHeartbeat).Truncate(time.Second)
@@ -77,13 +81,21 @@ func runPeers(args []string) error {
 		if lastConsumed == "" {
 			lastConsumed = "-"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\t%d\t%s\n",
-			p.SessionID, p.Role, p.AgentName, p.ProjectName, p.PID, age, stale, p.InboxCount, lastConsumed)
+		teamCol := p.TeamID
+		if teamCol == "" {
+			teamCol = "-"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\t%d\t%s\n",
+			p.SessionID, p.Role, p.AgentName, p.ProjectName, teamCol, p.PID, age, stale, p.InboxCount, lastConsumed)
 	}
 	return tw.Flush()
 }
 
-func collectPeers(mgr *session.Manager, dataDir string, staleSeconds int, includeStale bool) ([]peerSummary, error) {
+// collectPeers lists peer sessions. teamFilter, when non-empty, restricts the
+// result to sessions whose teamId matches exactly (F-5); sessions without a team
+// are therefore excluded by any filter. An empty teamFilter returns all sessions
+// (the unchanged global default).
+func collectPeers(mgr *session.Manager, dataDir string, staleSeconds int, includeStale bool, teamFilter string) ([]peerSummary, error) {
 	sessionsRoot := filepath.Join(dataDir, "sessions")
 	entries, err := os.ReadDir(sessionsRoot)
 	if err != nil {
@@ -103,6 +115,9 @@ func collectPeers(mgr *session.Manager, dataDir string, staleSeconds int, includ
 		if err != nil {
 			continue
 		}
+		if teamFilter != "" && mf.TeamID != teamFilter {
+			continue
+		}
 		stale := mf.LastHeartbeat.Before(cutoff)
 		if stale && !includeStale {
 			continue
@@ -117,6 +132,7 @@ func collectPeers(mgr *session.Manager, dataDir string, staleSeconds int, includ
 			Stale:             stale,
 			InboxCount:        countJSON(filepath.Join(sessionsRoot, e.Name(), "inbox")),
 			LastConsumedMsgID: mf.LastConsumedMsgID,
+			TeamID:            mf.TeamID,
 		})
 	}
 	return out, nil

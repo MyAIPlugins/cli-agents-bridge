@@ -62,6 +62,53 @@ func TestValidateSessionID(t *testing.T) {
 	}
 }
 
+// TestValidateTeamID covers the F-5 team label hygiene.
+// Regex: ^[a-z0-9][a-z0-9_-]{0,31}$ (1-32 chars, leading alphanumeric, then
+// lowercase alphanumeric / '-' / '_'). The empty string is NOT tested as valid
+// here: the caller skips ValidateTeamID entirely when --team is empty, so an
+// empty value never reaches this function.
+func TestValidateTeamID(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		id      string
+		wantErr bool
+	}{
+		// Valid
+		{"single char", "a", false},
+		{"single digit", "1", false},
+		{"alpha", "alpha", false},
+		{"with dash", "team-1", false},
+		{"with underscore", "team_1", false},
+		{"digit lead then mix", "0ab-c_d", false},
+		{"32 chars upper bound", "a234567890123456789012345678901b", false},
+
+		// Invalid: boundary / charset
+		{"empty string", "", true},
+		{"33 chars too long", "a2345678901234567890123456789012x", true},
+		{"uppercase", "Team", true},
+		{"leading dash", "-x", true},
+		{"leading underscore", "_x", true},
+		{"with space", "team 1", true},
+		{"with dot", "team.1", true},
+		{"with slash", "team/1", true},
+		{"path traversal", "../x", true},
+		{"unicode", "tëam", true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateTeamID(tc.id)
+			if tc.wantErr {
+				assert.ErrorIs(t, err, ErrInvalidTeamID, "id=%q should be rejected", tc.id)
+			} else {
+				assert.NoError(t, err, "id=%q should be accepted", tc.id)
+			}
+		})
+	}
+}
+
 // TestCheckOwnership covers SC-3 (ownership verification).
 // Happy path: file created by current process is owned by current UID → ok.
 // Mismatch path: /etc/passwd is owned by root (UID 0); when current UID != 0

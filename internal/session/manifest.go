@@ -60,6 +60,14 @@ type Manifest struct {
 	// empty by design — it pulls replies via receive and observes peers' acks in
 	// its own inbox instead. An empty value is therefore NOT a bug.
 	LastConsumedMsgID string `json:"lastConsumedMsgId,omitempty"`
+
+	// TeamID isolates a VAL/ESC pair from other pairs sharing the same data dir
+	// (F-5). Set via `register --team=<name>`. peers --team=<name> filters on it,
+	// and whoami prints it so an agent can confirm which team/data dir it is in.
+	// Optional and additive: empty means "no team" (the v1/legacy and
+	// register-without-team default), so omitempty keeps it out of those
+	// manifests and Validate/ApplyV1Defaults deliberately ignore it.
+	TeamID string `json:"teamId,omitempty"`
 }
 
 // Validate checks that the manifest has the minimum required fields for
