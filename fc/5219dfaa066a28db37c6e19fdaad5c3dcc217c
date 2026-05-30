@@ -1,0 +1,21 @@
+tests/integration/scenario_team_test.go
+  s_c99b42d9f3d32d::t_8466481671f7bf 42-46
+tests/integration/scenario_observe_test.go
+  s_c99b42d9f3d32d::t_6f2ee41cdf5c68 28-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "fc5219dfaa066a28db37c6e19fdaad5c3dcc217c",
+  "prompts": {},
+  "sessions": {
+    "s_c99b42d9f3d32d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67be31bc-ff6b-4cdd-8291-c8f038f8f051",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
