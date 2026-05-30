@@ -1,0 +1,23 @@
+cmd/cab-bridge/main.go
+  s_4d7e9f199f4f5f::t_ace3637aa3d0f9 19
+plugins/cli-agents-bridge/.claude-plugin/plugin.json
+  s_4d7e9f199f4f5f::t_467a2e6229fddc 4
+.claude-plugin/marketplace.json
+  s_4d7e9f199f4f5f::t_64b5505cea644c 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "8b5a751f866ae904c7e7c5a43505216914ca891f",
+  "prompts": {},
+  "sessions": {
+    "s_4d7e9f199f4f5f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a61e16c-4794-4dba-9a14-fb9263f841ce",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
