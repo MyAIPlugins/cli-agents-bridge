@@ -1,0 +1,52 @@
+# GoReleaser config (v2) — prebuilt multi-OS binaries for GitHub Releases.
+#
+# Local gate (no install): builds dist/ without publishing —
+#   go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean
+# Validate config:
+#   go run github.com/goreleaser/goreleaser/v2@latest check
+#
+# Matrix darwin/linux x amd64/arm64 mirrors Makefile cross-compile-all and
+# .github/workflows/ci.yml (CGO_ENABLED=0, -trimpath). Version is injected from
+# the git tag into main.version (single source of truth = the tag).
+version: 2
+project_name: cab-bridge
+
+builds:
+  - id: cab-bridge
+    main: ./cmd/cab-bridge
+    binary: cab-bridge
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: cab-bridge
+    formats:
+      - tar.gz
+    name_template: "cab-bridge_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  github:
+    owner: myAIPlugins
+    name: cli-agents-bridge
+  draft: false
+  prerelease: auto
+
+changelog:
+  disable: true
