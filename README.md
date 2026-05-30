@@ -34,6 +34,28 @@ Verify:
 # → cab-bridge --help output
 ```
 
+### Download a prebuilt binary (no Go required)
+
+Standalone CLI use (outside the plugin)? Grab the archive for your OS/arch from the latest [Release](https://github.com/myAIPlugins/cli-agents-bridge/releases/latest):
+
+```
+# pick your platform: darwin_arm64, darwin_amd64, linux_amd64, linux_arm64
+tar -xzf cab-bridge_<version>_<os>_<arch>.tar.gz
+install -m 755 cab-bridge ~/.local/bin/   # ensure ~/.local/bin is in PATH
+cab-bridge version
+```
+
+Verify the download against `checksums.txt` published alongside the archives.
+
+### Build from source
+
+Requires Go 1.25+:
+
+```
+make build          # -> bin/cab-bridge (version from `git describe`)
+make install-dev    # symlink into ~/.local/bin for development
+```
+
 ### Register two peers
 
 **Window 1 (VAL)**:
