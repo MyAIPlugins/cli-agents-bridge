@@ -1,0 +1,27 @@
+internal/session/manager.go
+  s_281db1c8665bc7::t_46a79419366fd2 295-297,299-300,309-321
+  s_281db1c8665bc7::t_89b622779c81e5 38-51
+  s_281db1c8665bc7::t_8fd7d8fac1b631 13
+  s_281db1c8665bc7::t_b4cd19755dfd62 345-346
+internal/session/manifest.go
+  s_281db1c8665bc7::t_be27f5ce762ea2 51-62
+internal/session/manager_test.go
+  s_281db1c8665bc7::t_b602caf4c0418e 6,10
+  s_281db1c8665bc7::t_0d16118749e435 360-430
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "f565985402aeb4feb94fa498885d8538eb014194",
+  "prompts": {},
+  "sessions": {
+    "s_281db1c8665bc7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9173056b-4734-4c0a-b05d-f99478acb59c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
