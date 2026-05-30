@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "cli-agents-bridge",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "description": "Robust multi-peer IPC bridge between CLI agent sessions (Claude Code, Codex, Aider, Cline). Role-based routing, scoped cleanup, namespace separation, security baseline.",
       "author": {
         "name": "Alan Curtis (AC Agency)",

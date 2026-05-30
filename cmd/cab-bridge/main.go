@@ -16,7 +16,7 @@ import (
 	transportfs "github.com/myAIPlugins/cli-agents-bridge/internal/transport/fs"
 )
 
-const version = "0.2.1"
+const version = "0.2.2"
 
 func init() {
 	syscall.Umask(0o077)
