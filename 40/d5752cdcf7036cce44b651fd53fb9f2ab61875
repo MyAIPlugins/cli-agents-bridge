@@ -1,0 +1,26 @@
+internal/session/scope_test.go
+  s_c99b42d9f3d32d::t_66e1f8bf79fd5d 1-169
+internal/session/manager.go
+  s_c99b42d9f3d32d::t_21d002d32bbfdb 160
+  s_c99b42d9f3d32d::t_9c60c1349a6913 76-81
+internal/session/scope.go
+  s_c99b42d9f3d32d::t_ee4ef152901f57 1-69
+internal/session/manifest.go
+  s_c99b42d9f3d32d::t_082b59fd73f636 71-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "40d5752cdcf7036cce44b651fd53fb9f2ab61875",
+  "prompts": {},
+  "sessions": {
+    "s_c99b42d9f3d32d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67be31bc-ff6b-4cdd-8291-c8f038f8f051",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
