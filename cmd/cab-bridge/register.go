@@ -62,6 +62,7 @@ func runRegister(args []string) error {
 		Role:        *role,
 		ForceNew:    *forceNew,
 		TeamID:      *team,
+		Scope:       resolveScope(pp), // F-17: auto project-root; "" on non-fatal failure
 	})
 	if err != nil {
 		return err

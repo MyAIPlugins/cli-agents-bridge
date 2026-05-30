@@ -21,7 +21,12 @@ type whoamiReport struct {
 	Role        string `json:"role"`
 	TeamID      string `json:"teamId,omitempty"`
 	ProjectPath string `json:"projectPath"`
-	DataDir     string `json:"dataDir"`
+	// Scope is the F-17 auto-derived project root this session belongs to (the
+	// value peers filters on by default). Shown from the stored manifest field,
+	// not recomputed, so it reflects the root captured at register time. Empty
+	// (omitted) for legacy/pre-F-17 sessions.
+	Scope   string `json:"scope,omitempty"`
+	DataDir string `json:"dataDir"`
 }
 
 func runWhoami(args []string) error {
@@ -57,6 +62,7 @@ func runWhoami(args []string) error {
 		Role:        mf.Role,
 		TeamID:      mf.TeamID,
 		ProjectPath: mf.ProjectPath,
+		Scope:       mf.Scope,
 		DataDir:     cfg.DataDir,
 	}
 
@@ -73,11 +79,16 @@ func runWhoami(args []string) error {
 	if team == "" {
 		team = "(none)"
 	}
+	scope := report.Scope
+	if scope == "" {
+		scope = "(none)"
+	}
 	fmt.Printf("session:     %s\n", report.SessionID)
 	fmt.Printf("agent:       %s\n", report.AgentName)
 	fmt.Printf("role:        %s\n", report.Role)
 	fmt.Printf("team:        %s\n", team)
 	fmt.Printf("projectPath: %s\n", report.ProjectPath)
+	fmt.Printf("scope:       %s\n", scope)
 	fmt.Printf("dataDir:     %s\n", report.DataDir)
 	return nil
 }

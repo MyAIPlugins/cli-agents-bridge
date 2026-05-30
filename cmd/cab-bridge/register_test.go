@@ -115,6 +115,43 @@ func TestRunRegister_AutoGCSweepsOrphanThenCreates(t *testing.T) {
 	assert.Equal(t, dirs[0], firstLine(out))
 }
 
+// TestRunRegister_PopulatesScope is the F-17 register wiring: registering from a
+// subfolder of a .git project must store that project root as the manifest
+// scope (resolveScope walks up from the --project-path). A marker-less path
+// would instead store itself (the cwd fallback), also asserted.
+func TestRunRegister_PopulatesScope(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".git"), 0o700))
+	sub := filepath.Join(root, "docs")
+	require.NoError(t, os.MkdirAll(sub, 0o700))
+
+	mgr := session.NewManager(dataDir, time.Second)
+
+	var runErr error
+	out := captureStdout(t, func() {
+		runErr = runRegister([]string{"--role=esc", "--project-path=" + sub, "--json=false"})
+	})
+	require.NoError(t, runErr)
+	mf, err := mgr.LoadManifest(firstLine(out))
+	require.NoError(t, err)
+	assert.Equal(t, root, mf.Scope, "scope must be the .git project root, derived from the subfolder")
+
+	// A marker-less project path stores itself as scope (cwd fallback).
+	bare := t.TempDir()
+	var runErr2 error
+	out2 := captureStdout(t, func() {
+		runErr2 = runRegister([]string{"--role=esc", "--project-path=" + bare, "--json=false"})
+	})
+	require.NoError(t, runErr2)
+	mf2, err := mgr.LoadManifest(firstLine(out2))
+	require.NoError(t, err)
+	assert.Equal(t, bare, mf2.Scope, "no marker -> scope is the project path itself")
+}
+
 // captureStdout redirects os.Stdout for the duration of fn and returns what was
 // written, so register's manifest/ID output does not pollute test logs.
 func captureStdout(t *testing.T, fn func()) string {

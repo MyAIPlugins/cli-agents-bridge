@@ -151,3 +151,24 @@ func resolveSessionID(mgr *session.Manager, flagValue string) (string, error) {
 	}
 	return sid, nil
 }
+
+// resolveScope derives the F-17 project-root scope for path: it resolves $HOME
+// and calls session.FindProjectRoot. Both steps are non-fatal — scope is a
+// convenience filter that must NEVER block register or peers — so any failure is
+// logged to stderr and the function returns "" (the "no scope / show-all"
+// sentinel). This is the single EXPLICIT, documented, logged scope fallback;
+// there is no silent degradation. A missing $HOME only disables the dotfiles
+// exclusion (FindProjectRoot tolerates an empty home).
+func resolveScope(path string) string {
+	home, herr := os.UserHomeDir()
+	if herr != nil {
+		fmt.Fprintf(os.Stderr, "cab-bridge: cannot resolve home for scope detection (non-fatal): %v\n", herr)
+		home = ""
+	}
+	scope, serr := session.FindProjectRoot(path, home)
+	if serr != nil {
+		fmt.Fprintf(os.Stderr, "cab-bridge: scope detection failed for %q (non-fatal): %v — proceeding without scope\n", path, serr)
+		return ""
+	}
+	return scope
+}
