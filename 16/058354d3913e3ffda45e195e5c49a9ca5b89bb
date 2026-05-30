@@ -1,0 +1,35 @@
+tests/integration/scenario_autoack_test.go
+  s_281db1c8665bc7::t_deebe57d308445 1-141
+cmd/cab-bridge/send_test.go
+  s_281db1c8665bc7::t_2eafb48aedae5b 1-25,51-94,97-133,136-167,169-180,183-187
+  s_281db1c8665bc7::t_245f0b1c014df5 26-50,95-96,134-135,168,181-182
+internal/transport/fs/receive.go
+  s_281db1c8665bc7::t_d300fef35d95f3 128-136
+cmd/cab-bridge/listen.go
+  s_281db1c8665bc7::t_a67f56db0731df 99-107
+  s_281db1c8665bc7::t_cff5118641033e 22
+cmd/cab-bridge/receive.go
+  s_281db1c8665bc7::t_0bf484d0edb8b2 113-118
+cmd/cab-bridge/ask.go
+  s_281db1c8665bc7::t_f25a08aa723319 67
+cmd/cab-bridge/send.go
+  s_281db1c8665bc7::t_a8c4c620ad5484 1-122
+internal/transport/fs/receive_test.go
+  s_281db1c8665bc7::t_7f0b5c37a4afb3 131-156
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "16058354d3913e3ffda45e195e5c49a9ca5b89bb",
+  "prompts": {},
+  "sessions": {
+    "s_281db1c8665bc7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9173056b-4734-4c0a-b05d-f99478acb59c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
