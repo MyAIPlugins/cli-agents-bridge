@@ -78,6 +78,18 @@ func sendMessage(cfg config.Config, mgr *session.Manager, fromSID, to, msgType, 
 	if err := transportfs.AtomicWriteBytes(dst, data, 0o600); err != nil {
 		return "", fmt.Errorf("send: write message: %w", err)
 	}
+
+	// F-9: best-effort copy into the SENDER's outbox so the agent can verify its
+	// own sends (outboxCount becomes meaningful, `cab sent` lists them). The real
+	// delivery (target inbox above) has already succeeded — a failed outbox copy
+	// must NOT fail the send, so errors are logged and swallowed, same posture as
+	// the auto-ack and heartbeat goroutine. msgID is returned regardless.
+	senderOutbox := filepath.Join(cfg.DataDir, "sessions", fromSID, "outbox")
+	if mkErr := os.MkdirAll(senderOutbox, 0o700); mkErr != nil {
+		fmt.Fprintf(os.Stderr, "cab-bridge: send: mkdir sender outbox (non-fatal): %v\n", mkErr)
+	} else if cpErr := transportfs.AtomicWriteBytes(filepath.Join(senderOutbox, msgID+".json"), data, 0o600); cpErr != nil {
+		fmt.Fprintf(os.Stderr, "cab-bridge: send: outbox copy for %s (non-fatal): %v\n", msgID, cpErr)
+	}
 	return msgID, nil
 }
 

@@ -108,6 +108,49 @@ func TestSendMessage_ResolvesRolesFromManifests(t *testing.T) {
 	assert.Equal(t, message.TypeQuery, m.Type)
 }
 
+// TestSendMessage_PopulatesSenderOutbox: F-9 — after a send, a copy of the
+// message lands in the SENDER's outbox so the agent can verify its own sends.
+func TestSendMessage_PopulatesSenderOutbox(t *testing.T) {
+	t.Parallel()
+
+	cfg, mgr, dataDir := testCfgMgr(t)
+	plantRoleSession(t, dataDir, "valsess1", session.RoleVal)
+	plantRoleSession(t, dataDir, "escsess1", session.RoleEsc)
+
+	id, err := sendMessage(cfg, mgr, "valsess1", "escsess1", message.TypeQuery, "hi", nil, false)
+	require.NoError(t, err)
+
+	data, rerr := os.ReadFile(filepath.Join(dataDir, "sessions", "valsess1", "outbox", id+".json"))
+	require.NoError(t, rerr, "sender outbox must contain a copy of the sent message")
+	m, derr := message.DecodeLenient(data, 65536)
+	require.NoError(t, derr)
+	assert.Equal(t, id, m.ID)
+	assert.Equal(t, "escsess1", m.To, "outbox copy records the recipient")
+	assert.Equal(t, message.TypeQuery, m.Type)
+}
+
+// TestSendMessage_OutboxCopyNonFatal is the punto-1 guard: the outbox copy is
+// best-effort. We sabotage the sender's outbox (a FILE where the dir should be,
+// so MkdirAll fails); sendMessage must STILL return the msgID with no error and
+// the real delivery (recipient inbox) must have happened.
+func TestSendMessage_OutboxCopyNonFatal(t *testing.T) {
+	t.Parallel()
+
+	cfg, mgr, dataDir := testCfgMgr(t)
+	plantRoleSession(t, dataDir, "valsess1", session.RoleVal)
+	plantRoleSession(t, dataDir, "escsess1", session.RoleEsc)
+
+	// A file named "outbox" makes MkdirAll(sessions/valsess1/outbox) fail.
+	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "sessions", "valsess1", "outbox"), []byte("not a dir"), 0o600))
+
+	id, err := sendMessage(cfg, mgr, "valsess1", "escsess1", message.TypeQuery, "hi", nil, false)
+	require.NoError(t, err, "a failed outbox copy must NOT fail the send")
+	require.NotEmpty(t, id, "msgID must be returned even when the outbox copy fails")
+
+	require.Equal(t, 1, countInboxJSON(t, dataDir, "escsess1"), "recipient inbox must still have the message")
+	assert.Equal(t, id, firstInboxMsg(t, dataDir, "escsess1").ID)
+}
+
 // TestMaybeAutoAck_AcksOnlyQuery is the loop-prevention + allow-list test: only
 // a consumed query produces an auto-ack; ack/response/notify/ping/event do not
 // (so an ack never begets an ack). When an ack is sent, it is type=ack with
