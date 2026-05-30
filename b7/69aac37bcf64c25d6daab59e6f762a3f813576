@@ -1,0 +1,25 @@
+Makefile
+  s_17cf9974503425::t_cb2c666de76d85 37,40
+  s_17cf9974503425::t_b80b489e4f1d59 52-54
+  s_17cf9974503425::t_d611e030d037b7 11-15,17
+cmd/cab-bridge/main.go
+  s_17cf9974503425::t_3d23bd9e9b7550 19-22
+.github/workflows/ci.yml
+  s_17cf9974503425::t_987657fa43f94b 37-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "b769aac37bcf64c25d6daab59e6f762a3f813576",
+  "prompts": {},
+  "sessions": {
+    "s_17cf9974503425": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "396e3cd6-3d2b-4eb8-bd31-c1eaf244833a",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
