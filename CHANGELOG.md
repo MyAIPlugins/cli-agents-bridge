@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] — 2026-05-30
+
+Automatic per-project isolation. Built via the bridge dogfooding workflow.
+
+### Added
+- **Auto-scope by project root (F-17)**: `register` derives a `scope` from the project root — the `.git` marker walking up from cwd (a dir for a clone, a FILE for a git worktree), with `$HOME` excluded so a dotfiles repo never collapses scopes, and fallback = cwd for marker-less projects. A VAL at the repo root and an ESC in a subfolder resolve to the same scope and see each other with zero config. `whoami` now shows `scope`.
+
+### Changed
+- **`peers` default view is now scope-filtered** (was global): it shows only sessions whose scope matches the current cwd's project root, so multiple projects sharing one data dir no longer see each other's (often orphan) sessions. `peers --all-scopes` for the global listing; `--team` and `--all-scopes` bypass the scope filter. Sessions hidden by the filter are reported on stderr (no silent truncation). Manual `CAB_DATA_DIR`/`--team` isolation remains for special cases — F-17 makes the common case automatic.
+
 ## [0.2.3] — 2026-05-30
 
 Prebuilt multi-OS binaries + public adoption. Built via the bridge dogfooding workflow.
