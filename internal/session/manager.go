@@ -73,6 +73,12 @@ type RegisterOpts struct {
 	// (F-5). Empty means "no team"; the caller validates a non-empty value
 	// (security.ValidateTeamID) before passing it here.
 	TeamID string
+	// Scope is the absolute project-root path for this session (F-17), derived
+	// by the caller via FindProjectRoot before Register is invoked. The cmd
+	// layer owns home/cwd resolution; Manager only stores the value, so it stays
+	// free of os.UserHomeDir/env dependencies and trivially testable. Empty means
+	// "no scope" (caller's FindProjectRoot failed, or a v1-style register).
+	Scope string
 }
 
 // Register creates a new session: generates a session ID, writes manifest.json
@@ -151,6 +157,7 @@ func (m *Manager) Register(ctx context.Context, opts RegisterOpts) (*Manifest, f
 		Status:        StatusActive,
 		Capabilities:  defaultCapabilities(opts.Capabilities),
 		TeamID:        opts.TeamID, // empty = no team; omitempty drops it from JSON
+		Scope:         opts.Scope,  // empty = no scope; omitempty drops it from JSON
 	}
 
 	if err := m.SaveManifest(manifest); err != nil {

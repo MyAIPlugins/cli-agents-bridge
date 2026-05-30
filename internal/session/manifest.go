@@ -68,6 +68,19 @@ type Manifest struct {
 	// register-without-team default), so omitempty keeps it out of those
 	// manifests and Validate/ApplyV1Defaults deliberately ignore it.
 	TeamID string `json:"teamId,omitempty"`
+
+	// Scope is the absolute project-root path this session belongs to (F-17),
+	// derived automatically at register time via FindProjectRoot (the cwd's
+	// nearest `.git` ancestor, else the cwd itself). peers filters on it by
+	// default so a fresh session sees only its own project's pair with zero
+	// config, and whoami prints it. Distinct from the manual TeamID override:
+	// scope is the automatic structural identity, teamId the manual knob for the
+	// cases scope alone cannot separate (LL-7). Optional and additive: empty
+	// means "no scope" (v1/legacy and pre-F-17 manifests), so omitempty keeps it
+	// out of those and Validate/ApplyV1Defaults deliberately ignore it. Never
+	// used as a filesystem path component — only string-compared for filtering —
+	// so it needs no SC-4-style validation.
+	Scope string `json:"scope,omitempty"`
 }
 
 // Validate checks that the manifest has the minimum required fields for
