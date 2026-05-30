@@ -1,0 +1,28 @@
+tests/integration/scenario_outbox_test.go
+  s_4d7e9f199f4f5f::t_abef2d706ab943 1-64
+cmd/cab-bridge/send.go
+  s_4d7e9f199f4f5f::t_e266232ba627ca 81-92
+cmd/cab-bridge/send_test.go
+  s_4d7e9f199f4f5f::t_47e8c7a90a875f 111-153
+cmd/cab-bridge/sent.go
+  s_4d7e9f199f4f5f::t_b8b3559cb40b21 1-114
+cmd/cab-bridge/main.go
+  s_4d7e9f199f4f5f::t_1dbcf6757ba781 115
+  s_4d7e9f199f4f5f::t_1fa8c1e267cf02 61-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "3a69ca3ffd9b619b54e1538eb07ea61025acfad4",
+  "prompts": {},
+  "sessions": {
+    "s_4d7e9f199f4f5f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a61e16c-4794-4dba-9a14-fb9263f841ce",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
