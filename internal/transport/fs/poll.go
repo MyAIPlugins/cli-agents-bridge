@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
@@ -78,40 +77,13 @@ func emitInboxOnce(ctx context.Context, out chan<- *message.Message, inboxDir st
 	processedDir := filepath.Join(filepath.Dir(inboxDir), "processed")
 
 	for _, e := range entries {
-		if e.IsDir() {
+		// consumeInboxEntry moves the message to processed/ BEFORE returning
+		// it: if the consumer is in another process and the channel send
+		// blocks, no second poller can see this file in inbox/ (at-most-once).
+		m, ok := consumeInboxEntry(inboxDir, processedDir, e, maxContentBytes)
+		if !ok {
 			continue
 		}
-		name := e.Name()
-		if strings.HasPrefix(name, ".tmp.") || !strings.HasSuffix(name, ".json") {
-			continue
-		}
-
-		full := filepath.Join(inboxDir, name)
-		data, err := os.ReadFile(full)
-		if err != nil {
-			continue
-		}
-
-		m, err := message.DecodeLenient(data, maxContentBytes)
-		if err != nil {
-			// Malformed — leave on disk so a forensics command can review
-			// it later. Do NOT emit to consumer — at-most-once delivery
-			// requires we never hand a partially-decoded payload to the
-			// caller.
-			continue
-		}
-
-		// Move BEFORE emit. If the consumer is in another process and
-		// the channel send blocks, we still guarantee that no second
-		// poller sees this file in inbox/.
-		if err := MoveToProcessed(full, processedDir); err != nil {
-			// EXDEV or permission issue — leave file in inbox, the next
-			// poll cycle will retry. Surfacing the error to the caller
-			// would require a richer channel type; for Sprint 3 silent
-			// retry matches the prior delete-error behavior.
-			continue
-		}
-
 		select {
 		case <-ctx.Done():
 			return

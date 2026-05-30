@@ -20,6 +20,7 @@ func runListen(args []string) error {
 	fs.SetOutput(os.Stderr)
 	sessionIDFlag := fs.String("session-id", "", "session ID (default: longest-prefix lookup from cwd)")
 	noAutoAck := fs.Bool("no-auto-ack", false, "disable the automatic delivery receipt sent to a query's sender on consume (F-12)")
+	waitOne := fs.Bool("wait-one", false, "exit (code 0) after delivering the first non-empty batch of messages, instead of blocking until the MaxBlocking timeout (F-10: wake-on-arrival for run-in-background callers; default off)")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -77,6 +78,53 @@ func runListen(args []string) error {
 
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
+
+	// F-10: --wait-one exits as soon as the first non-empty batch is delivered,
+	// so a run-in-background caller is woken the instant a message arrives
+	// instead of only at the MaxBlocking timeout. DrainInboxOnce returns the
+	// WHOLE batch present at the sweep (not literally one message), so no
+	// message is left consumed-but-unseen — the loss the channel-based poller
+	// would risk if we exited mid-stream. Default off → PollInbox path below.
+	if *waitOne {
+		for {
+			msgs, err := transportfs.DrainInboxOnce(inboxDir, cfg.MaxMessageBytes)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "cab-bridge: listen --wait-one: drain inbox: %v\n", err)
+			}
+			if len(msgs) > 0 {
+				for _, m := range msgs {
+					if err := enc.Encode(m); err != nil {
+						cancel()
+						return fmt.Errorf("listen: encode message: %w", err)
+					}
+					// F-12: record consumption then auto-ack the sender, BEFORE
+					// the exit below, exactly as the default path does.
+					if err := mgr.SetLastConsumed(sid, m.ID); err != nil {
+						fmt.Fprintf(os.Stderr, "cab-bridge: listen: record lastConsumed for %s: %v\n", m.ID, err)
+					}
+					if !*noAutoAck {
+						maybeAutoAck(cfg, mgr, sid, m)
+					}
+				}
+				// Explicit cancel before returning with a still-live ctx: the
+				// deferred `<-hbDone` (registered after `defer cancel`, so it
+				// runs FIRST under LIFO) blocks until the heartbeat goroutine
+				// sees ctx.Done. The default path returns only once ctx is
+				// already Done, so it needs no explicit cancel; --wait-one does.
+				cancel()
+				return nil
+			}
+			select {
+			case <-ctx.Done():
+				if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+					return fmt.Errorf("listen --wait-one: max-blocking timeout %v reached, exit for harness re-run: %w",
+						maxBlocking, transportfs.ErrTimeout)
+				}
+				return nil // SIGINT/clean cancel — exit 0, same as the default path.
+			case <-time.After(pollInterval):
+			}
+		}
+	}
 
 	ch := transportfs.PollInbox(ctx, inboxDir, pollInterval, cfg.MaxMessageBytes)
 	for {
