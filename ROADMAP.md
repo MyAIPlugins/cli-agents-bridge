@@ -7,7 +7,7 @@
 
 ## Status corrente — 2026-05-30
 
-**Fase**: **v0.2.2 SHIPPED 2026-05-30** — tag `v0.2.2` + [GitHub Release](https://github.com/MyAIPlugins/cli-agents-bridge/releases/tag/v0.2.2), merged su `main` (fast-forward). 9 commit (F-12×4 + F-10 `f52addc` + F-5 `54d4e36` + F-9 `3a69ca3` + release `8b5a751` bump→0.2.2 + doc VAL `121ced6`). Gate VAL `-race -count=1` verde 10/10 indipendente + smoke reale PASS + lettura test critici + SECURITY.md SC-3 reso onesto. Deferred → v0.2.3: F-11 race cleanup, GoReleaser binari multi-OS, SC-3 ownership wiring.
+**Fase**: **v0.2.3 SHIPPED 2026-05-30** — tag `v0.2.3` + [GitHub Release](https://github.com/MyAIPlugins/cli-agents-bridge/releases/tag/v0.2.3) con **binari prebuilt multi-OS** (GoReleaser; workflow `release.yml` primo run SUCCESS in 37s; 4 asset darwin/linux × amd64/arm64 + `checksums.txt`). Include skill pubblica `bridge-workflow` (role-agnostic, bundle plugin) + README role-agnostic + version-injection-da-tag. **v0.2.2 SHIPPED lo stesso giorno** (F-12 osservabilità + F-10 wake + F-5 team + F-9 outbox; tag + Release). Deferred → v0.3: F-11 race cleanup, SC-3 ownership wiring, bump action a Node 24 (deprecation warning CI, non bloccante).
 
 **v0.2.2 MUST #1 — F-12 ACK/osservabilità** (2026-05-30, coppia VAL-bridge/ESC-bridge, dogfooding via cab-bridge):
 - 4 commit `feat/v0.2.2`: `9e0c6c6` ack type + lenient forward-compat (solo type, status strict), `f565985` lastConsumedMsgId + manifest mutex su OGNI RMW, `1605835` auto-ack on listen emit (allow-list {query}, anti-loop strutturale) + scanForReply skip-ack + `--no-auto-ack`, `523fb32` inboxCount + lastConsumedMsgId in peers/status.
