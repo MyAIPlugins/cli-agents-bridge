@@ -16,13 +16,18 @@ import (
 // SchemaVersionV2 is the wire format emitted by cli-agents-bridge v0.2+.
 const SchemaVersionV2 = 2
 
-// Message types (PLAN §4.4 enum).
+// Message types (PLAN §4.4 enum). TypeAck (F-12) is a lightweight delivery
+// receipt emitted automatically by listen when it hands a query to its
+// consumer, so an orchestrator can tell "received" from "lost" without manual
+// discipline. It must never itself trigger an ack (loop prevention) — see the
+// auto-ack allow-list in cmd/cab-bridge/listen.go.
 const (
 	TypeQuery    = "query"
 	TypeResponse = "response"
 	TypePing     = "ping"
 	TypeNotify   = "notify"
 	TypeEvent    = "event"
+	TypeAck      = "ack"
 )
 
 // Message statuses. MVP uses pending/processing/completed; "failed" is
@@ -38,7 +43,7 @@ const (
 // Order is irrelevant — we use them as set lookups.
 var (
 	validTypes = map[string]struct{}{
-		TypeQuery: {}, TypeResponse: {}, TypePing: {}, TypeNotify: {}, TypeEvent: {},
+		TypeQuery: {}, TypeResponse: {}, TypePing: {}, TypeNotify: {}, TypeEvent: {}, TypeAck: {},
 	}
 	validStatuses = map[string]struct{}{
 		StatusPending: {}, StatusProcessing: {}, StatusCompleted: {}, StatusFailed: {},

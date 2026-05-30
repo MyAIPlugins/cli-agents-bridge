@@ -71,6 +71,15 @@ func TestValidate_RejectsInvalidType(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidType)
 }
 
+func TestValidate_AcceptsAckType(t *testing.T) {
+	t.Parallel()
+
+	// F-12: ack is a first-class message type (auto-emitted delivery receipt).
+	m := validMessage()
+	m.Type = TypeAck
+	require.NoError(t, Validate(m, 65536))
+}
+
 func TestValidate_RejectsInvalidStatus(t *testing.T) {
 	t.Parallel()
 
@@ -193,6 +202,57 @@ func TestDecodeLenient_AcceptsUnknownField(t *testing.T) {
 	m, err := DecodeLenient(payload, 65536)
 	require.NoError(t, err, "lenient decoder must tolerate forward-compatible additive fields")
 	assert.Equal(t, "msg-abc123def456", m.ID)
+}
+
+// F-12 forward-compat: a peer running a future schema may send a message type
+// this version does not know yet. The lenient runtime reader MUST deliver it
+// (the consumer reads content and decides) — only the strict write/audit
+// gateway rejects unknown types.
+func TestDecodeLenient_AcceptsUnknownType(t *testing.T) {
+	t.Parallel()
+
+	payload := []byte(`{
+		"id": "msg-abc123def456",
+		"schemaVersion": 2,
+		"from": "abc123ef",
+		"fromRole": "val",
+		"fromAgentName": "VAL",
+		"to": "def456ab",
+		"toRole": "esc",
+		"type": "future-type-v3",
+		"timestamp": "2026-05-24T18:00:00Z",
+		"status": "pending",
+		"content": "hi",
+		"inReplyTo": null,
+		"metadata": {"fromProject": "x", "processingState": "pending"}
+	}`)
+	m, err := DecodeLenient(payload, 65536)
+	require.NoError(t, err, "lenient decoder must tolerate an unknown (forward-compat) message type")
+	assert.Equal(t, "future-type-v3", m.Type)
+}
+
+func TestDecodeStrict_RejectsUnknownType(t *testing.T) {
+	t.Parallel()
+
+	payload := []byte(`{
+		"id": "msg-abc123def456",
+		"schemaVersion": 2,
+		"from": "abc123ef",
+		"fromRole": "val",
+		"fromAgentName": "VAL",
+		"to": "def456ab",
+		"toRole": "esc",
+		"type": "future-type-v3",
+		"timestamp": "2026-05-24T18:00:00Z",
+		"status": "pending",
+		"content": "hi",
+		"inReplyTo": null,
+		"metadata": {"fromProject": "x", "processingState": "pending"}
+	}`)
+	_, err := DecodeStrict(payload, 65536)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrInvalidType,
+		"strict decoder must reject an unknown type (protocol drift)")
 }
 
 func TestDecodeStrict_AppliesV1Defaults(t *testing.T) {

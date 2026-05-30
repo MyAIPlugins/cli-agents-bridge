@@ -27,15 +27,38 @@ var (
 	ErrUnsupportedVersion = errors.New("unsupported schemaVersion")
 )
 
-// Validate enforces all PLAN §4.4 constraints on m. maxContentBytes is the
-// per-message size limit from config.MaxMessageBytes — passed in rather
-// than read from a global to keep this package free of config import cycles.
+// Validate enforces all PLAN §4.4 constraints on m, INCLUDING the strict
+// message-type enum. maxContentBytes is the per-message size limit from
+// config.MaxMessageBytes — passed in rather than read from a global to keep
+// this package free of config import cycles.
 //
-// Validate is called by both the encoder (pre-write) and the decoder
-// (post-read with v1 defaults applied). Failure here is a hard error: a
-// malformed message must never be written to the wire nor delivered to a
-// caller (no silent fallback per CLAUDE.md "no fallback impliciti").
+// Validate is the write/audit gateway check: it is called by EncodeStrict
+// (pre-write) and DecodeStrict (audit read). An unknown type here is a hard
+// error — it surfaces protocol drift or a typo before it reaches the wire
+// (no silent fallback per CLAUDE.md "no fallback impliciti").
+//
+// Runtime read paths use validateCommon via DecodeLenient instead, which
+// tolerates an unknown type for forward-compat (F-12) — see validateCommon.
 func Validate(m *Message, maxContentBytes int) error {
+	if err := validateCommon(m, maxContentBytes); err != nil {
+		return err
+	}
+	if _, ok := validTypes[m.Type]; !ok {
+		return fmt.Errorf("validate: %w: got %q (allowed: query|response|ping|notify|event|ack)",
+			ErrInvalidType, m.Type)
+	}
+	return nil
+}
+
+// validateCommon runs every structural, security and size constraint EXCEPT
+// the message-TYPE enum membership. The status enum stays strict here (F-12
+// ratifica A: only the type enum grows additively in v0.2.2; status is
+// unchanged). It is the shared core of the strict Validate and of the lenient
+// read path: DecodeLenient calls validateCommon directly so a future peer can
+// send a type this version does not know yet and still have its message
+// delivered (the consumer reads content and decides). The strict gateway
+// (Validate/EncodeStrict/DecodeStrict) still rejects unknown types.
+func validateCommon(m *Message, maxContentBytes int) error {
 	if m == nil {
 		return fmt.Errorf("validate: %w: message is nil", ErrMissingRequired)
 	}
@@ -56,10 +79,6 @@ func Validate(m *Message, maxContentBytes int) error {
 		if !messageIDPattern.MatchString(*m.InReplyTo) {
 			return fmt.Errorf("validate: %w: inReplyTo=%q", ErrInvalidMessageID, *m.InReplyTo)
 		}
-	}
-	if _, ok := validTypes[m.Type]; !ok {
-		return fmt.Errorf("validate: %w: got %q (allowed: query|response|ping|notify|event)",
-			ErrInvalidType, m.Type)
 	}
 	if _, ok := validStatuses[m.Status]; !ok {
 		return fmt.Errorf("validate: %w: got %q (allowed: pending|processing|completed|failed)",
@@ -119,8 +138,12 @@ func DecodeStrict(data []byte, maxContentBytes int) (*Message, error) {
 // readers that must tolerate forward-compatible additive schema growth
 // (e.g. a v0.3 peer adding "threadId" should not break a v0.2 reader).
 //
-// Still applies Validate after decode so required fields, enums, and size
-// limits are enforced.
+// Applies validateCommon (NOT the strict Validate) after decode: required
+// fields, the status enum, security and size limits are still enforced, but
+// an unknown message TYPE is tolerated (F-12 forward-compat — a future peer
+// may send a type this version does not know yet; the consumer reads content
+// and decides). The strict write/audit gateway (EncodeStrict/DecodeStrict)
+// still rejects unknown types.
 func DecodeLenient(data []byte, maxContentBytes int) (*Message, error) {
 	var m Message
 	if err := json.Unmarshal(data, &m); err != nil {
@@ -129,7 +152,7 @@ func DecodeLenient(data []byte, maxContentBytes int) (*Message, error) {
 	if m.SchemaVersion == 1 {
 		m.ApplyV1Defaults()
 	}
-	if err := Validate(&m, maxContentBytes); err != nil {
+	if err := validateCommon(&m, maxContentBytes); err != nil {
 		return nil, fmt.Errorf("decode lenient: %w", err)
 	}
 	return &m, nil
