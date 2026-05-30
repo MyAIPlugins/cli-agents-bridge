@@ -48,6 +48,18 @@ type Manifest struct {
 	LastHeartbeat time.Time `json:"lastHeartbeat"`
 	Status        string    `json:"status"`
 	Capabilities  []string  `json:"capabilities"`
+
+	// LastConsumedMsgID is the ID of the most recently consumed inbox message
+	// (moved to processed/ by listen, or matched by receive). Empty until the
+	// session consumes its first message. F-12 observability: an orchestrator
+	// reads this (via peers/status) to tell an idle session from one that is
+	// actively draining its inbox. omitempty keeps it out of v1/legacy manifests
+	// and of a never-consumed session's JSON.
+	//
+	// Note: a VAL orchestrator that does not consume via listen leaves this
+	// empty by design — it pulls replies via receive and observes peers' acks in
+	// its own inbox instead. An empty value is therefore NOT a bug.
+	LastConsumedMsgID string `json:"lastConsumedMsgId,omitempty"`
 }
 
 // Validate checks that the manifest has the minimum required fields for

@@ -3,9 +3,11 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sync"
 	"testing"
 	"time"
 
@@ -354,4 +356,75 @@ func TestLoadManifest_V1DefaultsApplied(t *testing.T) {
 	assert.Equal(t, RoleNeutral, got.Role, "v1 read must default role to neutral")
 	assert.Equal(t, "legacy", got.AgentName, "v1 read must default agentName to projectName")
 	assert.Equal(t, 0, got.PID, "v1 read must default PID to 0")
+}
+
+// TestSetLastConsumed_UpdatesManifest is the F-12 unit: SetLastConsumed must
+// persist the message ID into the manifest's lastConsumedMsgId field.
+func TestSetLastConsumed_UpdatesManifest(t *testing.T) {
+	t.Parallel()
+
+	mgr := NewManager(t.TempDir(), time.Second)
+	projDir := t.TempDir()
+	mf, rel, err := mgr.Register(context.Background(), RegisterOpts{ProjectPath: projDir, Role: RoleEsc})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = rel() })
+
+	assert.Empty(t, mf.LastConsumedMsgID, "fresh session has no consumed message")
+	require.NoError(t, mgr.SetLastConsumed(mf.SessionID, "msg-aaaaaaaaaaaa"))
+
+	loaded, err := mgr.LoadManifest(mf.SessionID)
+	require.NoError(t, err)
+	assert.Equal(t, "msg-aaaaaaaaaaaa", loaded.LastConsumedMsgID)
+}
+
+// TestManifestRMW_ConcurrentHeartbeatAndConsume_NoLostUpdate exercises the
+// F-12 §3.5 race: the heartbeat goroutine and SetLastConsumed both
+// load-modify-save the SAME manifest concurrently. Without manifestMu a
+// heartbeat write that loaded an older copy would clobber a freshly-set
+// lastConsumedMsgId (lost update). The mutex serializes the read-modify-write,
+// so the LAST id written must always survive. Run under -race to also catch any
+// memory race in the Manager itself.
+func TestManifestRMW_ConcurrentHeartbeatAndConsume_NoLostUpdate(t *testing.T) {
+	t.Parallel()
+
+	mgr := NewManager(t.TempDir(), 5*time.Millisecond) // aggressive heartbeat tick
+	projDir := t.TempDir()
+	mf, rel, err := mgr.Register(context.Background(), RegisterOpts{ProjectPath: projDir, Role: RoleEsc})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = rel() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := mgr.StartHeartbeat(ctx, mf.SessionID)
+
+	const n = 50
+	errCh := make(chan error, 1)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < n; i++ {
+			if e := mgr.SetLastConsumed(mf.SessionID, fmt.Sprintf("msg-%012d", i)); e != nil {
+				select {
+				case errCh <- e:
+				default:
+				}
+				return
+			}
+		}
+	}()
+	wg.Wait()
+	cancel()
+	<-done
+
+	select {
+	case e := <-errCh:
+		require.NoError(t, e, "SetLastConsumed must not error under concurrency")
+	default:
+	}
+
+	loaded, err := mgr.LoadManifest(mf.SessionID)
+	require.NoError(t, err)
+	assert.Equal(t, fmt.Sprintf("msg-%012d", n-1), loaded.LastConsumedMsgID,
+		"last consumed id must survive concurrent heartbeat writes (no lost update)")
+	assert.False(t, loaded.LastHeartbeat.IsZero(), "heartbeat must also have run")
 }

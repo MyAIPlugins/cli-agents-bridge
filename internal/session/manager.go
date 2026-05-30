@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	transportfs "github.com/myAIPlugins/cli-agents-bridge/internal/transport/fs"
@@ -34,6 +35,20 @@ type Manager struct {
 
 	// Now is the clock injection point for tests. Defaults to time.Now.
 	Now func() time.Time
+
+	// manifestMu serializes every read-modify-write of a manifest performed by
+	// this Manager so concurrent goroutines in the same process cannot lose an
+	// update. The motivating case (F-12): listen runs the heartbeat goroutine
+	// (touchHeartbeat) and the consume loop (SetLastConsumed) concurrently; both
+	// load-modify-save the SAME manifest, and AtomicWriteJSON is atomic only at
+	// the file level (rename), not across the read-modify-write window — without
+	// this lock one save would clobber the other's field. Guards ALL RMW methods
+	// (touchHeartbeat, AdoptPID, SetLastConsumed) as defense in depth, so a
+	// future RMW cannot silently reintroduce the lost-update bug. LoadManifest /
+	// SaveManifest stay lock-free (they are the primitives called INSIDE the
+	// guarded sections; locking them too would deadlock — sync.Mutex is not
+	// reentrant).
+	manifestMu sync.Mutex
 }
 
 // NewManager constructs a Manager with default clock.
@@ -277,13 +292,33 @@ func (m *Manager) StartHeartbeat(ctx context.Context, sessionID string) <-chan s
 
 // touchHeartbeat reads manifest, sets LastHeartbeat = now, atomic-writes back.
 // Internal; the public surface is StartHeartbeat for the goroutine path
-// and Touch for the single-shot path.
+// and Touch for the single-shot path. Holds manifestMu for the whole
+// read-modify-write (see the field doc) so a concurrent SetLastConsumed cannot
+// lose its update.
 func (m *Manager) touchHeartbeat(sessionID string) error {
+	m.manifestMu.Lock()
+	defer m.manifestMu.Unlock()
 	manifest, err := m.LoadManifest(sessionID)
 	if err != nil {
 		return err
 	}
 	manifest.LastHeartbeat = m.now()
+	return m.SaveManifest(manifest)
+}
+
+// SetLastConsumed records msgID as the most recently consumed inbox message in
+// sessionID's manifest (F-12 observability). Called by listen after emitting a
+// message and by receive after matching a reply. Holds manifestMu for the whole
+// read-modify-write so the concurrent heartbeat goroutine cannot clobber the
+// field (see the manifestMu doc).
+func (m *Manager) SetLastConsumed(sessionID, msgID string) error {
+	m.manifestMu.Lock()
+	defer m.manifestMu.Unlock()
+	manifest, err := m.LoadManifest(sessionID)
+	if err != nil {
+		return err
+	}
+	manifest.LastConsumedMsgID = msgID
 	return m.SaveManifest(manifest)
 }
 
@@ -307,6 +342,8 @@ func (m *Manager) Touch(sessionID string) error {
 // PID: connect.go calls Touch from a short-lived process whose PID would be
 // just as ephemeral as register's, so only a real listen owner takes ownership.
 func (m *Manager) AdoptPID(sessionID string) error {
+	m.manifestMu.Lock()
+	defer m.manifestMu.Unlock()
 	manifest, err := m.LoadManifest(sessionID)
 	if err != nil {
 		return err
