@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] — 2026-05-30
+
+Prebuilt multi-OS binaries + public adoption. Built via the bridge dogfooding workflow.
+
+### Added
+- **GoReleaser** (`.goreleaser.yml` + `.github/workflows/release.yml`): prebuilt static binaries for darwin/linux × amd64/arm64 published to GitHub Releases on tag push (`CGO_ENABLED=0`, `-trimpath`, `checksums.txt`). Closes the source-first gap.
+- **Version injection**: `main.version` is injected from the git tag (GoReleaser) / `git describe` (Makefile) — single source of truth is the tag; no more hand-bumping the binary version.
+- **Public `bridge-workflow` skill** bundled with the plugin (`/cli-agents-bridge:bridge-workflow`): role-agnostic operating guide (PID/heartbeat model, `listen --wait-one`, team isolation, auto-ack, `cab sent`).
+
+### Changed
+- README role-agnostic (val/esc as example roles; documents free-form custom roles, `peer` for flat pairs, team isolation) + prebuilt-binary install path. `darwin-amd64` added to the cross-compile matrix (Makefile + ci.yml + goreleaser).
+
+## [0.2.2] — 2026-05-30
+
+Observability, instant wake, team isolation. Built end-to-end through the bridge dogfooding itself (a VAL↔ESC pair over `cab-bridge`).
+
+### Added
+- **F-12 task-state observability**: `ack` message type + automatic delivery receipt when `listen` consumes a query (allow-list `{query}`, loop-safe) + `inboxCount`/`lastConsumedMsgId` exposed in `peers`/`status`.
+- **F-10 instant wake**: `listen --wait-one` exits (code 0) on the first non-empty batch (lossless drain-once) — wake-on-arrival for run-in-background callers.
+- **F-5 team isolation**: `teamId` manifest field + `register --team=<name>` + `peers --team=<name>` filter + new `cab whoami` (full identity incl. full projectPath + dataDir).
+- **F-9 self-send visibility**: each send is copied to the sender's outbox + new `cab sent`.
+
+### Notes
+- Security baseline SC-1..SC-7 unchanged; SECURITY.md keeps SC-3 honestly deferred (primitive present, runtime wiring not yet on the live path).
+
 ## [0.2.1] — 2026-05-29
 
 First feature release after v0.2.0. Adds automatic orphan-session GC and closes a data-loss gap in session cleanup. Built end-to-end via the cli-agents-bridge dogfooding workflow (VAL↔ESC over the fork itself).
