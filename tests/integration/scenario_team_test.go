@@ -39,8 +39,11 @@ func TestScenarioTeam_PeersFilterIsolatesTeam(t *testing.T) {
 	assert.NotContains(t, out, betaID, "beta session must be excluded by --team=alpha")
 	assert.NotContains(t, out, noTeamID, "team-less session must be excluded by any --team filter")
 
-	// Default peers (no --team) is the unchanged global view: all three present.
-	out, errOut, exit = run(t, []string{"peers", "--json"}, dataDirEnv(dataDir))
+	// The cross-scope global view (--all-scopes) shows all three. Plain `peers`
+	// would apply the F-17 default scope filter keyed on the test's cwd; these
+	// sessions live under unrelated temp project paths, so --all-scopes is how a
+	// global listing is requested now.
+	out, errOut, exit = run(t, []string{"peers", "--json", "--all-scopes"}, dataDirEnv(dataDir))
 	require.Equal(t, 0, exit, "peers (global): %s", errOut)
 	assert.Contains(t, out, alphaID)
 	assert.Contains(t, out, betaID)

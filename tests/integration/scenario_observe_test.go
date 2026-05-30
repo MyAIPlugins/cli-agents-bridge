@@ -25,7 +25,10 @@ type statusView struct {
 
 func peersByID(t *testing.T, dataDir string) map[string]peerView {
 	t.Helper()
-	out, errOut, exit := run(t, []string{"peers", "--json"}, dataDirEnv(dataDir))
+	// --all-scopes: this observability check spans every scope. The sessions are
+	// registered under unrelated temp project paths, so the F-17 default filter —
+	// keyed on the test binary's own cwd scope — would otherwise hide them.
+	out, errOut, exit := run(t, []string{"peers", "--json", "--all-scopes"}, dataDirEnv(dataDir))
 	require.Equal(t, 0, exit, "peers --json must succeed: %s", errOut)
 	var list []peerView
 	require.NoError(t, json.Unmarshal([]byte(out), &list))
