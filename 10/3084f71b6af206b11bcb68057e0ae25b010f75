@@ -1,0 +1,28 @@
+.gitignore
+  s_da508dd14cf7fe::t_5c2f77c0e11c01 31-33
+  s_da508dd14cf7fe::t_bfee61ba998434 34
+README.md
+  s_da508dd14cf7fe::t_e032d7c91735cf 185-193,195
+  s_da508dd14cf7fe::t_57eb9d8b74e0c0 7
+  s_da508dd14cf7fe::t_b102ef4c9ffa68 142-151,155
+  s_da508dd14cf7fe::t_7ca295ae572e78 83,86
+  s_da508dd14cf7fe::t_6f8513fe940baf 115
+PLAN.md
+  s_da508dd14cf7fe::t_85d0fca296f1ce 1,3,5,9,11,13,15-18,22,24,26-38,42,44,47-54,57,59,61-69,71,73,77,79,81-89,91,95,97,99-104,106,108,110-112,114,116-117,121,123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "103084f71b6af206b11bcb68057e0ae25b010f75",
+  "prompts": {},
+  "sessions": {
+    "s_da508dd14cf7fe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "04afe0d5-69d7-4ebf-829d-0e5bd111d8ae",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
