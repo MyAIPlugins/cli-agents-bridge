@@ -1,0 +1,28 @@
+cmd/cab-bridge/bootstrap_test.go
+  s_187071c25099a0::t_ac40e378a8937a 118-125,129-136,139-141,144,151,154-155,161-162
+  s_187071c25099a0::t_e6e055446d498b 4
+  s_187071c25099a0::t_7199492cc8bb0e 177-188,190
+  s_187071c25099a0::t_052efc02370d32 208,212-218
+  s_187071c25099a0::t_58ea77f727d069 1-3,5-117,126-128,137-138,142-143,145-150,152-153,156-160,163-176,189,191-207,209-211,219
+cmd/cab-bridge/main.go
+  s_187071c25099a0::t_9b84e949032170 115
+  s_187071c25099a0::t_b5492f72a635c8 46-47
+cmd/cab-bridge/bootstrap.go
+  s_187071c25099a0::t_27a0a4552001e4 1-302
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9f074af8d1af3810602431003f39835982f8e2f8",
+  "prompts": {},
+  "sessions": {
+    "s_187071c25099a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7a7c02fb-3a1f-4781-823b-9e9155ad1e9d",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
