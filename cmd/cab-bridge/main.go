@@ -61,6 +61,8 @@ func main() {
 		exitFromErr(runCleanup(os.Args[2:]))
 	case "status":
 		exitFromErr(runStatus(os.Args[2:]))
+	case "overview":
+		exitFromErr(runOverview(os.Args[2:]))
 	case "whoami":
 		exitFromErr(runWhoami(os.Args[2:]))
 	case "state":
@@ -121,6 +123,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  peers                List known peers (table or --json) with role/agent/PID/heartbeat age")
 	fmt.Fprintln(os.Stderr, "  cleanup              Cleanup own session (default) or --scope=global (BUG-4 scoped)")
 	fmt.Fprintln(os.Stderr, "  status               Show own session status (heartbeat age, inbox/outbox/processed counts)")
+	fmt.Fprintln(os.Stderr, "  overview             At-a-glance me/peer/inbox for the current dir, no --session-id (F-42)")
 	fmt.Fprintln(os.Stderr, "  whoami               Show current session identity (session/agent/role/team/projectPath/scope/state/dataDir)")
 	fmt.Fprintln(os.Stderr, "  state <value>        Set this session's agent state: idle|working|done|orchestrating (F-23)")
 	fmt.Fprintln(os.Stderr, "  sent                 List messages this session has sent (its own outbox, F-9)")
