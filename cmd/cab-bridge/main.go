@@ -63,6 +63,8 @@ func main() {
 		exitFromErr(runWhoami(os.Args[2:]))
 	case "sent":
 		exitFromErr(runSent(os.Args[2:]))
+	case "inbox":
+		exitFromErr(runInbox(os.Args[2:]))
 	case "inspect":
 		exitFromErr(runInspect(os.Args[2:]))
 	case "migrate-from-patil":
@@ -116,6 +118,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  status               Show own session status (heartbeat age, inbox/outbox/processed counts)")
 	fmt.Fprintln(os.Stderr, "  whoami               Show current session identity (session/agent/role/team/projectPath/scope/dataDir)")
 	fmt.Fprintln(os.Stderr, "  sent                 List messages this session has sent (its own outbox, F-9)")
+	fmt.Fprintln(os.Stderr, "  inbox --list         List inbox (pending) + processed (consumed) messages without consuming (F-22)")
 	fmt.Fprintln(os.Stderr, "  inspect <id>         Print session manifest JSON (replaces jq dep)")
 	fmt.Fprintln(os.Stderr, "  migrate-from-patil   Migrate ~/.claude/session-bridge/ sessions to v2 namespace")
 	fmt.Fprintln(os.Stderr, "  version              Show version")
