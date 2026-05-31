@@ -1,0 +1,25 @@
+cmd/cab-bridge/main.go
+  s_c99b42d9f3d32d::t_5ba09913591707 121
+cmd/cab-bridge/inbox_test.go
+  s_c99b42d9f3d32d::t_a434b53f142ffc 123-194
+cmd/cab-bridge/inbox.go
+  s_c99b42d9f3d32d::t_0610024f7a2c12 43-44,52-58,71,73-90
+  s_c99b42d9f3d32d::t_d22615f1863f2c 158-201
+  s_c99b42d9f3d32d::t_61d8438f941b43 15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "2d43081ae3641cc3f434b66c7df6affc3fd0aa1a",
+  "prompts": {},
+  "sessions": {
+    "s_c99b42d9f3d32d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67be31bc-ff6b-4cdd-8291-c8f038f8f051",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
