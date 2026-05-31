@@ -28,3 +28,7 @@ vendor/
 # Bridge session artifacts (session-bridge plugin scratch, not project state)
 .claude/
 docs/.claude/
+
+# Internal VAL/ESC reports & archived planning — not for publication
+briefing/
+iterations/

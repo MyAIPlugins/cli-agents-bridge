@@ -4,7 +4,7 @@ Robust multi-peer IPC bridge between CLI agent sessions (Claude Code, Codex, Aid
 
 Fork of [`PatilShreyas/claude-code-session-bridge`](https://github.com/PatilShreyas/claude-code-session-bridge) v0.1.0 (MIT) with 9 confirmed upstream bugs fixed structurally, role-based routing, namespace-isolated storage, security baseline, and a single Go binary distribution.
 
-**Status**: v0.2.2 (shipped). See [CHANGELOG.md](./CHANGELOG.md) and [Releases](https://github.com/MyAIPlugins/cli-agents-bridge/releases) for details.
+**Status**: v0.4.0 (shipped). See [CHANGELOG.md](./CHANGELOG.md) and [Releases](https://github.com/MyAIPlugins/cli-agents-bridge/releases) for details.
 
 ---
 
@@ -80,10 +80,10 @@ cab-bridge ask --to=<ESC-id> --content="implement feature X"
 # → msg-abc123def456 (capture for receive)
 ```
 
-**ESC listens** (long-poll, prints each message as JSON):
+**ESC listens** (`--wait-one` wakes on the first message; prints each as JSON):
 
 ```
-cab-bridge listen
+cab-bridge listen --wait-one
 ```
 
 **VAL waits for the reply**:
@@ -112,7 +112,7 @@ cab-bridge cleanup --scope=global # cross-project (interactive confirm)
 
 Two equal agents with no hierarchy can both register `--role=peer` — `peer ↔ peer` is allowed out of the box.
 
-When several pairs share one data dir, isolate them with `--team=<name>` and filter via `peers --team=<name>` (or give each pair a separate `CAB_DATA_DIR`).
+Since v0.4, a pair in the same repo isolates itself **automatically** — `register` derives a `scope` from the project root (`.git`), and `peers` shows only the current project (no manual config). For special cases (peers on different git checkouts, or two pairs in one repo) use a separate `CAB_DATA_DIR` per pair, or `--team=<name>` + `peers --team=<name>`.
 
 ---
 
@@ -139,16 +139,20 @@ When several pairs share one data dir, isolate them with `--team=<name>` and fil
 ## Subcommands
 
 ```
-cab-bridge register             Register a new session for the current project
-cab-bridge listen               Poll inbox emitting messages as JSON
-cab-bridge ask                  Send a message to a peer
-cab-bridge connect <peer-id>    Refresh own heartbeat + validate peer reachable
-cab-bridge receive              Long-poll wait for a reply
-cab-bridge peers                List known peers (table or --json)
-cab-bridge cleanup              Cleanup own session (or --scope=global)
+cab-bridge register             Register a session (--resume to reconnect-or-register after a compact)
+cab-bridge listen               Poll inbox as JSON (--wait-one wake-on-arrival; --until-deadline=<dur>)
+cab-bridge ask                  Send a message to a peer (--file for long payloads)
+cab-bridge receive              Long-poll wait for a reply by msg-id
+cab-bridge state <value>        Set agent state: idle | working | done | orchestrating
+cab-bridge inbox                Inspect (--list) or archive (--tidy) inbox/processed, without consuming
+cab-bridge peers                List peers in the current scope (--all-scopes, --json)
+cab-bridge whoami               Show own identity (id, role, team, projectPath, scope, dataDir)
+cab-bridge sent                 List own sent messages (outbox)
 cab-bridge status               Show own session status
+cab-bridge connect <peer-id>    Refresh own heartbeat + validate peer reachable
+cab-bridge cleanup              Cleanup own session (or --scope=global)
 cab-bridge inspect <id>         Print session manifest JSON
-cab-bridge migrate-from-patil   Migrate upstream Patil sessions to v2 namespace
+cab-bridge migrate-from-patil   Migrate upstream Patil sessions to the v2 namespace
 ```
 
 Each subcommand prints its own `--help`.
@@ -178,12 +182,17 @@ For threat model + security controls see [SECURITY.md](./SECURITY.md). For GDPR 
 
 ## Roadmap
 
-- **v0.2.0** (current): MVP feature-complete, 9 BUG fixes, single binary, marketplace install
-- **v0.3.0**: notifications (osascript/notify-send), transcript log, thread view, retry built-in
-- **v0.4.0**: Unix socket daemon (gated by empirical latency >200ms ∧ peer count >3)
-- **v1.0.0**: Anthropic marketplace, encryption opt-in, multi-machine via Tailscale
+**Shipped** (detail in [CHANGELOG.md](./CHANGELOG.md)):
 
-Full plan in [PLAN.md](./PLAN.md).
+- **v0.2.0**: MVP — 9 upstream bugs fixed structurally, role routing, single binary, marketplace install
+- **v0.2.1 → v0.2.4**: auto-gc of orphan sessions; observability + instant wake (`listen --wait-one`, automatic delivery receipts); prebuilt multi-OS binaries (GoReleaser) + public `bridge-workflow` skill; **automatic per-project isolation** (scope derived from the project root — no manual `CAB_DATA_DIR` for the common case)
+- **v0.4.0** (current): reliable wake/delivery cycle + tooling — `receive` archives a matched reply to `processed/`; `listen --wait-one` exits 0 with a timeout payload (not 124); `listen --until-deadline`; `inbox --list`/`--tidy`; agent `state` (`working`/`done`/`orchestrating`, the last heartbeat-exempt); `register --resume` (idempotent reconnect-or-register after a compact/restart)
+
+**Next**: a conversation cursor (auto-detect message crossings — both sides acting on a stale message); inbox `--type`/`--unread` filters + an id-less `receive --any`; SC-3 ownership wiring.
+
+**Gated** (only if the need is measured): a Unix-socket daemon (only if filesystem-polling latency exceeds ~200ms in real long runs **and** concurrent peers exceed 3); v1.0 (Anthropic marketplace, opt-in encryption, multi-machine via Tailscale) after sustained real use.
+
+Design rationale in [PLAN.md](./PLAN.md).
 
 ---
 
