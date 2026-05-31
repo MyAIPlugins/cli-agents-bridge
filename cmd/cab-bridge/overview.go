@@ -54,10 +54,10 @@ type overviewMsg struct {
 }
 
 func runOverview(args []string) error {
-	fs_ := flag.NewFlagSet("overview", flag.ContinueOnError)
-	fs_.SetOutput(os.Stderr)
-	asJSON := fs_.Bool("json", false, "emit JSON on stdout (default: human-readable)")
-	if err := fs_.Parse(args); err != nil {
+	fs := flag.NewFlagSet("overview", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	asJSON := fs.Bool("json", false, "emit JSON on stdout (default: human-readable)")
+	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
