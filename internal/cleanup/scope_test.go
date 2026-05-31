@@ -96,6 +96,32 @@ func TestRun_Global_RemovesOnlyStaleSessions(t *testing.T) {
 	assert.True(t, os.IsNotExist(err), "stale session must be removed")
 }
 
+// TestRun_Global_OrchestratingExemptFromStaleSweep is the F-23a coherence guard:
+// globalSweep uses session.IsStale, so an orchestrating session with an old
+// heartbeat is heartbeat-exempt and survives, while a legacy stale session with
+// the same heartbeat is swept.
+func TestRun_Global_OrchestratingExemptFromStaleSweep(t *testing.T) {
+	t.Parallel()
+
+	dataDir := t.TempDir()
+	staleID, _ := registerSession(t, dataDir, 600*time.Second) // legacy stale -> swept
+	orchID, orchMgr := registerSession(t, dataDir, 600*time.Second)
+	require.NoError(t, orchMgr.SetState(orchID, session.StateOrchestrating)) // old heartbeat but orchestrating
+
+	res, err := Run(context.Background(), Options{
+		DataDir:       dataDir,
+		Scope:         ScopeGlobal,
+		StaleSeconds:  300,
+		RetentionDays: 7,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, res.SessionsRemoved, staleID, "legacy stale session must be swept")
+	assert.NotContains(t, res.SessionsRemoved, orchID, "orchestrating session is heartbeat-exempt, must NOT be swept")
+
+	_, err = os.Stat(filepath.Join(dataDir, "sessions", orchID))
+	assert.NoError(t, err, "orchestrating session dir must survive global sweep")
+}
+
 func TestRun_UnknownScope(t *testing.T) {
 	t.Parallel()
 

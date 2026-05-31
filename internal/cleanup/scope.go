@@ -111,9 +111,12 @@ func Run(_ context.Context, opts Options) (*Result, error) {
 	return res, nil
 }
 
-// globalSweep scans every session under DataDir, archives + removes those
-// whose lastHeartbeat is older than StaleSeconds. Returns the IDs removed.
-// BUG-8: StaleSeconds is the single source of truth shared with list-peers.
+// globalSweep scans every session under DataDir, archives + removes those that
+// are stale per session.IsStale. Returns the IDs removed. BUG-8: StaleSeconds is
+// the single source of truth shared with list-peers. F-23a: staleness goes
+// through session.IsStale (same as peers/status), so a session in state
+// "orchestrating" is heartbeat-exempt and is NOT swept here — the displayed
+// "not stale" and the swept set can never diverge.
 func globalSweep(opts Options) ([]string, error) {
 	sessionsRoot := filepath.Join(opts.DataDir, "sessions")
 	entries, err := os.ReadDir(sessionsRoot)
@@ -124,7 +127,7 @@ func globalSweep(opts Options) ([]string, error) {
 		return nil, fmt.Errorf("cleanup global: read sessions root: %w", err)
 	}
 
-	cutoff := opts.Now().Add(-time.Duration(opts.StaleSeconds) * time.Second)
+	now := opts.Now()
 	mgr := session.NewManager(opts.DataDir, time.Second) // interval irrelevant — we only LoadManifest
 
 	removed := []string{} // BUG-B: empty, not nil, for JSON []
@@ -137,8 +140,8 @@ func globalSweep(opts Options) ([]string, error) {
 			// Corrupt manifest — skip (Sprint 4 forensics will surface these).
 			continue
 		}
-		if mf.LastHeartbeat.After(cutoff) {
-			continue // still fresh
+		if !session.IsStale(mf, opts.StaleSeconds, now) {
+			continue // still fresh, or orchestrating (heartbeat-exempt, F-23a)
 		}
 		if err := archiveAndRemoveSession(opts.DataDir, e.Name(), opts.Now); err != nil {
 			continue // best-effort
