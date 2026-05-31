@@ -137,6 +137,98 @@ func TestReceiveReply_TimeoutReturnsErrTimeout(t *testing.T) {
 	assert.Contains(t, err.Error(), "msg-aaaaaaaaaaaa", "error must mention origMsgID for debuggability")
 }
 
+// anyMessage builds a valid v2 message of an arbitrary type (no inReplyTo) for
+// the ReceiveAny tests.
+func anyMessage(t *testing.T, id, msgType string) *message.Message {
+	t.Helper()
+	return &message.Message{
+		ID:            id,
+		SchemaVersion: message.SchemaVersionV2,
+		From:          "val12345",
+		FromRole:      "val",
+		FromAgentName: "VAL-test",
+		To:            "esc12345",
+		ToRole:        "esc",
+		Type:          msgType,
+		Timestamp:     "2026-05-31T10:00:00Z",
+		Status:        message.StatusPending,
+		Content:       "x",
+		Metadata:      message.Metadata{FromProject: "test", ProcessingState: message.StatusPending},
+	}
+}
+
+// TestReceiveAny_DrainsBatchExcludingAcks is the F-36 core: --any drains every
+// NON-ack pending message in one sweep (archiving to processed/) and LEAVES
+// type=ack in inbox as the F-12 signal.
+func TestReceiveAny_DrainsBatchExcludingAcks(t *testing.T) {
+	t.Parallel()
+	inbox := filepath.Join(t.TempDir(), "inbox")
+	require.NoError(t, os.MkdirAll(inbox, 0o700))
+
+	writeMessage(t, inbox, anyMessage(t, "msg-aaaaaaaaaaaa", message.TypeResponse))
+	writeMessage(t, inbox, anyMessage(t, "msg-bbbbbbbbbbbb", message.TypeQuery))
+	writeMessage(t, inbox, anyMessage(t, "msg-cccccccccccc", message.TypeAck))
+
+	got, err := ReceiveAny(context.Background(), inbox, 2*time.Second, 30*time.Millisecond, 65536)
+	require.NoError(t, err)
+	require.Len(t, got, 2, "drains the 2 non-ack messages, not the ack")
+	ids := map[string]bool{}
+	for _, m := range got {
+		ids[m.ID] = true
+	}
+	assert.True(t, ids["msg-aaaaaaaaaaaa"])
+	assert.True(t, ids["msg-bbbbbbbbbbbb"])
+	assert.False(t, ids["msg-cccccccccccc"], "ack must not be drained")
+
+	assert.True(t, archivedInProcessed(t, inbox, "msg-aaaaaaaaaaaa"), "non-ack archived to processed/")
+	assert.True(t, archivedInProcessed(t, inbox, "msg-bbbbbbbbbbbb"), "non-ack archived to processed/")
+	_, ackErr := os.Stat(filepath.Join(inbox, "msg-cccccccccccc.json"))
+	assert.NoError(t, ackErr, "ack stays in inbox as the observable F-12 signal")
+}
+
+// TestReceiveAny_OnlyAcks_TimesOut: a batch of only acks does NOT wake --any; it
+// times out and the acks remain in inbox.
+func TestReceiveAny_OnlyAcks_TimesOut(t *testing.T) {
+	t.Parallel()
+	inbox := filepath.Join(t.TempDir(), "inbox")
+	require.NoError(t, os.MkdirAll(inbox, 0o700))
+	writeMessage(t, inbox, anyMessage(t, "msg-aaaaaaaaaaaa", message.TypeAck))
+
+	got, err := ReceiveAny(context.Background(), inbox, 80*time.Millisecond, 30*time.Millisecond, 65536)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrTimeout)
+	assert.Nil(t, got)
+	_, ackErr := os.Stat(filepath.Join(inbox, "msg-aaaaaaaaaaaa.json"))
+	assert.NoError(t, ackErr, "the ack must stay in inbox after a timeout")
+}
+
+func TestReceiveAny_TimeoutEmptyInbox(t *testing.T) {
+	t.Parallel()
+	inbox := filepath.Join(t.TempDir(), "inbox")
+	require.NoError(t, os.MkdirAll(inbox, 0o700))
+
+	got, err := ReceiveAny(context.Background(), inbox, 80*time.Millisecond, 30*time.Millisecond, 65536)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrTimeout)
+	assert.Nil(t, got)
+}
+
+func TestReceiveAny_BatchArrivingMidWait(t *testing.T) {
+	t.Parallel()
+	inbox := filepath.Join(t.TempDir(), "inbox")
+	require.NoError(t, os.MkdirAll(inbox, 0o700))
+
+	go func() {
+		time.Sleep(80 * time.Millisecond)
+		writeMessage(t, inbox, anyMessage(t, "msg-dddddddddddd", message.TypeResponse))
+	}()
+
+	got, err := ReceiveAny(context.Background(), inbox, 2*time.Second, 30*time.Millisecond, 65536)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, "msg-dddddddddddd", got[0].ID)
+}
+
 func TestReceiveReply_ContextCancel_ReturnsWrappedErr(t *testing.T) {
 	t.Parallel()
 
