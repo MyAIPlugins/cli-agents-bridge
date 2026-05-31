@@ -24,12 +24,36 @@ type waitOneTimeout struct {
 	Messages []any  `json:"messages"`
 }
 
+// resolveMaxBlocking computes the listen window with precedence
+// flag > env > default (F-26). flagVal, when non-empty, is a Go duration string
+// (--until-deadline) and wins; an invalid or non-positive value is a hard error.
+// Otherwise cfgSeconds — already the CAB_MAX_BLOCKING_SECONDS env or its config
+// default — is used, falling back to 540s (9 min) when unset/non-positive.
+func resolveMaxBlocking(flagVal string, cfgSeconds int) (time.Duration, error) {
+	if flagVal != "" {
+		d, err := time.ParseDuration(flagVal)
+		if err != nil {
+			return 0, fmt.Errorf("invalid --until-deadline %q (want a Go duration like 2h or 30m): %w", flagVal, err)
+		}
+		if d <= 0 {
+			return 0, fmt.Errorf("--until-deadline must be positive, got %q", flagVal)
+		}
+		return d, nil
+	}
+	d := time.Duration(cfgSeconds) * time.Second
+	if d <= 0 {
+		d = 9 * time.Minute
+	}
+	return d, nil
+}
+
 func runListen(args []string) error {
 	fs := flag.NewFlagSet("listen", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	sessionIDFlag := fs.String("session-id", "", "session ID (default: longest-prefix lookup from cwd)")
 	noAutoAck := fs.Bool("no-auto-ack", false, "disable the automatic delivery receipt sent to a query's sender on consume (F-12)")
 	waitOne := fs.Bool("wait-one", false, "exit 0 after delivering the first non-empty batch of messages; on an empty-window timeout also exit 0, emitting a {\"status\":\"timeout\",\"messages\":[]} payload instead of failing (F-10/F-24: wake-on-arrival for run-in-background callers; default off)")
+	untilDeadline := fs.String("until-deadline", "", "explicit listen window as a Go duration (e.g. 2h, 30m); overrides CAB_MAX_BLOCKING_SECONDS and the 540s default for this run (F-26)")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -56,13 +80,15 @@ func runListen(args []string) error {
 		return fmt.Errorf("listen: adopt session PID: %w", err)
 	}
 
-	// MaxBlockingSeconds bounds the wall-clock duration of listen so the
-	// Claude Code agent harness 10-min subprocess timeout never kills us
-	// silently. On hit we exit 124 — the same convention as receive — so
-	// the harness wrapper can re-launch us. Default 540s = 9 min.
-	maxBlocking := time.Duration(cfg.MaxBlockingSeconds) * time.Second
-	if maxBlocking <= 0 {
-		maxBlocking = 9 * time.Minute
+	// MaxBlocking bounds the wall-clock duration of listen so the Claude Code
+	// agent harness 10-min subprocess timeout never kills us silently. On hit the
+	// default path exits 124 — the same convention as receive — so the harness
+	// wrapper can re-launch us; --wait-one instead exits 0 with a timeout payload
+	// (F-24). Window precedence (F-26): --until-deadline flag > the
+	// CAB_MAX_BLOCKING_SECONDS env (already folded into cfg) > 540s default.
+	maxBlocking, err := resolveMaxBlocking(*untilDeadline, cfg.MaxBlockingSeconds)
+	if err != nil {
+		return fmt.Errorf("listen: %w", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), maxBlocking)
 	defer cancel()
