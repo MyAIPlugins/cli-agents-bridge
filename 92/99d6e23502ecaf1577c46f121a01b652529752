@@ -1,0 +1,28 @@
+cmd/cab-bridge/register_test.go
+  s_eb4856a75f1865::t_b0307273a30ced 141-145
+  s_eb4856a75f1865::t_0aada7b432f96f 156-158
+cmd/cab-bridge/bootstrap_test.go
+  s_eb4856a75f1865::t_5522412d80404c 161-166
+internal/session/scope.go
+  ai_agent 46-52
+cmd/cab-bridge/common.go
+  ai_agent 9,156-177,189-190
+cmd/cab-bridge/common_test.go
+  ai_agent 7-9,91-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9299d6e23502ecaf1577c46f121a01b652529752",
+  "prompts": {},
+  "sessions": {
+    "s_eb4856a75f1865": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "85b200f7-3ddd-444c-9015-583ce5b39b74",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
