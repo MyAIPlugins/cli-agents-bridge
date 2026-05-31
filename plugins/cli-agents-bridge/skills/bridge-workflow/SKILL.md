@@ -1,6 +1,6 @@
 ---
 name: bridge-workflow
-description: How to coordinate two (or more) CLI agent sessions with the cab-bridge binary — register/listen/ask/receive, the PID/heartbeat model, instant wake with listen --wait-one, delivery receipts (auto-ack), team isolation, and self-send visibility. Use when one agent session needs to hand work to, or exchange messages with, another agent session on the same machine via cab-bridge.
+description: How to coordinate two (or more) CLI agent sessions with the cab-bridge binary — register/listen/ask/receive, the PID/heartbeat model, instant wake with listen --wait-one (and --until-deadline), delivery receipts (auto-ack), agent state (working/done/orchestrating), automatic per-project isolation, inbox inspection (inbox --list/--tidy), idempotent reconnect after a compact (register --resume), team isolation, and self-send visibility. Use when one agent session needs to hand work to, or exchange messages with, another agent session on the same machine via cab-bridge.
 ---
 
 # cab-bridge — coordinating two agent sessions
@@ -15,14 +15,14 @@ A "session" is a manifest on disk. Its `pid` and liveness work like this:
 
 - `cab-bridge register` is **one-shot**: it writes the manifest, records the register command's PID, then **exits — so that PID is already dead**. Right after `register`, a session has a dead PID. This is normal.
 - `cab-bridge listen` is **long-running**: on start it **adopts** the session (writes its OWN live PID into the manifest) and refreshes `lastHeartbeat` periodically. A session is "alive" only while a `listen` holds it.
-- **Consequence**: outside `listen`, a session goes `stale` after `StaleSeconds` (default 300s). That is NOT a bug. An orchestrator that doesn't sit in `listen` will look stale — it doesn't block anything; messages still land in its inbox.
+- **Consequence**: outside `listen`, a session goes `stale` after `StaleSeconds` (default 300s). That is NOT a bug. An orchestrator that doesn't sit in `listen` will look stale — it doesn't block anything; messages still land in its inbox. **Since v0.4 (F-23a) an orchestrator can declare `cab-bridge state orchestrating` once and is then heartbeat-exempt — it no longer shows stale (see "Task state" below).**
 - Orphan sweep: a session whose PID is dead AND whose heartbeat is older than `AutoGCHours` (default 24h) is removed by the auto-gc that runs at `register` startup.
 
 ## Setup constraints
 
 - **Distinct working directories**: the two sessions should start from DIFFERENT cwds (session lookup is longest-prefix-by-cwd; same cwd is ambiguous). The cwd does NOT limit file access — only the bridge's "which session am I" lookup. Passing `--session-id` explicitly avoids the ambiguity entirely.
-- **Same data dir = the pair's channel**: both sessions must use the same `CAB_DATA_DIR` (default `~/.claude/cli-agents-bridge/`). Use the LITERAL same value in both (never a shell `$$`).
-- **Multiple pairs at once → isolate by team**: if several pairs share one data dir, `peers` shows everyone and you can confuse whose session is whose. Two options: a separate `CAB_DATA_DIR` per pair, or — simpler — register with `--team=<name>` and filter with `peers --team=<name>`.
+- **Automatic per-project isolation (v0.4, F-17) — the common case needs no config**: the v0.4 binary derives a `scope` from the project root (the `.git` marker, walking up from cwd; `$HOME` excluded; fallback = cwd) at `register`, and `peers` shows only the sessions of the current project by default. So a pair in the SAME repo isolates itself — you need NEITHER `CAB_DATA_DIR` NOR `--team`. `peers --all-scopes` for the global view; `whoami` shows the `scope`.
+- **Manual isolation (special cases / pre-v0.4)**: both sessions sharing the same `CAB_DATA_DIR` (default `~/.claude/cli-agents-bridge/`, LITERAL same value, never a shell `$$`) is the physical channel. Use it when peers are on DIFFERENT git checkouts (auto-scope would separate them) or for two pairs in one repo. `--team=<name>` + `peers --team=<name>` is a logical filter WITHIN one data dir — do not mix the two axes (a session without the team is hidden by `peers --team`).
 
 ## The two patterns
 
@@ -36,7 +36,7 @@ cab-bridge ask --session-id=<self> --to=<peer> --file=/tmp/brief.md   # -> msg-i
 cab-bridge receive --session-id=<self> --msg-id=<msg-id> --max-deadline=300
 ```
 
-`receive` is a WAKE signal, not a guaranteed delivery: treat it as "something happened", then verify the real state by reading the inbox files on disk (and, if the task produces commits, `git log`). A reply that lands after the deadline stays in the inbox and is picked up on the next read.
+`receive` is a WAKE signal, not a guaranteed delivery: treat it as "something happened", then verify the real state by reading the inbox files on disk (and, if the task produces commits, `git log`). A reply that lands after the deadline stays in the inbox and is picked up on the next read. **Since v0.4 (F-30), when `receive` DOES match it archives the reply to your OWN `processed/` dir** (symmetric with `listen`) — so even if a background caller misses the stdout, you recover the consumed reply with `inbox --list` from your own session, instead of digging through the sender's outbox.
 
 ### Executor (sits in listen to receive)
 
@@ -51,7 +51,9 @@ cab-bridge ask --session-id=<self> --to=<orchestrator> --type=response --in-repl
 
 A `listen` running in the background notifies the agent only when the command EXITS, not on each message. With a long blocking window, an urgent message sits unseen until the window times out.
 
-**Preferred**: `cab-bridge listen --wait-one` exits (code 0) as soon as the first non-empty batch arrives — so a background caller is woken the instant a message lands. Process it, then re-launch `listen --wait-one`. It delivers the whole batch present at that sweep (lossless — no message is consumed-but-unseen). On an empty inbox it still honors the blocking timeout and exits 124, so the caller re-launches exactly as for the default listen.
+**Preferred**: `cab-bridge listen --wait-one` exits (code 0) as soon as the first non-empty batch arrives — so a background caller is woken the instant a message lands. Process it, then re-launch `listen --wait-one`. It delivers the whole batch present at that sweep (lossless — no message is consumed-but-unseen). **On an empty-window timeout it exits 0 with a `{"status":"timeout","messages":[]}` payload (v0.4, F-24) — not a failure** — so a background harness doesn't read "command failed" every idle cycle; the caller tells a timeout from a delivered batch by the `status` field. (The default non-`--wait-one` `listen` keeps exit 124 for bash until-loops.)
+
+For a long standby window without re-looping every ~9 min, set it explicitly: **`listen --until-deadline=2h`** (v0.4, F-26 — more discoverable than the `CAB_MAX_BLOCKING_SECONDS` env; precedence: flag > env > 540s default).
 
 Keep an executor in an ACTIVE listen between tasks: an agent that finished its turn and is no longer listening will NOT be woken by a new message until something re-engages it.
 
@@ -59,6 +61,7 @@ Keep an executor in an ACTIVE listen between tasks: an agent that finished its t
 
 - When a `listen` consumes a `query`, the binary automatically sends a `type=ack` receipt back to the sender (`inReplyTo` set to the original id). The orchestrator gets an `sent → ack → done` state machine for free. Only `query` triggers an auto-ack (so a receipt never begets a receipt). Suppress it with `listen --no-auto-ack`.
 - `peers` and `status` expose `inboxCount` (pending, un-consumed messages) and `lastConsumedMsgId` — so you can tell an idle session from one actively draining its inbox, without relying on heartbeat (which only proves the listen process is alive, not that work is happening).
+- **Agent state (v0.4, F-23a)**: `cab-bridge state <idle|working|done|orchestrating>` sets the session's state — the flag goes BEFORE the value: `cab-bridge state --session-id=<id> working`. `peers` (a `STATE` column), `status`, and `whoami` show it, so an orchestrator sees a peer move `working → done` natively, with less manual ACK discipline. `orchestrating` makes a session **heartbeat-exempt** (never stale) — for an orchestrator that does not sit in `listen`. State is setter-only; read it via `whoami`/`status`/`peers`.
 
 ## Knowing who/where you are — `cab whoami`
 
@@ -79,20 +82,32 @@ So two equal agents with no hierarchy can just use a custom role (e.g. both `--r
 
 ## Recovery after a reboot / reset
 
-A reboot leaves the manifests on disk with dead PIDs (stale/orphan); sessions do NOT re-attach themselves. Re-`register` (you get a NEW sessionId — the old one is dead), re-announce the new id to the peer, and sweep orphans with `cab-bridge cleanup --scope=global --force`.
+A reboot/restart/**compact** leaves the manifests on disk with dead PIDs. **Since v0.4 (F-27) recovery is one deterministic line**:
+
+```bash
+cab-bridge register --resume --agent-name=<same-name> --role=<same-role>
+```
+
+`--resume` = reconnect-or-register: it resumes the existing session matching your identity (agent-name + role + scope + team) — **same sessionId, same inbox/processed/outbox, same state** — or registers fresh if none matches. So you keep your old id (the peer keeps writing to the same place — no re-announce), and skip manual `whoami`+`peers` reconciliation. Liveness is the manifest PID (`IsProcessAlive`): a live owner (an active `listen`) is never stolen — if every identity match is live, the command errors (use `--force-new` for a deliberate second instance). A legacy (pre-F-17) session resumed this way has its `scope` backfilled. *(Pre-v0.4: re-`register` for a NEW id + re-announce to the peer + `cleanup --scope=global --force`.)*
 
 ## Cleaning up dead sessions
 
-Closing a window/session does not delete its session — it lingers as an orphan until the auto-gc threshold. A reliable hook would be unreliable (no shutdown hook fires on force-quit/crash); the robust pattern is reconcile-on-start, not cleanup-on-close. To clear dead sessions now: `cab-bridge cleanup --scope=global --force` (removes sessions stale beyond `StaleSeconds`; a live `listen` is preserved). For a single one: `cab-bridge cleanup --session-id=<id>`.
+Closing a window/session does not delete its session — it lingers as an orphan until the auto-gc threshold. A reliable hook would be unreliable (no shutdown hook fires on force-quit/crash); the robust pattern is reconcile-on-start, not cleanup-on-close. To clear dead sessions now: `cab-bridge cleanup --scope=global --force` (removes sessions stale beyond `StaleSeconds` — via the shared `IsStale`, so a session in state `orchestrating` is exempt; a live `listen` is preserved). For a single one: `cab-bridge cleanup --session-id=<id>`.
+
+## Inspecting the inbox — `inbox --list` / `--tidy` (v0.4, F-22)
+
+`cab-bridge inbox --session-id=<id> --list [--json]` lists `inbox/` (pending) and `processed/` (consumed) messages WITHOUT consuming them — id, from, type, timestamp, one-line preview, with a `box` field distinguishing the two. It replaces a fragile `ls inbox/*.json` and is how you recover a reply that `listen`/`receive` already archived to `processed/` (completes F-30). `cab-bridge inbox --session-id=<id> --tidy` archives every well-formed `inbox/` message to `processed/` (lossless sweep) — the explicit "I handled what `--list` showed" hygiene action. `--list` and `--tidy` are mutually exclusive.
 
 ## Command quick reference
 
 ```
-cab-bridge register --role=<val|esc|architect|observer|neutral|custom> --agent-name=<name> [--team=<name>] [--force-new]
-cab-bridge listen   --session-id=<id> [--wait-one] [--no-auto-ack]
+cab-bridge register --role=<val|esc|architect|observer|neutral|custom> --agent-name=<name> [--team=<name>] [--resume] [--force-new]
+cab-bridge listen   --session-id=<id> [--wait-one] [--until-deadline=<dur, e.g. 2h>] [--no-auto-ack]
 cab-bridge ask      --session-id=<id> --to=<peer> [--content=... | --file=path] [--type=query|response|notify|ack] [--in-reply-to=msg-...] [--allow-mesh]
 cab-bridge receive  --session-id=<id> --msg-id=<msg-...> --max-deadline=<sec>
-cab-bridge peers    [--json] [--team=<name>] [--include-stale]
+cab-bridge state    --session-id=<id> <idle|working|done|orchestrating>     # flag BEFORE the value
+cab-bridge inbox    --session-id=<id> (--list [--json] | --tidy)
+cab-bridge peers    [--json] [--team=<name>] [--all-scopes] [--include-stale]
 cab-bridge status   --session-id=<id>
 cab-bridge whoami   [--session-id=<id>] [--json]
 cab-bridge sent     [--session-id=<id>] [--json]
@@ -102,4 +117,4 @@ cab-bridge inspect  <id>
 cab-bridge version
 ```
 
-Exit codes: 0 ok, 1 validation, 2 routing-forbidden, 3 cleanup-confirm-required, 124 timeout (also: `listen --wait-one` exits 0 on delivery, 124 on empty-inbox timeout).
+Exit codes: 0 ok, 1 validation, 2 routing-forbidden, 3 cleanup-confirm-required, 124 timeout. `listen --wait-one` exits 0 on delivery AND on an empty-window timeout (the latter with a `{"status":"timeout","messages":[]}` payload, F-24); the default `listen` exits 124 on timeout.
