@@ -5,9 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] — 2026-05-31
 
-Sprint v0.3→v0.4 — reliable wake/delivery cycle + inbox tooling + agent-state observability. On `main` + dev binary regenerated; **not yet tagged** (awaiting real-use validation → likely `v0.4.0`). Independent VAL gate `go test -race -count=1 ./...` green at each step. Distilled from 8 independent dogfooding agent-voices (VPS + game + BI security review).
+Reliable wake/delivery cycle + inbox tooling + agent-state observability + idempotent reconnect. Built end-to-end via the cab-bridge dogfooding workflow and **validated in real use** (chatterence-bi field test: F-21/F-22/F-23a/F-26 confirmed on the job — "the bridge is now pleasant to use for an orchestrator, not just reliable"). Independent VAL gate `go test -race -count=1 ./...` green at each step + per-fix real smoke. Distilled from 8 independent dogfooding agent-voices (VPS + game + BI security review). Follow-up findings (F-34 conversation cursor, F-35 inbox filters, F-36 receive --any, F-23b read-receipt) deferred to a later version.
 
 ### Fixed
 - **F-30 — `receive` no longer deletes the consumed reply, it archives it**: `scanForReply` did `os.Remove` on a match (asymmetric to `listen`/`DrainInboxOnce` which `MoveToProcessed`). With a background `receive` whose caller missed stdout, the reply was then gone from the inbox and survived only in the SENDER's outbox → recovery from someone else's path. Now it is moved to the receiver's own `processed/` dir, so recovery is from home. At-most-once preserved across concurrent callers (a lost archive race — `ErrNotExist` — keeps scanning instead of handing the reply out twice; EXDEV/permission returns the message anyway since the caller is blocking on exactly it). `send.go` untouched — the bug was consume-side, not delivery.
