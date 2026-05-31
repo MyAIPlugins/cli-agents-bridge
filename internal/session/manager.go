@@ -334,6 +334,25 @@ func (m *Manager) SetLastConsumed(sessionID, msgID string) error {
 	return m.SaveManifest(manifest)
 }
 
+// SetState records the agent task-state in sessionID's manifest (F-23a) and
+// refreshes the heartbeat — setting the state is itself a sign of life. Holds
+// manifestMu for the whole read-modify-write so the concurrent heartbeat
+// goroutine (or SetLastConsumed) cannot clobber the field (same discipline as
+// SetLastConsumed / AdoptPID — see the manifestMu doc). The caller validates
+// state against the canonical set (IsValidState) before calling; Manager stores
+// it as given.
+func (m *Manager) SetState(sessionID, state string) error {
+	m.manifestMu.Lock()
+	defer m.manifestMu.Unlock()
+	manifest, err := m.LoadManifest(sessionID)
+	if err != nil {
+		return err
+	}
+	manifest.State = state
+	manifest.LastHeartbeat = m.now()
+	return m.SaveManifest(manifest)
+}
+
 // Touch refreshes the lastHeartbeat field of sessionID's manifest to "now"
 // without launching a goroutine. Used by the connect-peer subcommand to
 // guarantee the sender's heartbeat is fresh at handshake time (BUG-9 fix:

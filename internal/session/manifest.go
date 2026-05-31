@@ -81,6 +81,18 @@ type Manifest struct {
 	// used as a filesystem path component — only string-compared for filtering —
 	// so it needs no SC-4-style validation.
 	Scope string `json:"scope,omitempty"`
+
+	// State is the agent task-state (F-23a): one of the State* constants
+	// (idle/working/done/orchestrating), set by the agent via `cab-bridge state
+	// <value>` and shown by peers/status/whoami. Distinct from Status (session
+	// lifecycle "active") — it answers "what is the agent doing". State
+	// "orchestrating" makes the session heartbeat-exempt in session.IsStale.
+	// Optional and additive: empty means "unknown" (legacy/pre-F-23 and
+	// never-set), so omitempty keeps it out of those manifests and
+	// Validate/ApplyV1Defaults deliberately ignore it. Read paths are lenient
+	// (any value displayed verbatim, forward-compat); only the setter validates
+	// against the canonical set.
+	State string `json:"state,omitempty"`
 }
 
 // Validate checks that the manifest has the minimum required fields for
