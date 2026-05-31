@@ -79,6 +79,11 @@ type RegisterOpts struct {
 	// free of os.UserHomeDir/env dependencies and trivially testable. Empty means
 	// "no scope" (caller's FindProjectRoot failed, or a v1-style register).
 	Scope string
+	// Resume requests the F-27 reconnect-or-register behaviour: before creating
+	// a new session, resume an existing one whose identity (agent-name + role +
+	// scope + team) matches and which is not held by a live process. Ignored when
+	// ForceNew is set (ForceNew always creates a brand-new session).
+	Resume bool
 }
 
 // Register creates a new session: generates a session ID, writes manifest.json
@@ -98,6 +103,20 @@ func (m *Manager) Register(ctx context.Context, opts RegisterOpts) (*Manifest, f
 	absProj, err := filepath.Abs(opts.ProjectPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("register: resolve ProjectPath %q: %w", opts.ProjectPath, err)
+	}
+
+	// F-27 reconnect-or-register: with Resume, try to resume an existing
+	// matching session (reusing its id/inbox/state) before creating a fresh one.
+	// ForceNew short-circuits this — it always creates a brand-new session.
+	if opts.Resume && !opts.ForceNew {
+		mf, release, rerr := m.tryReuse(absProj, opts)
+		if rerr == nil {
+			return mf, release, nil // resumed an existing session
+		}
+		if !errors.Is(rerr, errReuseNoMatch) {
+			return nil, nil, rerr // ErrIdentityLive or a genuine failure
+		}
+		// errReuseNoMatch -> fall through to a fresh register below.
 	}
 
 	// BUG-6 fix: prevent double-register on the same project path unless

@@ -19,6 +19,7 @@ func runRegister(args []string) error {
 	agentName := fs.String("agent-name", "", "human-readable name (default: project basename)")
 	projectPath := fs.String("project-path", "", "project root path (default: cwd)")
 	forceNew := fs.Bool("force-new", false, "override existing live session for the same project (BUG-6)")
+	resume := fs.Bool("resume", false, "resume an existing matching session (same agent-name/role/scope/team) instead of creating a new one — the idempotent post-compact/restart bootstrap (F-27); errors if a live session with this identity already exists (use --force-new for a second instance)")
 	team := fs.String("team", "", "team label isolating this pair from others in the same data dir (F-5); peers --team filters on it")
 	asJSON := fs.Bool("json", true, "emit registration manifest as JSON on stdout (default true)")
 	if err := fs.Parse(args); err != nil {
@@ -63,6 +64,7 @@ func runRegister(args []string) error {
 		ForceNew:    *forceNew,
 		TeamID:      *team,
 		Scope:       resolveScope(pp), // F-17: auto project-root; "" on non-fatal failure
+		Resume:      *resume,          // F-27: reconnect-or-register
 	})
 	if err != nil {
 		return err
