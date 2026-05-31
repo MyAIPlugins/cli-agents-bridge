@@ -1,0 +1,19 @@
+cmd/cab-bridge/overview.go
+  s_eb4856a75f1865::t_5a2ed7edad5610 57-60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "3d884ad0e768df3ba6511332a44dade4a77fcc95",
+  "prompts": {},
+  "sessions": {
+    "s_eb4856a75f1865": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "85b200f7-3ddd-444c-9015-583ce5b39b74",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
