@@ -1,0 +1,23 @@
+internal/transport/fs/receive_test.go
+  s_c99b42d9f3d32d::t_00e4dbbd021ef4 75-77,79-105
+  s_c99b42d9f3d32d::t_0e1bb777abb12f 8,18-34
+internal/transport/fs/receive.go
+  s_c99b42d9f3d32d::t_1f3d5d91057460 88-99
+  s_c99b42d9f3d32d::t_51ebaf24b5079a 147-161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "8612af3eb608d7980a068f5b3908478cbf5ce96c",
+  "prompts": {},
+  "sessions": {
+    "s_c99b42d9f3d32d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67be31bc-ff6b-4cdd-8291-c8f038f8f051",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
