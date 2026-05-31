@@ -19,6 +19,10 @@ import (
 // expires on an empty inbox: a single JSON object whose "status" field lets a
 // caller distinguish an exit-0 timeout from a delivered batch (the delivery path
 // emits per-message NDJSON with no envelope). Messages is always the empty array.
+//
+// Shared by `listen --wait-one` and `receive --any` (F-36): both wake-on-batch
+// commands exit 0 with this same {status,messages} payload on an empty-window
+// timeout, so a run-in-background caller reads one contract for either.
 type waitOneTimeout struct {
 	Status   string `json:"status"`
 	Messages []any  `json:"messages"`
