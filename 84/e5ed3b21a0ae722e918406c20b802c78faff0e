@@ -1,0 +1,29 @@
+PRIVACY.md
+  s_da508dd14cf7fe::t_0610ab37acdb90 82
+.claude-plugin/marketplace.json
+  s_da508dd14cf7fe::t_0610ab37acdb90 6,16
+PLAN.md
+  s_da508dd14cf7fe::t_0610ab37acdb90 361
+plugins/cli-agents-bridge/.claude-plugin/plugin.json
+  s_da508dd14cf7fe::t_0610ab37acdb90 8
+iterations/PLAN_v2_ESC.md
+  s_da508dd14cf7fe::t_0610ab37acdb90 325
+SECURITY.md
+  s_da508dd14cf7fe::t_0610ab37acdb90 61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "84e5ed3b21a0ae722e918406c20b802c78faff0e",
+  "prompts": {},
+  "sessions": {
+    "s_da508dd14cf7fe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "04afe0d5-69d7-4ebf-829d-0e5bd111d8ae",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
