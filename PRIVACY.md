@@ -79,4 +79,4 @@ For encryption-at-rest (a v1.0+ candidate), see PLAN.md §5 v1.0.
 
 ## Contact
 
-Privacy questions: advertalis@gmail.com
+Privacy questions: firstcontact@alancurtisagency.com

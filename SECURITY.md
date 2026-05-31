@@ -58,7 +58,7 @@ Explicitly NOT defended against in v0.2.0, with rationale:
 
 If you find a security issue:
 
-1. **Email**: advertalis@gmail.com
+1. **Email**: firstcontact@alancurtisagency.com
 2. **Subject**: `[security] cli-agents-bridge: <short description>`
 3. Include:
    - Affected version (`cab-bridge --version`)

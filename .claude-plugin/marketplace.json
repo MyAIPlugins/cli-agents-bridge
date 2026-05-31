@@ -3,7 +3,7 @@
   "description": "Self-marketplace for cli-agents-bridge — fork of PatilShreyas/claude-code-session-bridge",
   "owner": {
     "name": "myAIPlugins",
-    "email": "advertalis@gmail.com",
+    "email": "firstcontact@alancurtisagency.com",
     "url": "https://github.com/myAIPlugins"
   },
   "plugins": [
@@ -13,7 +13,7 @@
       "description": "Robust multi-peer IPC bridge between CLI agent sessions (Claude Code, Codex, Aider, Cline). Role-based routing, scoped cleanup, namespace separation, security baseline.",
       "author": {
         "name": "Alan Curtis (AC Agency)",
-        "email": "advertalis@gmail.com",
+        "email": "firstcontact@alancurtisagency.com",
         "url": "https://www.alancurtisagency.com"
       },
       "source": "./plugins/cli-agents-bridge",

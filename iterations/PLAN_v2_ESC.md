@@ -322,7 +322,7 @@ cli-agents-bridge/
   "description": "Robust multi-peer IPC bridge between CLI agent sessions (Claude Code, etc.)",
   "author": {
     "name": "Alan",
-    "email": "advertalis@gmail.com",
+    "email": "firstcontact@alancurtisagency.com",
     "url": "https://github.com/<TBD-org>/cli-agents-bridge"
   },
   "homepage": "https://github.com/<TBD-org>/cli-agents-bridge",

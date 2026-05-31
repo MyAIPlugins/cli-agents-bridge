@@ -5,7 +5,7 @@
   "description": "Robust multi-peer IPC bridge between CLI agent sessions (Claude Code, etc.) — fork of PatilShreyas/claude-code-session-bridge",
   "author": {
     "name": "Alan Curtis (AC Agency)",
-    "email": "advertalis@gmail.com",
+    "email": "firstcontact@alancurtisagency.com",
     "url": "https://www.alancurtisagency.com"
   },
   "homepage": "https://github.com/myAIPlugins/cli-agents-bridge",
