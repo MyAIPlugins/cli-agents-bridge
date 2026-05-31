@@ -85,8 +85,18 @@ func ReceiveReply(
 }
 
 // scanForReply does a single pass of inboxDir looking for a message whose
-// inReplyTo equals origMsgID. On match, deletes the file (at-most-once
-// consumption, same policy as PollInbox) and returns the message.
+// inReplyTo equals origMsgID. On match it ARCHIVES the file to the sibling
+// processed/ dir (F-30) and returns the message — symmetric with
+// DrainInboxOnce/consumeInboxEntry, so a background receive whose caller missed
+// the stdout can recover an already-consumed reply from its OWN processed/ dir
+// instead of digging it out of the sender's outbox. Previously it deleted the
+// file (os.Remove), which left a consumed reply nowhere on the receiver's side.
+//
+// At-most-once is preserved across concurrent callers: if the archive move loses
+// a race (source already gone, ErrNotExist) the reply was consumed by another
+// caller, so this one keeps scanning. Any OTHER move failure (EXDEV, permission)
+// leaves the file in inbox AND still returns the message — the receive caller is
+// blocking on exactly this reply and must not lose it to an archive error.
 //
 // Returns (nil, nil) when no match yet — the polling loop in ReceiveReply
 // handles retry. Returns non-nil error only for unexpected I/O failures
@@ -134,11 +144,21 @@ func scanForReply(inboxDir, origMsgID string, maxContentBytes int) (*message.Mes
 			continue
 		}
 
-		// Match. Delete BEFORE returning to ensure at-most-once consumption
-		// across concurrent ReceiveReply callers (same defensive pattern
-		// as PollInbox).
-		if err := os.Remove(full); err != nil {
-			return nil, fmt.Errorf("remove consumed reply %q: %w", full, err)
+		// Match. Archive to processed/ (F-30) instead of deleting, so the
+		// receiver keeps a recoverable copy. processedDir is the inbox sibling,
+		// derived exactly as DrainInboxOnce does.
+		processedDir := filepath.Join(filepath.Dir(inboxDir), "processed")
+		if err := MoveToProcessed(full, processedDir); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				// Lost a race: a concurrent ReceiveReply already consumed (moved)
+				// this reply. Preserve at-most-once — do NOT hand it out twice;
+				// keep scanning for our own match.
+				continue
+			}
+			// EXDEV/permission: the file is still in inbox and the caller is
+			// blocking on exactly this reply — never lose it. Return it anyway
+			// and log; a later scan or `inbox --list` can still surface it.
+			fmt.Fprintf(os.Stderr, "cab-bridge: receive matched reply %q but archiving to processed/ failed (non-fatal): %v\n", full, err)
 		}
 		return m, nil
 	}

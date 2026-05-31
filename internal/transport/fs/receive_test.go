@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +14,24 @@ import (
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
 )
+
+// archivedInProcessed reports whether a message with the given id was archived
+// into the processed/ dir that is a sibling of inboxDir (F-30 move target;
+// MoveToProcessed prefixes a timestamp, so match on the trailing basename).
+func archivedInProcessed(t *testing.T, inboxDir, id string) bool {
+	t.Helper()
+	processed := filepath.Join(filepath.Dir(inboxDir), "processed")
+	entries, err := os.ReadDir(processed)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), id+".json") {
+			return true
+		}
+	}
+	return false
+}
 
 func validReplyMessage(t *testing.T, id, from, to, replyTo string) *message.Message {
 	t.Helper()
@@ -53,9 +72,37 @@ func TestReceiveReply_FindsExistingReply(t *testing.T) {
 	assert.Equal(t, reply.ID, got.ID)
 	assert.Equal(t, "pong", got.Content)
 
-	// Consumed reply must be deleted (at-most-once consumption)
+	// F-30: the matched reply is ARCHIVED to processed/, not deleted — gone from
+	// inbox but present (timestamp-prefixed) in the sibling processed/ dir, so
+	// the receiver keeps a recoverable copy.
 	_, sterr := os.Stat(filepath.Join(inbox, reply.ID+".json"))
-	assert.True(t, os.IsNotExist(sterr), "matched reply must be deleted post-consumption")
+	assert.True(t, os.IsNotExist(sterr), "matched reply must leave inbox")
+	assert.True(t, archivedInProcessed(t, inbox, reply.ID), "matched reply must be archived to processed/")
+}
+
+// TestReceiveReply_ArchivedReplyIsNotRematched is the F-30 regression: once a
+// reply is consumed (archived to processed/), a second ReceiveReply for the same
+// origMsgID must NOT re-match it — it is no longer in inbox.
+func TestReceiveReply_ArchivedReplyIsNotRematched(t *testing.T) {
+	t.Parallel()
+
+	inbox := filepath.Join(t.TempDir(), "inbox")
+	require.NoError(t, os.MkdirAll(inbox, 0o700))
+
+	origID := "msg-aaaaaaaaaaaa"
+	reply := validReplyMessage(t, "msg-bbbbbbbbbbbb", "esc12345", "val12345", origID)
+	writeMessage(t, inbox, reply)
+
+	got, err := ReceiveReply(context.Background(), inbox, origID, 2*time.Second, 30*time.Millisecond, 65536)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.True(t, archivedInProcessed(t, inbox, reply.ID), "first receive must archive the reply")
+
+	// Second receive for the same origID must time out — the reply now lives in
+	// processed/, not inbox, so it is not re-delivered.
+	_, err = ReceiveReply(context.Background(), inbox, origID, 80*time.Millisecond, 30*time.Millisecond, 65536)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrTimeout, "an archived reply must not be re-matched by a later receive")
 }
 
 func TestReceiveReply_FindsReplyArrivingMidWait(t *testing.T) {
