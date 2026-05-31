@@ -1,0 +1,38 @@
+docs/SESSION-2026-05-30-handoff.md
+  s_da508dd14cf7fe::t_090e4668d996f6 43
+  s_da508dd14cf7fe::t_6009205dc4eb6c 44-51,54,56-59
+  s_da508dd14cf7fe::t_106ce2f1b46778 40-42
+  s_da508dd14cf7fe::t_7a7732d6f71bb4 52-53,55
+  s_da508dd14cf7fe::t_52ac06065bcb74 1-39,61-63
+  s_da508dd14cf7fe::t_67e9a1075df22e 60
+ROADMAP.md
+  s_da508dd14cf7fe::t_2ada8d8c266b88 200,204,208,221
+  s_da508dd14cf7fe::t_69e4cd29598019 201
+  s_da508dd14cf7fe::t_88a4f584419069 210-211
+  s_da508dd14cf7fe::t_99d46574b1414e 223-225,228
+  s_da508dd14cf7fe::t_97f2eb7d2459ee 226-227
+  s_da508dd14cf7fe::t_1aed4d23f29d24 216-220
+  s_da508dd14cf7fe::t_7742ffad06e920 229
+  s_da508dd14cf7fe::t_38dbda294da023 205
+  s_da508dd14cf7fe::t_7c45d21123d7ff 203
+  s_da508dd14cf7fe::t_7bf28152510142 206
+  s_da508dd14cf7fe::t_7eec0698378aff 209
+  s_da508dd14cf7fe::t_741a69f2675855 202
+  s_da508dd14cf7fe::t_7dfbbb197a69ef 222
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "16433dbbb29dfcfefa68b0e5422c2dd854f1a893",
+  "prompts": {},
+  "sessions": {
+    "s_da508dd14cf7fe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "04afe0d5-69d7-4ebf-829d-0e5bd111d8ae",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
