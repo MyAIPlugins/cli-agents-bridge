@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+v0.5 (in progress) — *AI-friendly under stress* (LL-13): reduce the surface of opaque ids/artifacts an agent must handle by hand.
+
+### Added
+- **F-40 — `cab-bridge bootstrap --role=<val|esc>`** (zero-config pairing): a one-shot bootstrap that discovers an already-registered peer in the project scope **in-process** (`collectPeers`, no pipe → F-16 by design), derives its own name adaptively (inherits the peer's suffix — `VAL-x` ↔ `ESC-x` — or falls back to `<ROLE>-<scope-basename>`, converging in either order), registers idempotently (`--resume`, F-27), and then: for `val` sets `state=orchestrating` + exits, for `esc` hands off to `listen --wait-one`. Eliminates the manual register+peers+naming dance — the riskiest phase for a fresh agent.
+
 ## [0.4.0] — 2026-05-31
 
 Reliable wake/delivery cycle + inbox tooling + agent-state observability + idempotent reconnect. Built end-to-end via the cab-bridge dogfooding workflow and **validated in real use** (chatterence-bi field test: F-21/F-22/F-23a/F-26 confirmed on the job — "the bridge is now pleasant to use for an orchestrator, not just reliable"). Independent VAL gate `go test -race -count=1 ./...` green at each step + per-fix real smoke. Distilled from 8 independent dogfooding agent-voices (VPS + game + BI security review). Follow-up findings (F-34 conversation cursor, F-35 inbox filters, F-36 receive --any, F-23b read-receipt) deferred to a later version.
