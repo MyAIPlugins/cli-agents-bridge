@@ -25,7 +25,10 @@ type whoamiReport struct {
 	// value peers filters on by default). Shown from the stored manifest field,
 	// not recomputed, so it reflects the root captured at register time. Empty
 	// (omitted) for legacy/pre-F-17 sessions.
-	Scope   string `json:"scope,omitempty"`
+	Scope string `json:"scope,omitempty"`
+	// State is the F-23a agent task-state (idle/working/done/orchestrating) from
+	// the stored manifest; empty (omitted) for legacy/never-set.
+	State   string `json:"state,omitempty"`
 	DataDir string `json:"dataDir"`
 }
 
@@ -63,6 +66,7 @@ func runWhoami(args []string) error {
 		TeamID:      mf.TeamID,
 		ProjectPath: mf.ProjectPath,
 		Scope:       mf.Scope,
+		State:       mf.State,
 		DataDir:     cfg.DataDir,
 	}
 
@@ -83,12 +87,17 @@ func runWhoami(args []string) error {
 	if scope == "" {
 		scope = "(none)"
 	}
+	state := report.State
+	if state == "" {
+		state = "(none)"
+	}
 	fmt.Printf("session:     %s\n", report.SessionID)
 	fmt.Printf("agent:       %s\n", report.AgentName)
 	fmt.Printf("role:        %s\n", report.Role)
 	fmt.Printf("team:        %s\n", team)
 	fmt.Printf("projectPath: %s\n", report.ProjectPath)
 	fmt.Printf("scope:       %s\n", scope)
+	fmt.Printf("state:       %s\n", state)
 	fmt.Printf("dataDir:     %s\n", report.DataDir)
 	return nil
 }

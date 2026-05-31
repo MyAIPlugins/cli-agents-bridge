@@ -38,6 +38,10 @@ type peerSummary struct {
 	// which are therefore hidden by the default filter and shown only with
 	// --all-scopes.
 	Scope string `json:"scope,omitempty"`
+	// State is the F-23a agent task-state (idle/working/done/orchestrating).
+	// Empty (omitted) for legacy/pre-F-23 or never-set sessions. State
+	// "orchestrating" makes Stale always false (session.IsStale).
+	State string `json:"state,omitempty"`
 }
 
 func runPeers(args []string) error {
@@ -99,7 +103,7 @@ func runPeers(args []string) error {
 	}
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "SESSION_ID\tROLE\tAGENT_NAME\tPROJECT\tTEAM\tPID\tHEARTBEAT_AGE\tSTALE\tINBOX\tLAST_CONSUMED\tSCOPE")
+	fmt.Fprintln(tw, "SESSION_ID\tROLE\tSTATE\tAGENT_NAME\tPROJECT\tTEAM\tPID\tHEARTBEAT_AGE\tSTALE\tINBOX\tLAST_CONSUMED\tSCOPE")
 	now := time.Now().UTC()
 	for _, p := range peers {
 		age := now.Sub(p.LastHeartbeat).Truncate(time.Second)
@@ -119,8 +123,12 @@ func runPeers(args []string) error {
 		if scopeCol == "" {
 			scopeCol = "-"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\t%d\t%s\t%s\n",
-			p.SessionID, p.Role, p.AgentName, p.ProjectName, teamCol, p.PID, age, stale, p.InboxCount, lastConsumed, scopeCol)
+		stateCol := p.State
+		if stateCol == "" {
+			stateCol = "-"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\t%d\t%s\t%s\n",
+			p.SessionID, p.Role, stateCol, p.AgentName, p.ProjectName, teamCol, p.PID, age, stale, p.InboxCount, lastConsumed, scopeCol)
 	}
 	return tw.Flush()
 }
@@ -146,7 +154,7 @@ func collectPeers(mgr *session.Manager, dataDir string, staleSeconds int, includ
 		return nil, 0, fmt.Errorf("peers: read sessions root: %w", err)
 	}
 
-	cutoff := time.Now().UTC().Add(-time.Duration(staleSeconds) * time.Second)
+	now := time.Now().UTC()
 	out := []peerSummary{} // BUG-B: empty, not nil, so peers --json emits [] not null
 	hiddenByScope := 0
 	for _, e := range entries {
@@ -160,7 +168,9 @@ func collectPeers(mgr *session.Manager, dataDir string, staleSeconds int, includ
 		if teamFilter != "" && mf.TeamID != teamFilter {
 			continue
 		}
-		stale := mf.LastHeartbeat.Before(cutoff)
+		// F-23a: staleness via the single shared definition (orchestrating is
+		// heartbeat-exempt). Same source of truth as status + cleanup globalSweep.
+		stale := session.IsStale(mf, staleSeconds, now)
 		if stale && !includeStale {
 			continue
 		}
@@ -182,6 +192,7 @@ func collectPeers(mgr *session.Manager, dataDir string, staleSeconds int, includ
 			LastConsumedMsgID: mf.LastConsumedMsgID,
 			TeamID:            mf.TeamID,
 			Scope:             mf.Scope,
+			State:             mf.State,
 		})
 	}
 	return out, hiddenByScope, nil

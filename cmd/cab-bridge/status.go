@@ -9,20 +9,26 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
 type statusReport struct {
-	SessionID     string    `json:"sessionId"`
-	Role          string    `json:"role"`
-	AgentName     string    `json:"agentName"`
-	ProjectName   string    `json:"projectName"`
-	StartedAt     time.Time `json:"startedAt"`
-	LastHeartbeat time.Time `json:"lastHeartbeat"`
-	HeartbeatAge  string    `json:"heartbeatAge"`
-	InboxCount    int       `json:"inboxCount"`
-	OutboxCount   int       `json:"outboxCount"`
-	ProcessedCount int      `json:"processedCount"`
-	Stale         bool      `json:"stale"`
+	SessionID      string    `json:"sessionId"`
+	Role           string    `json:"role"`
+	AgentName      string    `json:"agentName"`
+	ProjectName    string    `json:"projectName"`
+	StartedAt      time.Time `json:"startedAt"`
+	LastHeartbeat  time.Time `json:"lastHeartbeat"`
+	HeartbeatAge   string    `json:"heartbeatAge"`
+	InboxCount     int       `json:"inboxCount"`
+	OutboxCount    int       `json:"outboxCount"`
+	ProcessedCount int       `json:"processedCount"`
+	Stale          bool      `json:"stale"`
+	// State is the F-23a agent task-state (idle/working/done/orchestrating);
+	// empty (omitted) for legacy/never-set. orchestrating forces Stale=false
+	// (session.IsStale).
+	State string `json:"state,omitempty"`
 	// LastConsumedMsgID is the id of the most recently consumed inbox message
 	// (F-12). Combined with inboxCount (== pending, since consumed messages are
 	// moved to processed/) it distinguishes an idle session from one actively
@@ -59,18 +65,19 @@ func runStatus(args []string) error {
 
 	sessionDir := filepath.Join(cfg.DataDir, "sessions", sid)
 	report := statusReport{
-		SessionID:      mf.SessionID,
-		Role:           mf.Role,
-		AgentName:      mf.AgentName,
-		ProjectName:    mf.ProjectName,
-		StartedAt:      mf.StartedAt,
-		LastHeartbeat:  mf.LastHeartbeat,
-		HeartbeatAge:   time.Since(mf.LastHeartbeat).Truncate(time.Second).String(),
+		SessionID:         mf.SessionID,
+		Role:              mf.Role,
+		AgentName:         mf.AgentName,
+		ProjectName:       mf.ProjectName,
+		StartedAt:         mf.StartedAt,
+		LastHeartbeat:     mf.LastHeartbeat,
+		HeartbeatAge:      time.Since(mf.LastHeartbeat).Truncate(time.Second).String(),
 		InboxCount:        countJSON(filepath.Join(sessionDir, "inbox")),
 		OutboxCount:       countJSON(filepath.Join(sessionDir, "outbox")),
 		ProcessedCount:    countJSON(filepath.Join(sessionDir, "processed")),
-		Stale:             time.Since(mf.LastHeartbeat) > time.Duration(cfg.StaleSeconds)*time.Second,
+		Stale:             session.IsStale(mf, cfg.StaleSeconds, time.Now().UTC()),
 		LastConsumedMsgID: mf.LastConsumedMsgID,
+		State:             mf.State,
 	}
 
 	out, err := json.MarshalIndent(report, "", "  ")
