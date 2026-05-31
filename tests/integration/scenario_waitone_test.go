@@ -129,16 +129,20 @@ func TestScenarioWaitOne_NoAutoAck_SuppressesReceipt(t *testing.T) {
 		"--no-auto-ack must suppress the delivery receipt")
 }
 
-// TestScenarioWaitOne_NoMessage_TimesOut124 verifies that with an empty inbox
-// --wait-one still honours the MaxBlocking timeout and exits 124, so a
-// run-in-background caller re-launches exactly as it does for the default path.
-func TestScenarioWaitOne_NoMessage_TimesOut124(t *testing.T) {
+// TestScenarioWaitOne_NoMessage_TimesOutPayloadExit0 verifies the F-24 change:
+// an empty-inbox --wait-one window that expires is a valid result, not a
+// failure. It now exits 0 with a {"status":"timeout","messages":[]} payload on
+// stdout, so a run-in-background harness reads success (not "command failed")
+// every idle cycle and tells a timeout from a delivered batch by the payload.
+func TestScenarioWaitOne_NoMessage_TimesOutPayloadExit0(t *testing.T) {
 	t.Parallel()
 	dataDir := t.TempDir()
 
 	_, escID := registerPair(t, dataDir, "wot")
 
-	_, errOut, exit := run(t, []string{"listen", "--wait-one", "--session-id=" + escID},
+	stdout, errOut, exit := run(t, []string{"listen", "--wait-one", "--session-id=" + escID},
 		dataDirEnv(dataDir, "CAB_POLL_INTERVAL_MS=50", "CAB_MAX_BLOCKING_SECONDS=1"))
-	assert.Equal(t, 124, exit, "empty inbox + timeout must exit 124; stderr: %s", errOut)
+	require.Equal(t, 0, exit, "empty inbox + timeout must now exit 0; stderr: %s", errOut)
+	assert.Contains(t, stdout, `"status"`, "timeout must emit a status payload on stdout")
+	assert.Contains(t, stdout, "timeout", "payload status must be timeout")
 }

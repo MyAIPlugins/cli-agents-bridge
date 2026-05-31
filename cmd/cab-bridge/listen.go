@@ -15,12 +15,21 @@ import (
 	transportfs "github.com/myAIPlugins/cli-agents-bridge/internal/transport/fs"
 )
 
+// waitOneTimeout is the F-24 sentinel payload emitted when a --wait-one window
+// expires on an empty inbox: a single JSON object whose "status" field lets a
+// caller distinguish an exit-0 timeout from a delivered batch (the delivery path
+// emits per-message NDJSON with no envelope). Messages is always the empty array.
+type waitOneTimeout struct {
+	Status   string `json:"status"`
+	Messages []any  `json:"messages"`
+}
+
 func runListen(args []string) error {
 	fs := flag.NewFlagSet("listen", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	sessionIDFlag := fs.String("session-id", "", "session ID (default: longest-prefix lookup from cwd)")
 	noAutoAck := fs.Bool("no-auto-ack", false, "disable the automatic delivery receipt sent to a query's sender on consume (F-12)")
-	waitOne := fs.Bool("wait-one", false, "exit (code 0) after delivering the first non-empty batch of messages, instead of blocking until the MaxBlocking timeout (F-10: wake-on-arrival for run-in-background callers; default off)")
+	waitOne := fs.Bool("wait-one", false, "exit 0 after delivering the first non-empty batch of messages; on an empty-window timeout also exit 0, emitting a {\"status\":\"timeout\",\"messages\":[]} payload instead of failing (F-10/F-24: wake-on-arrival for run-in-background callers; default off)")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -117,8 +126,16 @@ func runListen(args []string) error {
 			select {
 			case <-ctx.Done():
 				if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-					return fmt.Errorf("listen --wait-one: max-blocking timeout %v reached, exit for harness re-run: %w",
-						maxBlocking, transportfs.ErrTimeout)
+					// F-24: an empty --wait-one window that expires is a valid
+					// result, not a failure. Emit a timeout payload and exit 0 so a
+					// run-in-background harness reads success (not "command failed")
+					// every idle cycle; the caller tells this timeout from a
+					// delivered batch by the "status" field. The default PollInbox
+					// path below keeps exit 124 — a bash until-loop relies on it.
+					if err := enc.Encode(waitOneTimeout{Status: "timeout", Messages: []any{}}); err != nil {
+						return fmt.Errorf("listen --wait-one: encode timeout payload: %w", err)
+					}
+					return nil
 				}
 				return nil // SIGINT/clean cancel — exit 0, same as the default path.
 			case <-time.After(pollInterval):
