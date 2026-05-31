@@ -1,0 +1,22 @@
+tests/integration/scenario_waitone_test.go
+  s_c99b42d9f3d32d::t_cf04ff66fdd027 132-137,143,145-147
+cmd/cab-bridge/listen.go
+  s_c99b42d9f3d32d::t_50f7dbdc8b459b 18-26,32
+  s_c99b42d9f3d32d::t_89ea8136b883a8 129-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "88d98a1cc3fac6e7c56602849ce6f57a9e96e847",
+  "prompts": {},
+  "sessions": {
+    "s_c99b42d9f3d32d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67be31bc-ff6b-4cdd-8291-c8f038f8f051",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
