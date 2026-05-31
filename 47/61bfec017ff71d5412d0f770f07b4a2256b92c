@@ -1,0 +1,23 @@
+cmd/cab-bridge/listen.go
+  s_c99b42d9f3d32d::t_39f13d8fa10f40 27-49
+  s_c99b42d9f3d32d::t_8ce3472e6c6ef4 56
+  s_c99b42d9f3d32d::t_6a4080c7bae8a9 83-91
+cmd/cab-bridge/listen_test.go
+  s_c99b42d9f3d32d::t_0ba577b8ecf4fe 1-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4761bfec017ff71d5412d0f770f07b4a2256b92c",
+  "prompts": {},
+  "sessions": {
+    "s_c99b42d9f3d32d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67be31bc-ff6b-4cdd-8291-c8f038f8f051",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
