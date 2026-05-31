@@ -1,0 +1,21 @@
+internal/cleanup/scope.go
+  s_c99b42d9f3d32d::t_47ddf2b933892f 114-119,130,143-144
+internal/cleanup/scope_test.go
+  s_c99b42d9f3d32d::t_5cc10d0de664fb 99-124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "0e10ccde2f3e68c3d7c685a23c29d226b4cd674a",
+  "prompts": {},
+  "sessions": {
+    "s_c99b42d9f3d32d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67be31bc-ff6b-4cdd-8291-c8f038f8f051",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
