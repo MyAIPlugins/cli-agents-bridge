@@ -1,5 +1,7 @@
 # Handoff sessione 2026-05-30 — cli-agents-bridge
 
+> **AGGIORNAMENTO 2026-05-31 — Sprint v0.3 1° giro CHIUSO + MERGED su `main`.** Le 3 coppie di test (VPS/gioco/BI) hanno consegnato i feedback → backlog v0.3 consolidato (F-13→F-32, 8 voci). Primo giro implementato via cab-bridge (canale `teams/cab-dev`): F-30 `8612af3` (receive→archivia), F-24 `88d98a1` (--wait-one exit0+payload), F-26 `4761bfe` (--until-deadline). Gate VAL verde 10/10 no-cached, binario rigenerato `0.2.4-5-g4761bfe` in PATH (fix attivi), CHANGELOG [Unreleased]/ROADMAP/skill aggiornati. **NON taggato** → tag v0.3.0 dopo il testing reale nei progetti. Restano: F-22 (follow-up), F-23/F-27 (portanti), F-25/F-28/F-29/F-31/F-32/F-11. Dettaglio in `ROADMAP.md` + memory.
+
 > Stato + pending pre-compact. Per riprendere: leggi questo + `docs/v0.2.2-plan.md` + la skill
 > `cab-bridge-awareness` (findings di metodo). Il principio guida resta **F-16: verifica il
 > ground-truth su disco (git/inbox/peers), MAI il resoconto**.
