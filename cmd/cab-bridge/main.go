@@ -43,6 +43,8 @@ func main() {
 		fmt.Println(version)
 	case "--help", "-h", "help":
 		printUsage()
+	case "bootstrap":
+		exitFromErr(runBootstrap(os.Args[2:]))
 	case "register":
 		exitFromErr(runRegister(os.Args[2:]))
 	case "listen":
@@ -110,6 +112,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  cab-bridge <subcommand> [args...]")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Subcommands:")
+	fmt.Fprintln(os.Stderr, "  bootstrap            Zero-config pairing: discover peer, derive name, register (--resume), listen (esc) — F-40")
 	fmt.Fprintln(os.Stderr, "  register             Register a new session (--resume to reconnect an existing one post-compact, F-27)")
 	fmt.Fprintln(os.Stderr, "  listen               Poll inbox emitting messages as JSON until SIGINT or MaxBlocking timeout")
 	fmt.Fprintln(os.Stderr, "  ask                  Send a message to a peer (--to, --content, --file, --in-reply-to, --allow-mesh)")
