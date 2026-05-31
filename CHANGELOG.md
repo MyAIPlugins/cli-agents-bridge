@@ -17,6 +17,7 @@ Sprint v0.3 — "reliable wake/delivery cycle". On `main` + dev binary regenerat
 
 ### Added
 - **F-26 — `listen --until-deadline=<duration>`**: explicit standby window (e.g. `2h`, `30m`) for the run-in-background executor pattern, more discoverable than `CAB_MAX_BLOCKING_SECONDS`. Precedence: `--until-deadline` flag > `CAB_MAX_BLOCKING_SECONDS` env > 540s default. Invalid/non-positive value is a hard error naming the flag.
+- **F-22 — `inbox` subcommand**: `inbox --session-id=<id> --list [--json]` lists `inbox/` (pending) and `processed/` (consumed) messages WITHOUT consuming them (id, from, type, timestamp, one-line preview) — completes F-30 (an archived reply is listable from home, replacing the fragile `ls inbox/*.json`). `inbox --tidy` archives every well-formed `inbox/` message to `processed/` (lossless sweep via `MoveToProcessed`, the explicit "I handled what `--list` showed" hygiene action; malformed/`.tmp` files left for forensics). `--list` and `--tidy` are mutually exclusive.
 
 ## [0.2.4] — 2026-05-30
 
