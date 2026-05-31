@@ -15,11 +15,24 @@ func mkGitDir(t *testing.T, dir string) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".git"), 0o700))
 }
 
-// mkGitFile creates dir plus a `.git` FILE (linked git-worktree marker).
+// mkGitFile creates dir plus a `.git` FILE (linked git-worktree marker) whose
+// gitdir pointer is a non-worktree fixture path (so it exercises the F-41
+// fallback to own-root).
 func mkGitFile(t *testing.T, dir string) {
 	t.Helper()
 	require.NoError(t, os.MkdirAll(dir, 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, ".git"), []byte("gitdir: /elsewhere\n"), 0o600))
+}
+
+// mkWorktreeGitFile creates wtDir plus a `.git` FILE pointing at gitdirTarget,
+// reproducing the linked-worktree layout where the pointer is
+// `<root>/.git/worktrees/<name>` (F-41). gitdirTarget may be absolute or
+// relative (git writes either).
+func mkWorktreeGitFile(t *testing.T, wtDir, gitdirTarget string) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(wtDir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(wtDir, ".git"),
+		[]byte("gitdir: "+gitdirTarget+"\n"), 0o600))
 }
 
 func TestFindProjectRoot_GitDirMarker_FromNestedCwd(t *testing.T) {
@@ -35,6 +48,10 @@ func TestFindProjectRoot_GitDirMarker_FromNestedCwd(t *testing.T) {
 	assert.Equal(t, root, got)
 }
 
+// A `.git` FILE counts as a marker, but a pointer that is NOT the canonical
+// worktree shape (here the fixture's non-worktree "/elsewhere") falls back to
+// the dir's own root as scope (F-41 fallback). The realistic worktree pointer
+// is exercised by TestFindProjectRoot_Worktree_ResolvesToGitCommonRoot below.
 func TestFindProjectRoot_GitFileMarker_Worktree(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
@@ -45,7 +62,7 @@ func TestFindProjectRoot_GitFileMarker_Worktree(t *testing.T) {
 
 	got, err := FindProjectRoot(nested, home)
 	require.NoError(t, err)
-	assert.Equal(t, root, got, "a .git FILE (worktree) must count as a marker")
+	assert.Equal(t, root, got, "a .git FILE with a non-worktree pointer falls back to its own dir")
 }
 
 func TestFindProjectRoot_CwdIsRoot_ExactMatch(t *testing.T) {
@@ -166,4 +183,77 @@ func TestFindProjectRoot_CwdEqualsHome_Degenerate(t *testing.T) {
 	got, err := FindProjectRoot(home, home)
 	require.NoError(t, err)
 	assert.Equal(t, home, got)
+}
+
+// F-41: a linked worktree (a `.git` FILE pointing at <root>/.git/worktrees/<n>)
+// resolves to the git-common-root <root>, NOT to the worktree dir, so a VAL at
+// the main repo and an ESC in a worktree of the same repo share one scope.
+func TestFindProjectRoot_Worktree_ResolvesToGitCommonRoot(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	base := t.TempDir()
+	mainRepo := filepath.Join(base, "main")
+	wt := filepath.Join(base, "main-wt")
+	gitdir := filepath.Join(mainRepo, ".git", "worktrees", "main-wt")
+	mkWorktreeGitFile(t, wt, gitdir)
+	nested := filepath.Join(wt, "internal", "session")
+	require.NoError(t, os.MkdirAll(nested, 0o700))
+
+	got, err := FindProjectRoot(nested, home)
+	require.NoError(t, err)
+	assert.Equal(t, mainRepo, got, "a linked worktree resolves to its git-common-root")
+}
+
+// F-41: a relative gitdir pointer is resolved against the worktree dir before
+// the common-root is derived (git may write either absolute or relative).
+func TestFindProjectRoot_Worktree_RelativeGitdir(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	base := t.TempDir()
+	mainRepo := filepath.Join(base, "main")
+	wt := filepath.Join(base, "wt")
+	rel := filepath.Join("..", "main", ".git", "worktrees", "wt") // relative from wt
+	mkWorktreeGitFile(t, wt, rel)
+
+	got, err := FindProjectRoot(wt, home)
+	require.NoError(t, err)
+	assert.Equal(t, mainRepo, got, "a relative gitdir resolves against the worktree dir")
+}
+
+// F-41: a submodule's `.git` file points at <super>/.git/modules/<name>, which
+// is NOT a worktree pointer -> it falls back to the submodule's own dir as scope
+// (a submodule is a distinct repository, correctly isolated).
+func TestFindProjectRoot_GitFile_Submodule_FallsBackToOwnRoot(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	base := t.TempDir()
+	super := filepath.Join(base, "super")
+	sub := filepath.Join(super, "vendored")
+	gitdir := filepath.Join(super, ".git", "modules", "vendored")
+	mkWorktreeGitFile(t, sub, gitdir)
+
+	got, err := FindProjectRoot(sub, home)
+	require.NoError(t, err)
+	assert.Equal(t, sub, got, "a submodule .git pointer is not a worktree -> own dir is its scope")
+}
+
+// F-41 (the v0.5 onboarding goal): a VAL at the MAIN repo (.git DIR) and an ESC
+// in a linked worktree of the same repo (.git FILE -> common-root) resolve to
+// the SAME scope, so they pair with zero config and see each other in `peers`.
+func TestFindProjectRoot_ValMainRepoAndEscWorktree_SameScope(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	base := t.TempDir()
+	mainRepo := filepath.Join(base, "cli-agents-bridge")
+	mkGitDir(t, mainRepo) // VAL lives here (main checkout, .git is a DIR)
+	wt := filepath.Join(base, "cli-agents-bridge-esc")
+	gitdir := filepath.Join(mainRepo, ".git", "worktrees", "cli-agents-bridge-esc")
+	mkWorktreeGitFile(t, wt, gitdir) // ESC lives here (linked worktree, .git is a FILE)
+
+	valScope, err := FindProjectRoot(mainRepo, home)
+	require.NoError(t, err)
+	escScope, err := FindProjectRoot(wt, home)
+	require.NoError(t, err)
+	assert.Equal(t, valScope, escScope, "main repo and its worktree must share one scope (F-41)")
+	assert.Equal(t, mainRepo, escScope)
 }
