@@ -1,0 +1,27 @@
+plugins/cli-agents-bridge/skills/bridge-workflow/SKILL.md
+  s_da508dd14cf7fe::t_34be0552033086 18
+  s_da508dd14cf7fe::t_5c0902d6bab91f 24-25
+  s_da508dd14cf7fe::t_3b450c0b07fdbb 104-105,108-110,120
+  s_da508dd14cf7fe::t_ea6633e0e28ecf 3
+  s_da508dd14cf7fe::t_7f75ad98001a11 85-91
+  s_da508dd14cf7fe::t_0741ae49af266c 54-56
+  s_da508dd14cf7fe::t_a9fb4f10617f1f 95-99
+  s_da508dd14cf7fe::t_347137888365b2 64
+  s_da508dd14cf7fe::t_f68fa14f3790fc 39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "cc3994cece84870475ea660712484dae7cfcbe9e",
+  "prompts": {},
+  "sessions": {
+    "s_da508dd14cf7fe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "04afe0d5-69d7-4ebf-829d-0e5bd111d8ae",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
