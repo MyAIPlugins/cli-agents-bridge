@@ -1,0 +1,23 @@
+internal/session/scope_test.go
+  s_eb4856a75f1865::t_bb75e106fcc08c 187-259
+  s_eb4856a75f1865::t_249b06aea4a611 18-20,27-35
+  s_eb4856a75f1865::t_cb916c015bc57f 51-54,65
+internal/session/scope.go
+  s_eb4856a75f1865::t_0105186d694825 7,12-13,15-35,65-68,81-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "59b18c4455a84ab00e414b81e7a137c8f4885313",
+  "prompts": {},
+  "sessions": {
+    "s_eb4856a75f1865": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "85b200f7-3ddd-444c-9015-583ce5b39b74",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
