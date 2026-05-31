@@ -1,0 +1,35 @@
+internal/session/reconnect_test.go
+  s_c99b42d9f3d32d::t_3fb76182998a4d 61-62
+  s_c99b42d9f3d32d::t_69a5aedd6d3652 95-99,109
+  s_c99b42d9f3d32d::t_93756ed086056f 176-177,184,189-190,192
+  s_c99b42d9f3d32d::t_6b3d16eaa6a63f 160
+  s_c99b42d9f3d32d::t_faa22333a05457 1-13,36-46,48-60,63-94,100-108,110-159,161-175,178-183,185-188,191,193-197
+  s_c99b42d9f3d32d::t_4251806e34af21 14-35,47
+cmd/cab-bridge/register.go
+  s_c99b42d9f3d32d::t_e64e78812ecf28 22
+  s_c99b42d9f3d32d::t_b6e2e54bdbd6a7 67
+internal/session/reconnect.go
+  s_c99b42d9f3d32d::t_15fcddec0f24ee 40-46,58-63,67,82-83
+  s_c99b42d9f3d32d::t_d93316c6cb1286 1-39,47-57,64-66,68-81,84-175
+cmd/cab-bridge/main.go
+  s_c99b42d9f3d32d::t_0a6b68c0410b54 113
+internal/session/manager.go
+  s_c99b42d9f3d32d::t_8d27f8d8eb7750 82-86
+  s_c99b42d9f3d32d::t_955293b6025c7b 108-121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4784bac83fe023606d72382d4add9e71088e6b21",
+  "prompts": {},
+  "sessions": {
+    "s_c99b42d9f3d32d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67be31bc-ff6b-4cdd-8291-c8f038f8f051",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
