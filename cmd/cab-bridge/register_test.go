@@ -138,7 +138,11 @@ func TestRunRegister_PopulatesScope(t *testing.T) {
 	require.NoError(t, runErr)
 	mf, err := mgr.LoadManifest(firstLine(out))
 	require.NoError(t, err)
-	assert.Equal(t, root, mf.Scope, "scope must be the .git project root, derived from the subfolder")
+	// Scope is the canonical (symlink-resolved) project root (F-41); t.TempDir is
+	// under a symlinked /tmp|/var on macOS, so resolve the expected value too.
+	wantRoot, evErr := filepath.EvalSymlinks(root)
+	require.NoError(t, evErr)
+	assert.Equal(t, wantRoot, mf.Scope, "scope must be the (canonical) .git project root, derived from the subfolder")
 
 	// A marker-less project path stores itself as scope (cwd fallback).
 	bare := t.TempDir()
@@ -149,7 +153,9 @@ func TestRunRegister_PopulatesScope(t *testing.T) {
 	require.NoError(t, runErr2)
 	mf2, err := mgr.LoadManifest(firstLine(out2))
 	require.NoError(t, err)
-	assert.Equal(t, bare, mf2.Scope, "no marker -> scope is the project path itself")
+	wantBare, evErr2 := filepath.EvalSymlinks(bare)
+	require.NoError(t, evErr2)
+	assert.Equal(t, wantBare, mf2.Scope, "no marker -> scope is the (canonical) project path itself")
 }
 
 // captureStdout redirects os.Stdout for the duration of fn and returns what was

@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -152,13 +153,28 @@ func resolveSessionID(mgr *session.Manager, flagValue string) (string, error) {
 	return sid, nil
 }
 
-// resolveScope derives the F-17 project-root scope for path: it resolves $HOME
-// and calls session.FindProjectRoot. Both steps are non-fatal — scope is a
-// convenience filter that must NEVER block register or peers — so any failure is
-// logged to stderr and the function returns "" (the "no scope / show-all"
-// sentinel). This is the single EXPLICIT, documented, logged scope fallback;
-// there is no silent degradation. A missing $HOME only disables the dotfiles
-// exclusion (FindProjectRoot tolerates an empty home).
+// resolveScope derives the F-17 project-root scope for path: it resolves $HOME,
+// calls session.FindProjectRoot (a lexical walk), then symlink-canonicalizes the
+// result. Every step is non-fatal — scope is a convenience filter that must
+// NEVER block register or peers — so any failure is logged to stderr and the
+// function returns "" (the "no scope / show-all" sentinel) or the un-resolved
+// path. This is the single EXPLICIT, documented, logged scope path; there is no
+// silent degradation. A missing $HOME only disables the dotfiles exclusion
+// (FindProjectRoot tolerates an empty home).
+//
+// F-41 symlink canonicalization: FindProjectRoot is lexical, but its two branches
+// disagree under a symlinked path — a normal/main repo (.git DIR) keeps the
+// lexical cwd path, while a linked worktree (.git FILE) inherits the `gitdir:`
+// that git writes ALREADY symlink-resolved. collectPeers compares scope as a
+// STRING, so on macOS (/tmp -> /private/tmp), under /var, or a symlinked
+// home/volume the main checkout and a worktree would get divergent scope strings
+// and silently fail to pair. EvalSymlinks here yields ONE canonical form for
+// every scope consumer (register's stored Scope, peers' scopeFilter, bootstrap's
+// discovery all flow through resolveScope, the sole FindProjectRoot caller).
+// Non-fatal: if the path can't be resolved (e.g. it does not exist yet) keep the
+// lexical scope — never drop it. ProjectPath and the cwd lookup
+// (LongestPrefixLookup) stay lexical on their own independent axis; Scope and
+// ProjectPath are never compared to each other, so canonicalizing Scope is safe.
 func resolveScope(path string) string {
 	home, herr := os.UserHomeDir()
 	if herr != nil {
@@ -169,6 +185,9 @@ func resolveScope(path string) string {
 	if serr != nil {
 		fmt.Fprintf(os.Stderr, "cab-bridge: scope detection failed for %q (non-fatal): %v — proceeding without scope\n", path, serr)
 		return ""
+	}
+	if resolved, rerr := filepath.EvalSymlinks(scope); rerr == nil {
+		return resolved
 	}
 	return scope
 }

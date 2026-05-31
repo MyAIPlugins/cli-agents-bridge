@@ -158,8 +158,12 @@ func TestBootstrap_TwoFreshAgentsConverge(t *testing.T) {
 	assert.Equal(t, "VAL-"+scopeBase, valMf.AgentName)
 	assert.Equal(t, "ESC-"+scopeBase, escMf.AgentName)
 	assert.Equal(t, session.StateOrchestrating, valMf.State, "val is set orchestrating")
-	// Both resolve to the git root -> shared scope -> they see each other.
-	assert.Equal(t, root, valMf.Scope)
+	// Both resolve to the git root -> shared scope -> they see each other. Scope is
+	// the canonical (symlink-resolved) root (F-41), so resolve the expected value
+	// too (t.TempDir is under a symlinked /tmp|/var on macOS).
+	wantRoot, evErr := filepath.EvalSymlinks(root)
+	require.NoError(t, evErr)
+	assert.Equal(t, wantRoot, valMf.Scope)
 	assert.Equal(t, valMf.Scope, escMf.Scope)
 }
 

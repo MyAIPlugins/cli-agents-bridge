@@ -43,9 +43,13 @@ import (
 // (e.g. a project-level `.claude`), kept here so adding it stays purely additive
 // (VAL ratification H1). An empty home disables the exclusion (no $HOME known).
 //
-// Resolution is lexical (filepath.Abs + Clean), matching LongestPrefixLookup and
-// isPathDescendantOrEqual; symlinks are not resolved so scope and the cwd lookup
-// agree on one canonical form.
+// Resolution in THIS walk is lexical (filepath.Abs + Clean), matching
+// LongestPrefixLookup and isPathDescendantOrEqual. Symlinks are NOT resolved here;
+// the sole caller (cmd resolveScope) symlink-canonicalizes the returned scope so
+// the `.git` DIR branch (lexical cwd) and the `.git` FILE branch (git writes the
+// gitdir already symlink-resolved) converge on one form under a symlinked path
+// (F-41). Scope and the cwd lookup are independent axes — the lookup compares
+// ProjectPath, never Scope — so the two need not share a form.
 //
 // Returns an error only if filepath.Abs fails on cwd (effectively never). The
 // caller treats that as "no scope" and proceeds — the feature must never block a
