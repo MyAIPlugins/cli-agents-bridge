@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Sprint v0.3 — "reliable wake/delivery cycle". On `main` + dev binary regenerated for real-project testing; **not yet tagged/released** (awaiting real-use validation). Independent VAL gate `go test -race -count=1 ./...` green. Distilled from 8 independent dogfooding agent-voices (VPS + game + BI security review).
+
+### Fixed
+- **F-30 — `receive` no longer deletes the consumed reply, it archives it**: `scanForReply` did `os.Remove` on a match (asymmetric to `listen`/`DrainInboxOnce` which `MoveToProcessed`). With a background `receive` whose caller missed stdout, the reply was then gone from the inbox and survived only in the SENDER's outbox → recovery from someone else's path. Now it is moved to the receiver's own `processed/` dir, so recovery is from home. At-most-once preserved across concurrent callers (a lost archive race — `ErrNotExist` — keeps scanning instead of handing the reply out twice; EXDEV/permission returns the message anyway since the caller is blocking on exactly it). `send.go` untouched — the bug was consume-side, not delivery.
+
+### Changed
+- **F-24 — `listen --wait-one` exits 0 with a timeout payload instead of 124**: an empty-window timeout in `--wait-one` returned `ErrTimeout` → exit 124, which a run-in-background harness surfaced as "command failed" every idle cycle. It now emits `{"status":"timeout","messages":[]}` on stdout and exits 0; the caller tells a timeout from a delivered batch by the `status` field. The default `PollInbox` path keeps exit 124 (a bash until-loop relies on it).
+
+### Added
+- **F-26 — `listen --until-deadline=<duration>`**: explicit standby window (e.g. `2h`, `30m`) for the run-in-background executor pattern, more discoverable than `CAB_MAX_BLOCKING_SECONDS`. Precedence: `--until-deadline` flag > `CAB_MAX_BLOCKING_SECONDS` env > 540s default. Invalid/non-positive value is a hard error naming the flag.
+
 ## [0.2.4] — 2026-05-30
 
 Automatic per-project isolation. Built via the bridge dogfooding workflow.
