@@ -1,0 +1,21 @@
+internal/message/validate_test.go
+  s_ab480f9f53051e::t_b0ead0b9fad4c2 295-313
+internal/message/validate.go
+  s_ab480f9f53051e::t_0e0cf041ec6174 30-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "dc6471823a4f03ece415a02fcf9d617c3ed273cc",
+  "prompts": {},
+  "sessions": {
+    "s_ab480f9f53051e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ef21e425-f6de-4cf5-848a-f49f98e5af68",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
