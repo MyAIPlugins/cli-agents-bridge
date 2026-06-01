@@ -140,3 +140,11 @@ func TestRunReceive_UnseenRequiresAny(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--unseen requires --any")
 }
+
+// F-49 follow-up: --unseen ALONE must report the precise error, not the generic
+// "pass --msg-id or --any" (the check now runs before the any/msg-id mutex).
+func TestRunReceive_UnseenAloneRequiresAny(t *testing.T) {
+	err := runReceive([]string{"--unseen"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--unseen requires --any")
+}

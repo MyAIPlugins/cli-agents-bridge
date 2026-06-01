@@ -63,6 +63,13 @@ func runReceive(args []string) error {
 		return err
 	}
 
+	// --unseen modifies --any; checked BEFORE the --any/--msg-id mutex so
+	// `receive --unseen` alone reports the precise error rather than falling
+	// through to the generic "pass --msg-id or --any" (F-49 follow-up).
+	if *unseen && !*anyFlag {
+		return errors.New("receive: --unseen requires --any")
+	}
+
 	switch {
 	case *anyFlag && *msgID != "":
 		return errors.New("receive: --any and --msg-id are mutually exclusive — choose one")
@@ -74,9 +81,6 @@ func runReceive(args []string) error {
 	}
 	if err := validateEmit(*emit); err != nil {
 		return fmt.Errorf("receive: %w", err)
-	}
-	if *unseen && !*anyFlag {
-		return errors.New("receive: --unseen requires --any")
 	}
 
 	cfg, warnings, err := config.Load()
