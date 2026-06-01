@@ -1,0 +1,27 @@
+cmd/cab-bridge/ask.go
+  s_ab480f9f53051e::t_4a771be319446d 64-86
+  s_ab480f9f53051e::t_13554c84eb130a 25
+  s_ab480f9f53051e::t_a277edbf0b8943 8-9
+cmd/cab-bridge/dedup_test.go
+  ai_agent 1-129
+cmd/cab-bridge/send_test.go
+  s_ab480f9f53051e::t_b810abd3b0739a 231-316
+cmd/cab-bridge/dedup.go
+  s_ab480f9f53051e::t_43c2395f8a516a 1-71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "d84df7347626509f66c6ea9a4c42fedeb9d98329",
+  "prompts": {},
+  "sessions": {
+    "s_ab480f9f53051e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ef21e425-f6de-4cf5-848a-f49f98e5af68",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
