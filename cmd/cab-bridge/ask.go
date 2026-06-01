@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
@@ -20,6 +22,7 @@ func runAsk(args []string) error {
 	inReplyTo := fs.String("in-reply-to", "", "msg-... ID this message replies to (required for type=response)")
 	allowMesh := fs.Bool("allow-mesh", false, "allow esc→esc routing (BUG-3 override)")
 	sessionIDFlag := fs.String("session-id", "", "sender session ID (default: longest-prefix lookup from cwd)")
+	skipDuplicate := fs.Bool("skip-duplicate", false, "if an identical message (same to/type/content within DedupWindowSeconds) was just sent, skip the resend and print the original id instead (F-43)")
 
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -56,6 +59,29 @@ func runAsk(args []string) error {
 	sid, err := resolveSessionID(mgr, *sessionIDFlag)
 	if err != nil {
 		return err
+	}
+
+	// F-43: guard against a degraded agent re-invoking `ask` before the first
+	// send returned. A recent identical message (same to/type/content within
+	// DedupWindowSeconds) in our own outbox is treated as a duplicate. Default:
+	// warn on stderr and send anyway (lose nothing, never block a legitimate
+	// repeat). --skip-duplicate: skip the resend and print the ORIGINAL id, so a
+	// double-invoke caller still captures a usable id with no duplicate on disk.
+	// Disabled when DedupWindowSeconds <= 0.
+	if cfg.DedupWindowSeconds > 0 {
+		outbox := filepath.Join(cfg.DataDir, "sessions", sid, "outbox")
+		dupID, derr := findRecentDuplicate(outbox, *to, *msgType, body, cfg.DedupWindowSeconds, cfg.MaxMessageBytes, time.Now())
+		if derr != nil {
+			return fmt.Errorf("ask: %w", derr)
+		}
+		if dupID != "" {
+			if *skipDuplicate {
+				fmt.Fprintf(os.Stderr, "ask: skipping duplicate of %s (same to/type/content within %ds)\n", dupID, cfg.DedupWindowSeconds)
+				fmt.Println(dupID)
+				return nil
+			}
+			fmt.Fprintf(os.Stderr, "ask: warning: looks like a duplicate of %s sent within %ds (same to/type/content); sending anyway — use --skip-duplicate to suppress the resend\n", dupID, cfg.DedupWindowSeconds)
+		}
 	}
 
 	var inReplyToPtr *string

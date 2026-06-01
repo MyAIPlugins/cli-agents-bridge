@@ -228,3 +228,89 @@ func TestMaybeAutoAck_NonFatalWhenObserverListener(t *testing.T) {
 	maybeAutoAck(cfg, mgr, "obssess1", inbound) // observer cannot send → skipped
 	assert.Equal(t, 0, countInboxJSON(t, dataDir, "valsess1"))
 }
+
+// F-43: a second identical ask within the window warns on stderr but STILL
+// delivers (default: lose nothing, never block a legitimate repeat).
+func TestRunAsk_DuplicateDefaultWarnsAndSends(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	plantRoleSession(t, dataDir, "valsess1", session.RoleVal)
+	plantRoleSession(t, dataDir, "escsess1", session.RoleEsc)
+
+	args := []string{"--session-id=valsess1", "--to=escsess1", "--content=hello dup"}
+	var e1 error
+	captureStdout(t, func() { e1 = runAsk(args) })
+	require.NoError(t, e1)
+
+	var e2 error
+	_, stderr := captureStdoutStderr(t, func() { e2 = runAsk(args) })
+	require.NoError(t, e2, "default duplicate must still send (exit 0)")
+	assert.Contains(t, stderr, "duplicate", "a warning must be emitted on stderr")
+	assert.Equal(t, 2, countInboxJSON(t, dataDir, "escsess1"), "default sends anyway: recipient has both")
+}
+
+// F-43: --skip-duplicate does not resend; it prints the ORIGINAL id (caller
+// idempotence) and leaves the recipient inbox unchanged.
+func TestRunAsk_DuplicateSkipReturnsOriginalID(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	plantRoleSession(t, dataDir, "valsess1", session.RoleVal)
+	plantRoleSession(t, dataDir, "escsess1", session.RoleEsc)
+
+	args := []string{"--session-id=valsess1", "--to=escsess1", "--content=hello dup"}
+	var e1 error
+	out1 := captureStdout(t, func() { e1 = runAsk(args) })
+	require.NoError(t, e1)
+	id1 := strings.TrimSpace(out1)
+
+	var e2 error
+	out2 := captureStdout(t, func() {
+		e2 = runAsk([]string{"--session-id=valsess1", "--to=escsess1", "--content=hello dup", "--skip-duplicate"})
+	})
+	require.NoError(t, e2)
+	assert.Equal(t, id1, strings.TrimSpace(out2), "skip prints the ORIGINAL id, not a new one")
+	assert.Equal(t, 1, countInboxJSON(t, dataDir, "escsess1"), "skip must NOT resend")
+}
+
+// F-43: a different content within the window is not a duplicate — sent, no warning.
+func TestRunAsk_DifferentContentNotDuplicate(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	plantRoleSession(t, dataDir, "valsess1", session.RoleVal)
+	plantRoleSession(t, dataDir, "escsess1", session.RoleEsc)
+
+	var e1 error
+	captureStdout(t, func() { e1 = runAsk([]string{"--session-id=valsess1", "--to=escsess1", "--content=first"}) })
+	require.NoError(t, e1)
+
+	var e2 error
+	_, stderr := captureStdoutStderr(t, func() {
+		e2 = runAsk([]string{"--session-id=valsess1", "--to=escsess1", "--content=second"})
+	})
+	require.NoError(t, e2)
+	assert.NotContains(t, stderr, "duplicate", "different content must not warn")
+	assert.Equal(t, 2, countInboxJSON(t, dataDir, "escsess1"))
+}
+
+// F-43: CAB_DEDUP_WINDOW_SECONDS=0 disables the check — a duplicate is sent with
+// no warning (the <=0 gate).
+func TestRunAsk_DedupDisabled(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	t.Setenv("CAB_DEDUP_WINDOW_SECONDS", "0")
+	plantRoleSession(t, dataDir, "valsess1", session.RoleVal)
+	plantRoleSession(t, dataDir, "escsess1", session.RoleEsc)
+
+	args := []string{"--session-id=valsess1", "--to=escsess1", "--content=dup"}
+	var e1, e2 error
+	captureStdout(t, func() { e1 = runAsk(args) })
+	require.NoError(t, e1)
+	_, stderr := captureStdoutStderr(t, func() { e2 = runAsk(args) })
+	require.NoError(t, e2)
+	assert.NotContains(t, stderr, "duplicate", "dedup disabled → no warning")
+	assert.Equal(t, 2, countInboxJSON(t, dataDir, "escsess1"))
+}
