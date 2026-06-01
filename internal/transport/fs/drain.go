@@ -13,16 +13,21 @@ import (
 
 // consumeInboxEntry processes a single directory entry from inboxDir: it skips
 // non-message files (.tmp.* atomic-write leftovers, non-.json), reads and
-// lenient-decodes the payload, and on success moves it to processedDir BEFORE
-// returning it. Returns (msg, true) when a message was consumed (and moved), or
-// (nil, false) when the entry was skipped — not a message, unreadable,
-// malformed, or move failed. Malformed files are deliberately left on disk for
-// forensics.
+// lenient-decodes the payload, optionally applies the accept predicate, and on
+// success moves it to processedDir BEFORE returning it. Returns (msg, true) when
+// a message was consumed (and moved), or (nil, false) when the entry was skipped
+// — not a message, unreadable, malformed, REJECTED by accept, or move failed.
+// Malformed files are deliberately left on disk for forensics.
+//
+// accept is an optional predicate (nil = accept all): when non-nil, only entries
+// for which accept(m) is true are consumed; a rejected entry is LEFT in inbox
+// (the check runs BEFORE the move). This is how `receive --any` drains
+// everything EXCEPT type=ack while listen's paths keep consuming all (accept=nil).
 //
 // This is the single source of truth for the inbox consume policy shared by the
-// streaming PollInbox path and the synchronous DrainInboxOnce path, so the two
-// never drift on what counts as a consumable message.
-func consumeInboxEntry(inboxDir, processedDir string, e os.DirEntry, maxContentBytes int) (*message.Message, bool) {
+// streaming PollInbox path, the synchronous DrainInboxOnce path, and the
+// receive --any drain, so they never drift on what counts as a consumable message.
+func consumeInboxEntry(inboxDir, processedDir string, e os.DirEntry, maxContentBytes int, accept func(*message.Message) bool) (*message.Message, bool) {
 	if e.IsDir() {
 		return nil, false
 	}
@@ -41,6 +46,12 @@ func consumeInboxEntry(inboxDir, processedDir string, e os.DirEntry, maxContentB
 	if err != nil {
 		// Malformed — leave on disk so a forensics command can review it
 		// later. Never hand a partially-decoded payload to the caller.
+		return nil, false
+	}
+
+	// Predicate gate BEFORE the move, so a rejected message stays in inbox (e.g.
+	// receive --any leaves type=ack as the observable F-12 delivery signal).
+	if accept != nil && !accept(m) {
 		return nil, false
 	}
 
@@ -67,6 +78,16 @@ func consumeInboxEntry(inboxDir, processedDir string, e os.DirEntry, maxContentB
 // read error (not ErrNotExist) is surfaced to the caller; skipped entries
 // (.tmp.*, non-.json, unreadable, malformed) are left on disk silently.
 func DrainInboxOnce(inboxDir string, maxContentBytes int) ([]*message.Message, error) {
+	return drainInbox(inboxDir, maxContentBytes, nil) // nil = accept all (listen path, unchanged)
+}
+
+// drainInbox performs one synchronous sweep of inboxDir, consuming every entry
+// for which accept(m) is true (a nil predicate accepts all) and returning them in
+// os.ReadDir order. Rejected entries are left in inbox. It is the shared engine
+// behind DrainInboxOnce (accept-all) and ReceiveAny (non-ack predicate, F-36).
+// Returns a nil slice (no error) when the inbox is empty or absent; a genuine
+// read error (not ErrNotExist) is surfaced.
+func drainInbox(inboxDir string, maxContentBytes int, accept func(*message.Message) bool) ([]*message.Message, error) {
 	entries, err := os.ReadDir(inboxDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -80,7 +101,7 @@ func DrainInboxOnce(inboxDir string, maxContentBytes int) ([]*message.Message, e
 
 	var msgs []*message.Message
 	for _, e := range entries {
-		if m, ok := consumeInboxEntry(inboxDir, processedDir, e, maxContentBytes); ok {
+		if m, ok := consumeInboxEntry(inboxDir, processedDir, e, maxContentBytes, accept); ok {
 			msgs = append(msgs, m)
 		}
 	}

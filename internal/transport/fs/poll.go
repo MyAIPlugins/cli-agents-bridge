@@ -80,7 +80,7 @@ func emitInboxOnce(ctx context.Context, out chan<- *message.Message, inboxDir st
 		// consumeInboxEntry moves the message to processed/ BEFORE returning
 		// it: if the consumer is in another process and the channel send
 		// blocks, no second poller can see this file in inbox/ (at-most-once).
-		m, ok := consumeInboxEntry(inboxDir, processedDir, e, maxContentBytes)
+		m, ok := consumeInboxEntry(inboxDir, processedDir, e, maxContentBytes, nil) // nil = accept all (unchanged)
 		if !ok {
 			continue
 		}

@@ -164,3 +164,61 @@ func scanForReply(inboxDir, origMsgID string, maxContentBytes int) (*message.Mes
 	}
 	return nil, nil
 }
+
+// ReceiveAny waits up to deadline for the first non-empty batch of NON-ack
+// messages in inboxDir, draining and archiving them to processed/ (F-30) in one
+// sweep, and returns the batch. It is the id-less wake primitive behind
+// `receive --any` (F-36): an orchestrator wakes on "anything arrived" WITHOUT
+// fabricating a msg-id to wait on (the LL-13 hallucination root).
+//
+// type=ack messages are NEVER drained — they are left in inbox as the observable
+// F-12 delivery signal, exactly as scanForReply skips them — so a batch of only
+// acks does NOT wake ReceiveAny (it times out with the acks still in inbox).
+//
+// Unlike listen, receive does NOT AdoptPID: this is a one-shot wake, not a
+// long-running listener (the delta that keeps receive and listen distinct).
+// Polling mirrors ReceiveReply (initial scan + ticker + deadline-before-scan).
+// Returns (batch, nil) on the first non-empty sweep, (nil, ErrTimeout) on
+// deadline, or (nil, ctx-wrapped) on cancellation.
+func ReceiveAny(
+	ctx context.Context,
+	inboxDir string,
+	deadline, pollInterval time.Duration,
+	maxContentBytes int,
+) ([]*message.Message, error) {
+	notAck := func(m *message.Message) bool { return m.Type != message.TypeAck }
+	deadlineTime := time.Now().Add(deadline)
+
+	// Initial sweep: a batch may already be waiting when ReceiveAny is called.
+	if msgs, err := drainInbox(inboxDir, maxContentBytes, notAck); err != nil {
+		return nil, err
+	} else if len(msgs) > 0 {
+		return msgs, nil
+	}
+
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("receive canceled: %w", ctx.Err())
+		case <-ticker.C:
+			// Deadline checked BEFORE the sweep so a tick at deadline still scans
+			// (same BUG-2 fix-intent as ReceiveReply: never lose a batch on disk).
+			now := time.Now()
+
+			msgs, err := drainInbox(inboxDir, maxContentBytes, notAck)
+			if err != nil {
+				return nil, err
+			}
+			if len(msgs) > 0 {
+				return msgs, nil
+			}
+
+			if now.After(deadlineTime) {
+				return nil, fmt.Errorf("%w: waited=%v (--any)", ErrTimeout, deadline)
+			}
+		}
+	}
+}

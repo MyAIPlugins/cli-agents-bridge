@@ -18,30 +18,40 @@ import (
 	transportfs "github.com/myAIPlugins/cli-agents-bridge/internal/transport/fs"
 )
 
-// runReceive implements the `cab-bridge receive` subcommand.
+// runReceive implements the `cab-bridge receive` subcommand. Two modes:
+//
+//	--msg-id   wait for a reply to a SPECIFIC message (one message out).
+//	--any      wake on the first batch of ANY non-ack message, no id (F-36) —
+//	           the id-less wake for an orchestrator that has nothing to wait ON.
+//
+// The two are mutually exclusive; exactly one is required.
 //
 // Flags:
 //
-//	--msg-id        original message ID to wait for reply to (required)
-//	--max-deadline  max seconds to wait for reply (default 1800 = 30 min)
+//	--msg-id        message ID to wait for a reply to (required unless --any)
+//	--any           wake on any non-ack message, without a msg-id
+//	--max-deadline  max seconds to wait (default 1800 = 30 min)
 //	--session-id    target session (default: longest-prefix lookup from cwd)
 //
 // Output:
 //
-//	stdout: matched message as indented JSON on success.
+//	stdout: --msg-id → the matched message as indented JSON; --any → the drained
+//	        batch as NDJSON (one indented object per message).
 //	stderr: error messages on failure (BUG-7 fix: never to stdout).
 //
 // Exit codes (mapped in main.go from returned error):
 //
-//	0    success — reply found and written to stdout
+//	0    success — reply/batch written to stdout; OR a --any timeout (exit 0 with
+//	     a {"status":"timeout"} payload, the deliberate asymmetry with --msg-id)
 //	1    config/validation/IO error
-//	124  ErrTimeout — deadline elapsed without a matching reply
+//	124  --msg-id ErrTimeout — deadline elapsed without a matching reply
 func runReceive(args []string) error {
 	fs := flag.NewFlagSet("receive", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr) // flag errors go to stderr
-	msgID := fs.String("msg-id", "", "original message ID to wait for reply to (required)")
-	maxDeadlineSec := fs.Int("max-deadline", 1800, "max seconds to wait for reply (default 1800 = 30 min)")
+	msgID := fs.String("msg-id", "", "message ID to wait for a reply to (required unless --any)")
+	maxDeadlineSec := fs.Int("max-deadline", 1800, "max seconds to wait (default 1800 = 30 min)")
 	sessionIDFlag := fs.String("session-id", "", "session ID (default: longest-prefix lookup from cwd)")
+	anyFlag := fs.Bool("any", false, "wake on the first batch of any non-ack message, without a msg-id; mutually exclusive with --msg-id (F-36)")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil // help already printed by flag pkg, exit 0 success
@@ -49,8 +59,11 @@ func runReceive(args []string) error {
 		return err
 	}
 
-	if *msgID == "" {
-		return errors.New("receive: --msg-id required")
+	switch {
+	case *anyFlag && *msgID != "":
+		return errors.New("receive: --any and --msg-id are mutually exclusive — choose one")
+	case !*anyFlag && *msgID == "":
+		return errors.New("receive: pass --msg-id (wait for a specific reply) or --any (wake on any non-ack message)")
 	}
 	if *maxDeadlineSec <= 0 {
 		return fmt.Errorf("receive: --max-deadline must be > 0 (got %d)", *maxDeadlineSec)
@@ -105,6 +118,11 @@ func runReceive(args []string) error {
 	deadline := time.Duration(*maxDeadlineSec) * time.Second
 	interval := time.Duration(cfg.PollIntervalMs) * time.Millisecond
 
+	// F-36: --any wakes on the first batch of any non-ack message, with no msg-id.
+	if *anyFlag {
+		return receiveAny(ctx, mgr, sid, inboxDir, deadline, interval, cfg.MaxMessageBytes)
+	}
+
 	m, err := transportfs.ReceiveReply(ctx, inboxDir, *msgID, deadline, interval, cfg.MaxMessageBytes)
 	if err != nil {
 		return err
@@ -121,5 +139,42 @@ func runReceive(args []string) error {
 		return fmt.Errorf("receive: marshal output: %w", err)
 	}
 	fmt.Println(string(out))
+	return nil
+}
+
+// receiveAny implements `receive --any` (F-36): wake on the first batch of any
+// non-ack message, drained and archived, emitted as NDJSON (one indented object
+// per message). On an empty-window timeout it exits 0 with a {"status":"timeout"}
+// payload — the DELIBERATE asymmetry with --msg-id (which exits 124, F-24): a
+// run-in-background wake loop reads success, not "command failed", every idle
+// cycle. SetLastConsumed records the last drained message for F-12 observability
+// (the batch is consumed in os.ReadDir order, so this is "consumed up to here",
+// not a temporal resume cursor — which --any does not need). Best-effort.
+func receiveAny(ctx context.Context, mgr *session.Manager, sid, inboxDir string, deadline, interval time.Duration, maxBytes int) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+
+	msgs, err := transportfs.ReceiveAny(ctx, inboxDir, deadline, interval, maxBytes)
+	if err != nil {
+		if errors.Is(err, transportfs.ErrTimeout) {
+			if eerr := enc.Encode(waitOneTimeout{Status: "timeout", Messages: []any{}}); eerr != nil {
+				return fmt.Errorf("receive --any: encode timeout payload: %w", eerr)
+			}
+			return nil
+		}
+		return err
+	}
+
+	for _, m := range msgs {
+		if eerr := enc.Encode(m); eerr != nil {
+			return fmt.Errorf("receive --any: encode message: %w", eerr)
+		}
+	}
+	if len(msgs) > 0 {
+		last := msgs[len(msgs)-1]
+		if serr := mgr.SetLastConsumed(sid, last.ID); serr != nil {
+			fmt.Fprintf(os.Stderr, "receive --any: record lastConsumed for %s: %v\n", last.ID, serr)
+		}
+	}
 	return nil
 }
