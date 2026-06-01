@@ -32,6 +32,7 @@ import (
 //	--any           wake on any non-ack message, without a msg-id
 //	--max-deadline  max seconds to wait (default 1800 = 30 min)
 //	--session-id    target session (default: longest-prefix lookup from cwd)
+//	--emit          json (full message, default) or content (body only, F-48)
 //
 // Output:
 //
@@ -52,6 +53,7 @@ func runReceive(args []string) error {
 	maxDeadlineSec := fs.Int("max-deadline", 1800, "max seconds to wait (default 1800 = 30 min)")
 	sessionIDFlag := fs.String("session-id", "", "session ID (default: longest-prefix lookup from cwd)")
 	anyFlag := fs.Bool("any", false, "wake on the first batch of any non-ack message, without a msg-id; mutually exclusive with --msg-id (F-36)")
+	emit := fs.String("emit", emitJSON, "output format for delivered messages: json (full message, default) or content (body only, F-48)")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil // help already printed by flag pkg, exit 0 success
@@ -67,6 +69,9 @@ func runReceive(args []string) error {
 	}
 	if *maxDeadlineSec <= 0 {
 		return fmt.Errorf("receive: --max-deadline must be > 0 (got %d)", *maxDeadlineSec)
+	}
+	if err := validateEmit(*emit); err != nil {
+		return fmt.Errorf("receive: %w", err)
 	}
 
 	cfg, warnings, err := config.Load()
@@ -120,7 +125,7 @@ func runReceive(args []string) error {
 
 	// F-36: --any wakes on the first batch of any non-ack message, with no msg-id.
 	if *anyFlag {
-		return receiveAny(ctx, mgr, sid, inboxDir, deadline, interval, cfg.MaxMessageBytes)
+		return receiveAny(ctx, mgr, sid, inboxDir, deadline, interval, cfg.MaxMessageBytes, *emit)
 	}
 
 	m, err := transportfs.ReceiveReply(ctx, inboxDir, *msgID, deadline, interval, cfg.MaxMessageBytes)
@@ -134,11 +139,11 @@ func runReceive(args []string) error {
 		fmt.Fprintf(os.Stderr, "receive: record lastConsumed for %s: %v\n", m.ID, serr)
 	}
 
-	out, err := json.MarshalIndent(m, "", "  ")
-	if err != nil {
-		return fmt.Errorf("receive: marshal output: %w", err)
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	if err := emitMessage(enc, *emit, m); err != nil {
+		return fmt.Errorf("receive: emit message: %w", err)
 	}
-	fmt.Println(string(out))
 	return nil
 }
 
@@ -150,15 +155,20 @@ func runReceive(args []string) error {
 // cycle. SetLastConsumed records the last drained message for F-12 observability
 // (the batch is consumed in os.ReadDir order, so this is "consumed up to here",
 // not a temporal resume cursor — which --any does not need). Best-effort.
-func receiveAny(ctx context.Context, mgr *session.Manager, sid, inboxDir string, deadline, interval time.Duration, maxBytes int) error {
+func receiveAny(ctx context.Context, mgr *session.Manager, sid, inboxDir string, deadline, interval time.Duration, maxBytes int, emit string) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 
 	msgs, err := transportfs.ReceiveAny(ctx, inboxDir, deadline, interval, maxBytes)
 	if err != nil {
 		if errors.Is(err, transportfs.ErrTimeout) {
-			if eerr := enc.Encode(waitOneTimeout{Status: "timeout", Messages: []any{}}); eerr != nil {
-				return fmt.Errorf("receive --any: encode timeout payload: %w", eerr)
+			// --emit=content suppresses the JSON timeout envelope (it would pollute
+			// a content-only stream); empty stdout + exit 0 is the timeout signal
+			// there. Default json mode keeps the F-36 payload intact.
+			if emit == emitJSON {
+				if eerr := enc.Encode(waitOneTimeout{Status: "timeout", Messages: []any{}}); eerr != nil {
+					return fmt.Errorf("receive --any: encode timeout payload: %w", eerr)
+				}
 			}
 			return nil
 		}
@@ -166,7 +176,7 @@ func receiveAny(ctx context.Context, mgr *session.Manager, sid, inboxDir string,
 	}
 
 	for _, m := range msgs {
-		if eerr := enc.Encode(m); eerr != nil {
+		if eerr := emitMessage(enc, emit, m); eerr != nil {
 			return fmt.Errorf("receive --any: encode message: %w", eerr)
 		}
 	}

@@ -58,11 +58,15 @@ func runListen(args []string) error {
 	noAutoAck := fs.Bool("no-auto-ack", false, "disable the automatic delivery receipt sent to a query's sender on consume (F-12)")
 	waitOne := fs.Bool("wait-one", false, "exit 0 after delivering the first non-empty batch of messages; on an empty-window timeout also exit 0, emitting a {\"status\":\"timeout\",\"messages\":[]} payload instead of failing (F-10/F-24: wake-on-arrival for run-in-background callers; default off)")
 	untilDeadline := fs.String("until-deadline", "", "explicit listen window as a Go duration (e.g. 2h, 30m); overrides CAB_MAX_BLOCKING_SECONDS and the 540s default for this run (F-26)")
+	emit := fs.String("emit", emitJSON, "output format for delivered messages: json (full message, default) or content (body only, F-48)")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
 		return err
+	}
+	if err := validateEmit(*emit); err != nil {
+		return fmt.Errorf("listen: %w", err)
 	}
 
 	cfg, err := loadConfigOrFail()
@@ -132,7 +136,7 @@ func runListen(args []string) error {
 			}
 			if len(msgs) > 0 {
 				for _, m := range msgs {
-					if err := enc.Encode(m); err != nil {
+					if err := emitMessage(enc, *emit, m); err != nil {
 						cancel()
 						return fmt.Errorf("listen: encode message: %w", err)
 					}
@@ -162,8 +166,13 @@ func runListen(args []string) error {
 					// every idle cycle; the caller tells this timeout from a
 					// delivered batch by the "status" field. The default PollInbox
 					// path below keeps exit 124 — a bash until-loop relies on it.
-					if err := enc.Encode(waitOneTimeout{Status: "timeout", Messages: []any{}}); err != nil {
-						return fmt.Errorf("listen --wait-one: encode timeout payload: %w", err)
+					// --emit=content suppresses this JSON envelope (it would pollute a
+					// content-only stream); empty stdout + exit 0 is the timeout signal
+					// there, as a delivered batch is always non-empty.
+					if *emit == emitJSON {
+						if err := enc.Encode(waitOneTimeout{Status: "timeout", Messages: []any{}}); err != nil {
+							return fmt.Errorf("listen --wait-one: encode timeout payload: %w", err)
+						}
 					}
 					return nil
 				}
@@ -186,9 +195,9 @@ func runListen(args []string) error {
 				}
 				return nil
 			}
-			// Emit one JSON object per line (newline-delimited JSON, easy to
-			// pipe to jq -c or process with a loop on the caller side).
-			if err := enc.Encode(m); err != nil {
+			// Emit the message per --emit: a full JSON object (default, NDJSON
+			// pipeable to jq -c) or the content body only (F-48).
+			if err := emitMessage(enc, *emit, m); err != nil {
 				return fmt.Errorf("listen: encode message: %w", err)
 			}
 			// F-12: record consumption (observability) then auto-ack the

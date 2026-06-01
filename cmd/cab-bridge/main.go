@@ -71,6 +71,8 @@ func main() {
 		exitFromErr(runSent(os.Args[2:]))
 	case "inbox":
 		exitFromErr(runInbox(os.Args[2:]))
+	case "read":
+		exitFromErr(runRead(os.Args[2:]))
 	case "inspect":
 		exitFromErr(runInspect(os.Args[2:]))
 	case "migrate-from-patil":
@@ -128,6 +130,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  state <value>        Set this session's agent state: idle|working|done|orchestrating (F-23)")
 	fmt.Fprintln(os.Stderr, "  sent                 List messages this session has sent (its own outbox, F-9)")
 	fmt.Fprintln(os.Stderr, "  inbox --list|--tidy  List inbox+processed without consuming, or --tidy to archive inbox/ to processed/ (F-22)")
+	fmt.Fprintln(os.Stderr, "  read <msg-id>        Print a message's content from inbox/ or processed/ without consuming it (--json for the full message, F-48)")
 	fmt.Fprintln(os.Stderr, "  inspect <id>         Print session manifest JSON (replaces jq dep)")
 	fmt.Fprintln(os.Stderr, "  migrate-from-patil   Migrate ~/.claude/session-bridge/ sessions to v2 namespace")
 	fmt.Fprintln(os.Stderr, "  version              Show version")

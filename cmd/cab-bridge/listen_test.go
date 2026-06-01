@@ -1,11 +1,15 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
 // TestResolveMaxBlocking covers the F-26 window precedence: --until-deadline
@@ -53,4 +57,47 @@ func TestResolveMaxBlocking(t *testing.T) {
 		_, err = resolveMaxBlocking("-5m", 0)
 		require.Error(t, err)
 	})
+}
+
+// F-48: listen --wait-one --emit=content delivers only the body of the batch.
+func TestRunListen_WaitOne_EmitContent_BodyOnly(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	sid := "lsnemit1"
+	plantOverviewSession(t, dataDir, sid, session.RoleEsc, "ESC-y", "/repo/x", "", "")
+	plantMsg(t, dataDir, sid, "inbox", "msg-aaaaaaaaaaaa", "val12345", "VAL-x", message.TypeResponse, "wake body text")
+
+	var runErr error
+	out := captureStdout(t, func() {
+		runErr = runListen([]string{"--wait-one", "--session-id=" + sid, "--emit=content", "--until-deadline=5s", "--no-auto-ack"})
+	})
+	require.NoError(t, runErr)
+	assert.Contains(t, out, "wake body text")
+	assert.NotContains(t, out, "schemaVersion", "content mode emits only the body")
+}
+
+// F-48: a --wait-one window that expires in content mode suppresses the JSON
+// timeout payload — empty stdout, exit 0.
+func TestRunListen_WaitOne_EmitContentTimeout_EmptyStdout(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	sid := "lsnemit2"
+	plantOverviewSession(t, dataDir, sid, session.RoleEsc, "ESC-y", "/repo/x", "", "")
+
+	var runErr error
+	out := captureStdout(t, func() {
+		runErr = runListen([]string{"--wait-one", "--session-id=" + sid, "--emit=content", "--until-deadline=1s", "--no-auto-ack"})
+	})
+	require.NoError(t, runErr, "wait-one timeout exits 0")
+	assert.Empty(t, strings.TrimSpace(out), "content mode suppresses the timeout payload")
+}
+
+func TestRunListen_EmitInvalid(t *testing.T) {
+	err := runListen([]string{"--emit=xml", "--session-id=lsnemit3"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--emit")
 }
