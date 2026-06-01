@@ -169,7 +169,7 @@ func TestReceiveAny_DrainsBatchExcludingAcks(t *testing.T) {
 	writeMessage(t, inbox, anyMessage(t, "msg-bbbbbbbbbbbb", message.TypeQuery))
 	writeMessage(t, inbox, anyMessage(t, "msg-cccccccccccc", message.TypeAck))
 
-	got, err := ReceiveAny(context.Background(), inbox, 2*time.Second, 30*time.Millisecond, 65536)
+	got, err := ReceiveAny(context.Background(), inbox, 2*time.Second, 30*time.Millisecond, 65536, time.Time{})
 	require.NoError(t, err)
 	require.Len(t, got, 2, "drains the 2 non-ack messages, not the ack")
 	ids := map[string]bool{}
@@ -194,7 +194,7 @@ func TestReceiveAny_OnlyAcks_TimesOut(t *testing.T) {
 	require.NoError(t, os.MkdirAll(inbox, 0o700))
 	writeMessage(t, inbox, anyMessage(t, "msg-aaaaaaaaaaaa", message.TypeAck))
 
-	got, err := ReceiveAny(context.Background(), inbox, 80*time.Millisecond, 30*time.Millisecond, 65536)
+	got, err := ReceiveAny(context.Background(), inbox, 80*time.Millisecond, 30*time.Millisecond, 65536, time.Time{})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrTimeout)
 	assert.Nil(t, got)
@@ -207,7 +207,7 @@ func TestReceiveAny_TimeoutEmptyInbox(t *testing.T) {
 	inbox := filepath.Join(t.TempDir(), "inbox")
 	require.NoError(t, os.MkdirAll(inbox, 0o700))
 
-	got, err := ReceiveAny(context.Background(), inbox, 80*time.Millisecond, 30*time.Millisecond, 65536)
+	got, err := ReceiveAny(context.Background(), inbox, 80*time.Millisecond, 30*time.Millisecond, 65536, time.Time{})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrTimeout)
 	assert.Nil(t, got)
@@ -223,7 +223,7 @@ func TestReceiveAny_BatchArrivingMidWait(t *testing.T) {
 		writeMessage(t, inbox, anyMessage(t, "msg-dddddddddddd", message.TypeResponse))
 	}()
 
-	got, err := ReceiveAny(context.Background(), inbox, 2*time.Second, 30*time.Millisecond, 65536)
+	got, err := ReceiveAny(context.Background(), inbox, 2*time.Second, 30*time.Millisecond, 65536, time.Time{})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	assert.Equal(t, "msg-dddddddddddd", got[0].ID)
@@ -299,4 +299,53 @@ func TestReceiveReply_MissingInboxDir_TimesOutCleanly(t *testing.T) {
 	_, err := ReceiveReply(context.Background(), filepath.Join(t.TempDir(), "no-such-dir"), "msg-aaaaaaaaaaaa", 80*time.Millisecond, 30*time.Millisecond, 65536)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrTimeout, "missing inbox dir must produce a clean timeout, not a panic")
+}
+
+// anyMessageAt is anyMessage with a caller-controlled Timestamp, for the F-49
+// --unseen window tests.
+func anyMessageAt(t *testing.T, id, msgType string, ts time.Time) *message.Message {
+	t.Helper()
+	m := anyMessage(t, id, msgType)
+	m.Timestamp = ts.UTC().Format(time.RFC3339Nano)
+	return m
+}
+
+// TestReceiveAny_Unseen_IgnoresPreExistingWakesOnNew is the F-49 core: with a
+// non-zero `since`, the pending already present (Timestamp <= since) is ignored
+// and LEFT in the inbox, and only a newer message wakes ReceiveAny.
+func TestReceiveAny_Unseen_IgnoresPreExistingWakesOnNew(t *testing.T) {
+	t.Parallel()
+	inbox := filepath.Join(t.TempDir(), "inbox")
+	require.NoError(t, os.MkdirAll(inbox, 0o700))
+	base := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	writeMessage(t, inbox, anyMessageAt(t, "msg-aaaaaaaaaaaa", message.TypeResponse, base))
+	writeMessage(t, inbox, anyMessageAt(t, "msg-bbbbbbbbbbbb", message.TypeResponse, base.Add(time.Minute)))
+
+	since := base.Add(30 * time.Second)
+	got, err := ReceiveAny(context.Background(), inbox, 2*time.Second, 30*time.Millisecond, 65536, since)
+	require.NoError(t, err)
+	require.Len(t, got, 1, "only the message newer than `since` wakes")
+	assert.Equal(t, "msg-bbbbbbbbbbbb", got[0].ID)
+
+	_, oldErr := os.Stat(filepath.Join(inbox, "msg-aaaaaaaaaaaa.json"))
+	assert.NoError(t, oldErr, "--unseen leaves the pre-existing pending in inbox")
+	assert.True(t, archivedInProcessed(t, inbox, "msg-bbbbbbbbbbbb"), "the new message is consumed")
+}
+
+// TestReceiveAny_Unseen_AllOldTimesOut: a `since` newer than the only pending
+// message → timeout, message left in inbox.
+func TestReceiveAny_Unseen_AllOldTimesOut(t *testing.T) {
+	t.Parallel()
+	inbox := filepath.Join(t.TempDir(), "inbox")
+	require.NoError(t, os.MkdirAll(inbox, 0o700))
+	base := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	writeMessage(t, inbox, anyMessageAt(t, "msg-aaaaaaaaaaaa", message.TypeResponse, base))
+
+	since := base.Add(time.Hour)
+	got, err := ReceiveAny(context.Background(), inbox, 80*time.Millisecond, 30*time.Millisecond, 65536, since)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrTimeout)
+	assert.Nil(t, got)
+	_, oldErr := os.Stat(filepath.Join(inbox, "msg-aaaaaaaaaaaa.json"))
+	assert.NoError(t, oldErr, "the pre-existing pending stays in inbox on an --unseen timeout")
 }

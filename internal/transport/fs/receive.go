@@ -171,6 +171,10 @@ func scanForReply(inboxDir, origMsgID string, maxContentBytes int) (*message.Mes
 // `receive --any` (F-36): an orchestrator wakes on "anything arrived" WITHOUT
 // fabricating a msg-id to wait on (the LL-13 hallucination root).
 //
+// A non-zero `since` (F-49 --unseen) narrows the wake to messages whose
+// Timestamp is strictly after it — the pending already in the inbox at launch is
+// ignored (and left in place); pass the zero time for the plain --any behaviour.
+//
 // type=ack messages are NEVER drained — they are left in inbox as the observable
 // F-12 delivery signal, exactly as scanForReply skips them — so a batch of only
 // acks does NOT wake ReceiveAny (it times out with the acks still in inbox).
@@ -185,12 +189,31 @@ func ReceiveAny(
 	inboxDir string,
 	deadline, pollInterval time.Duration,
 	maxContentBytes int,
+	since time.Time,
 ) ([]*message.Message, error) {
-	notAck := func(m *message.Message) bool { return m.Type != message.TypeAck }
+	// accept keeps non-ack messages; with a non-zero `since` (F-49 --unseen) it
+	// also requires Timestamp strictly after `since`, so the pending already in
+	// the inbox at launch is ignored and only what ARRIVES afterwards wakes us. A
+	// zero `since` is the plain --any behaviour (all non-ack). consumeInboxEntry
+	// gates on this predicate BEFORE MoveToProcessed, so a rejected (older)
+	// message is LEFT in the inbox, never consumed.
+	accept := func(m *message.Message) bool {
+		if m.Type == message.TypeAck {
+			return false
+		}
+		if since.IsZero() {
+			return true
+		}
+		ts, perr := time.Parse(time.RFC3339Nano, m.Timestamp)
+		if perr != nil {
+			return false // cannot confirm it is new → do not wake on it
+		}
+		return ts.After(since)
+	}
 	deadlineTime := time.Now().Add(deadline)
 
 	// Initial sweep: a batch may already be waiting when ReceiveAny is called.
-	if msgs, err := drainInbox(inboxDir, maxContentBytes, notAck); err != nil {
+	if msgs, err := drainInbox(inboxDir, maxContentBytes, accept); err != nil {
 		return nil, err
 	} else if len(msgs) > 0 {
 		return msgs, nil
@@ -208,7 +231,7 @@ func ReceiveAny(
 			// (same BUG-2 fix-intent as ReceiveReply: never lose a batch on disk).
 			now := time.Now()
 
-			msgs, err := drainInbox(inboxDir, maxContentBytes, notAck)
+			msgs, err := drainInbox(inboxDir, maxContentBytes, accept)
 			if err != nil {
 				return nil, err
 			}

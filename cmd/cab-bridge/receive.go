@@ -30,6 +30,7 @@ import (
 //
 //	--msg-id        message ID to wait for a reply to (required unless --any)
 //	--any           wake on any non-ack message, without a msg-id
+//	--unseen        with --any: ignore pre-existing pending, wake only on new (F-49)
 //	--max-deadline  max seconds to wait (default 1800 = 30 min)
 //	--session-id    target session (default: longest-prefix lookup from cwd)
 //	--emit          json (full message, default) or content (body only, F-48)
@@ -54,6 +55,7 @@ func runReceive(args []string) error {
 	sessionIDFlag := fs.String("session-id", "", "session ID (default: longest-prefix lookup from cwd)")
 	anyFlag := fs.Bool("any", false, "wake on the first batch of any non-ack message, without a msg-id; mutually exclusive with --msg-id (F-36)")
 	emit := fs.String("emit", emitJSON, "output format for delivered messages: json (full message, default) or content (body only, F-48)")
+	unseen := fs.Bool("unseen", false, "with --any: wake only on messages that ARRIVE after launch, ignoring (and leaving in the inbox) the pending already present (F-49)")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil // help already printed by flag pkg, exit 0 success
@@ -72,6 +74,9 @@ func runReceive(args []string) error {
 	}
 	if err := validateEmit(*emit); err != nil {
 		return fmt.Errorf("receive: %w", err)
+	}
+	if *unseen && !*anyFlag {
+		return errors.New("receive: --unseen requires --any")
 	}
 
 	cfg, warnings, err := config.Load()
@@ -125,7 +130,11 @@ func runReceive(args []string) error {
 
 	// F-36: --any wakes on the first batch of any non-ack message, with no msg-id.
 	if *anyFlag {
-		return receiveAny(ctx, mgr, sid, inboxDir, deadline, interval, cfg.MaxMessageBytes, *emit)
+		var since time.Time
+		if *unseen {
+			since = time.Now()
+		}
+		return receiveAny(ctx, mgr, sid, inboxDir, deadline, interval, cfg.MaxMessageBytes, *emit, since)
 	}
 
 	m, err := transportfs.ReceiveReply(ctx, inboxDir, *msgID, deadline, interval, cfg.MaxMessageBytes)
@@ -155,11 +164,11 @@ func runReceive(args []string) error {
 // cycle. SetLastConsumed records the last drained message for F-12 observability
 // (the batch is consumed in os.ReadDir order, so this is "consumed up to here",
 // not a temporal resume cursor — which --any does not need). Best-effort.
-func receiveAny(ctx context.Context, mgr *session.Manager, sid, inboxDir string, deadline, interval time.Duration, maxBytes int, emit string) error {
+func receiveAny(ctx context.Context, mgr *session.Manager, sid, inboxDir string, deadline, interval time.Duration, maxBytes int, emit string, since time.Time) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 
-	msgs, err := transportfs.ReceiveAny(ctx, inboxDir, deadline, interval, maxBytes)
+	msgs, err := transportfs.ReceiveAny(ctx, inboxDir, deadline, interval, maxBytes, since)
 	if err != nil {
 		if errors.Is(err, transportfs.ErrTimeout) {
 			// --emit=content suppresses the JSON timeout envelope (it would pollute

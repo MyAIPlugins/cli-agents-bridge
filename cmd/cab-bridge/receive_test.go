@@ -113,3 +113,30 @@ func TestRunReceive_EmitInvalid(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--emit")
 }
+
+// F-49: --any --unseen ignores a pre-existing pending and times out exit 0; the
+// pre-existing message is left in the inbox (a plantMsg's fixed 2026-05-31
+// timestamp is older than now, so it is not "new").
+func TestRunReceive_UnseenIgnoresPreExisting(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	sid := "rcvuns01"
+	plantOverviewSession(t, dataDir, sid, session.RoleVal, "VAL-x", "/repo/x", "", "")
+	plantMsg(t, dataDir, sid, "inbox", "msg-aaaaaaaaaaaa", "esc99999", "ESC-y", message.TypeResponse, "old pending")
+
+	var runErr error
+	out := captureStdout(t, func() {
+		runErr = runReceive([]string{"--any", "--unseen", "--session-id=" + sid, "--max-deadline=1"})
+	})
+	require.NoError(t, runErr, "--unseen ignores the pre-existing pending → timeout exit 0")
+	assert.Contains(t, out, "\"status\": \"timeout\"")
+	assert.Equal(t, 1, countInboxJSON(t, dataDir, sid), "the pre-existing pending stays in inbox (not consumed)")
+}
+
+func TestRunReceive_UnseenRequiresAny(t *testing.T) {
+	err := runReceive([]string{"--unseen", "--msg-id=msg-aaaaaaaaaaaa"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--unseen requires --any")
+}
