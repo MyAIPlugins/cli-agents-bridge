@@ -1,0 +1,45 @@
+cmd/cab-bridge/read.go
+  s_ab480f9f53051e::t_391d5d50675ec9 1-112
+cmd/cab-bridge/main.go
+  s_ab480f9f53051e::t_d1ba8984d96abf 133
+  s_ab480f9f53051e::t_c8ffafe7016c7f 74-75
+cmd/cab-bridge/receive.go
+  s_ab480f9f53051e::t_ebc0b279e5d7d9 128
+  s_ab480f9f53051e::t_b724a876f41d42 142-145
+  s_ab480f9f53051e::t_4093848ea0b968 56
+  s_ab480f9f53051e::t_0e4c731df625c3 158,165-171,179
+  s_ab480f9f53051e::t_2ce3d64609fc8c 73-75
+  s_ab480f9f53051e::t_00ae4e9f24b528 35
+cmd/cab-bridge/read_test.go
+  ai_agent 1-173
+cmd/cab-bridge/emit_test.go
+  s_ab480f9f53051e::t_db50096809f8d6 1-52
+cmd/cab-bridge/listen.go
+  s_ab480f9f53051e::t_e7ed87320d8519 198-200
+  s_ab480f9f53051e::t_423f72ea18463c 61,68-69
+  s_ab480f9f53051e::t_1ca48d7d18eff1 139
+  s_ab480f9f53051e::t_050e818b1d4d0e 169-175
+cmd/cab-bridge/listen_test.go
+  s_ab480f9f53051e::t_4ab3de454307aa 4,10-12
+  s_ab480f9f53051e::t_29b55632555156 61-103
+cmd/cab-bridge/receive_test.go
+  s_ab480f9f53051e::t_17174769c9c885 72-115
+cmd/cab-bridge/emit.go
+  s_ab480f9f53051e::t_1b8d8fa1fce52f 1-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "04cef208536e6de093991531c5b295a4c8dcae4c",
+  "prompts": {},
+  "sessions": {
+    "s_ab480f9f53051e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ef21e425-f6de-4cf5-848a-f49f98e5af68",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
