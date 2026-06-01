@@ -8,5 +8,6 @@
   "max_message_bytes": 65536,
   "retention_days": 7,
   "heartbeat_tick_ms": 30000,
-  "auto_gc_hours": 24
+  "auto_gc_hours": 24,
+  "dedup_window_seconds": 10
 }

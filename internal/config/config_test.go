@@ -141,3 +141,35 @@ func TestLoad_UserConfigReadFromDataDirEnv(t *testing.T) {
 		t.Errorf("StaleSeconds = %d, want 999 — config.json under CAB_DATA_DIR must be read (F-B)", cfg.StaleSeconds)
 	}
 }
+
+// TestDefaultConfig_DedupWindowSeconds pins the F-43 default: dedup window 10s.
+func TestDefaultConfig_DedupWindowSeconds(t *testing.T) {
+	if got := DefaultConfig().DedupWindowSeconds; got != 10 {
+		t.Errorf("default DedupWindowSeconds = %d, want 10", got)
+	}
+}
+
+// TestLoad_DedupWindowSecondsEnvOverride covers the env override and the disable
+// case (0). Like CAB_AUTO_GC_HOURS, a 0 via env must take effect (the user file
+// ignores zero-values), so users can turn the duplicate check off.
+func TestLoad_DedupWindowSecondsEnvOverride(t *testing.T) {
+	t.Setenv("CAB_DATA_DIR", filepath.Join(t.TempDir(), "cab-data"))
+
+	t.Setenv("CAB_DEDUP_WINDOW_SECONDS", "30")
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.DedupWindowSeconds != 30 {
+		t.Errorf("DedupWindowSeconds = %d, want 30 (env override)", cfg.DedupWindowSeconds)
+	}
+
+	t.Setenv("CAB_DEDUP_WINDOW_SECONDS", "0")
+	cfg, _, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.DedupWindowSeconds != 0 {
+		t.Errorf("DedupWindowSeconds = %d, want 0 (env must disable, overriding default 10)", cfg.DedupWindowSeconds)
+	}
+}

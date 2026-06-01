@@ -96,6 +96,19 @@ type Config struct {
 	// config.json is ignored (applyUserFile skips zero-values) — disable via
 	// the env var instead.
 	AutoGCHours int `json:"auto_gc_hours"`
+
+	// DedupWindowSeconds is the look-back window (seconds) within which `ask`
+	// treats a previously-sent message with the same (to, type, content) as a
+	// duplicate (F-43: defence against a degraded agent re-invoking `ask` without
+	// waiting for the first send's stdout). Default behaviour warns and sends
+	// anyway; --skip-duplicate suppresses the resend.
+	// Default: 10 (covers a 1-2s double-invoke with margin, without flagging two
+	// deliberately-spaced identical sends).
+	// Set to 0 to disable the duplicate check entirely.
+	// Env override: CAB_DEDUP_WINDOW_SECONDS. NOTE: like auto_gc_hours, a 0 in the
+	// user config.json is ignored (applyUserFile skips zero-values) — disable via
+	// the env var instead.
+	DedupWindowSeconds int `json:"dedup_window_seconds"`
 }
 
 // DefaultConfig returns the source-of-truth default values. The DataDir is
@@ -112,6 +125,7 @@ func DefaultConfig() Config {
 		RetentionDays:      7,
 		HeartbeatTickMs:    30000,
 		AutoGCHours:        24,
+		DedupWindowSeconds: 10,
 	}
 }
 
@@ -201,6 +215,9 @@ func applyUserFile(cfg *Config, path string) error {
 	if override.AutoGCHours != 0 {
 		cfg.AutoGCHours = override.AutoGCHours
 	}
+	if override.DedupWindowSeconds != 0 {
+		cfg.DedupWindowSeconds = override.DedupWindowSeconds
+	}
 	return nil
 }
 
@@ -234,6 +251,9 @@ func applyEnv(cfg *Config) []string {
 		warnings = append(warnings, w)
 	}
 	if w := envInt("CAB_AUTO_GC_HOURS", &cfg.AutoGCHours); w != "" {
+		warnings = append(warnings, w)
+	}
+	if w := envInt("CAB_DEDUP_WINDOW_SECONDS", &cfg.DedupWindowSeconds); w != "" {
 		warnings = append(warnings, w)
 	}
 
