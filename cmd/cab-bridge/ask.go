@@ -23,6 +23,7 @@ func runAsk(args []string) error {
 	allowMesh := fs.Bool("allow-mesh", false, "allow esc→esc routing (BUG-3 override)")
 	sessionIDFlag := fs.String("session-id", "", "sender session ID (default: longest-prefix lookup from cwd)")
 	skipDuplicate := fs.Bool("skip-duplicate", false, "if an identical message (same to/type/content within DedupWindowSeconds) was just sent, skip the resend and print the original id instead (F-43)")
+	strictReply := fs.Bool("strict-reply", false, "reject (instead of warn) when --in-reply-to points at a message id not found in your inbox/ or processed/ — an existence check against hallucinated ids (F-37)")
 
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -104,8 +105,30 @@ func runAsk(args []string) error {
 
 	var inReplyToPtr *string
 	if *inReplyTo != "" {
+		// Validate the FORMAT first: a clean "invalid message id" beats a
+		// confusing "not found" warning on a malformed id (sendMessage re-checks
+		// the format at the write gateway, but failing here is clearer).
+		if err := message.ValidateMessageID(*inReplyTo); err != nil {
+			return fmt.Errorf("ask: --in-reply-to: %w", err)
+		}
 		s := *inReplyTo
 		inReplyToPtr = &s
+		// F-37: validate the id EXISTS, not just that it is well-formed — a
+		// hallucinated id (LL-13) passes the format check but points at no real
+		// message. The reply target was RECEIVED, so look in our own inbox/ +
+		// processed/ (reusing findMessage from F-48). Default: warn and send —
+		// cleanup/auto-gc may have legitimately removed an older message, so
+		// rejecting by default would be a false positive. --strict-reply rejects.
+		if _, _, ferr := findMessage(sessionDir, s, cfg.MaxMessageBytes); ferr != nil {
+			if errors.Is(ferr, ErrMessageNotFound) {
+				if *strictReply {
+					return fmt.Errorf("ask: --in-reply-to %s not found in your inbox/ or processed/ (drop --strict-reply to send anyway)", s)
+				}
+				fmt.Fprintf(os.Stderr, "ask: warning: --in-reply-to %s not found in your inbox/ or processed/ — possibly hallucinated or already cleaned up; sending anyway\n", s)
+			} else {
+				return fmt.Errorf("ask: in-reply-to existence check: %w", ferr)
+			}
+		}
 	}
 
 	msgID, err := sendMessage(cfg, mgr, sid, *to, *msgType, body, inReplyToPtr, *allowMesh)

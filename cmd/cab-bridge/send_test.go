@@ -389,3 +389,67 @@ func TestRunAsk_NoUnreadWhenPendingOlderThanLastSent(t *testing.T) {
 	require.NoError(t, e)
 	assert.NotContains(t, stderr, "unread", "a peer message older than our last send is superseded, no warning")
 }
+
+// F-37: --in-reply-to to a message that EXISTS in our inbox/processed → no warn.
+func TestRunAsk_InReplyToExisting_NoWarn(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	plantRoleSession(t, dataDir, "valsess1", session.RoleVal)
+	plantRoleSession(t, dataDir, "escsess1", session.RoleEsc)
+	// a message we RECEIVED from esc, sitting in our processed/
+	plantMsg(t, dataDir, "valsess1", "processed", "msg-aaaaaaaaaaaa", "escsess1", "ESC-y", message.TypeQuery, "brief we got")
+
+	var e error
+	_, stderr := captureStdoutStderr(t, func() {
+		e = runAsk([]string{"--session-id=valsess1", "--to=escsess1", "--type=response", "--in-reply-to=msg-aaaaaaaaaaaa", "--content=my reply"})
+	})
+	require.NoError(t, e)
+	assert.NotContains(t, stderr, "not found", "an existing in-reply-to must not warn")
+	assert.Equal(t, 1, countInboxJSON(t, dataDir, "escsess1"), "the reply is delivered")
+}
+
+// F-37: --in-reply-to to a well-formed but non-existent id → warn + send (default).
+func TestRunAsk_InReplyToHallucinated_WarnsAndSends(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	plantRoleSession(t, dataDir, "valsess1", session.RoleVal)
+	plantRoleSession(t, dataDir, "escsess1", session.RoleEsc)
+
+	var e error
+	_, stderr := captureStdoutStderr(t, func() {
+		e = runAsk([]string{"--session-id=valsess1", "--to=escsess1", "--type=response", "--in-reply-to=msg-ffffffffffff", "--content=reply"})
+	})
+	require.NoError(t, e, "a hallucinated in-reply-to warns but still sends by default")
+	assert.Contains(t, stderr, "not found")
+	assert.Equal(t, 1, countInboxJSON(t, dataDir, "escsess1"), "default still delivers")
+}
+
+// F-37: --strict-reply rejects a non-existent in-reply-to (does NOT send).
+func TestRunAsk_InReplyToHallucinated_StrictRejects(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	plantRoleSession(t, dataDir, "valsess1", session.RoleVal)
+	plantRoleSession(t, dataDir, "escsess1", session.RoleEsc)
+
+	err := runAsk([]string{"--session-id=valsess1", "--to=escsess1", "--type=response", "--in-reply-to=msg-ffffffffffff", "--content=reply", "--strict-reply"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+	assert.Equal(t, 0, countInboxJSON(t, dataDir, "escsess1"), "--strict-reply must NOT send")
+}
+
+// F-37: a malformed --in-reply-to gets a clean format error before the existence check.
+func TestRunAsk_InReplyToMalformed_FormatError(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	plantRoleSession(t, dataDir, "valsess1", session.RoleVal)
+	plantRoleSession(t, dataDir, "escsess1", session.RoleEsc)
+
+	err := runAsk([]string{"--session-id=valsess1", "--to=escsess1", "--in-reply-to=notanid", "--content=x"})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, message.ErrInvalidMessageID)
+	assert.Equal(t, 0, countInboxJSON(t, dataDir, "escsess1"))
+}
