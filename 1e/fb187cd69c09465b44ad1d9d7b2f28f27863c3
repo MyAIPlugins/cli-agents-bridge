@@ -1,0 +1,26 @@
+internal/config/config.go
+  s_ab480f9f53051e::t_1ce76cc056991c 128
+  s_ab480f9f53051e::t_5aac6c99c9615b 218-220
+  s_ab480f9f53051e::t_3ffe64094fd3fd 99-111
+  s_ab480f9f53051e::t_6a3b2b146ddf4f 256-258
+internal/config/config_test.go
+  s_ab480f9f53051e::t_6c8700b0f96573 144-175
+config/default.json
+  s_ab480f9f53051e::t_c034e80b208be4 11-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "1efb187cd69c09465b44ad1d9d7b2f28f27863c3",
+  "prompts": {},
+  "sessions": {
+    "s_ab480f9f53051e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ef21e425-f6de-4cf5-848a-f49f98e5af68",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
