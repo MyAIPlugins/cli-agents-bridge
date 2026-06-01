@@ -314,3 +314,78 @@ func TestRunAsk_DedupDisabled(t *testing.T) {
 	assert.NotContains(t, stderr, "duplicate", "dedup disabled → no warning")
 	assert.Equal(t, 2, countInboxJSON(t, dataDir, "escsess1"))
 }
+
+// F-34: a still-unread non-ack from the recipient warns on stderr but STILL
+// sends (never blocks), and the unread message is NOT consumed.
+func TestRunAsk_UnreadWarnsAndSends(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	plantRoleSession(t, dataDir, "valsess1", session.RoleVal)
+	plantRoleSession(t, dataDir, "escsess1", session.RoleEsc)
+	// ESC sent VAL a report that VAL never consumed; VAL never sent to ESC, so the
+	// cutoff is zero and this counts as unread.
+	plantInboxAt(t, dataDir, "valsess1", "msg-aaaaaaaaaaaa", "escsess1", message.TypeResponse, "ESC report", time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC))
+
+	var e error
+	_, stderr := captureStdoutStderr(t, func() {
+		e = runAsk([]string{"--session-id=valsess1", "--to=escsess1", "--content=new brief"})
+	})
+	require.NoError(t, e, "unread warning never blocks the send")
+	assert.Contains(t, stderr, "unread", "a warning citing the unread message must be emitted")
+	assert.Contains(t, stderr, "msg-aaaaaaaaaaaa", "the warning cites the id so the caller can read it")
+	assert.Equal(t, 1, countInboxJSON(t, dataDir, "escsess1"), "the brief is still delivered")
+	assert.Equal(t, 1, countInboxJSON(t, dataDir, "valsess1"), "the unread message is NOT consumed (pure read)")
+}
+
+func TestRunAsk_NoUnreadWhenInboxClean(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	plantRoleSession(t, dataDir, "valsess1", session.RoleVal)
+	plantRoleSession(t, dataDir, "escsess1", session.RoleEsc)
+
+	var e error
+	_, stderr := captureStdoutStderr(t, func() {
+		e = runAsk([]string{"--session-id=valsess1", "--to=escsess1", "--content=brief"})
+	})
+	require.NoError(t, e)
+	assert.NotContains(t, stderr, "unread", "a clean inbox must not warn")
+}
+
+func TestRunAsk_NoUnreadForAckOnly(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	plantRoleSession(t, dataDir, "valsess1", session.RoleVal)
+	plantRoleSession(t, dataDir, "escsess1", session.RoleEsc)
+	plantInboxAt(t, dataDir, "valsess1", "msg-aaaaaaaaaaaa", "escsess1", message.TypeAck, "ACK", time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC))
+
+	var e error
+	_, stderr := captureStdoutStderr(t, func() {
+		e = runAsk([]string{"--session-id=valsess1", "--to=escsess1", "--content=brief"})
+	})
+	require.NoError(t, e)
+	assert.NotContains(t, stderr, "unread", "an ack-only inbox must not warn")
+}
+
+// F-34 cutoff: a peer message older than our last send to that peer is
+// superseded and must not warn.
+func TestRunAsk_NoUnreadWhenPendingOlderThanLastSent(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	plantRoleSession(t, dataDir, "valsess1", session.RoleVal)
+	plantRoleSession(t, dataDir, "escsess1", session.RoleEsc)
+	base := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	// ESC's pending is OLDER than VAL's last send to ESC → superseded.
+	plantInboxAt(t, dataDir, "valsess1", "msg-aaaaaaaaaaaa", "escsess1", message.TypeResponse, "old report", base)
+	plantOutboxAt(t, dataDir, "valsess1", "msg-bbbbbbbbbbbb", "escsess1", message.TypeQuery, "prev brief", base.Add(30*time.Second))
+
+	var e error
+	_, stderr := captureStdoutStderr(t, func() {
+		e = runAsk([]string{"--session-id=valsess1", "--to=escsess1", "--content=new brief"})
+	})
+	require.NoError(t, e)
+	assert.NotContains(t, stderr, "unread", "a peer message older than our last send is superseded, no warning")
+}

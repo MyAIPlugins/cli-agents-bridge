@@ -84,6 +84,24 @@ func runAsk(args []string) error {
 		}
 	}
 
+	// F-34: warn if the recipient has sent us a still-unread (un-consumed) non-ack
+	// message AFTER our last message to them — the cross we would make by replying
+	// on a stale snapshot (the dominant cause of VAL/ESC message crossings). Always
+	// on, never blocks (sends anyway); the warning cites the id so the caller can
+	// `cab-bridge read <id>` before replying. Symmetric: it fires for any sender.
+	sessionDir := filepath.Join(cfg.DataDir, "sessions", sid)
+	lastSent, lserr := lastSentTimeTo(filepath.Join(sessionDir, "outbox"), *to, cfg.MaxMessageBytes)
+	if lserr != nil {
+		return fmt.Errorf("ask: %w", lserr)
+	}
+	unreadID, uerr := unreadFromPeer(filepath.Join(sessionDir, "inbox"), *to, lastSent, cfg.MaxMessageBytes)
+	if uerr != nil {
+		return fmt.Errorf("ask: %w", uerr)
+	}
+	if unreadID != "" {
+		fmt.Fprintf(os.Stderr, "ask: warning: %s sent %s after your last message to them and it is unread in your inbox — read it before replying (cab-bridge read %s)\n", *to, unreadID, unreadID)
+	}
+
 	var inReplyToPtr *string
 	if *inReplyTo != "" {
 		s := *inReplyTo
