@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-06-01
+
+Backlog-minore follow-up to v0.5.0 — anti-degradation hardening — built same-day via the dogfooding workflow (independent VAL gate `-race -count=1` green + real smoke per fix).
+
+### Added
+- **F-49 — `receive --any --unseen`**: wakes only on messages that ARRIVE after launch, ignoring (and leaving in the inbox) the pending already present. Cutoff = now-at-launch (single-machine clock-skew is nil; no opaque timestamp to transcribe — anti-LL-13, unlike a `--since` flag). `--unseen` requires `--any`; plain `--any` is unchanged (`since.IsZero()` keeps the old behaviour).
+- **F-37 — `ask --in-reply-to` existence validation**: warns on stderr (and sends anyway) when the referenced id is not found in your `inbox/`/`processed/` — a well-formed but never-existent (hallucinated, LL-13) id no longer passes silently; `--strict-reply` rejects instead. Reuses `findMessage` (F-48); the format is validated first. With F-43 (duplicates) and F-34 (crossings) this completes the LL-13 anti-hallucination safety-net trio.
+
+### Fixed
+- `receive --unseen` alone now reports the precise `--unseen requires --any` instead of falling through to the generic `pass --msg-id or --any` (precedence fix).
+
 ## [0.5.0] — 2026-06-01
 
 *AI-friendly under stress* (LL-13/LL-14): reduce the surface of opaque ids/artifacts an agent must handle by hand — zero-config onboarding, id-less wake, content/state without digging, and guards against the crossings/duplicates a degraded agent produces. Built end-to-end via the cab-bridge dogfooding workflow (VAL↔ESC over the bridge itself, hands-free via the first-arriver-listens pattern); independent VAL gate `go test -race -count=1 ./...` green + a real smoke per feature; **validated in real use** (real-estate field session, 5 prod deploys: `overview` "the single most useful upgrade", `state` "gold", the bridge "made itself forgotten").

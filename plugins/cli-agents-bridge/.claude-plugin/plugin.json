@@ -1,7 +1,7 @@
 {
   "name": "cli-agents-bridge",
   "displayName": "CLI Agents Bridge",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Robust multi-peer IPC bridge between CLI agent sessions (Claude Code, etc.) — fork of PatilShreyas/claude-code-session-bridge",
   "author": {
     "name": "Alan Curtis (AC Agency)",
