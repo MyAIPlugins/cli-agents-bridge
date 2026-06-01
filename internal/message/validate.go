@@ -27,6 +27,19 @@ var (
 	ErrUnsupportedVersion = errors.New("unsupported schemaVersion")
 )
 
+// ValidateMessageID returns ErrInvalidMessageID if id does not match the wire
+// format ^msg-[a-z0-9]{12}$. Exported for callers that accept a message id from
+// user input (e.g. `cab-bridge read <msg-id>`) and must reject a malformed or
+// fabricated id before using it (an F-37 safety net). Reuses messageIDPattern
+// and the ErrInvalidMessageID sentinel that validateCommon already applies to
+// the in-message id, so the rule never drifts between the two call sites.
+func ValidateMessageID(id string) error {
+	if !messageIDPattern.MatchString(id) {
+		return fmt.Errorf("%w: got %q", ErrInvalidMessageID, id)
+	}
+	return nil
+}
+
 // Validate enforces all PLAN §4.4 constraints on m, INCLUDING the strict
 // message-type enum. maxContentBytes is the per-message size limit from
 // config.MaxMessageBytes — passed in rather than read from a global to keep

@@ -292,3 +292,22 @@ func TestGenerateMessageID_MatchesRegex(t *testing.T) {
 			"generated id %q must satisfy msg-[a-z0-9]{12}", id)
 	}
 }
+
+func TestValidateMessageID(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, ValidateMessageID("msg-abc123def456"))
+
+	for _, bad := range []string{
+		"",                  // empty
+		"abc123def456",      // missing msg- prefix
+		"msg-ABC123DEF456",  // uppercase not allowed
+		"msg-abc123",        // too short
+		"msg-abc123def4567", // too long
+		"msg-abc12_def456",  // illegal char
+	} {
+		err := ValidateMessageID(bad)
+		require.Error(t, err, "id %q must be rejected", bad)
+		assert.ErrorIs(t, err, ErrInvalidMessageID)
+	}
+}
