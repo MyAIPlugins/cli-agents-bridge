@@ -1,0 +1,31 @@
+internal/transport/fs/receive_test.go
+  s_ab480f9f53051e::t_71013abd5b41df 172,226
+  s_ab480f9f53051e::t_6e34dab43b5d8f 197,210
+internal/transport/fs/receive.go
+  s_ab480f9f53051e::t_ae3854e876d0ab 192,194-212
+  s_ab480f9f53051e::t_ccfff9e6349eb8 216,234
+cmd/cab-bridge/receive.go
+  s_ab480f9f53051e::t_3a017010c97013 133-137
+  s_ab480f9f53051e::t_61cdb74ae356aa 58
+  s_ab480f9f53051e::t_cd08664ea6f0f9 167,171
+  s_ab480f9f53051e::t_6628381950607c 33
+  s_ab480f9f53051e::t_c3c0f93cff8904 78-80
+cmd/cab-bridge/receive_test.go
+  s_ab480f9f53051e::t_f437f27e32c677 116-142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "5fc167571aa294990e1b49faa6bcffe4fddf4bb2",
+  "prompts": {},
+  "sessions": {
+    "s_ab480f9f53051e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ef21e425-f6de-4cf5-848a-f49f98e5af68",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
