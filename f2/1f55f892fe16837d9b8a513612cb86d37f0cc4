@@ -1,0 +1,25 @@
+ROADMAP.md
+  s_da508dd14cf7fe::t_e4316b9555bcd8 319
+  s_da508dd14cf7fe::t_73a4678f8a0196 320-325
+CLAUDE.md
+  s_da508dd14cf7fe::t_1dbc457c8f26e9 127-129
+docs/spike-cri-codex-bridge.md
+  s_da508dd14cf7fe::t_91803877d88faa 1-128
+  s_da508dd14cf7fe::t_6ba52474b305b1 129-168
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "f21f55f892fe16837d9b8a513612cb86d37f0cc4",
+  "prompts": {},
+  "sessions": {
+    "s_da508dd14cf7fe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "04afe0d5-69d7-4ebf-829d-0e5bd111d8ae",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
