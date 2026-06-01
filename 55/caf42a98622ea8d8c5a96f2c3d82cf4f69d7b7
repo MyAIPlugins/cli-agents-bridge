@@ -1,0 +1,21 @@
+cmd/cab-bridge/ask.go
+  s_ab480f9f53051e::t_422f88169cfb06 87-104
+cmd/cab-bridge/unread_test.go
+  s_ab480f9f53051e::t_01594ab7a8cd20 1-133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "55caf42a98622ea8d8c5a96f2c3d82cf4f69d7b7",
+  "prompts": {},
+  "sessions": {
+    "s_ab480f9f53051e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ef21e425-f6de-4cf5-848a-f49f98e5af68",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
