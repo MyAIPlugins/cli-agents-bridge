@@ -292,7 +292,7 @@ Coppia indipendente, ~5h, ~15 scambi, **sessione degradata** (entrambi allucinan
 
 **Convergenze (DOPPIA conferma VAL-bi + ESC-bi) = leve TOP v0.5:**
 - **F-34 conversation-cursor / read-cursor pre-ask** — ESC-bi "il problema DOMINANTE": il VAL opera su snapshot vecchio (NO-GO su codice già committato; "lascia 2825c52" quando era `3301d20`). Design concreto: quando il VAL lancia `ask`, il bridge avvisa se ci sono msg ESC non-letti più recenti del suo ultimo `receive` ("⚠️ leggi prima di inviare"). Eliminerebbe ~90% degli incroci.
-- **F-43 dedup `ask` (NUOVO)** — VAL-bi #2 + ESC-bi #1: stesso contenuto inviato in doppio 2-3×. **Verificato (F-16): NON è retry-bridge** (`ask`/`send` non ritentano) → doppio-invoke del VAL (non ha atteso lo stdout). Fix difensivo: `ask --dedup`/idempotency-key/warning se `(from,to,sha256(content))` ripetuto entro N s. Cheap, difende dal degrado (la norma, non l'eccezione).
+- **F-43 ✅ DONE** (`1efb187`+`d84df73`, merge in `main`; gate VAL indip. verde 10/10 no-cached + smoke 4 casi) — dedup `ask` (VAL-bi #2 + ESC-bi #1): difesa contro il doppio-invoke degradato. `DedupWindowSeconds` (10s, env `CAB_DEDUP_WINDOW_SECONDS`, ≤0 disabilita); default warning su stderr + invia (non blocca un repeat legittimo), `--skip-duplicate` → stampa l'**id originale** (idempotenza caller) + no resend; match `(to,type, Content==)` **string-equality** (no sha256 — pushback ESC accettato, R-4); guard solo in `runAsk` (auto-ack intatto, R-5). **Verificato (F-16): NON era retry-bridge** → doppio-invoke.
 
 **Nuovi finding (fonte ESC-bi):**
 - **F-44 workRef (NUOVO, ambizioso)** — campo opzionale `{branch, headSha}` nel messaggio, mostrato accanto a ogni msg → il VAL ha sotto gli occhi l'ultimo SHA dichiarato dall'ESC, NON lo confabula (il "110 confabulato"). Mitiga LL-13/F-37 sugli SHA alla radice. Metadata opzionale → non rompe la vendor-agnosticità. Strutturale.
@@ -311,7 +311,7 @@ Coppia indipendente, ~5h, ~15 scambi, **sessione degradata** (entrambi allucinan
 
 **Miglioramenti SKILL (non codice, li applico io):** `state working/done` quasi-obbligatorio nel loop ESC (VAL-bi #4: ha dovuto spiare `git status` perché ESC-bi non dichiarava lo stato → niente segnale nativo); F-16 più prominente (entrambi morsi da pipe inquinata); `receive` = sveglia+leggi-inbox (e `--any` come radice).
 
-**Ordine v0.5 aggiornato**: F-41+F-42 ✅ + **F-36 ✅** (`eec1f23`) + **F-48 ✅ DONE+MERGED** (`dc64718`+`04cef20`; `read <msg-id>` + `--emit=content`; gate VAL indip. verde + smoke) → **prossimo: F-34 (conversation-cursor/incroci) + F-43 (dedup ask)** = le 2 leve TOP restanti, poi F-49/F-50/F-23b/F-45/F-39/F-37/F-47, poi F-44/F-46/F-11 (strutturali).
+**Ordine v0.5 aggiornato**: F-41+F-42 ✅ + F-36 ✅ + F-48 ✅ + **F-43 ✅ DONE+MERGED** (`1efb187`+`d84df73`; dedup `ask`) → **prossimo: F-34 (conversation-cursor/incroci)** = la leva grande rimasta (il "problema dominante" anti-incroci), poi F-49/F-50/F-23b/F-45/F-39/F-37/F-47, poi F-44/F-46/F-11 (strutturali).
 | **M3** Smoke test Alan + release v0.2.0 | 🔒 BLOCKED on M2 | +1 giorno post-M2 | ~45 min Alan-time + docs (README/PRIVACY/SECURITY) |
 | **M4** v0.3.0 — quality of life | 🔮 FUTURE | 1-2 settimane post-M3 | notification, transcript, retry, background-listen (gated da validation reale) |
 | **M5** v0.4.0 — daemon Unix socket | 🔮 FUTURE GATED | 1-2 settimane post-M4 | GATE: G1 latency >200ms ∧ G2 peer >3. Se non si verifica → daemon NON si fa |
