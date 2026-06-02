@@ -26,6 +26,14 @@ const (
 	notifyWatchDefaultHookTO = 30 * time.Second
 	notifyWatchDir           = "notify-watch"
 	notifyWatchDefaultName   = "default"
+	// notifyWatchKillGrace is how long a timed-out hook's process group has to
+	// exit on SIGTERM before it is SIGKILLed (P1.2 process-group teardown).
+	notifyWatchKillGrace = 3 * time.Second
+	// notifyWatchMaxEnvIDs caps how many message ids are inlined into CAB_MSG_IDS/
+	// FROM_IDS/TYPES, so a huge inbox cannot overflow the env/argv limit (P3.6).
+	// CAB_MSG_COUNT still reports the true total; CAB_MSG_IDS_TRUNCATED=1 signals
+	// the cap was hit.
+	notifyWatchMaxEnvIDs = 100
 )
 
 // errHookFailed wraps a non-zero hook exit so the watch loop can distinguish a
@@ -39,12 +47,19 @@ type watchConfig struct {
 	shell           bool
 	hookArgv        []string
 	exitOnHookError bool
+	allowConcurrent bool
 }
 
 // hookRunner executes the hook for a batch, given the CAB_* env to inject. It is
 // injected into watchTick so the tick logic is testable without spawning a real
 // process (production uses execHookRunner).
 type hookRunner func(ctx context.Context, env []string) error
+
+// hookGuard reports whether the watched session is, right now, actively in
+// listen (and a human-readable detail). Re-checked each tick before firing the
+// hook so a listener that starts AFTER the watcher is still caught (P2.3).
+// Injected so watchTick stays testable without a real Manager.
+type hookGuard func() (active bool, detail string)
 
 // runNotifyWatch implements `cab-bridge notify-watch`: an EXTERNAL watcher (a Go
 // process, immune to a peer's torn-down background terminal) that polls a
@@ -64,7 +79,7 @@ func runNotifyWatch(args []string) error {
 	hookTimeout := fs_.Duration("hook-timeout", notifyWatchDefaultHookTO, "max wall-clock for one hook invocation before it is killed (Go duration)")
 	ignoreExisting := fs_.Bool("ignore-existing", false, "mark the messages already pending at startup as seen WITHOUT notifying — only wake on messages arriving afterwards")
 	allowConcurrent := fs_.Bool("allow-concurrent-consumer", false, "proceed even if the session looks like it is actively in `listen` (a watcher + a listener on one inbox is a double consumer)")
-	shell := fs_.Bool("shell", false, "run the hook via `sh -c <joined argv>` instead of executing argv directly (opt-in; argv-direct is the safe default)")
+	shell := fs_.Bool("shell", false, "run the hook via `sh -c` (opt-in; argv-direct is the safe default). With --shell, pass the WHOLE command as one shell string after `--` — the argv is joined and NOT re-quoted, so e.g. `--shell -- 'screen -X stuff \"$CAB_MSG_COUNT\"'`")
 	dryRun := fs_.Bool("dry-run", false, "do ONE scan, print the hook that would run for the current pending batch, and exit — no state change, no lock")
 	exitOnHookError := fs_.Bool("exit-on-hook-error", false, "exit non-zero on the first hook failure instead of backing off and staying operational")
 	if err := fs_.Parse(args); err != nil {
@@ -118,6 +133,7 @@ func runNotifyWatch(args []string) error {
 		shell:           *shell,
 		hookArgv:        hookArgv,
 		exitOnHookError: *exitOnHookError,
+		allowConcurrent: *allowConcurrent,
 	}
 
 	// --dry-run: one scan + print, no lock, no state mutation.
@@ -179,6 +195,20 @@ func runNotifyWatch(args []string) error {
 
 	runner := execHookRunner(wcfg, logw)
 
+	// P2.3: re-evaluate the consumer guardrail every tick (not just at startup),
+	// so a `listen` that starts AFTER the watcher is still caught before we fire
+	// the hook. A manifest we cannot read does not block (best-effort).
+	guard := func() (bool, string) {
+		m, lerr := mgr.LoadManifest(sid)
+		if lerr != nil {
+			return false, ""
+		}
+		if session.IsProcessAlive(m.PID) && m.ListenUntil != nil && m.ListenUntil.After(time.Now()) {
+			return true, fmt.Sprintf("session %s is now in listen (PID %d, window until %s)", sid, m.PID, m.ListenUntil.UTC().Format(time.RFC3339))
+		}
+		return false, ""
+	}
+
 	ctx, cancel := notifyWatchSignalContext()
 	defer cancel()
 	ticker := time.NewTicker(*pollInterval)
@@ -186,7 +216,7 @@ func runNotifyWatch(args []string) error {
 
 	fmt.Fprintln(logw, "notify-watch: watching (Ctrl-C to stop)")
 	for {
-		if err := watchTick(ctx, sessionDir, sid, st, statePath, wcfg, runner, time.Now().UTC(), cfg.MaxMessageBytes, logw, warned); err != nil {
+		if err := watchTick(ctx, sessionDir, sid, st, statePath, wcfg, runner, guard, time.Now().UTC(), cfg.MaxMessageBytes, logw, warned); err != nil {
 			if errors.Is(err, errHookFailed) {
 				if wcfg.exitOnHookError {
 					return err
@@ -213,19 +243,20 @@ func runNotifyWatch(args []string) error {
 // exit-0 (or record a failure + backoff otherwise). Pure except for the injected
 // runner, so it is fully unit-testable. Returns errHookFailed (wrapped) on a hook
 // non-zero exit, or a raw error on a scan/state I/O failure.
-func watchTick(ctx context.Context, sessionDir, sid string, st *watchState, statePath string, cfg watchConfig, run hookRunner, now time.Time, maxBytes int, logw io.Writer, warned map[string]bool) error {
+func watchTick(ctx context.Context, sessionDir, sid string, st *watchState, statePath string, cfg watchConfig, run hookRunner, guard hookGuard, now time.Time, maxBytes int, logw io.Writer, warned map[string]bool) error {
 	pending, err := collectPendingForNotify(sessionDir, maxBytes, logw, warned)
 	if err != nil {
 		return err
 	}
 
 	// Prune markers for ids no longer pending (consumed by the peer) so state
-	// does not grow without bound.
+	// does not grow without bound. dirty tracks whether state changed, so an idle
+	// tick does not fsync the state file every poll (P1.1 idle write-storm fix).
 	present := make(map[string]bool, len(pending))
 	for _, e := range pending {
 		present[e.MsgID] = true
 	}
-	st.prune(present)
+	dirty := st.prune(present)
 
 	// Coalesce candidates into ONE batch (non-negotiable #3: never one hook per
 	// message → no 10× spam).
@@ -236,31 +267,55 @@ func watchTick(ctx context.Context, sessionDir, sid string, st *watchState, stat
 		}
 	}
 	if len(batch) == 0 {
-		return st.save(statePath) // prune may have changed state; persist it
+		if dirty {
+			return st.save(statePath)
+		}
+		return nil // nothing changed → no disk write
+	}
+
+	// P2.3: a listener that started after us is consuming this inbox — skip the
+	// hook (do NOT mark, retry next tick) unless the operator allows concurrency.
+	if active, detail := guard(); active {
+		if !cfg.allowConcurrent {
+			fmt.Fprintf(logw, "notify-watch: skipping hook this tick — %s; a listener is consuming (set --allow-concurrent-consumer to override)\n", detail)
+			if dirty {
+				return st.save(statePath)
+			}
+			return nil
+		}
+		fmt.Fprintf(logw, "notify-watch: WARN %s; running hook anyway (--allow-concurrent-consumer)\n", detail)
 	}
 
 	ids := make([]string, len(batch))
 	for i, e := range batch {
 		ids[i] = e.MsgID
 	}
-	fmt.Fprintf(logw, "notify-watch: hook start: %d message(s) ids=%s\n", len(batch), strings.Join(ids, ","))
+	idsCSV := strings.Join(ids, ",")
+	fmt.Fprintf(logw, "notify-watch: hook start: %d message(s) ids=%s\n", len(batch), idsCSV)
 
 	runErr := run(ctx, buildHookEnv(sid, batch))
 	if runErr != nil {
 		for _, e := range batch {
 			st.markFailure(e.MsgID, runErr.Error(), now)
 		}
-		_ = st.save(statePath)
-		fmt.Fprintf(logw, "notify-watch: hook FAILED for ids=%s: %v (will back off)\n", strings.Join(ids, ","), runErr)
-		return fmt.Errorf("%w: ids=%s: %v", errHookFailed, strings.Join(ids, ","), runErr)
+		if serr := st.save(statePath); serr != nil {
+			fmt.Fprintf(logw, "notify-watch: WARN state save failed after hook failure (ids=%s): %v\n", idsCSV, serr)
+		}
+		fmt.Fprintf(logw, "notify-watch: hook FAILED for ids=%s: %v (will back off)\n", idsCSV, runErr)
+		return fmt.Errorf("%w: ids=%s: %v", errHookFailed, idsCSV, runErr)
 	}
 
 	// Non-negotiable #4: mark ONLY after exit-0.
 	for _, e := range batch {
 		st.markSuccess(e.MsgID, now)
 	}
-	fmt.Fprintf(logw, "notify-watch: hook OK: notified %d message(s) ids=%s\n", len(batch), strings.Join(ids, ","))
-	return st.save(statePath)
+	fmt.Fprintf(logw, "notify-watch: hook OK: notified %d message(s) ids=%s\n", len(batch), idsCSV)
+	if serr := st.save(statePath); serr != nil {
+		// P2.4: the hook ran but we could not persist the marker → a restart would
+		// re-notify. Surface the degradation explicitly instead of a silent OK.
+		fmt.Fprintf(logw, "notify-watch: WARN state save failed after hook OK — a restart may re-notify ids=%s: %v\n", idsCSV, serr)
+	}
+	return nil
 }
 
 // collectPendingForNotify scans ONLY the session's inbox/ (pending) as a pure
@@ -321,21 +376,35 @@ func collectPendingForNotify(sessionDir string, maxBytes int, logw io.Writer, wa
 // ONLY, never message content/preview (non-negotiable #1). Comma-separated lists
 // are parallel (ids[i] / froms[i] / types[i] describe the same message).
 func buildHookEnv(sid string, batch []inboxEntry) []string {
-	ids := make([]string, len(batch))
-	froms := make([]string, len(batch))
-	types := make([]string, len(batch))
-	for i, e := range batch {
-		ids[i] = e.MsgID
-		froms[i] = e.From
-		types[i] = e.Type
+	total := len(batch)
+	// P3.6: cap the inlined ids so a huge inbox cannot overflow the env/argv
+	// limit. CAB_MSG_COUNT still reports the true total (the typical hook uses
+	// only the count); CAB_MSG_IDS_TRUNCATED=1 signals the lists were capped.
+	n := total
+	truncated := false
+	if n > notifyWatchMaxEnvIDs {
+		n = notifyWatchMaxEnvIDs
+		truncated = true
 	}
-	return []string{
+	ids := make([]string, n)
+	froms := make([]string, n)
+	types := make([]string, n)
+	for i := 0; i < n; i++ {
+		ids[i] = batch[i].MsgID
+		froms[i] = batch[i].From
+		types[i] = batch[i].Type
+	}
+	env := []string{
 		"CAB_SESSION_ID=" + sid,
 		"CAB_MSG_IDS=" + strings.Join(ids, ","),
-		"CAB_MSG_COUNT=" + strconv.Itoa(len(batch)),
+		"CAB_MSG_COUNT=" + strconv.Itoa(total),
 		"CAB_FROM_IDS=" + strings.Join(froms, ","),
 		"CAB_TYPES=" + strings.Join(types, ","),
 	}
+	if truncated {
+		env = append(env, "CAB_MSG_IDS_TRUNCATED=1")
+	}
+	return env
 }
 
 // execHookRunner returns the production hookRunner: it executes the configured
@@ -350,14 +419,44 @@ func execHookRunner(cfg watchConfig, logw io.Writer) hookRunner {
 
 		var cmd *exec.Cmd
 		if cfg.shell {
-			cmd = exec.CommandContext(hctx, "sh", "-c", strings.Join(cfg.hookArgv, " "))
+			cmd = exec.Command("sh", "-c", strings.Join(cfg.hookArgv, " "))
 		} else {
-			cmd = exec.CommandContext(hctx, cfg.hookArgv[0], cfg.hookArgv[1:]...)
+			cmd = exec.Command(cfg.hookArgv[0], cfg.hookArgv[1:]...)
 		}
 		cmd.Env = append(os.Environ(), env...)
 		cmd.Stdout = logw
 		cmd.Stderr = logw
-		return cmd.Run()
+		// P1.2: give the hook its own process group so a timeout/cancel can tear
+		// down the WHOLE tree (screen/tmux/`sh -c '... &'`), not just the direct
+		// child as exec.CommandContext would. Unix-only (Darwin+Linux), no cgo.
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+		if err := cmd.Start(); err != nil {
+			return err
+		}
+		pgid := cmd.Process.Pid // Setpgid makes the child its own group leader → pgid == pid
+
+		done := make(chan error, 1)
+		go func() { done <- cmd.Wait() }()
+
+		select {
+		case err := <-done:
+			return err
+		case <-hctx.Done():
+			// SIGTERM the whole group, then SIGKILL after a short grace if it has
+			// not exited, then reap.
+			_ = syscall.Kill(-pgid, syscall.SIGTERM)
+			select {
+			case <-done:
+			case <-time.After(notifyWatchKillGrace):
+				_ = syscall.Kill(-pgid, syscall.SIGKILL)
+				<-done
+			}
+			if errors.Is(hctx.Err(), context.DeadlineExceeded) {
+				return fmt.Errorf("hook exceeded --hook-timeout %v (process group killed): %w", cfg.hookTimeout, hctx.Err())
+			}
+			return hctx.Err()
+		}
 	}
 }
 

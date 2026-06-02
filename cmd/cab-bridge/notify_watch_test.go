@@ -57,6 +57,9 @@ func watchTestCfg() watchConfig {
 	return watchConfig{pollInterval: time.Second, hookTimeout: time.Second, hookArgv: []string{"true"}}
 }
 
+// noGuard is the default hookGuard for tests: the session is never in listen.
+func noGuard() (bool, string) { return false, "" }
+
 // Non-negotiable #2: notify-watch is a PEEK. Messages stay in inbox/ after a tick.
 func TestWatchTick_PeekNonConsuming(t *testing.T) {
 	t.Parallel()
@@ -67,7 +70,7 @@ func TestWatchTick_PeekNonConsuming(t *testing.T) {
 	statePath, st := watchTestState(t, sessionDir)
 	fr := &recordingRunner{}
 
-	err := watchTick(context.Background(), sessionDir, sid, st, statePath, watchTestCfg(), fr.run, time.Now().UTC(), 65536, io.Discard, map[string]bool{})
+	err := watchTick(context.Background(), sessionDir, sid, st, statePath, watchTestCfg(), fr.run, noGuard, time.Now().UTC(), 65536, io.Discard, map[string]bool{})
 	require.NoError(t, err)
 	assert.Len(t, fr.calls, 1, "one pending message → one hook")
 	assert.FileExists(t, filepath.Join(sessionDir, "inbox", "msg-aaaaaaaaaaaa.json"), "the message must stay in inbox (not consumed)")
@@ -85,7 +88,7 @@ func TestWatchTick_CoalescesBatch(t *testing.T) {
 	statePath, st := watchTestState(t, sessionDir)
 	fr := &recordingRunner{}
 
-	require.NoError(t, watchTick(context.Background(), sessionDir, sid, st, statePath, watchTestCfg(), fr.run, time.Now().UTC(), 65536, io.Discard, map[string]bool{}))
+	require.NoError(t, watchTick(context.Background(), sessionDir, sid, st, statePath, watchTestCfg(), fr.run, noGuard, time.Now().UTC(), 65536, io.Discard, map[string]bool{}))
 	require.Len(t, fr.calls, 1, "three pending → ONE coalesced hook, never 3")
 	assert.Equal(t, "3", envValue(fr.calls[0], "CAB_MSG_COUNT"))
 	assert.Equal(t, sid, envValue(fr.calls[0], "CAB_SESSION_ID"))
@@ -106,8 +109,8 @@ func TestWatchTick_DedupAfterSuccess(t *testing.T) {
 	statePath, st := watchTestState(t, sessionDir)
 	fr := &recordingRunner{}
 
-	require.NoError(t, watchTick(context.Background(), sessionDir, sid, st, statePath, watchTestCfg(), fr.run, time.Now().UTC(), 65536, io.Discard, map[string]bool{}))
-	require.NoError(t, watchTick(context.Background(), sessionDir, sid, st, statePath, watchTestCfg(), fr.run, time.Now().UTC(), 65536, io.Discard, map[string]bool{}))
+	require.NoError(t, watchTick(context.Background(), sessionDir, sid, st, statePath, watchTestCfg(), fr.run, noGuard, time.Now().UTC(), 65536, io.Discard, map[string]bool{}))
+	require.NoError(t, watchTick(context.Background(), sessionDir, sid, st, statePath, watchTestCfg(), fr.run, noGuard, time.Now().UTC(), 65536, io.Discard, map[string]bool{}))
 	assert.Len(t, fr.calls, 1, "the still-pending, already-notified message is not re-notified")
 }
 
@@ -122,14 +125,14 @@ func TestWatchTick_RestartDoesNotReNotify(t *testing.T) {
 	statePath, st := watchTestState(t, sessionDir)
 
 	fr1 := &recordingRunner{}
-	require.NoError(t, watchTick(context.Background(), sessionDir, sid, st, statePath, watchTestCfg(), fr1.run, time.Now().UTC(), 65536, io.Discard, map[string]bool{}))
+	require.NoError(t, watchTick(context.Background(), sessionDir, sid, st, statePath, watchTestCfg(), fr1.run, noGuard, time.Now().UTC(), 65536, io.Discard, map[string]bool{}))
 	require.Len(t, fr1.calls, 1)
 
 	// "restart": load the state from disk and run again.
 	st2, err := loadWatchState(statePath)
 	require.NoError(t, err)
 	fr2 := &recordingRunner{}
-	require.NoError(t, watchTick(context.Background(), sessionDir, sid, st2, statePath, watchTestCfg(), fr2.run, time.Now().UTC(), 65536, io.Discard, map[string]bool{}))
+	require.NoError(t, watchTick(context.Background(), sessionDir, sid, st2, statePath, watchTestCfg(), fr2.run, noGuard, time.Now().UTC(), 65536, io.Discard, map[string]bool{}))
 	assert.Empty(t, fr2.calls, "a restarted watcher must not re-notify already-handled messages")
 }
 
@@ -145,13 +148,13 @@ func TestWatchTick_HookFailureNoMarkThenRetries(t *testing.T) {
 	fr := &recordingRunner{failFirst: 1} // first call fails, the retry succeeds
 	t0 := time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC)
 
-	err := watchTick(context.Background(), sessionDir, sid, st, statePath, watchTestCfg(), fr.run, t0, 65536, io.Discard, map[string]bool{})
+	err := watchTick(context.Background(), sessionDir, sid, st, statePath, watchTestCfg(), fr.run, noGuard, t0, 65536, io.Discard, map[string]bool{})
 	require.ErrorIs(t, err, errHookFailed, "a hook failure is reported as errHookFailed")
 	assert.False(t, st.Entries["msg-aaaaaaaaaaaa"].OK, "a failed hook must not mark the message notified")
 
 	// after the backoff (poll interval, attempts==1) it is a candidate again; the
 	// retry now succeeds and marks it.
-	require.NoError(t, watchTick(context.Background(), sessionDir, sid, st, statePath, watchTestCfg(), fr.run, t0.Add(2*time.Second), 65536, io.Discard, map[string]bool{}))
+	require.NoError(t, watchTick(context.Background(), sessionDir, sid, st, statePath, watchTestCfg(), fr.run, noGuard, t0.Add(2*time.Second), 65536, io.Discard, map[string]bool{}))
 	assert.Len(t, fr.calls, 2, "after backoff the failed message is retried")
 	assert.True(t, st.Entries["msg-aaaaaaaaaaaa"].OK, "the successful retry marks the message notified")
 }
@@ -166,12 +169,12 @@ func TestWatchTick_PrunesConsumed(t *testing.T) {
 	statePath, st := watchTestState(t, sessionDir)
 	fr := &recordingRunner{}
 
-	require.NoError(t, watchTick(context.Background(), sessionDir, sid, st, statePath, watchTestCfg(), fr.run, time.Now().UTC(), 65536, io.Discard, map[string]bool{}))
+	require.NoError(t, watchTick(context.Background(), sessionDir, sid, st, statePath, watchTestCfg(), fr.run, noGuard, time.Now().UTC(), 65536, io.Discard, map[string]bool{}))
 	require.Contains(t, st.Entries, "msg-aaaaaaaaaaaa")
 
 	// the peer consumed it: remove from inbox, then tick again.
 	require.NoError(t, os.Remove(filepath.Join(sessionDir, "inbox", "msg-aaaaaaaaaaaa.json")))
-	require.NoError(t, watchTick(context.Background(), sessionDir, sid, st, statePath, watchTestCfg(), fr.run, time.Now().UTC(), 65536, io.Discard, map[string]bool{}))
+	require.NoError(t, watchTick(context.Background(), sessionDir, sid, st, statePath, watchTestCfg(), fr.run, noGuard, time.Now().UTC(), 65536, io.Discard, map[string]bool{}))
 	assert.NotContains(t, st.Entries, "msg-aaaaaaaaaaaa", "a consumed message's marker is pruned")
 }
 
@@ -185,7 +188,7 @@ func TestWatchTick_AcksFiltered(t *testing.T) {
 	statePath, st := watchTestState(t, sessionDir)
 	fr := &recordingRunner{}
 
-	require.NoError(t, watchTick(context.Background(), sessionDir, sid, st, statePath, watchTestCfg(), fr.run, time.Now().UTC(), 65536, io.Discard, map[string]bool{}))
+	require.NoError(t, watchTick(context.Background(), sessionDir, sid, st, statePath, watchTestCfg(), fr.run, noGuard, time.Now().UTC(), 65536, io.Discard, map[string]bool{}))
 	assert.Empty(t, fr.calls, "an ack-only inbox triggers no hook")
 }
 
@@ -206,6 +209,80 @@ func TestCollectPendingForNotify_LogsMalformedOnce(t *testing.T) {
 	_, err = collectPendingForNotify(sessionDir, 65536, &log, warned)
 	require.NoError(t, err)
 	assert.Equal(t, 1, strings.Count(log.String(), "msg-bad.json"), "a malformed file is logged exactly once across ticks")
+}
+
+// P1.1: an idle tick (empty inbox, or no state change) must NOT write to disk —
+// no fsync storm. Proven by a sentinel: a second idle tick leaves the file we
+// planted untouched.
+func TestWatchTick_IdleDoesNotWrite(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	sid := "nwsess09"
+	sessionDir := filepath.Join(dataDir, "sessions", sid)
+	statePath, st := watchTestState(t, sessionDir)
+	require.NoError(t, os.MkdirAll(filepath.Join(sessionDir, "inbox"), 0o700))
+	fr := &recordingRunner{}
+
+	// empty inbox, empty state → no candidates, nothing to prune → no write.
+	require.NoError(t, watchTick(context.Background(), sessionDir, sid, st, statePath, watchTestCfg(), fr.run, noGuard, time.Now().UTC(), 65536, io.Discard, map[string]bool{}))
+	assert.NoFileExists(t, statePath, "an idle watcher must not create a state file")
+
+	// now plant + notify once (state is written), then drop a sentinel and tick
+	// idle again (message still pending, already notified) — file must be untouched.
+	plantMsg(t, dataDir, sid, "inbox", "msg-aaaaaaaaaaaa", "val12345", "VAL-x", message.TypeQuery, "brief")
+	require.NoError(t, watchTick(context.Background(), sessionDir, sid, st, statePath, watchTestCfg(), fr.run, noGuard, time.Now().UTC(), 65536, io.Discard, map[string]bool{}))
+	require.FileExists(t, statePath)
+	require.NoError(t, os.WriteFile(statePath, []byte("SENTINEL"), 0o600))
+
+	require.NoError(t, watchTick(context.Background(), sessionDir, sid, st, statePath, watchTestCfg(), fr.run, noGuard, time.Now().UTC(), 65536, io.Discard, map[string]bool{}))
+	data, rerr := os.ReadFile(statePath)
+	require.NoError(t, rerr)
+	assert.Equal(t, "SENTINEL", string(data), "an idle tick (no new candidate, nothing pruned) must not rewrite the state")
+}
+
+// P2.3: a listener that started AFTER the watcher is caught each tick — the hook
+// is skipped (not marked) unless --allow-concurrent-consumer.
+func TestWatchTick_GuardrailSkipsWhenListening(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	sid := "nwsess10"
+	sessionDir := filepath.Join(dataDir, "sessions", sid)
+	plantMsg(t, dataDir, sid, "inbox", "msg-aaaaaaaaaaaa", "val12345", "VAL-x", message.TypeQuery, "brief")
+	statePath, st := watchTestState(t, sessionDir)
+	activeGuard := func() (bool, string) { return true, "session in listen" }
+	fr := &recordingRunner{}
+
+	// allowConcurrent=false (default) → skip, do not mark.
+	require.NoError(t, watchTick(context.Background(), sessionDir, sid, st, statePath, watchTestCfg(), fr.run, activeGuard, time.Now().UTC(), 65536, io.Discard, map[string]bool{}))
+	assert.Empty(t, fr.calls, "a live listener makes the watcher skip the hook")
+	assert.NotContains(t, st.Entries, "msg-aaaaaaaaaaaa", "skipped message is not marked (retried when the listener stops)")
+
+	// allowConcurrent=true → run anyway.
+	cfg := watchTestCfg()
+	cfg.allowConcurrent = true
+	require.NoError(t, watchTick(context.Background(), sessionDir, sid, st, statePath, cfg, fr.run, activeGuard, time.Now().UTC(), 65536, io.Discard, map[string]bool{}))
+	assert.Len(t, fr.calls, 1, "--allow-concurrent-consumer runs the hook despite the listener")
+}
+
+// P2.4: a state-save failure AFTER a successful hook is logged explicitly (a
+// restart could re-notify), not swallowed.
+func TestWatchTick_SaveFailAfterHookOKIsLogged(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	sid := "nwsess11"
+	sessionDir := filepath.Join(dataDir, "sessions", sid)
+	plantMsg(t, dataDir, sid, "inbox", "msg-aaaaaaaaaaaa", "val12345", "VAL-x", message.TypeQuery, "brief")
+	require.NoError(t, os.MkdirAll(sessionDir, 0o700))
+	// state path in a non-existent dir → AtomicWriteJSON cannot create its temp.
+	badStatePath := filepath.Join(sessionDir, "no-such-dir", "default.json")
+	st := &watchState{Entries: map[string]*watchEntry{}}
+	fr := &recordingRunner{}
+	var log strings.Builder
+
+	err := watchTick(context.Background(), sessionDir, sid, st, badStatePath, watchTestCfg(), fr.run, noGuard, time.Now().UTC(), 65536, &log, map[string]bool{})
+	require.NoError(t, err, "a save failure after a successful hook is not fatal")
+	assert.Len(t, fr.calls, 1, "the hook still ran")
+	assert.Contains(t, log.String(), "restart may re-notify", "the degradation is logged explicitly")
 }
 
 // --- execHookRunner: the real exec path ---
@@ -264,6 +341,35 @@ func TestExecHookRunner_TimeoutKills(t *testing.T) {
 	err := execHookRunner(cfg, io.Discard)(context.Background(), nil)
 	require.Error(t, err, "a hook exceeding --hook-timeout is killed and reported as an error")
 	assert.Less(t, time.Since(start), 3*time.Second, "it is killed near the timeout, not after the full sleep")
+}
+
+// P1.2: a hook that spawns a long-lived child must have the WHOLE process group
+// torn down at timeout — not just the direct child. The script backgrounds a
+// sleep, records its pid, and waits; on timeout the group kill must reap the
+// background sleep too.
+func TestExecHookRunner_TimeoutKillsChildProcess(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	childPidFile := filepath.Join(dir, "child.pid")
+	script := filepath.Join(dir, "spawn.sh")
+	body := "#!/bin/sh\nsleep 30 &\necho $! > \"" + childPidFile + "\"\nwait\n"
+	require.NoError(t, os.WriteFile(script, []byte(body), 0o755))
+
+	// 2s timeout: ample for the script to spawn + record its child pid even under
+	// the load of `go test -race`, while the child sleeps 30s so the kill always
+	// precedes its natural exit.
+	cfg := watchConfig{hookTimeout: 2 * time.Second, hookArgv: []string{script}}
+	start := time.Now()
+	err := execHookRunner(cfg, io.Discard)(context.Background(), nil)
+	require.Error(t, err, "the timed-out hook reports an error")
+	assert.Less(t, time.Since(start), 10*time.Second, "killed near the timeout, not after the 30s child sleep")
+
+	data, rerr := os.ReadFile(childPidFile)
+	require.NoError(t, rerr, "the script recorded its child pid")
+	childPid, perr := strconv.Atoi(strings.TrimSpace(string(data)))
+	require.NoError(t, perr)
+	assert.Eventually(t, func() bool { return !session.IsProcessAlive(childPid) }, 3*time.Second, 50*time.Millisecond,
+		"the backgrounded child must be killed with the process group, not orphaned")
 }
 
 // --- runNotifyWatch: early-return paths (flag validation, dry-run, guardrail) ---

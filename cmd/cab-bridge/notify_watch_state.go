@@ -120,13 +120,18 @@ func (s *watchState) markFailure(msgID, errMsg string, now time.Time) {
 }
 
 // prune drops markers for ids no longer pending in inbox/ (the peer consumed
-// them via receive/listen), so the state file does not grow unbounded.
-func (s *watchState) prune(present map[string]bool) {
+// them via receive/listen), so the state file does not grow unbounded. Returns
+// true if it removed anything, so the caller can avoid an unnecessary disk write
+// on an idle tick (P1.1 idle write-storm fix).
+func (s *watchState) prune(present map[string]bool) bool {
+	changed := false
 	for id := range s.Entries {
 		if !present[id] {
 			delete(s.Entries, id)
+			changed = true
 		}
 	}
+	return changed
 }
 
 // notifyRetryBackoff returns the minimum wait before retrying a failed hook for
