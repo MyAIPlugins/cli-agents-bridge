@@ -453,3 +453,45 @@ func TestRunAsk_InReplyToMalformed_FormatError(t *testing.T) {
 	assert.ErrorIs(t, err, message.ErrInvalidMessageID)
 	assert.Equal(t, 0, countInboxJSON(t, dataDir, "escsess1"))
 }
+
+// F-39: --in-reply-to=last resolves to the id of the most recent non-ack message
+// received from --to (here an already-consumed brief in processed/) and the
+// delivered reply carries that id — the agent never transcribes an opaque msg-id.
+func TestRunAsk_InReplyToLast_ResolvesAndDelivers(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	plantRoleSession(t, dataDir, "valsess1", session.RoleVal)
+	plantRoleSession(t, dataDir, "escsess1", session.RoleEsc)
+	// VAL received a brief from ESC, already consumed → it sits in processed/.
+	plantProcessedAt(t, dataDir, "valsess1", "msg-aaaaaaaaaaaa", "escsess1", message.TypeQuery, "the brief", time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC))
+
+	var e error
+	out := captureStdout(t, func() {
+		e = runAsk([]string{"--session-id=valsess1", "--to=escsess1", "--type=response", "--in-reply-to=last", "--content=my reply"})
+	})
+	require.NoError(t, e)
+	newID := strings.TrimSpace(out)
+	assert.Equal(t, 1, countInboxJSON(t, dataDir, "escsess1"), "the reply is delivered")
+
+	// the delivered reply must carry inReplyTo = the resolved brief id
+	m, _, ferr := findMessage(filepath.Join(dataDir, "sessions", "escsess1"), newID, 65536)
+	require.NoError(t, ferr)
+	require.NotNil(t, m.InReplyTo, "the reply must thread to the brief")
+	assert.Equal(t, "msg-aaaaaaaaaaaa", *m.InReplyTo, "last resolved to the most recent non-ack from the peer")
+}
+
+// F-39: --in-reply-to=last with nothing ever received from --to is a clear error,
+// and nothing is sent (there is no reference to derive).
+func TestRunAsk_InReplyToLast_NoMessageFromPeerErrors(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	plantRoleSession(t, dataDir, "valsess1", session.RoleVal)
+	plantRoleSession(t, dataDir, "escsess1", session.RoleEsc)
+
+	err := runAsk([]string{"--session-id=valsess1", "--to=escsess1", "--type=response", "--in-reply-to=last", "--content=reply"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no message received from", "the error names the missing reference, not a raw scan error")
+	assert.Equal(t, 0, countInboxJSON(t, dataDir, "escsess1"), "nothing to reply to → nothing sent")
+}

@@ -12,6 +12,67 @@ import (
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
 )
 
+// ErrNoMessageFromPeer is returned by lastReceivedFrom when the peer has never
+// sent us a non-ack message in inbox/ or processed/ — there is nothing to reply
+// to, so `ask --in-reply-to=last` cannot resolve a target id.
+var ErrNoMessageFromPeer = errors.New("no message received from peer")
+
+// lastReceivedFrom resolves the id of the most recent NON-ack message we
+// RECEIVED from `peer`, scanning inbox/ (pending) AND processed/ (consumed) —
+// the message being replied to is usually already consumed, so it lives in
+// processed/. It powers `ask --in-reply-to=last` (F-39): the symbolic reference
+// that lets an agent reply without transcribing an opaque msg-id, the LL-13
+// hallucination surface. Matching is on the decoded m.From/m.Timestamp, never
+// the filename — processed/ files carry a MoveToProcessed <timestamp>- prefix
+// (process.go), so a filename lookup would be wrong. type=ack is excluded: a
+// reply targets content, not a delivery receipt (F-12). A missing box
+// contributes nothing; .tmp.*, non-.json, unreadable, malformed files and
+// unparseable timestamps are skipped. Returns ErrNoMessageFromPeer when nothing
+// matches.
+func lastReceivedFrom(sessionDir, peer string, maxContentBytes int) (string, error) {
+	var bestID string
+	var bestTime time.Time
+	for _, box := range []string{"inbox", "processed"} {
+		dir := filepath.Join(sessionDir, box)
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			return "", fmt.Errorf("in-reply-to=last: scan %s: %w", box, err)
+		}
+		for _, e := range entries {
+			name := e.Name()
+			if e.IsDir() || strings.HasPrefix(name, ".tmp.") || !strings.HasSuffix(name, ".json") {
+				continue
+			}
+			data, rerr := os.ReadFile(filepath.Join(dir, name))
+			if rerr != nil {
+				continue
+			}
+			m, derr := message.DecodeLenient(data, maxContentBytes)
+			if derr != nil {
+				continue
+			}
+			if m.From != peer || m.Type == message.TypeAck {
+				continue
+			}
+			ts, perr := time.Parse(time.RFC3339Nano, m.Timestamp)
+			if perr != nil {
+				continue
+			}
+			if bestID == "" || ts.After(bestTime) {
+				bestID = m.ID
+				bestTime = ts
+			}
+		}
+	}
+	if bestID == "" {
+		return "", ErrNoMessageFromPeer
+	}
+	return bestID, nil
+}
+
 // lastSentTimeTo returns the Timestamp of the most recent message in outboxDir
 // addressed to `to`, or the zero time if none was ever sent there. It is the
 // F-34 cutoff: a peer message older than our last send to that peer is treated

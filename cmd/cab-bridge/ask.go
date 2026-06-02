@@ -105,6 +105,22 @@ func runAsk(args []string) error {
 
 	var inReplyToPtr *string
 	if *inReplyTo != "" {
+		// F-39: "last" is a SYMBOLIC reference, resolved here BEFORE the format
+		// check (it does not match ^msg-). It becomes the id of the most recent
+		// non-ack message we received from --to — the message being replied to —
+		// so the agent never transcribes an opaque msg-id (the LL-13
+		// hallucination surface). The resolved id exists by construction, so
+		// ValidateMessageID and the F-37 existence check below both pass.
+		if *inReplyTo == "last" {
+			resolved, lerr := lastReceivedFrom(sessionDir, *to, cfg.MaxMessageBytes)
+			if lerr != nil {
+				if errors.Is(lerr, ErrNoMessageFromPeer) {
+					return fmt.Errorf("ask: --in-reply-to=last: no message received from %s to derive the reference from", *to)
+				}
+				return fmt.Errorf("ask: --in-reply-to=last: %w", lerr)
+			}
+			*inReplyTo = resolved
+		}
 		// Validate the FORMAT first: a clean "invalid message id" beats a
 		// confusing "not found" warning on a malformed id (sendMessage re-checks
 		// the format at the write gateway, but failing here is clearer).

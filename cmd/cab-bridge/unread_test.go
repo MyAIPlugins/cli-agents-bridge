@@ -131,3 +131,113 @@ func TestUnreadFromPeer_MostRecentAmongMatches(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "msg-bbbbbbbbbbbb", got, "the most recent unread is returned")
 }
+
+// plantProcessedAt writes a v2 message into processed/ using the REAL
+// MoveToProcessed naming (<timestamp>-<id>.json, process.go:35) with a
+// caller-controlled From/Type/Timestamp, so lastReceivedFrom can be exercised on
+// already-consumed messages (the common F-39 case: the brief being replied to is
+// in processed/). plantProcessedTimestamped (read_test.go) hardcodes those fields.
+func plantProcessedAt(t *testing.T, dataDir, sid, id, from, msgType, content string, ts time.Time) {
+	t.Helper()
+	dir := filepath.Join(dataDir, "sessions", sid, "processed")
+	require.NoError(t, os.MkdirAll(dir, 0o700))
+	m := message.Message{
+		ID:            id,
+		SchemaVersion: message.SchemaVersionV2,
+		From:          from,
+		FromRole:      "esc",
+		FromAgentName: "ESC-y",
+		To:            sid,
+		ToRole:        "val",
+		Type:          msgType,
+		Timestamp:     ts.UTC().Format(time.RFC3339Nano),
+		Status:        message.StatusPending,
+		Content:       content,
+		Metadata:      message.Metadata{FromProject: "test", ProcessingState: message.StatusPending},
+	}
+	data, err := json.Marshal(&m)
+	require.NoError(t, err)
+	name := ts.UTC().Format("20060102T150405.000000000Z") + "-" + id + ".json"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), data, 0o600))
+}
+
+func TestLastReceivedFrom_FromInbox(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	base := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	plantInboxAt(t, dataDir, "valsess1", "msg-aaaaaaaaaaaa", "escsess1", message.TypeQuery, "brief", base)
+
+	got, err := lastReceivedFrom(filepath.Join(dataDir, "sessions", "valsess1"), "escsess1", 65536)
+	require.NoError(t, err)
+	assert.Equal(t, "msg-aaaaaaaaaaaa", got, "a still-pending message from the peer resolves")
+}
+
+// The common F-39 case: the brief being replied to is already consumed → it
+// lives in processed/, named with a timestamp prefix. lastReceivedFrom matches
+// on the decoded m.From/m.Timestamp, not the filename.
+func TestLastReceivedFrom_FromProcessed(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	base := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	plantProcessedAt(t, dataDir, "valsess1", "msg-bbbbbbbbbbbb", "escsess1", message.TypeQuery, "consumed brief", base)
+
+	got, err := lastReceivedFrom(filepath.Join(dataDir, "sessions", "valsess1"), "escsess1", 65536)
+	require.NoError(t, err)
+	assert.Equal(t, "msg-bbbbbbbbbbbb", got, "an already-consumed message in processed/ resolves")
+}
+
+// The most recent wins across BOTH boxes — here the newest is in processed/, so
+// the scan must not stop at inbox/.
+func TestLastReceivedFrom_MostRecentAcrossBoxes(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	base := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	plantInboxAt(t, dataDir, "valsess1", "msg-aaaaaaaaaaaa", "escsess1", message.TypeResponse, "pending older", base.Add(5*time.Second))
+	plantProcessedAt(t, dataDir, "valsess1", "msg-bbbbbbbbbbbb", "escsess1", message.TypeQuery, "processed newer", base.Add(15*time.Second))
+
+	got, err := lastReceivedFrom(filepath.Join(dataDir, "sessions", "valsess1"), "escsess1", 65536)
+	require.NoError(t, err)
+	assert.Equal(t, "msg-bbbbbbbbbbbb", got, "the most recent by timestamp wins, even if it is in processed/")
+}
+
+// An ack is a delivery receipt, not content to reply to: when the most recent
+// message from the peer is an ack, the previous NON-ack is used.
+func TestLastReceivedFrom_SkipsAckUsesPreviousNonAck(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	base := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	plantInboxAt(t, dataDir, "valsess1", "msg-aaaaaaaaaaaa", "escsess1", message.TypeQuery, "the real brief", base.Add(5*time.Second))
+	plantInboxAt(t, dataDir, "valsess1", "msg-bbbbbbbbbbbb", "escsess1", message.TypeAck, "ACK", base.Add(15*time.Second))
+
+	got, err := lastReceivedFrom(filepath.Join(dataDir, "sessions", "valsess1"), "escsess1", 65536)
+	require.NoError(t, err)
+	assert.Equal(t, "msg-aaaaaaaaaaaa", got, "the newest is an ack → fall back to the previous non-ack")
+}
+
+func TestLastReceivedFrom_NoMessageFromPeer(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	// inbox exists but is empty: the peer never wrote to us.
+	require.NoError(t, os.MkdirAll(filepath.Join(dataDir, "sessions", "valsess1", "inbox"), 0o700))
+
+	_, err := lastReceivedFrom(filepath.Join(dataDir, "sessions", "valsess1"), "escsess1", 65536)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrNoMessageFromPeer, "an empty inbox → sentinel error")
+}
+
+func TestLastReceivedFrom_OtherPeerIgnored(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	base := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	plantInboxAt(t, dataDir, "valsess1", "msg-aaaaaaaaaaaa", "other999", message.TypeQuery, "from other", base)
+
+	_, err := lastReceivedFrom(filepath.Join(dataDir, "sessions", "valsess1"), "escsess1", 65536)
+	require.ErrorIs(t, err, ErrNoMessageFromPeer, "only the --to peer counts")
+}
+
+func TestLastReceivedFrom_MissingBoxes(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	_, err := lastReceivedFrom(filepath.Join(dataDir, "sessions", "valsess1"), "escsess1", 65536)
+	require.ErrorIs(t, err, ErrNoMessageFromPeer, "no inbox/ or processed/ → sentinel, not a scan error")
+}
