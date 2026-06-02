@@ -55,6 +55,8 @@ func main() {
 		exitFromErr(runConnect(os.Args[2:]))
 	case "receive":
 		exitFromErr(runReceive(os.Args[2:]))
+	case "notify-watch":
+		exitFromErr(runNotifyWatch(os.Args[2:]))
 	case "peers":
 		exitFromErr(runPeers(os.Args[2:]))
 	case "cleanup":
@@ -122,6 +124,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  ask                  Send a message to a peer (--to, --content, --file, --in-reply-to, --allow-mesh)")
 	fmt.Fprintln(os.Stderr, "  connect <peer-id>    Refresh own heartbeat (BUG-9) + validate peer reachable")
 	fmt.Fprintln(os.Stderr, "  receive              Long-poll wait for a reply to a specific message ID")
+	fmt.Fprintln(os.Stderr, "  notify-watch -- <hook>  External watcher: run <hook> when new inbox messages arrive, for peers with no native push (F-66)")
 	fmt.Fprintln(os.Stderr, "  peers                List known peers (table or --json) with role/agent/PID/heartbeat age")
 	fmt.Fprintln(os.Stderr, "  cleanup              Cleanup own session (default) or --scope=global (BUG-4 scoped)")
 	fmt.Fprintln(os.Stderr, "  status               Show own session status (heartbeat age, inbox/outbox/processed counts)")
