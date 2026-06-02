@@ -142,6 +142,102 @@ func TestPrintOverviewHuman_WithPeerAndInbox(t *testing.T) {
 	assert.Contains(t, out, "msg-aaaaaaaaaaaa from VAL-x  type query")
 }
 
+// F-81: a live PID + a future listen window → the session is actively listening,
+// and overview reports the pid and the window.
+func TestBuildOverview_ListenerActive(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	plantOverviewSession(t, dataDir, "lsnov01", session.RoleEsc, "ESC-x", "/repo/x", "", "working") // PID = os.Getpid() (live)
+	mgr := session.NewManager(dataDir, time.Second)
+	until := time.Now().UTC().Add(time.Hour)
+	require.NoError(t, mgr.SetListenUntil("lsnov01", until))
+
+	rep, err := buildOverview(mgr, overviewTestCfg(dataDir), "lsnov01")
+	require.NoError(t, err)
+	assert.True(t, rep.ListenerActive, "live PID + future window → listening")
+	assert.Equal(t, os.Getpid(), rep.ListenerPid)
+	require.NotNil(t, rep.ListenerUntil)
+	assert.WithinDuration(t, until, *rep.ListenerUntil, time.Second, "the window survives the manifest round-trip")
+}
+
+// F-81: a past listen window (the listen exited or its window expired) → not
+// listening, and pid/until are suppressed.
+func TestBuildOverview_ListenerExpiredWindow(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	plantOverviewSession(t, dataDir, "lsnov02", session.RoleEsc, "ESC-x", "/repo/x", "", "")
+	mgr := session.NewManager(dataDir, time.Second)
+	require.NoError(t, mgr.SetListenUntil("lsnov02", time.Now().UTC().Add(-time.Minute)))
+
+	rep, err := buildOverview(mgr, overviewTestCfg(dataDir), "lsnov02")
+	require.NoError(t, err)
+	assert.False(t, rep.ListenerActive, "an expired window → not listening")
+	assert.Zero(t, rep.ListenerPid)
+	assert.Nil(t, rep.ListenerUntil)
+}
+
+// F-81: a legacy/non-listen manifest has no listenUntil at all → not listening,
+// no crash on the nil pointer.
+func TestBuildOverview_ListenerAbsentLegacy(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	plantOverviewSession(t, dataDir, "lsnov03", session.RoleEsc, "ESC-x", "/repo/x", "", "") // no SetListenUntil
+
+	mgr := session.NewManager(dataDir, time.Second)
+	rep, err := buildOverview(mgr, overviewTestCfg(dataDir), "lsnov03")
+	require.NoError(t, err)
+	assert.False(t, rep.ListenerActive, "no listen window (legacy/non-listen) → not listening")
+	assert.Nil(t, rep.ListenerUntil)
+}
+
+// F-81: a future window but a DEAD PID (the listen process is gone) → not
+// listening. The AND of PID-alive and future-window guards the false positive of
+// a stale ListenUntil left in the manifest.
+func TestBuildOverview_ListenerDeadPID(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	plantOverviewSession(t, dataDir, "lsnov04", session.RoleEsc, "ESC-x", "/repo/x", "", "")
+	mgr := session.NewManager(dataDir, time.Second)
+	mf, err := mgr.LoadManifest("lsnov04")
+	require.NoError(t, err)
+	mf.PID = deadPID
+	future := time.Now().UTC().Add(time.Hour)
+	mf.ListenUntil = &future
+	require.NoError(t, mgr.SaveManifest(mf))
+
+	rep, err := buildOverview(mgr, overviewTestCfg(dataDir), "lsnov04")
+	require.NoError(t, err)
+	assert.False(t, rep.ListenerActive, "future window but dead PID → not listening")
+}
+
+func TestPrintOverviewHuman_ListenerActive(t *testing.T) {
+	t.Parallel()
+	until := time.Now().UTC().Add(30 * time.Minute)
+	rep := overviewReport{
+		Me:             overviewSelf{SessionID: "esc12345", AgentName: "ESC-x", Role: "esc", Stale: false},
+		ListenerActive: true,
+		ListenerPid:    4321,
+		ListenerUntil:  &until,
+		Inbox:          []overviewMsg{},
+	}
+	var b bytes.Buffer
+	printOverviewHuman(&b, rep)
+	out := b.String()
+	assert.Contains(t, out, "listener: listening (PID 4321", "the listener line names the pid")
+	assert.Contains(t, out, "expires in", "and the remaining window")
+}
+
+func TestPrintOverviewHuman_ListenerNotListening(t *testing.T) {
+	t.Parallel()
+	rep := overviewReport{
+		Me:    overviewSelf{SessionID: "esc12345", AgentName: "ESC-x", Role: "esc", Stale: true},
+		Inbox: []overviewMsg{},
+	}
+	var b bytes.Buffer
+	printOverviewHuman(&b, rep)
+	assert.Contains(t, b.String(), "listener: not listening")
+}
+
 func TestPrintOverviewHuman_NoPeerEmptyInbox(t *testing.T) {
 	t.Parallel()
 	rep := overviewReport{

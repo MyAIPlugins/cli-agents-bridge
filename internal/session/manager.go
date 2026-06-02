@@ -372,6 +372,26 @@ func (m *Manager) SetState(sessionID, state string) error {
 	return m.SaveManifest(manifest)
 }
 
+// SetListenUntil records the deadline of the CURRENT listen window in
+// sessionID's manifest (F-81 observability), written by listen at startup as
+// now + the resolved MaxBlocking window. Holds manifestMu for the whole
+// read-modify-write so the concurrent heartbeat goroutine (or SetLastConsumed)
+// cannot clobber the field (same discipline as SetLastConsumed — see the
+// manifestMu doc). Stored in UTC. Does NOT touch LastHeartbeat: AdoptPID already
+// refreshed it at listen startup and the heartbeat goroutine keeps it fresh, so
+// publishing the window is not itself a separate sign of life.
+func (m *Manager) SetListenUntil(sessionID string, until time.Time) error {
+	m.manifestMu.Lock()
+	defer m.manifestMu.Unlock()
+	manifest, err := m.LoadManifest(sessionID)
+	if err != nil {
+		return err
+	}
+	u := until.UTC()
+	manifest.ListenUntil = &u
+	return m.SaveManifest(manifest)
+}
+
 // Touch refreshes the lastHeartbeat field of sessionID's manifest to "now"
 // without launching a goroutine. Used by the connect-peer subcommand to
 // guarantee the sender's heartbeat is fresh at handshake time (BUG-9 fix:

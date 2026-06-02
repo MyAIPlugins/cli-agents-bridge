@@ -24,7 +24,17 @@ import (
 // building blocks (LongestPrefixLookup, collectPeers/selectPeer, collectInbox)
 // rather than duplicating them.
 type overviewReport struct {
-	Me    overviewSelf  `json:"me"`
+	Me overviewSelf `json:"me"`
+
+	// F-81: listener observability — whether THIS session is actively in a listen
+	// window and when it expires. ListenerActive is IsProcessAlive(PID) AND a
+	// future ListenUntil; pid/until are only meaningful (and only emitted) when
+	// active. Answers the CRI ask "am I really listening? PID X, expires in Y?"
+	// that PID/heartbeat/state alone could not.
+	ListenerActive bool       `json:"listenerActive"`
+	ListenerPid    int        `json:"listenerPid,omitempty"`
+	ListenerUntil  *time.Time `json:"listenerUntil,omitempty"`
+
 	Peer  *overviewPeer `json:"peer"`  // null when no complementary peer is registered yet
 	Inbox []overviewMsg `json:"inbox"` // pending messages only (inbox/, not processed/)
 }
@@ -128,6 +138,16 @@ func buildOverview(mgr *session.Manager, cfg config.Config, sid string) (overvie
 		Inbox: []overviewMsg{},
 	}
 
+	// F-81: am I actively listening? A live PID AND a future listen window. AND'd
+	// so a dead listen (PID gone after the process exits) or an expired window
+	// both read as "not listening" — no false positive from a stale ListenUntil
+	// left in the manifest. listen writes ListenUntil at startup (SetListenUntil).
+	if session.IsProcessAlive(me.PID) && me.ListenUntil != nil && me.ListenUntil.After(now) {
+		report.ListenerActive = true
+		report.ListenerPid = me.PID
+		report.ListenerUntil = me.ListenUntil
+	}
+
 	// Peer: the complementary role within my own scope+team. collectPeers
 	// includes me, but selectPeer never picks my own role, so I am not selected.
 	// Filtering on MY stored scope (not resolveScope(cwd)) keeps this correct even
@@ -171,6 +191,15 @@ func buildOverview(mgr *session.Manager, cfg config.Config, sid string) (overvie
 func printOverviewHuman(w io.Writer, r overviewReport) {
 	fmt.Fprintf(w, "me:    %s  (%s)  role %s  scope %s  state %s%s\n",
 		r.Me.AgentName, r.Me.SessionID, r.Me.Role, overviewDash(r.Me.Scope), overviewState(r.Me.State), overviewLive(r.Me.Stale))
+
+	// F-81 listener line. English, consistent with the rest of this output. The
+	// remaining window is computed at display time (now-relative), truncated to
+	// the second.
+	if r.ListenerActive && r.ListenerUntil != nil {
+		fmt.Fprintf(w, "listener: listening (PID %d, expires in %s)\n", r.ListenerPid, time.Until(*r.ListenerUntil).Truncate(time.Second))
+	} else {
+		fmt.Fprintln(w, "listener: not listening")
+	}
 
 	if r.Peer == nil {
 		fmt.Fprintln(w, "peer:  (none paired in this scope yet)")

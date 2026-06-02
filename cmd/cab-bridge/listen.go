@@ -98,6 +98,17 @@ func runListen(args []string) error {
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
+
+	// F-81: publish the current listen window (now + resolved MaxBlocking) so
+	// `overview` can show whether this session is ACTIVELY listening and when the
+	// window expires. Read back AND'd with a live PID (AdoptPID above), so once
+	// this process exits the same manifest reads as "not listening". Applies to
+	// both the --wait-one and default branches. Best-effort: a write failure must
+	// not break listen.
+	if err := mgr.SetListenUntil(sid, time.Now().UTC().Add(maxBlocking)); err != nil {
+		fmt.Fprintf(os.Stderr, "cab-bridge: listen: record listen window: %v\n", err)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), maxBlocking)
 	defer cancel()
 

@@ -101,3 +101,30 @@ func TestRunListen_EmitInvalid(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--emit")
 }
+
+// F-81: listen publishes its window into the manifest at startup, so overview
+// can report "listening (PID, expires in ...)". Verified after a --wait-one run
+// that exits as soon as it drains the pre-planted inbox.
+func TestRunListen_WaitOne_WritesListenUntil(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	sid := "lsnlu001"
+	plantOverviewSession(t, dataDir, sid, session.RoleEsc, "ESC-y", "/repo/x", "", "")
+	plantMsg(t, dataDir, sid, "inbox", "msg-aaaaaaaaaaaa", "val12345", "VAL-x", message.TypeResponse, "wake")
+
+	before := time.Now().UTC()
+	var runErr error
+	_ = captureStdout(t, func() {
+		runErr = runListen([]string{"--wait-one", "--session-id=" + sid, "--until-deadline=5s", "--no-auto-ack"})
+	})
+	require.NoError(t, runErr)
+
+	mgr := session.NewManager(dataDir, time.Second)
+	mf, err := mgr.LoadManifest(sid)
+	require.NoError(t, err)
+	require.NotNil(t, mf.ListenUntil, "listen must publish its window at startup")
+	assert.True(t, mf.ListenUntil.After(before), "ListenUntil is in the future relative to before the call")
+	assert.True(t, mf.ListenUntil.Before(before.Add(10*time.Second)), "ListenUntil ~ now + 5s window, not unbounded")
+}

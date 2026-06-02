@@ -93,6 +93,19 @@ type Manifest struct {
 	// (any value displayed verbatim, forward-compat); only the setter validates
 	// against the canonical set.
 	State string `json:"state,omitempty"`
+
+	// ListenUntil is the wall-clock deadline of the CURRENT listen window (F-81),
+	// written by `listen` at startup as now + the resolved MaxBlocking window. It
+	// powers the overview "listener" line: combined with a live PID it tells
+	// whether a session is ACTIVELY in listen and when its window expires —
+	// observability a peer/orchestrator otherwise lacks (PID/heartbeat alone do
+	// not distinguish a real listen from the register-then-die window, BUG-A).
+	// A POINTER, not a value: encoding/json omitempty does NOT drop a zero
+	// time.Time (it is a struct, never "empty"), only a nil pointer — so *time.Time
+	// is what genuinely keeps it out of non-listen/legacy manifests (same reason
+	// message.InReplyTo is *string). Optional and additive:
+	// Validate/ApplyV1Defaults ignore it, like TeamID/State.
+	ListenUntil *time.Time `json:"listenUntil,omitempty"`
 }
 
 // Validate checks that the manifest has the minimum required fields for
