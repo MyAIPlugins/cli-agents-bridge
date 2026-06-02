@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] — unreleased (in `main`, pending push/tag/deploy)
+
+Built by the cross-vendor TRIAD on the bridge itself (VAL Claude + ESC Claude + CRI Codex over `cab-bridge`): F-39/F-81 = brief → independent VAL gate → merge; **F-66 with the full rigor** — CRI design-gate (naive-loop → serious-watcher) → ESC impl → VAL gate → CRI diff-gate (two P1s the green gate did not see) → ESC fix → VAL re-gate → CRI check → merge. Independent VAL gate `go test -race -count=1 ./...` green + code audit + real smoke per feature.
+
+### Added
+- **F-39 — `ask --in-reply-to=last`**: symbolic reference resolving to the id of the most recent non-ack message received from `--to` — so an agent replies without transcribing an opaque msg-id (the LL-13 hallucination surface; the #1 recurring friction, asked by both ESC and CRI). New helper `lastReceivedFrom` (scans `inbox/`+`processed/`, matches on decoded `From`/`Timestamp`, sentinel `ErrNoMessageFromPeer`); explicit `--in-reply-to=<msg-id>` untouched (`last` is intercepted before the `^msg-` format check).
+- **F-81 — listener observability in `overview`**: a `listener:` line — `listening (PID, expires in Y)` / `not listening` — plus `--json` `listenerActive`/`listenerPid`/`listenerUntil`. Active iff `IsProcessAlive(PID) && ListenUntil` in the future (the AND guards a stale `ListenUntil` from a dead listen — distinguishes a real listener from the register-then-die heartbeat). New `Manifest.ListenUntil *time.Time` (pointer, not value: `omitempty` does NOT drop a zero `time.Time` struct — only a nil pointer; same reason as `message.InReplyTo`), written by `listen` at startup via `SetListenUntil`.
+- **F-66 — `cab-bridge notify-watch`**: external inbox watcher for no-push peers (e.g. Codex CLI) — polls the inbox NON-consumingly (`collectPendingForNotify`, inbox-only, non-ack) and on a new batch runs a configurable hook (`-- argv...`, e.g. `screen -X stuff` to inject into a Codex TUI). Six hardening invariants from the CRI design+diff gates: argv-direct default (`--shell` opt-in; env = metadata only, never content/preview); batch coalescing (one hook per batch, not per message); persistent dedup (marks only after hook exit-0, backoff on failure, prune); `ListenUntil` guardrail + per-`watch-name` lock against a concurrent consumer; structured stderr log + once-per-file skip logging; dirty-only state save (no idle write-storm) + Unix process-group teardown on timeout (`Setpgid` + `kill(-pgid)`, so `screen`/`tmux`/`sh -c '... &'` are not orphaned). The bridge's "second wake door" for vendors without push (LL-16).
+
 ## [0.5.1] — 2026-06-01
 
 Backlog-minore follow-up to v0.5.0 — anti-degradation hardening — built same-day via the dogfooding workflow (independent VAL gate `-race -count=1` green + real smoke per fix).
