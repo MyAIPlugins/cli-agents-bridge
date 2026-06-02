@@ -1,0 +1,40 @@
+ROADMAP.md
+  s_da508dd14cf7fe::t_97c63a87830673 326-350
+docs/test-2giu-esc-val-cri-appunti.md
+  s_da508dd14cf7fe::t_95af19c01e80d2 283-309
+  s_da508dd14cf7fe::t_4c8bdd121020b0 310-324
+  s_da508dd14cf7fe::t_b1b63639a0fd0d 152-166
+  s_da508dd14cf7fe::t_bf29f5c65ebf26 246-247
+  s_da508dd14cf7fe::t_84cd72ee6036fc 97-101,117,226-245,248-250
+  s_da508dd14cf7fe::t_7bf0d6d4ff6848 362-384
+  s_da508dd14cf7fe::t_c87f0957743d12 478-498
+  s_da508dd14cf7fe::t_3ceaa5038648d2 133-151
+  s_da508dd14cf7fe::t_3f5c49b58ee575 1-52
+  s_da508dd14cf7fe::t_03a243145a441f 53-96
+  s_da508dd14cf7fe::t_b5b67f74829d07 341-361
+  s_da508dd14cf7fe::t_ab6382c82930e9 118-132
+  s_da508dd14cf7fe::t_daf8b07fe1dcc1 451-477
+  s_da508dd14cf7fe::t_d7fb690f8f7814 385-417
+  s_da508dd14cf7fe::t_50b76747427fba 251-282
+  s_da508dd14cf7fe::t_88d07e48580865 418-450
+  s_da508dd14cf7fe::t_51388474d6cf7d 499-534
+  s_da508dd14cf7fe::t_2cf1a32cbd8cf3 206-225
+  s_da508dd14cf7fe::t_5d9f64d64ec88a 102-116
+  s_da508dd14cf7fe::t_0dcdc6a5e2f98d 325-340
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "57fb69a26671b2fb28c376acd121f764d22c8c48",
+  "prompts": {},
+  "sessions": {
+    "s_da508dd14cf7fe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "04afe0d5-69d7-4ebf-829d-0e5bd111d8ae",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
