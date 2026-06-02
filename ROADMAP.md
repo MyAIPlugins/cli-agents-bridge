@@ -323,6 +323,31 @@ Coppia indipendente, ~5h, ~15 scambi, **sessione degradata** (entrambi allucinan
 Primo uso **cross-vendor** del bridge (Codex CLI 0.136 TUI, `gpt-5.5`, come CRI ↔ VAL Claude), **zero modifiche al binario** → claim "vendor-agnostic" dimostrato sul campo. **Valore reale**: il CRI ha trovato 2 difetti che VAL+esperto avevano mancato — un fence Markdown spaiato nelle skill, e il raffinamento errno del piano F-51 (sopra). Dettaglio completo + ESITO in `docs/spike-cri-codex-bridge.md`.
 - **Finding cross-vendor**: `--to` accetta solo session-id (un by-name sarebbe AI-friendly, LL-13); `receive --any --emit=content` su timeout = stdout vuoto, ambiguo per non-Claude (la skill impone `--emit=json`); le skill Codex NON si auto-attivano per pura rilevanza → serve **menzione esplicita**; **Codex TUI: un comando bloccante in background NON sopravvive alla fine del turno** → loop foreground ri-loopato o re-ingaggio manuale (latenza cold ~4-5min, warm ~secondi).
 - **Capability riusabile**: worktree dedicato + 2 skill globali `~/.codex/skills/{critico,cab-bridge-awareness}` + re-ingaggio per task. Due use-case: bridge-peer (coding, analisi lunga) vs MCP-tool (duello one-shot, fuori scope).
+
+### Test reale multi-vendor ESC/VAL/CRI/ARC — 2 giu 2026 (finding F-57→F-82 consolidati)
+
+Test su progetto REALE (`chatterence-bi-template`, 4h+, 3 feature in prod): VAL/ESC **Claude Code** + CRI **Codex CLI** + ARC **Claude Desktop**. Log completo: `docs/test-2giu-esc-val-cri-appunti.md` (18 update + feedback 3 ruoli). **Conferma chiave**: il bridge + Claude Code = **long-run resiliente NATIVO** (wake-push, pause 30-90min, zero intervento); **tutto l'attrito è nel runtime Codex (no-push), NON nel bridge**. Valore CRI cross-vendor confermato su modulo legale (bypass `mode='admin'`, build-blocker client→`pg`, NO-GO design eIDAS, fix schema probatori, bug cross-commit `nda` — LL-15).
+
+**Gruppo A — Wake & osservabilità peer eterogenei (gap #1, cluster dominante)**:
+- **F-59** no-push Codex TOTALE (verificato no-intervento: senza poke, msg invisibile *indefinitamente*; cause su codice Codex: PTY torn-down #10767 + polling-loop morto #10957; `background_terminal_max_timeout` IRRILEVANTE; il background terminal sparisce ~1h).
+- **F-66 `notify-watch` (P1 del cluster)**: comando bridge = polling esterno NON-consuming + `--on-message=<cmd>` → inietta nella TUI Codex via `screen -X stuff "testo"; sleep 0.3; screen -X stuff $'\r'` (Enter SEPARATO fuori dal paste-burst, #9020 — **validato sul campo**). Processo esterno = nostro Go → immune al background-terminal Codex. Associazione istanza: 1 notify-watch per CRI, screen-name 1:1 col progetto (o lookup-by-cwd). Preserva sessione/memoria/controllo (≠ watcher-exec, ≠ MCP one-shot).
+- **F-71** flag wake-mode peer (`--peer-wake=manual` / manifest `wakeMode`) → `peers`/`overview` mostra "manual-wake" invece di "stale-morto".
+- **F-81 (TOP CRI)** comando STATO-LISTENER unico (PID, deadline-residua, ultimi-msg, inbox-status, listener-duplicati) + **F-78** overview arricchito (`processedCount`, `lastConsumed*`, `listenerPid/Deadline`). Converge con F-42.
+- **F-64/F-75** listener lifecycle (`listen --forever`/auto-renew/warning-expiry) · **F-63** leak processi orfani (receive/listen) · **F-77** timestamp human (`age_seconds`/local).
+
+**Gruppo B — Riferimenti simbolici (priorità #1 trasversale)**:
+- **F-39 `--in-reply-to=last`** (+ `--to-last-from`): l'UNICO attrito ricorrente di ESC **e** chiesto da CRI. Cappello LL-13 (anti-id-stale, F-16). Alto impatto / basso costo.
+
+**Gruppo C — Correzioni skill (FATTE nel consolidamento 2 giu)**: skill Codex `cab-bridge-awareness` (comandi-brevi-on-demand NON listen-persistente · strict-reply same-scope · no-push limite · id-esplicito · setup-worktree) · skill personale Claude (rimossa nota scope-worktree obsoleta → F-41 pairing automatico; aggiunto **F-67** `--wait-one` drain-all) · skill pubblica repo `bridge-workflow` GIÀ allineata. **F-67** (`--wait-one` consuma il batch preesistente, garantito da `DrainInboxOnce`, `listen.go:131`), **F-73** (setup multi-agente-worktree).
+
+**Gruppo D — Ergonomia/UX**:
+- **F-74** status `pending` non aggiornato dopo consume (distinguere `delivery_status` da `processing_state`) · **F-76** comando "inbox next" unificato (receive/listen) · **F-70** `receive --singleton`/guard anti-incrocio (**race confermata BENIGNA sui dati — risponde a F-53/Q3-esperto**; serve solo guard UX) · **F-68** multi-response stesso `--in-reply-to` (supportato di fatto, documentare) · **F-80** `ask --file` output JSON `{id,to,inReplyTo,fileBytes}` · **F-79** discoverability peer fuori-scope.
+
+**Gruppo E — Cross-vendor / future**:
+- **F-72 ARC peer via MCP server** (Claude Desktop, bidirezionale VAL↔ARC) = **bridge a 2 porte** (CLI per peer-con-shell + MCP per peer-senza-shell); assorbe **F-69** (shared-context cross-worktree per la guidance ARC oggi off-bridge/gitignored).
+- **F-82** plugin Codex (packaging/distribuzione) — **dipende da F-66** (nota CRI: un plugin senza notify-watch impacchetta lo stesso attrito). Backlog "supporto Codex first-class".
+
+**Priorità proposta**: C (fatto) → **B (F-39)** → **A (F-66 + osservabilità F-81/F-71)** → D → E. Lo **scope di v0.6** (cosa implementa l'ESC) è decisione Alan in un brief separato.
 - **Cursor strutturale assente (gap, non bug)**: F-34 (v0.5.0) è un WARNING pre-`ask` (non-blocking), NON un cursor sincronizzante → per run multi-giorno **free-form concorrente** non basta. Mitigazione adottata: **ping-pong stretto** (`ask`→blocca su `receive --msg-id`; ESC `listen --wait-one` 1-msg) → un solo msg in volo per direzione, crossing strutturalmente quasi-impossibile. Cursor completo = backlog.
 - **F-52 (NUOVO)**: NESSUN test di **crossing end-to-end** (due lati su msg stantio) — F-34 testa la primitiva (`unread_test.go`, 8 test) ma non lo scenario. Il cursor va test-first.
 - **F-53 (NUOVO)**: NESSUN test integrazione **listen+receive concorrenti** sullo stesso inbox (17 scenario, zero concorrenti) — la race è confinata al mesh per DESIGN (hub-and-spoke = 1 consumatore) ma non c'è test che lo conferma.
