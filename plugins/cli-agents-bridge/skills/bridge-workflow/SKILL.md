@@ -33,6 +33,8 @@ cab-bridge bootstrap --role=val   # register + set state=orchestrating + exit (a
 ```
 `bootstrap` discovers an already-registered peer in its scope (in-process — no piped output to parse), derives its own name adaptively (inherits the peer's suffix: a peer `VAL-x` → `ESC-x`, converging in either order; fallback `<ROLE>-<scope-basename>`), and registers idempotently (`--resume`). For `role=esc` it hands off to `listen --wait-one`, so the executor's session id is managed internally and never transcribed — the safest onboarding for a fresh agent. Pass `--agent-name=<name>` to override the derived name. Re-running the same command is the id-free re-listen loop.
 
+**Caveat — peer already present (F-47, F-88):** because `role=esc` bootstrap hands off to a blocking `listen`, it leaves no room to send the poke `ask` that the "second peer pings the first" flow needs when the VAL is already listening. In that case skip the monolithic bootstrap and use the atomic commands: `register --resume --role=esc` → `overview` (find the peer id) → `ask --to=<peer> --type=notify ...` (poke) → `listen --wait-one`. Bootstrap stays ideal for the `peer: null` case (enter listen and wait for the brief).
+
 ## The two patterns
 
 ### Orchestrator (does NOT sit in listen)

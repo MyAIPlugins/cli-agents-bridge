@@ -373,6 +373,20 @@ Test su progetto REALE (`chatterence-bi-template`, 4h+, 3 feature in prod): VAL/
 | **M5** v0.4.0 — daemon Unix socket | 🔮 FUTURE GATED | 1-2 settimane post-M4 | GATE: G1 latency >200ms ∧ G2 peer >3. Se non si verifica → daemon NON si fa |
 | **M6** v1.0.0 — production-ready | 🔮 FUTURE | 3-6 mesi | Marketplace Anthropic submission, brew tap, encryption opt-in, multi-machine |
 
+### Smoke test v0.6 (3 giu 2026, binario `0.5.1-10-g395212e`) — VAL+ESC Claude Code, end-to-end OK
+
+Smoke a mani libere su task reale ma piccola (fix copyright `LICENSE`, 1 file `+2/-1`, commit `90e4ae4`, pushato su origin/main). VAL-bridge (root) ↔ ESC-bridge (sottocartella gitignored `.worktrees` dello STESSO checkout `main`). Conferme sul campo delle feature v0.6:
+- **F-81 overview/listener** — `overview` nudo (no `--session-id`): riga `listener: listening/not` + `channel ok` = orientamento in una call. ESC l'ha eletto "pezzo migliore".
+- **F-39 `--in-reply-to=last`** — agganciato 2× corretto (`inReplyTo` = msg-id reale del brief) senza che ESC trascrivesse mai un id a memoria → LL-13 regge.
+- **F-36 wake id-free** (`receive --any`) — VAL svegliato 3× event-driven, zero id maneggiati.
+- **F-41 pairing automatico** — coppia nello stesso checkout (cwd disgiunte root/`.worktrees`), zero `CAB_DATA_DIR`/`--all-scopes`: `peers` nudo vede subito la coppia.
+
+**F-88 (NUOVO, dal feedback ESC) — `bootstrap` monolitico è scomodo nel caso F-47 (peer-presente da pingare)**: `bootstrap --role=esc` fa `register` + entra in `listen` BLOCCANTE in un colpo solo → non lascia spazio per infilare l'`ask` di poke richiesto quando il VAL è GIÀ attivo (F-47, "il secondo pinga il primo"). ESC è andato di comandi atomici (`register --resume` / `overview` / `ask` / `listen`): più controllo, stesso costo. Fix: o `bootstrap` accetta un poke (`--ping-peer`/`--no-listen`), o la skill DOCUMENTA che nel caso peer-presente si usano i comandi atomici (**fix-doc immediato applicato** a `cab-bridge-awareness` + skill pubblica `bridge-workflow`). Basso impatto, alta chiarezza onboarding.
+
+**F-89 (minore) — `state` flag-prima-del-valore contro-intuitivo** (`state --session-id=X working`, idiom Go `flag`): ci si inciampa una volta; già documentato in skill. Setter-only (rilettura via `overview`/`whoami`) — corretto, da ricordare.
+
+**Verdetto**: per ciò che una task da 1 riga esercita (no concorrenza/long-run/late-reply/recovery), v0.6 è solida e prevedibile. Il giudizio pieno resta sui dogfooding di carico (cfr. archi v0.4/v0.5). **Lezione di metodo emersa nello stesso giro (feedback Alan)**: ESC/CRI mandano spesso un messaggio FINALE dopo la chiusura (conferma o contenuto utile) → controllare SEMPRE l'inbox prima di archiviare (memory `check-final-messages`).
+
 ---
 
 ## Decisioni architetturali chiuse (riferimento)
