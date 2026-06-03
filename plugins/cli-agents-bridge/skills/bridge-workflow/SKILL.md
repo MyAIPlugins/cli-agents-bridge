@@ -55,7 +55,7 @@ cab-bridge receive --any --max-deadline=300        # times out exit 0 with {"sta
 cab-bridge register --role=esc --agent-name=executor-1       # -> sessionId
 cab-bridge listen --wait-one --session-id=<self>             # see wake note below
 # on a work task: leave listen, implement, then reply:
-cab-bridge ask --session-id=<self> --to=<orchestrator> --type=response --in-reply-to=<brief-id> --file=/tmp/reply.md
+cab-bridge ask --session-id=<self> --to=<orchestrator> --type=response --in-reply-to=last --file=/tmp/reply.md   # v0.6 (F-39): 'last' = most recent message from --to → no opaque id to transcribe; fallback --in-reply-to=<id from output>
 ```
 
 ## Instant wake — use `listen --wait-one`
@@ -63,6 +63,8 @@ cab-bridge ask --session-id=<self> --to=<orchestrator> --type=response --in-repl
 A `listen` running in the background notifies the agent only when the command EXITS, not on each message. With a long blocking window, an urgent message sits unseen until the window times out.
 
 **Preferred**: `cab-bridge listen --wait-one` exits (code 0) as soon as the first non-empty batch arrives — so a background caller is woken the instant a message lands. Process it, then re-launch `listen --wait-one`. It delivers the whole batch present at that sweep (lossless — no message is consumed-but-unseen). **On an empty-window timeout it exits 0 with a `{"status":"timeout","messages":[]}` payload (v0.4, F-24) — not a failure** — so a background harness doesn't read "command failed" every idle cycle; the caller tells a timeout from a delivered batch by the `status` field. (The default non-`--wait-one` `listen` keeps exit 124 for bash until-loops.)
+
+**For a peer WITHOUT push** (e.g. Codex CLI, Claude Desktop), the wake must come from OUTSIDE: `cab-bridge notify-watch` (v0.6, F-66) — an external watcher that polls the peer's inbox NON-consumingly and, on a new batch, runs a configurable hook (`-- argv`, e.g. `screen -X stuff` to inject into the peer's TUI). Claude Code peers have native push (the background-task notification) and need no watcher.
 
 For a long standby window without re-looping every ~9 min, set it explicitly: **`listen --until-deadline=2h`** (v0.4, F-26 — more discoverable than the `CAB_MAX_BLOCKING_SECONDS` env; precedence: flag > env > 540s default).
 
@@ -80,7 +82,7 @@ Keep an executor in an ACTIVE listen between tasks: an agent that finished its t
 
 ## At-a-glance state — `overview` (v0.5, F-42)
 
-`cab-bridge overview` prints, in ONE call and with NO `--session-id`, your whole world: who you are (id, scope, state), your paired peer (the complementary role in your scope), and your pending inbox — human-readable by default (`--json` for scripting). It collapses the `peers` + `whoami` + inbox-listing dance into one scannable view, and is worktree-aware (it resolves "you" from the cwd).
+`cab-bridge overview` prints, in ONE call and with NO `--session-id`, your whole world: who you are (id, scope, state), your paired peer (the complementary role in your scope), and your pending inbox — human-readable by default (`--json` for scripting). It collapses the `peers` + `whoami` + inbox-listing dance into one scannable view, and is worktree-aware (it resolves "you" from the cwd). **(v0.6, F-81)** overview also prints a `listener:` line — `listening (PID, expires in Y)` / `not listening` — true only for a live PID AND a future listen window, so it distinguishes an ACTIVE listen from the register-then-die heartbeat.
 
 ## Seeing your own sends — `cab sent`
 
@@ -119,14 +121,15 @@ Closing a window/session does not delete its session — it lingers as an orphan
 cab-bridge bootstrap --role=<val|esc> [--agent-name=<name>] [--until-deadline=<dur>]   # zero-config onboarding (v0.5)
 cab-bridge register --role=<val|esc|architect|observer|neutral|custom> --agent-name=<name> [--team=<name>] [--resume] [--force-new]
 cab-bridge listen   --session-id=<id> [--wait-one] [--until-deadline=<dur, e.g. 2h>] [--no-auto-ack]
-cab-bridge ask      --session-id=<id> --to=<peer> [--content=... | --file=path] [--type=query|response|notify|ack] [--in-reply-to=msg-...] [--allow-mesh]
+cab-bridge ask      --session-id=<id> --to=<peer> [--content=... | --file=path] [--type=query|response|notify|ack] [--in-reply-to=last|msg-...] [--strict-reply] [--allow-mesh]
 cab-bridge receive  --session-id=<id> (--msg-id=<msg-...> | --any) --max-deadline=<sec>   # --any: id-less wake (v0.5)
 cab-bridge state    --session-id=<id> <idle|working|done|orchestrating>     # flag BEFORE the value
 cab-bridge inbox    --session-id=<id> (--list [--json] | --tidy)
 cab-bridge peers    [--json] [--team=<name>] [--all-scopes] [--include-stale]
 cab-bridge status   --session-id=<id>
 cab-bridge whoami   [--session-id=<id>] [--json]
-cab-bridge overview [--json]                                   # me + peer + inbox in one call, no id (v0.5)
+cab-bridge overview [--json]                                   # me + peer + inbox + listener-status, one call, no id (v0.5/F-81)
+cab-bridge notify-watch --session-id=<id> [--watch-name=<n>] [--poll-interval=<dur>] [--allow-concurrent-consumer] -- <hook argv>   # external wake for a no-push peer (v0.6, F-66)
 cab-bridge sent     [--session-id=<id>] [--json]
 cab-bridge connect  --session-id=<id> <peer>
 cab-bridge cleanup  [--scope=my-session|global] [--session-id=<id>] [--force]
