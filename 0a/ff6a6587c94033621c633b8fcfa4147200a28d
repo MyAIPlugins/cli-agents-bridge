@@ -1,0 +1,21 @@
+ROADMAP.md
+  s_61e013f378e0f8::t_adeb608b663a37 376-389
+plugins/cli-agents-bridge/skills/bridge-workflow/SKILL.md
+  s_61e013f378e0f8::t_b36bc19619c06d 36-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "0aff6a6587c94033621c633b8fcfa4147200a28d",
+  "prompts": {},
+  "sessions": {
+    "s_61e013f378e0f8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "58667cb8-4936-47a0-95a8-fd4243c0598a",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
