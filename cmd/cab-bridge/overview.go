@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
-	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
@@ -86,30 +85,13 @@ func runOverview(args []string) error {
 	}
 	mgr := newSessionManager(cfg)
 
-	// Resolve "me": an explicit --session-id wins (worktree / shared scope);
-	// otherwise the id-free cwd lookup (F-42 default), with a bootstrap-friendly
-	// message on a miss that also points at --session-id.
-	var sid string
-	if *sessionIDFlag != "" {
-		sid, err = resolveSessionID(mgr, *sessionIDFlag)
-		if err != nil {
-			return fmt.Errorf("overview: %w", err)
-		}
-	} else {
-		cwd, gerr := os.Getwd()
-		if gerr != nil {
-			return fmt.Errorf("overview: getwd: %w", gerr)
-		}
-		sid, err = mgr.LongestPrefixLookup(cwd)
-		if err != nil {
-			if errors.Is(err, session.ErrNoSessionForCwd) {
-				return fmt.Errorf("overview: no session for this directory — pass --session-id, or run `cab-bridge bootstrap --role=val|esc` (or `register`) here first")
-			}
-			return fmt.Errorf("overview: session lookup from cwd %q: %w", cwd, err)
-		}
-		if verr := security.ValidateSessionID(sid); verr != nil {
-			return fmt.Errorf("overview: session lookup returned invalid id %q: %w", sid, verr)
-		}
+	// Resolve "me" through the shared B-1 guardrail: an explicit --session-id
+	// wins (worktree / shared scope, F-86); otherwise the id-free cwd lookup
+	// (F-42 default) with the scope-collision guardrail (hard-ambiguity reject,
+	// shared-scope warning on stderr — never polluting the --json stdout below).
+	sid, err := resolveCurrentSession(mgr, "overview", *sessionIDFlag)
+	if err != nil {
+		return err
 	}
 
 	report, err := buildOverview(mgr, cfg, sid)

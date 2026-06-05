@@ -248,3 +248,61 @@ func formatSharedScopeWarning(cmdName, cwd string, res session.Resolution) strin
 	fmt.Fprintf(&b, "\n  pass --session-id=<id> to be explicit (e.g. cab-bridge %s --session-id=%s ...)", cmdName, sel.ID)
 	return b.String()
 }
+
+// resolveCurrentSession resolves the session id an id-free command operates on,
+// applying the B-1 scope-collision guardrail. It is the SINGLE chokepoint every
+// id-free command routes through, so the policy lives in one place.
+//
+//   - An explicit --session-id BYPASSES the guardrail (resolveSessionID
+//     validates and returns it). A disciplined caller that always passes the id
+//     sees zero warnings — the warning appears only when the id is omitted in a
+//     scope where it is genuinely ambiguous.
+//   - Otherwise "me" is resolved from the cwd via LookupByCWDDetails and the pure
+//     evaluateResolution predicate is applied: a HARD ambiguity is rejected; a
+//     shared-scope hazard warns on stderr (or, with
+//     CAB_BRIDGE_STRICT_SESSION_LOOKUP=1, is rejected). The warning is stderr
+//     only — stdout stays clean for --json / --emit consumers.
+func resolveCurrentSession(mgr *session.Manager, cmdName, sessionIDFlag string) (string, error) {
+	if sessionIDFlag != "" {
+		// Explicit id: bypass the guardrail (no lookup, no warning). Wrap the
+		// validation error with cmdName so the bypass path is as well-labelled as
+		// the lookup path below.
+		sid, err := resolveSessionID(mgr, sessionIDFlag)
+		if err != nil {
+			return "", fmt.Errorf("%s: %w", cmdName, err)
+		}
+		return sid, nil
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("%s: getwd for session lookup: %w", cmdName, err)
+	}
+	res, err := mgr.LookupByCWDDetails(cwd)
+	if err != nil {
+		if errors.Is(err, session.ErrNoSessionForCwd) {
+			return "", fmt.Errorf("%s: no session for cwd %q — register first (or `cab-bridge bootstrap`), or pass --session-id=<id>", cmdName, cwd)
+		}
+		return "", fmt.Errorf("%s: session lookup from cwd %q: %w", cmdName, cwd, err)
+	}
+	sid, warnMsg, perr := evaluateResolution(cmdName, cwd, res, strictSessionLookup())
+	if perr != nil {
+		return "", perr
+	}
+	if warnMsg != "" {
+		fmt.Fprintln(os.Stderr, warnMsg)
+	}
+	// Defensive SC-4 re-validation, consistent with resolveSessionID.
+	if err := security.ValidateSessionID(sid); err != nil {
+		return "", fmt.Errorf("%s: session lookup returned invalid id %q: %w", cmdName, sid, err)
+	}
+	return sid, nil
+}
+
+// strictSessionLookup reports whether the opt-in env var
+// CAB_BRIDGE_STRICT_SESSION_LOOKUP promotes a shared-scope WARNING to a hard
+// error (B-1). Default OFF — the hazard is a warning, never blocks (F-41/F-42
+// non-regression). Read here, not in config, because it is a per-invocation
+// safety toggle, not a tunable runtime parameter.
+func strictSessionLookup() bool {
+	return os.Getenv("CAB_BRIDGE_STRICT_SESSION_LOOKUP") == "1"
+}

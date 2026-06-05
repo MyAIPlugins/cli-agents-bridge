@@ -111,7 +111,7 @@ func runNotifyWatch(args []string) error {
 		return err
 	}
 	mgr := newSessionManager(cfg)
-	sid, err := resolveSessionID(mgr, *sessionIDFlag)
+	sid, err := resolveCurrentSession(mgr, "notify-watch", *sessionIDFlag)
 	if err != nil {
 		return err
 	}

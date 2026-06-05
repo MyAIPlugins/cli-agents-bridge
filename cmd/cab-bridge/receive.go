@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
-	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 	transportfs "github.com/myAIPlugins/cli-agents-bridge/internal/transport/fs"
 )
@@ -98,21 +97,9 @@ func runReceive(args []string) error {
 
 	mgr := session.NewManager(cfg.DataDir, time.Duration(cfg.HeartbeatTickMs)*time.Millisecond)
 
-	sid := *sessionIDFlag
-	if sid == "" {
-		cwd, gerr := os.Getwd()
-		if gerr != nil {
-			return fmt.Errorf("receive: getwd for session lookup: %w", gerr)
-		}
-		lookup, lerr := mgr.LongestPrefixLookup(cwd)
-		if lerr != nil {
-			return fmt.Errorf("receive: --session-id not provided and lookup from cwd %q failed: %w", cwd, lerr)
-		}
-		sid = lookup
-	}
-
-	if err := security.ValidateSessionID(sid); err != nil {
-		return fmt.Errorf("receive: %w", err)
+	sid, err := resolveCurrentSession(mgr, "receive", *sessionIDFlag)
+	if err != nil {
+		return err
 	}
 
 	inboxDir := filepath.Join(cfg.DataDir, "sessions", sid, "inbox")

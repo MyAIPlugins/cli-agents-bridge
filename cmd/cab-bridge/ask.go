@@ -75,7 +75,7 @@ func runAsk(args []string) error {
 	}
 	mgr := newSessionManager(cfg)
 
-	sid, err := resolveSessionID(mgr, *sessionIDFlag)
+	sid, err := resolveCurrentSession(mgr, "ask", *sessionIDFlag)
 	if err != nil {
 		return err
 	}

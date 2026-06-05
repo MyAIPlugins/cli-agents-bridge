@@ -44,7 +44,7 @@ func runSent(args []string) error {
 	}
 	mgr := newSessionManager(cfg)
 
-	sid, err := resolveSessionID(mgr, *sessionIDFlag)
+	sid, err := resolveCurrentSession(mgr, "sent", *sessionIDFlag)
 	if err != nil {
 		return err
 	}

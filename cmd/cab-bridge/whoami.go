@@ -50,7 +50,7 @@ func runWhoami(args []string) error {
 	}
 	mgr := newSessionManager(cfg)
 
-	sid, err := resolveSessionID(mgr, *sessionIDFlag)
+	sid, err := resolveCurrentSession(mgr, "whoami", *sessionIDFlag)
 	if err != nil {
 		return err
 	}

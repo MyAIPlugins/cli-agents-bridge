@@ -75,7 +75,7 @@ func runListen(args []string) error {
 	}
 	mgr := newSessionManager(cfg)
 
-	sid, err := resolveSessionID(mgr, *sessionIDFlag)
+	sid, err := resolveCurrentSession(mgr, "listen", *sessionIDFlag)
 	if err != nil {
 		return err
 	}
