@@ -88,6 +88,18 @@ func runListen(args []string) error {
 		return fmt.Errorf("listen: adopt session PID: %w", err)
 	}
 
+	// B-2: claim listener ownership. The returned token is OURS for this listen's
+	// lifetime; ownerOK reports whether we are still the current listener — it
+	// goes false once a `register --resume` from a new instance reclaims the
+	// session. ownerOK fences the consume path (no consume after a reclaim) and
+	// the heartbeat (stop refreshing a session a new owner holds), and the watcher
+	// below exits us promptly.
+	owner, err := mgr.ClaimListener(sid)
+	if err != nil {
+		return fmt.Errorf("listen: claim listener ownership: %w", err)
+	}
+	ownerOK := func() bool { return mgr.IsListenerCurrent(sid, owner.Token) }
+
 	// MaxBlocking bounds the wall-clock duration of listen so the Claude Code
 	// agent harness 10-min subprocess timeout never kills us silently. On hit the
 	// default path exits 124 — the same convention as receive — so the harness
@@ -123,12 +135,36 @@ func runListen(args []string) error {
 		}
 	}()
 
-	// Heartbeat goroutine (BUG-1 fix exercised in cmd).
-	hbDone := mgr.StartHeartbeat(ctx, sid)
+	// Heartbeat goroutine (BUG-1 fix exercised in cmd). Owner-fenced (B-2): it
+	// stops refreshing LastHeartbeat once we are evicted, so it cannot clobber the
+	// heartbeat of the session the new owner now holds.
+	hbDone := mgr.StartHeartbeatOwned(ctx, sid, ownerOK)
 	defer func() { <-hbDone }()
 
 	inboxDir := filepath.Join(cfg.DataDir, "sessions", sid, "inbox")
 	pollInterval := time.Duration(cfg.PollIntervalMs) * time.Millisecond
+
+	// B-2 fence watcher: if our listener ownership is reclaimed (a new instance
+	// ran register --resume), cancel the context so BOTH loops below exit cleanly
+	// (exit 0 — an evicted orphan ending is normal, not a failure). The pre-move
+	// ownership check in the consume path guarantees zero consumption in the race
+	// window before this fires.
+	go func() {
+		ticker := time.NewTicker(pollInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if !ownerOK() {
+					fmt.Fprintln(os.Stderr, "cab-bridge: listen: listener ownership reclaimed by another instance — exiting")
+					cancel()
+					return
+				}
+			}
+		}
+	}()
 
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
@@ -141,7 +177,7 @@ func runListen(args []string) error {
 	// would risk if we exited mid-stream. Default off → PollInbox path below.
 	if *waitOne {
 		for {
-			msgs, err := transportfs.DrainInboxOnce(inboxDir, cfg.MaxMessageBytes)
+			msgs, err := transportfs.DrainInboxOnceOwned(inboxDir, cfg.MaxMessageBytes, ownerOK)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "cab-bridge: listen --wait-one: drain inbox: %v\n", err)
 			}
@@ -193,7 +229,7 @@ func runListen(args []string) error {
 		}
 	}
 
-	ch := transportfs.PollInbox(ctx, inboxDir, pollInterval, cfg.MaxMessageBytes)
+	ch := transportfs.PollInboxOwned(ctx, inboxDir, pollInterval, cfg.MaxMessageBytes, ownerOK)
 	for {
 		select {
 		case m, ok := <-ch:

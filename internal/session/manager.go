@@ -435,6 +435,16 @@ var ErrSessionExistsForProject = errors.New("session already exists for project"
 // The returned channel is closed when the goroutine exits, allowing the
 // caller to wait for clean shutdown after ctx cancellation.
 func (m *Manager) StartHeartbeat(ctx context.Context, sessionID string) <-chan struct{} {
+	return m.StartHeartbeatOwned(ctx, sessionID, nil)
+}
+
+// StartHeartbeatOwned is StartHeartbeat with a B-2 ownership fence: before each
+// tick it checks ownerOK and STOPS (closes the done channel) on a mismatch, so
+// an EVICTED listener no longer refreshes LastHeartbeat of a session a new
+// process now owns — the cross-process lost-update the in-process manifestMu
+// cannot prevent (see the manifestMu field doc). A nil ownerOK behaves exactly
+// like the unfenced StartHeartbeat (always the owner).
+func (m *Manager) StartHeartbeatOwned(ctx context.Context, sessionID string, ownerOK func() bool) <-chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -446,6 +456,9 @@ func (m *Manager) StartHeartbeat(ctx context.Context, sessionID string) <-chan s
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				if ownerOK != nil && !ownerOK() {
+					return // evicted — stop refreshing the new owner's heartbeat
+				}
 				_ = m.touchHeartbeat(sessionID)
 			}
 		}

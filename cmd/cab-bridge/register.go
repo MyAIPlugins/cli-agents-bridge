@@ -83,6 +83,15 @@ func runRegister(args []string) error {
 	// process can re-acquire. listen will re-acquire its own lock.
 	_ = release()
 
+	// B-2: a --resume that reclaimed a live identity match reports what it
+	// superseded on stderr (stdout stays the manifest JSON / bare id for capture).
+	// The previous listener is already revoked; its orphan listen, at its next
+	// ownership check, stops consuming and exits.
+	if mf.LastReclaim != nil {
+		fmt.Fprintf(os.Stderr, "register: reclaimed session %s — superseded the previous listener (pid %d, generation %d -> %d); a prior instance with this identity was orphaned\n",
+			mf.SessionID, mf.LastReclaim.PrevPID, mf.LastReclaim.PrevGeneration, mf.LastReclaim.NewGeneration)
+	}
+
 	if *asJSON {
 		out, err := json.MarshalIndent(mf, "", "  ")
 		if err != nil {
