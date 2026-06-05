@@ -143,3 +143,46 @@ func TestStartHeartbeatOwned_StopsOnEviction(t *testing.T) {
 	time.Sleep(30 * time.Millisecond) // several heartbeat intervals
 	assert.True(t, mustLoadHB(t, mgr, sid).Equal(hbAtStop), "no heartbeat write after eviction")
 }
+
+// TestTouchHeartbeatOwned_EvictedDoesNotWrite is the B-2 P2 core: after a reclaim
+// the evicted listener's owned heartbeat re-checks ownership UNDER the lock,
+// detects the mismatch, and does NOT write the manifest (no clobber of the new
+// owner's PID/ListenUntil) — the TOCTOU race the un-locked check alone leaves open.
+func TestTouchHeartbeatOwned_EvictedDoesNotWrite(t *testing.T) {
+	t.Parallel()
+	const sid = "hbown02"
+	mgr := NewManager(t.TempDir(), time.Second)
+	require.NoError(t, os.MkdirAll(mgr.sessionDir(sid), 0o700))
+	plantManifestDetails(t, mgr, sid, "/repo/x", "/repo/x", "ESC-x", RoleEsc)
+
+	o, err := mgr.ClaimListener(sid)
+	require.NoError(t, err)
+	ownerOK := func() bool { return mgr.IsListenerCurrent(sid, o.Token) }
+
+	_, err = mgr.ReclaimListener(sid) // a new instance reclaims
+	require.NoError(t, err)
+
+	hbBefore := mustLoadHB(t, mgr, sid)
+	time.Sleep(10 * time.Millisecond) // a write would advance the timestamp
+	assert.True(t, mgr.touchHeartbeatOwned(sid, ownerOK), "the evicted heartbeat detects the reclaim under the lock")
+	assert.True(t, mustLoadHB(t, mgr, sid).Equal(hbBefore), "and must NOT write the manifest (no clobber)")
+}
+
+// TestTouchHeartbeatOwned_OwnerWrites: the CURRENT owner is not evicted and does
+// refresh the heartbeat (the fence does not break the normal path).
+func TestTouchHeartbeatOwned_OwnerWrites(t *testing.T) {
+	t.Parallel()
+	const sid = "hbown03"
+	mgr := NewManager(t.TempDir(), time.Second)
+	require.NoError(t, os.MkdirAll(mgr.sessionDir(sid), 0o700))
+	plantManifestDetails(t, mgr, sid, "/repo/x", "/repo/x", "ESC-x", RoleEsc)
+
+	o, err := mgr.ClaimListener(sid)
+	require.NoError(t, err)
+	ownerOK := func() bool { return mgr.IsListenerCurrent(sid, o.Token) }
+
+	hbBefore := mustLoadHB(t, mgr, sid)
+	time.Sleep(10 * time.Millisecond)
+	assert.False(t, mgr.touchHeartbeatOwned(sid, ownerOK), "the current owner is not evicted")
+	assert.True(t, mustLoadHB(t, mgr, sid).After(hbBefore), "the current owner refreshes the heartbeat")
+}

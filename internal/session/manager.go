@@ -456,14 +456,44 @@ func (m *Manager) StartHeartbeatOwned(ctx context.Context, sessionID string, own
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if ownerOK != nil && !ownerOK() {
-					return // evicted — stop refreshing the new owner's heartbeat
+				if ownerOK == nil {
+					_ = m.touchHeartbeat(sessionID) // unfenced: original behaviour, no lock
+					continue
 				}
-				_ = m.touchHeartbeat(sessionID)
+				if !ownerOK() {
+					return // fast un-locked pre-check: cheap early stop on eviction
+				}
+				if m.touchHeartbeatOwned(sessionID, ownerOK) {
+					return // evicted, CONFIRMED under the session lock (P2) — stop
+				}
 			}
 		}
 	}()
 	return done
+}
+
+// touchHeartbeatOwned refreshes LastHeartbeat for a FENCED listener (B-2 P2),
+// serializing the manifest read-modify-write with the SAME session lock the
+// reclaim/adopt holds, and re-verifying ownership UNDER that lock immediately
+// before writing. This closes the TOCTOU race where an evicted listener — having
+// passed an un-locked ownerOK pre-check — would load+save a pre-reclaim manifest
+// and clobber the new owner's PID/ListenUntil (manifestMu is in-process only, so
+// it cannot serialize against a reclaim running in another process).
+//
+// Returns evicted=true when the under-lock re-check fails (a reclaim happened):
+// the caller stops the heartbeat. Lock contention (a concurrent claim/reclaim)
+// returns evicted=false — best-effort, skip this beat and retry next tick.
+func (m *Manager) touchHeartbeatOwned(sessionID string, ownerOK func() bool) (evicted bool) {
+	release, err := AcquireLock(filepath.Join(m.sessionDir(sessionID), "lock"), false)
+	if err != nil {
+		return false // contended — skip this beat (best-effort), not evicted
+	}
+	defer func() { _ = release() }()
+	if !ownerOK() {
+		return true // a reclaim revoked us (confirmed under the lock) — do not write
+	}
+	_ = m.touchHeartbeat(sessionID) // RMW now serialized cross-process by the lock we hold
+	return false
 }
 
 // touchHeartbeat reads manifest, sets LastHeartbeat = now, atomic-writes back.
