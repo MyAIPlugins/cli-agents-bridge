@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -252,4 +253,37 @@ func TestPrintOverviewHuman_NoPeerEmptyInbox(t *testing.T) {
 	assert.Contains(t, out, "[stale]")
 	assert.Contains(t, out, "peer:  (none paired in this scope yet)")
 	assert.Contains(t, out, "inbox: empty")
+}
+
+// TestRunOverview_SessionIDFlag_ResolvesExplicitSession is the A-3 (F-86) check:
+// with --session-id, overview reports THAT session directly, regardless of the
+// cwd — the worktree/shared-scope case where the bare cwd lookup is wrong.
+func TestRunOverview_SessionIDFlag_ResolvesExplicitSession(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	plantOverviewSession(t, dataDir, "ovsid001", session.RoleEsc, "ESC-x", "/repo/x", "", "working")
+
+	var runErr error
+	out := captureStdout(t, func() {
+		runErr = runOverview([]string{"--session-id=ovsid001", "--json"})
+	})
+	require.NoError(t, runErr)
+
+	var rep overviewReport
+	require.NoError(t, json.Unmarshal([]byte(out), &rep))
+	assert.Equal(t, "ovsid001", rep.Me.SessionID, "an explicit --session-id resolves me directly, not via the cwd")
+	assert.Equal(t, session.RoleEsc, rep.Me.Role)
+}
+
+// TestRunOverview_SessionIDFlag_InvalidRejected: a malformed --session-id goes
+// through the same SC-4 validation as every other id path and is rejected with
+// an overview-prefixed error.
+func TestRunOverview_SessionIDFlag_InvalidRejected(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	err := runOverview([]string{"--session-id=BAD!!"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "overview:")
 }

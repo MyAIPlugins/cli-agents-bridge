@@ -67,6 +67,12 @@ func runOverview(args []string) error {
 	fs := flag.NewFlagSet("overview", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	asJSON := fs.Bool("json", false, "emit JSON on stdout (default: human-readable)")
+	// A-3 (F-86): overview defaults to an id-free cwd lookup (F-42), but in a
+	// worktree or a shared scope the cwd lookup resolves the WRONG session (e.g.
+	// it sees an ESC worktree as the VAL), making the overview useless exactly
+	// where it is needed. An explicit --session-id wins when passed; the default
+	// stays id-free.
+	sessionIDFlag := fs.String("session-id", "", "session to report on (default: id-free cwd lookup, F-42); pass it in a worktree or shared scope where the cwd lookup would resolve the wrong session")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -80,22 +86,30 @@ func runOverview(args []string) error {
 	}
 	mgr := newSessionManager(cfg)
 
-	// Resolve "me" from the cwd only — overview deliberately has no --session-id
-	// (the whole point is zero ids to transcribe). A clearer message than the
-	// generic resolveSessionID one, naming bootstrap, for the no-session edge.
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("overview: getwd: %w", err)
-	}
-	sid, err := mgr.LongestPrefixLookup(cwd)
-	if err != nil {
-		if errors.Is(err, session.ErrNoSessionForCwd) {
-			return fmt.Errorf("overview: no session for this directory — run `cab-bridge bootstrap --role=val|esc` (or `register`) here first")
+	// Resolve "me": an explicit --session-id wins (worktree / shared scope);
+	// otherwise the id-free cwd lookup (F-42 default), with a bootstrap-friendly
+	// message on a miss that also points at --session-id.
+	var sid string
+	if *sessionIDFlag != "" {
+		sid, err = resolveSessionID(mgr, *sessionIDFlag)
+		if err != nil {
+			return fmt.Errorf("overview: %w", err)
 		}
-		return fmt.Errorf("overview: session lookup from cwd %q: %w", cwd, err)
-	}
-	if err := security.ValidateSessionID(sid); err != nil {
-		return fmt.Errorf("overview: session lookup returned invalid id %q: %w", sid, err)
+	} else {
+		cwd, gerr := os.Getwd()
+		if gerr != nil {
+			return fmt.Errorf("overview: getwd: %w", gerr)
+		}
+		sid, err = mgr.LongestPrefixLookup(cwd)
+		if err != nil {
+			if errors.Is(err, session.ErrNoSessionForCwd) {
+				return fmt.Errorf("overview: no session for this directory — pass --session-id, or run `cab-bridge bootstrap --role=val|esc` (or `register`) here first")
+			}
+			return fmt.Errorf("overview: session lookup from cwd %q: %w", cwd, err)
+		}
+		if verr := security.ValidateSessionID(sid); verr != nil {
+			return fmt.Errorf("overview: session lookup returned invalid id %q: %w", sid, verr)
+		}
 	}
 
 	report, err := buildOverview(mgr, cfg, sid)
