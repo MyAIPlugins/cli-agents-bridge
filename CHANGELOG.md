@@ -20,6 +20,19 @@ Small, isolated, low-risk fixes distilled from 7 real dogfooding feedbacks (chat
 - **A-1 — the F-34 unread-warning now suggests an EXECUTABLE `read` command**: it printed `cab-bridge read <id>`, which in a shared scope resolves the wrong session by cwd lookup and fails with "message not found". It now emits `cab-bridge read --session-id=<sid> <id>` with the sender's own id (the unread message lives in the sender's inbox) and the flag BEFORE the positional (Go flag parsing requires it).
 - **A-5 — actionable error when `--session-id` is passed to `register`/`inspect`**: the "always pass `--session-id`" rule (correct for the shared-scope collision) hit a cryptic stdlib "flag provided but not defined: -session-id". Both now define `--session-id` only to reject it with a message teaching the correct form (`register` → `--resume`; `inspect` → the positional `cab-bridge inspect <id>`), right after `Parse`, before any FS access. Happy paths untouched.
 
+### B-1 — shared-scope id-collision guardrail (the #1 feedback finding, CRI-gated)
+
+When VAL@root + ESC/CRI@worktree share a git-repo scope (F-41 pairing), an id-free command resolved "me" by cwd lookup and could silently pick the WRONG session — a silent wrong-session bug (7 independent feedback voices, incl. the cross-vendor CRI). Built via the full cross-vendor round (CRI design-gate → impl → independent VAL gate → CRI diff-gate, which found 3 P3s invisible to the green gate → fix → re-gate → CRI check → merge).
+
+#### Added
+- **`resolveCurrentSession` — one guardrailed chokepoint for id-free resolution**: all id-free commands (ask/read/listen/state/inbox/connect/cleanup/sent/status/whoami/notify-watch + receive + overview) now resolve "me" through a single cmd-level helper backed by a new pure `Manager.LookupByCWDDetails`, which in ONE scan surfaces two collision signals:
+  - a **HARD ambiguity** (2+ manifests matching the cwd at the same maximum ProjectPath length — `LongestPrefixLookup` silently took the first) is **REJECTED** with an executable `pass --session-id=<id>` listing the contenders;
+  - a **shared-scope hazard** (other sessions in the resolved session's non-empty scope with a different ProjectPath) **WARNS on stderr** — naming the resolved session, the siblings, and an executable `--session-id` remediation — or is rejected under opt-in `CAB_BRIDGE_STRICT_SESSION_LOOKUP=1`.
+  An explicit `--session-id` **bypasses** the guardrail entirely (a disciplined caller sees nothing). The warning is **stderr-only** — `--json`/`--emit=json`/NDJSON stdout stays valid. By design it does NOT prefer live/non-stale sessions, filter by team, canonicalize ProjectPath via symlinks, or pick by agent/role/`.git` (design-gate constraints).
+
+#### Changed
+- **`LongestPrefixLookup` untouched** (Register's collision check still uses it); the new pure lookup lands beside it. The old `resolveSessionID` cwd-lookup branch is **removed** — reduced to `validateExplicitSessionID` (an empty id is now a caller error, not a lookup) so no future id-free caller can re-bypass the guardrail (the dead-branch trap the diff-gate flagged).
+
 ## [0.6.0] — unreleased (in `main`, pending push/tag/deploy)
 
 Built by the cross-vendor TRIAD on the bridge itself (VAL Claude + ESC Claude + CRI Codex over `cab-bridge`): F-39/F-81 = brief → independent VAL gate → merge; **F-66 with the full rigor** — CRI design-gate (naive-loop → serious-watcher) → ESC impl → VAL gate → CRI diff-gate (two P1s the green gate did not see) → ESC fix → VAL re-gate → CRI check → merge. Independent VAL gate `go test -race -count=1 ./...` green + code audit + real smoke per feature.
