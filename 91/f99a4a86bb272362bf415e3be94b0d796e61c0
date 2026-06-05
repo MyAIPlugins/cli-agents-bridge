@@ -1,0 +1,22 @@
+internal/session/listener.go
+  s_7098059e940d0a::t_09f6d52e62963c 140
+  s_7098059e940d0a::t_bfc4ddc65546dd 1-139,141-180
+internal/session/listener_test.go
+  s_7098059e940d0a::t_6870a228723b5f 1-102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "91f99a4a86bb272362bf415e3be94b0d796e61c0",
+  "prompts": {},
+  "sessions": {
+    "s_7098059e940d0a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "244cef3a-0042-428a-8e94-2011d38cf511",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
