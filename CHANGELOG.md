@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Tier A — CLI ergonomics (distilled from 7 real dogfooding feedbacks)
+
+Small, isolated, low-risk fixes distilled from 7 real dogfooding feedbacks (chatterence-bi: ESC + VAL + CRI, ~10h+ across 3 heterogeneous agents). Built on the bridge itself (VAL↔ESC over `cab-bridge`); independent VAL gate `go test -race -count=1 ./...` green (10/10, zero cached) + `go vet` clean + a per-fix real smoke. The dominant feedback finding — the shared-scope id-collision guardrail — is a separate, CRI-gated hardening arc (next).
+
+#### Added
+- **A-2 — `ask` accepts `--type=question` as an alias for `query`**: "question" (the natural word) was rejected deep in the write gateway by the strict type enum, silently losing the message. `runAsk` now normalizes `question` (any case) → the canonical `query` — a courtesy of the CLI input layer; the wire schema enum and the shared `sendMessage`/auto-ack paths are untouched. Any other unknown type fails in `runAsk` with an actionable error (the user-facing list `query|response|ping|notify|event` + a "did you mean 'query'?" on a near-miss) BEFORE touching config or the filesystem. New exported `message.IsValidType` so the CLI validates against the SAME enum without duplicating it (DRY, no drift).
+- **A-3 — `overview --session-id`** (F-86): `overview` derived "me" from the cwd only, so in a worktree or a shared scope it resolved the wrong session (an ESC worktree seen as the VAL) — useless exactly where it is needed. An explicit `--session-id` now wins (`resolveSessionID`, SC-4 validated); the default stays the id-free cwd lookup (F-42), with a miss message that also points at `--session-id`.
+- **A-4 — `ask` echoes `replying_to=<resolved-id>` on stderr** (F-80): with `--in-reply-to=last` the resolved id was opaque, so the sender could not confirm it threaded onto the right message (a confabulation surface, LL-13). The echo is on stderr — stdout stays the bare msg-id so `$(cab-bridge ask ...)` capture is intact; diagnostic like the F-34/F-43 warnings.
+
+#### Fixed
+- **A-1 — the F-34 unread-warning now suggests an EXECUTABLE `read` command**: it printed `cab-bridge read <id>`, which in a shared scope resolves the wrong session by cwd lookup and fails with "message not found". It now emits `cab-bridge read --session-id=<sid> <id>` with the sender's own id (the unread message lives in the sender's inbox) and the flag BEFORE the positional (Go flag parsing requires it).
+- **A-5 — actionable error when `--session-id` is passed to `register`/`inspect`**: the "always pass `--session-id`" rule (correct for the shared-scope collision) hit a cryptic stdlib "flag provided but not defined: -session-id". Both now define `--session-id` only to reject it with a message teaching the correct form (`register` → `--resume`; `inspect` → the positional `cab-bridge inspect <id>`), right after `Parse`, before any FS access. Happy paths untouched.
+
 ## [0.6.0] — unreleased (in `main`, pending push/tag/deploy)
 
 Built by the cross-vendor TRIAD on the bridge itself (VAL Claude + ESC Claude + CRI Codex over `cab-bridge`): F-39/F-81 = brief → independent VAL gate → merge; **F-66 with the full rigor** — CRI design-gate (naive-loop → serious-watcher) → ESC impl → VAL gate → CRI diff-gate (two P1s the green gate did not see) → ESC fix → VAL re-gate → CRI check → merge. Independent VAL gate `go test -race -count=1 ./...` green + code audit + real smoke per feature.
