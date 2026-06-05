@@ -100,7 +100,13 @@ func runAsk(args []string) error {
 		return fmt.Errorf("ask: %w", uerr)
 	}
 	if unreadID != "" {
-		fmt.Fprintf(os.Stderr, "ask: warning: %s sent %s after your last message to them and it is unread in your inbox — read it before replying (cab-bridge read %s)\n", *to, unreadID, unreadID)
+		// A-1 (F-34): the suggested command must be executable as-is. In a shared
+		// scope (VAL@root + ESC@worktree on the same repo) a bare `read <id>` would
+		// resolve the wrong session by cwd lookup and fail with "message not found".
+		// The unread message lives in OUR (the sender's) inbox, so the recipient of
+		// this warning reads it with OUR id — sid, already resolved above. The
+		// --session-id flag must come BEFORE the positional (Go flag parsing).
+		fmt.Fprintf(os.Stderr, "ask: warning: %s sent %s after your last message to them and it is unread in your inbox — read it before replying (cab-bridge read --session-id=%s %s)\n", *to, unreadID, sid, unreadID)
 	}
 
 	var inReplyToPtr *string
