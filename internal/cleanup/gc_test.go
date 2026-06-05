@@ -121,7 +121,7 @@ func TestGCOrphans_ArchivesInboxAndProcessedBeforeDelete(t *testing.T) {
 	assertGone(t, dataDir, "orphan01")
 
 	base2 := filepath.Join(dataDir, "archive", "2026-05-29", "orphan01")
-	assertArchived(t, filepath.Join(base2, "inbox"), "msg-aaaaaaaaaaaa")       // AUDIT-1: unread inbox preserved
+	assertArchived(t, filepath.Join(base2, "inbox"), "msg-aaaaaaaaaaaa") // AUDIT-1: unread inbox preserved
 	assertArchived(t, filepath.Join(base2, "processed"), "msg-bbbbbbbbbbbb")
 }
 

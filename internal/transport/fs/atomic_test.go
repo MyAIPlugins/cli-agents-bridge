@@ -15,9 +15,9 @@ func TestAtomicWriteJSON_RoundTrip(t *testing.T) {
 
 	target := filepath.Join(t.TempDir(), "manifest.json")
 	in := map[string]interface{}{
-		"sessionId":    "abc123",
+		"sessionId":     "abc123",
 		"schemaVersion": float64(2),
-		"role":         "val",
+		"role":          "val",
 	}
 
 	require.NoError(t, AtomicWriteJSON(target, in))

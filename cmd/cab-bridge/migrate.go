@@ -36,9 +36,9 @@ type migrateReport struct {
 //  3. For each session in source/sessions/<id>/:
 //     a. Read manifest.json. Reject if malformed.
 //     b. SC-4 validate id + projectPath (RC-3 security: corrupted v1
-//        manifests may contain ../ traversal in projectPath).
+//     manifests may contain ../ traversal in projectPath).
 //     c. Transform to v2: schemaVersion=2, role=neutral, agentName=projectName,
-//        pid=0 (no live PID inferable for legacy session).
+//     pid=0 (no live PID inferable for legacy session).
 //     d. If target exists and has .migrated marker → skip (idempotent).
 //     e. Write target manifest with 0o600 (SC-5) + atomic write.
 //     f. Copy inbox/*.json + outbox/*.json preserving names (0o600).

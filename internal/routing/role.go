@@ -9,10 +9,10 @@
 //   - val ↔ architect  OK (triadic pattern)
 //   - val ↔ observer   OK (val can notify observers)
 //   - esc ↔ esc        REJECTED (must route through VAL) — override with
-//                      --allow-mesh for advanced multi-ESC scenarios
+//     --allow-mesh for advanced multi-ESC scenarios
 //   - observer → any   REJECTED (observers are read-only sinks)
 //   - neutral ↔ any    OK (v1 schema compat — neutral is the read-default
-//                      for Patil v1 messages with no role field)
+//     for Patil v1 messages with no role field)
 //
 // The override is explicit by design (CLAUDE.md "no fallback impliciti"):
 // callers wanting mesh peer-to-peer must pass --allow-mesh and accept the

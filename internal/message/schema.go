@@ -69,19 +69,19 @@ func IsValidType(t string) bool {
 // "inReplyTo": null in JSON (semantically distinct from "" empty-but-present).
 // The Patil upstream format uses null, and PLAN keeps the convention.
 type Message struct {
-	ID               string   `json:"id"`
-	SchemaVersion    int      `json:"schemaVersion"`
-	From             string   `json:"from"`
-	FromRole         string   `json:"fromRole"`
-	FromAgentName    string   `json:"fromAgentName"`
-	To               string   `json:"to"`
-	ToRole           string   `json:"toRole"`
-	Type             string   `json:"type"`
-	Timestamp        string   `json:"timestamp"`
-	Status           string   `json:"status"`
-	Content          string   `json:"content"`
-	InReplyTo        *string  `json:"inReplyTo"`
-	Metadata         Metadata `json:"metadata"`
+	ID            string   `json:"id"`
+	SchemaVersion int      `json:"schemaVersion"`
+	From          string   `json:"from"`
+	FromRole      string   `json:"fromRole"`
+	FromAgentName string   `json:"fromAgentName"`
+	To            string   `json:"to"`
+	ToRole        string   `json:"toRole"`
+	Type          string   `json:"type"`
+	Timestamp     string   `json:"timestamp"`
+	Status        string   `json:"status"`
+	Content       string   `json:"content"`
+	InReplyTo     *string  `json:"inReplyTo"`
+	Metadata      Metadata `json:"metadata"`
 }
 
 // Metadata is the inner object reserved for routing/observability fields
