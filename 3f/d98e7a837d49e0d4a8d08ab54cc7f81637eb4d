@@ -1,0 +1,23 @@
+internal/transport/fs/fencing_test.go
+  s_7098059e940d0a::t_6daa7cbda24b26 119-152
+internal/transport/fs/poll.go
+  s_7098059e940d0a::t_59d76c5c88244c 67
+  s_7098059e940d0a::t_c62cbda9a029ea 79
+  s_7098059e940d0a::t_9b8ba5377c20f4 99-107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "3fd98e7a837d49e0d4a8d08ab54cc7f81637eb4d",
+  "prompts": {},
+  "sessions": {
+    "s_7098059e940d0a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "244cef3a-0042-428a-8e94-2011d38cf511",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
