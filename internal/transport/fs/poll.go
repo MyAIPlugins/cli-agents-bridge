@@ -42,6 +42,18 @@ import (
 // convention used by atomic.go) are skipped silently — they belong to
 // other writers and are not consumable messages.
 func PollInbox(ctx context.Context, inboxDir string, interval time.Duration, maxContentBytes int) <-chan *message.Message {
+	return pollInbox(ctx, inboxDir, interval, maxContentBytes, nil) // no ownership fence
+}
+
+// PollInboxOwned is PollInbox with a B-2 ownership fence: ownerOK is checked
+// immediately before each message is moved to processed/, so a listener whose
+// ownership was reclaimed stops consuming (the streaming counterpart of
+// DrainInboxOnceOwned). The listen default path uses this; receive never does.
+func PollInboxOwned(ctx context.Context, inboxDir string, interval time.Duration, maxContentBytes int, ownerOK func() bool) <-chan *message.Message {
+	return pollInbox(ctx, inboxDir, interval, maxContentBytes, ownerOK)
+}
+
+func pollInbox(ctx context.Context, inboxDir string, interval time.Duration, maxContentBytes int, ownerOK func() bool) <-chan *message.Message {
 	out := make(chan *message.Message)
 	go func() {
 		defer close(out)
@@ -52,7 +64,7 @@ func PollInbox(ctx context.Context, inboxDir string, interval time.Duration, max
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				emitInboxOnce(ctx, out, inboxDir, maxContentBytes)
+				emitInboxOnce(ctx, out, inboxDir, maxContentBytes, ownerOK)
 			}
 		}
 	}()
@@ -64,7 +76,7 @@ func PollInbox(ctx context.Context, inboxDir string, interval time.Duration, max
 // swallowed silently: a transient read failure should not crash the
 // polling goroutine — the next tick will retry. (Persistent failures
 // surface elsewhere via the manifest status lifecycle, Sprint 4+.)
-func emitInboxOnce(ctx context.Context, out chan<- *message.Message, inboxDir string, maxContentBytes int) {
+func emitInboxOnce(ctx context.Context, out chan<- *message.Message, inboxDir string, maxContentBytes int, ownerOK func() bool) {
 	entries, err := os.ReadDir(inboxDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -80,7 +92,7 @@ func emitInboxOnce(ctx context.Context, out chan<- *message.Message, inboxDir st
 		// consumeInboxEntry moves the message to processed/ BEFORE returning
 		// it: if the consumer is in another process and the channel send
 		// blocks, no second poller can see this file in inbox/ (at-most-once).
-		m, ok := consumeInboxEntry(inboxDir, processedDir, e, maxContentBytes, nil) // nil = accept all (unchanged)
+		m, ok := consumeInboxEntry(inboxDir, processedDir, e, maxContentBytes, nil, ownerOK) // nil accept = all; ownerOK fences (nil = unfenced)
 		if !ok {
 			continue
 		}

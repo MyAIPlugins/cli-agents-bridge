@@ -213,7 +213,7 @@ func ReceiveAny(
 	deadlineTime := time.Now().Add(deadline)
 
 	// Initial sweep: a batch may already be waiting when ReceiveAny is called.
-	if msgs, err := drainInbox(inboxDir, maxContentBytes, accept); err != nil {
+	if msgs, err := drainInbox(inboxDir, maxContentBytes, accept, nil); err != nil {
 		return nil, err
 	} else if len(msgs) > 0 {
 		return msgs, nil
@@ -231,7 +231,7 @@ func ReceiveAny(
 			// (same BUG-2 fix-intent as ReceiveReply: never lose a batch on disk).
 			now := time.Now()
 
-			msgs, err := drainInbox(inboxDir, maxContentBytes, accept)
+			msgs, err := drainInbox(inboxDir, maxContentBytes, accept, nil)
 			if err != nil {
 				return nil, err
 			}

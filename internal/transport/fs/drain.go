@@ -27,7 +27,7 @@ import (
 // This is the single source of truth for the inbox consume policy shared by the
 // streaming PollInbox path, the synchronous DrainInboxOnce path, and the
 // receive --any drain, so they never drift on what counts as a consumable message.
-func consumeInboxEntry(inboxDir, processedDir string, e os.DirEntry, maxContentBytes int, accept func(*message.Message) bool) (*message.Message, bool) {
+func consumeInboxEntry(inboxDir, processedDir string, e os.DirEntry, maxContentBytes int, accept func(*message.Message) bool, ownerOK func() bool) (*message.Message, bool) {
 	if e.IsDir() {
 		return nil, false
 	}
@@ -55,6 +55,15 @@ func consumeInboxEntry(inboxDir, processedDir string, e os.DirEntry, maxContentB
 		return nil, false
 	}
 
+	// B-2 F3 ownership fence: re-check listener ownership IMMEDIATELY before the
+	// move — the latest possible point, closing the ReadDir→move race. A listener
+	// whose token was revoked by a reclaim mid-sweep MUST NOT consume: the message
+	// is left in inbox for the new owner. nil = no fence (receive --any is
+	// one-shot, never owns a session — vincolo 6 — so it passes nil).
+	if ownerOK != nil && !ownerOK() {
+		return nil, false
+	}
+
 	if err := MoveToProcessed(full, processedDir); err != nil {
 		// EXDEV or permission issue — leave file in inbox; the caller's next
 		// sweep retries. Same silent-retry policy as the prior delete path.
@@ -78,7 +87,17 @@ func consumeInboxEntry(inboxDir, processedDir string, e os.DirEntry, maxContentB
 // read error (not ErrNotExist) is surfaced to the caller; skipped entries
 // (.tmp.*, non-.json, unreadable, malformed) are left on disk silently.
 func DrainInboxOnce(inboxDir string, maxContentBytes int) ([]*message.Message, error) {
-	return drainInbox(inboxDir, maxContentBytes, nil) // nil = accept all (listen path, unchanged)
+	return drainInbox(inboxDir, maxContentBytes, nil, nil) // accept all, no ownership fence
+}
+
+// DrainInboxOnceOwned is DrainInboxOnce with a B-2 ownership fence: ownerOK is
+// checked immediately before EACH message is moved to processed/, so a listener
+// whose ownership was reclaimed mid-sweep stops consuming and leaves the rest in
+// inbox for the new owner. A message already moved before the reclaim stays
+// consumed (it was legitimately ours at the time). ownerOK must be non-nil — use
+// DrainInboxOnce for the unfenced path.
+func DrainInboxOnceOwned(inboxDir string, maxContentBytes int, ownerOK func() bool) ([]*message.Message, error) {
+	return drainInbox(inboxDir, maxContentBytes, nil, ownerOK)
 }
 
 // drainInbox performs one synchronous sweep of inboxDir, consuming every entry
@@ -87,7 +106,7 @@ func DrainInboxOnce(inboxDir string, maxContentBytes int) ([]*message.Message, e
 // behind DrainInboxOnce (accept-all) and ReceiveAny (non-ack predicate, F-36).
 // Returns a nil slice (no error) when the inbox is empty or absent; a genuine
 // read error (not ErrNotExist) is surfaced.
-func drainInbox(inboxDir string, maxContentBytes int, accept func(*message.Message) bool) ([]*message.Message, error) {
+func drainInbox(inboxDir string, maxContentBytes int, accept func(*message.Message) bool, ownerOK func() bool) ([]*message.Message, error) {
 	entries, err := os.ReadDir(inboxDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -101,7 +120,7 @@ func drainInbox(inboxDir string, maxContentBytes int, accept func(*message.Messa
 
 	var msgs []*message.Message
 	for _, e := range entries {
-		if m, ok := consumeInboxEntry(inboxDir, processedDir, e, maxContentBytes, accept); ok {
+		if m, ok := consumeInboxEntry(inboxDir, processedDir, e, maxContentBytes, accept, ownerOK); ok {
 			msgs = append(msgs, m)
 		}
 	}
