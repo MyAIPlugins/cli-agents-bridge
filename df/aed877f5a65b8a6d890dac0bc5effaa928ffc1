@@ -1,0 +1,29 @@
+internal/transport/fs/drain.go
+  s_7098059e940d0a::t_69a5ba4b876346 109
+  s_7098059e940d0a::t_389cdf82e6dc35 90-100
+internal/transport/fs/poll.go
+  s_7098059e940d0a::t_b53d617e60dcda 79
+  s_7098059e940d0a::t_f030160e45a9c7 45-56,67
+  s_7098059e940d0a::t_fa69bbd449dccb 95
+internal/transport/fs/fencing_test.go
+  s_7098059e940d0a::t_85489dcc612558 1-6,8-14,17-23,25-118
+  s_7098059e940d0a::t_8999fdbe52c604 7,15-16,24
+internal/transport/fs/receive.go
+  s_7098059e940d0a::t_cd1c3154af18dc 216,234
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "dfaed877f5a65b8a6d890dac0bc5effaa928ffc1",
+  "prompts": {},
+  "sessions": {
+    "s_7098059e940d0a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "244cef3a-0042-428a-8e94-2011d38cf511",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
