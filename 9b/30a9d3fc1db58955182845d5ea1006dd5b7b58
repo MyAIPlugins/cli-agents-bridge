@@ -1,0 +1,9 @@
+cmd/cab-bridge/scope_guardrail_test.go
+  ai_agent 134-181
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "9b30a9d3fc1db58955182845d5ea1006dd5b7b58",
+  "prompts": {}
+}
