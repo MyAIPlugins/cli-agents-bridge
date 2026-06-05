@@ -1,0 +1,20 @@
+internal/transport/fs/poll.go
+  s_7098059e940d0a::t_d1dbab6af28c20 58-59
+  s_7098059e940d0a::t_337e4e9b21ef73 37-45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "22af61d57228f3cbb64d4f5de3e1b3a66849f25d",
+  "prompts": {},
+  "sessions": {
+    "s_7098059e940d0a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "244cef3a-0042-428a-8e94-2011d38cf511",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
