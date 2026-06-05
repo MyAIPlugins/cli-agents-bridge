@@ -34,9 +34,15 @@ import (
 // silently rolling back to delete-and-emit would violate "no fallback
 // impliciti" (CLAUDE.md).
 //
-// The output channel closes when ctx is canceled. The goroutine respects
-// ctx during emit as well — a slow consumer cannot pin a canceled poller
-// to the channel.
+// The output channel closes when ctx is canceled — but a message already MOVED
+// out of inbox/ is never dropped: it is sent with a BLOCKING send (B-2 P1,
+// "consumed ⇒ delivered"), NOT a select on ctx.Done(). CONSUMER CONTRACT: after
+// canceling ctx the consumer MUST keep reading from the channel until it closes.
+// A moved message is in flight and the poller goroutine blocks on that send
+// until it is received — abandoning the channel after cancel would strand that
+// message in processed/ with no consumer AND leak the poller goroutine. (listen's
+// default loop honours this: its `case <-ctx.Done()` is a no-op that loops on,
+// so it keeps draining the channel to close.)
 //
 // Non-JSON entries and files prefixed with ".tmp." (the os.CreateTemp
 // convention used by atomic.go) are skipped silently — they belong to
@@ -49,6 +55,8 @@ func PollInbox(ctx context.Context, inboxDir string, interval time.Duration, max
 // immediately before each message is moved to processed/, so a listener whose
 // ownership was reclaimed stops consuming (the streaming counterpart of
 // DrainInboxOnceOwned). The listen default path uses this; receive never does.
+// The same drain-to-close consumer contract as PollInbox applies (a moved
+// message is sent blocking, so the consumer must drain to close after cancel).
 func PollInboxOwned(ctx context.Context, inboxDir string, interval time.Duration, maxContentBytes int, ownerOK func() bool) <-chan *message.Message {
 	return pollInbox(ctx, inboxDir, interval, maxContentBytes, ownerOK)
 }
