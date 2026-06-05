@@ -62,6 +62,15 @@ func runInspect(args []string) error {
 		fmt.Printf("  PID:     %d\n", mf.PID)
 		fmt.Printf("  Started: %s\n", mf.StartedAt.Format("2006-01-02 15:04:05 MST"))
 		fmt.Printf("  HB age:  %s\n", mf.LastHeartbeat.Format("2006-01-02 15:04:05 MST"))
+		// B-2: the listener ownership record, when present (generation + pid +
+		// claimed-at). pid==0 means a reclaim revoked it and no listener re-claimed.
+		if owner, ok, oerr := mgr.ReadListener(sid); oerr == nil && ok {
+			fmt.Printf("  Listener: generation %d, pid %d, claimed %s\n",
+				owner.Generation, owner.PID, owner.ClaimedAt.Format("2006-01-02 15:04:05 MST"))
+			if owner.PID == 0 {
+				fmt.Printf("            reclaim-pending (revoked, no listener has re-claimed)\n")
+			}
+		}
 	}
 	return nil
 }

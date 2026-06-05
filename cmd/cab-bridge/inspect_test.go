@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -36,4 +37,23 @@ func TestRunInspect_PositionalStillWorks(t *testing.T) {
 	})
 	require.NoError(t, runErr)
 	assert.Contains(t, out, "insp0001", "the positional inspect still prints the manifest")
+}
+
+// TestRunInspect_ShowsListenerRecord is the B-2 observability: once a listener
+// has claimed, inspect's human output carries the listener generation/pid.
+func TestRunInspect_ShowsListenerRecord(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	plantOverviewSession(t, dataDir, "inspls01", session.RoleEsc, "ESC-x", "/repo/x", "", "working")
+	mgr := session.NewManager(dataDir, time.Second)
+	_, err := mgr.ClaimListener("inspls01")
+	require.NoError(t, err)
+
+	var runErr error
+	out := captureStdout(t, func() {
+		runErr = runInspect([]string{"--json=false", "inspls01"})
+	})
+	require.NoError(t, runErr)
+	assert.Contains(t, out, "Listener: generation 1", "inspect shows the listener ownership record")
 }

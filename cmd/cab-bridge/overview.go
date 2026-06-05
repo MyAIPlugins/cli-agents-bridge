@@ -35,6 +35,13 @@ type overviewReport struct {
 	ListenerPid    int        `json:"listenerPid,omitempty"`
 	ListenerUntil  *time.Time `json:"listenerUntil,omitempty"`
 
+	// B-2 listener ownership, from listener.json — distinct from the F-81 active
+	// signal above (which is manifest PID + window). Generation is the monotone
+	// claim counter; ReclaimPending is true when a reclaim revoked the listener
+	// and no new listen has claimed yet (listener.json PID == 0).
+	ListenerGeneration     int  `json:"listenerGeneration,omitempty"`
+	ListenerReclaimPending bool `json:"listenerReclaimPending,omitempty"`
+
 	Peer  *overviewPeer `json:"peer"`  // null when no complementary peer is registered yet
 	Inbox []overviewMsg `json:"inbox"` // pending messages only (inbox/, not processed/)
 }
@@ -145,6 +152,14 @@ func buildOverview(mgr *session.Manager, cfg config.Config, sid string) (overvie
 		report.ListenerUntil = me.ListenUntil
 	}
 
+	// B-2: the listener ownership record (generation + reclaim-pending), separate
+	// from the F-81 active signal above. Best-effort: a missing/unreadable record
+	// just leaves the fields zero (a session that never listened).
+	if owner, ok, oerr := mgr.ReadListener(sid); oerr == nil && ok {
+		report.ListenerGeneration = owner.Generation
+		report.ListenerReclaimPending = owner.PID == 0
+	}
+
 	// Peer: the complementary role within my own scope+team. collectPeers
 	// includes me, but selectPeer never picks my own role, so I am not selected.
 	// Filtering on MY stored scope (not resolveScope(cwd)) keeps this correct even
@@ -192,9 +207,16 @@ func printOverviewHuman(w io.Writer, r overviewReport) {
 	// F-81 listener line. English, consistent with the rest of this output. The
 	// remaining window is computed at display time (now-relative), truncated to
 	// the second.
-	if r.ListenerActive && r.ListenerUntil != nil {
-		fmt.Fprintf(w, "listener: listening (PID %d, expires in %s)\n", r.ListenerPid, time.Until(*r.ListenerUntil).Truncate(time.Second))
-	} else {
+	switch {
+	case r.ListenerActive && r.ListenerUntil != nil:
+		gen := ""
+		if r.ListenerGeneration > 0 {
+			gen = fmt.Sprintf(", generation %d", r.ListenerGeneration)
+		}
+		fmt.Fprintf(w, "listener: listening (PID %d, expires in %s%s)\n", r.ListenerPid, time.Until(*r.ListenerUntil).Truncate(time.Second), gen)
+	case r.ListenerReclaimPending:
+		fmt.Fprintf(w, "listener: reclaim-pending (generation %d — revoked, no listener has re-claimed yet)\n", r.ListenerGeneration)
+	default:
 		fmt.Fprintln(w, "listener: not listening")
 	}
 

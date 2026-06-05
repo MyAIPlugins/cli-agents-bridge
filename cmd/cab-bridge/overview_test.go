@@ -287,3 +287,60 @@ func TestRunOverview_SessionIDFlag_InvalidRejected(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "overview:")
 }
+
+// TestBuildOverview_ListenerGeneration is the B-2 observability: a claimed
+// listener surfaces its generation; PID!=0 → not reclaim-pending.
+func TestBuildOverview_ListenerGeneration(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	plantOverviewSession(t, dataDir, "lsngen01", session.RoleEsc, "ESC-x", "/repo/x", "", "working")
+	mgr := session.NewManager(dataDir, time.Second)
+	_, err := mgr.ClaimListener("lsngen01")
+	require.NoError(t, err)
+
+	rep, err := buildOverview(mgr, overviewTestCfg(dataDir), "lsngen01")
+	require.NoError(t, err)
+	assert.Equal(t, 1, rep.ListenerGeneration)
+	assert.False(t, rep.ListenerReclaimPending)
+}
+
+// TestBuildOverview_ListenerReclaimPending: after a reclaim (PID==0), overview
+// reports reclaim-pending with the bumped generation.
+func TestBuildOverview_ListenerReclaimPending(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	plantOverviewSession(t, dataDir, "lsngen02", session.RoleEsc, "ESC-x", "/repo/x", "", "")
+	mgr := session.NewManager(dataDir, time.Second)
+	_, err := mgr.ClaimListener("lsngen02")
+	require.NoError(t, err)
+	_, err = mgr.ReclaimListener("lsngen02")
+	require.NoError(t, err)
+
+	rep, err := buildOverview(mgr, overviewTestCfg(dataDir), "lsngen02")
+	require.NoError(t, err)
+	assert.Equal(t, 2, rep.ListenerGeneration)
+	assert.True(t, rep.ListenerReclaimPending, "PID==0 after reclaim → reclaim-pending")
+}
+
+// TestPrintOverviewHuman_ListenerGenerationAndReclaim: the human line carries
+// the generation when active, and the reclaim-pending hint otherwise.
+func TestPrintOverviewHuman_ListenerGenerationAndReclaim(t *testing.T) {
+	t.Parallel()
+	until := time.Now().UTC().Add(time.Hour)
+	var b bytes.Buffer
+	printOverviewHuman(&b, overviewReport{
+		Me:             overviewSelf{SessionID: "esc12345", AgentName: "ESC-x", Role: "esc"},
+		ListenerActive: true, ListenerPid: 4321, ListenerUntil: &until, ListenerGeneration: 2,
+		Inbox: []overviewMsg{},
+	})
+	assert.Contains(t, b.String(), "generation 2", "active listener line carries the generation")
+
+	var b2 bytes.Buffer
+	printOverviewHuman(&b2, overviewReport{
+		Me:                     overviewSelf{SessionID: "esc12345", AgentName: "ESC-x", Role: "esc"},
+		ListenerReclaimPending: true, ListenerGeneration: 3,
+		Inbox: []overviewMsg{},
+	})
+	assert.Contains(t, b2.String(), "reclaim-pending")
+	assert.Contains(t, b2.String(), "generation 3")
+}
