@@ -1,6 +1,6 @@
 ---
 name: bridge-workflow
-description: How to coordinate two (or more) CLI agent sessions with the cab-bridge binary — register/listen/ask/receive, the PID/heartbeat model, instant wake with listen --wait-one (and --until-deadline), zero-config onboarding (bootstrap), id-less wake (receive --any), at-a-glance state (overview), scope = git repository (same-repo worktrees pair automatically), delivery receipts (auto-ack), agent state (working/done/orchestrating), automatic per-project isolation, inbox inspection (inbox --list/--tidy), idempotent reconnect after a compact (register --resume), team isolation, and self-send visibility. Use when one agent session needs to hand work to, or exchange messages with, another agent session on the same machine via cab-bridge.
+description: How to coordinate two (or more) CLI agent sessions with the cab-bridge binary — register/listen/ask/receive, the PID/heartbeat model, instant wake with listen --wait-one (and --until-deadline), zero-config onboarding (bootstrap), id-less wake (receive --any), at-a-glance state (overview), scope = git repository (same-repo worktrees pair automatically), delivery receipts (auto-ack), agent state (working/done/orchestrating), automatic per-project isolation, inbox inspection (inbox --list/--tidy), idempotent reconnect after a compact (register --resume), team isolation, self-send visibility, and the v0.7 shared-scope guardrail (warns/rejects an ambiguous id-free session resolution; overview --session-id). Use when one agent session needs to hand work to, or exchange messages with, another agent session on the same machine via cab-bridge.
 ---
 
 # cab-bridge — coordinating two agent sessions
@@ -21,6 +21,7 @@ A "session" is a manifest on disk. Its `pid` and liveness work like this:
 ## Setup constraints
 
 - **Distinct working directories**: the two sessions should start from DIFFERENT cwds (session lookup is longest-prefix-by-cwd; same cwd is ambiguous). The cwd does NOT limit file access — only the bridge's "which session am I" lookup. Passing `--session-id` explicitly avoids the ambiguity entirely.
+- **Shared-scope guardrail (v0.7, B-1)**: an id-free command in a SHARED scope (e.g. VAL@root + ESC@worktree of the SAME repo, F-41) now SIGNALS the hazard instead of silently picking the wrong session. A hard ambiguity (2+ sessions equally match the cwd) is **REJECTED**; a shared-scope hazard (other sessions in your scope with a different project path) **WARNS on stderr** — both naming an executable `--session-id=<id>` remediation. `CAB_BRIDGE_STRICT_SESSION_LOOKUP=1` promotes the warning to an error. A disciplined caller that always passes `--session-id` sees nothing — the warning is the safety net for when you forget it. The warning is stderr-only, so `--json`/`--emit=json`/NDJSON stdout stays valid.
 - **Automatic per-project isolation (v0.4, F-17) — the common case needs no config**: the v0.4 binary derives a `scope` from the project root (the `.git` marker, walking up from cwd; `$HOME` excluded; fallback = cwd) at `register`, and `peers` shows only the sessions of the current project by default. So a pair in the SAME repo isolates itself — you need NEITHER `CAB_DATA_DIR` NOR `--team`. `peers --all-scopes` for the global view; `whoami` shows the `scope`. **(v0.5, F-41)** the scope is the git REPOSITORY (git-common-root): a linked `git worktree` resolves to its main repo, so a VAL at the repo root and an ESC in a worktree of the SAME repo share one scope and pair in plain `peers` — no flags. Different git repos keep distinct scopes (isolated).
 - **Manual isolation (special cases / pre-v0.4)**: both sessions sharing the same `CAB_DATA_DIR` (default `~/.claude/cli-agents-bridge/`, LITERAL same value, never a shell `$$`) is the physical channel. Use it for peers on DIFFERENT git repos that must share one channel, or for two pairs in one repo (since v0.5/F-41, worktrees of the SAME repo already share a scope — nothing needed). `--team=<name>` + `peers --team=<name>` is a logical filter WITHIN one data dir — do not mix the two axes (a session without the team is hidden by `peers --team`).
 
@@ -84,7 +85,7 @@ Keep an executor in an ACTIVE listen between tasks: an agent that finished its t
 
 ## At-a-glance state — `overview` (v0.5, F-42)
 
-`cab-bridge overview` prints, in ONE call and with NO `--session-id`, your whole world: who you are (id, scope, state), your paired peer (the complementary role in your scope), and your pending inbox — human-readable by default (`--json` for scripting). It collapses the `peers` + `whoami` + inbox-listing dance into one scannable view, and is worktree-aware (it resolves "you" from the cwd). **(v0.6, F-81)** overview also prints a `listener:` line — `listening (PID, expires in Y)` / `not listening` — true only for a live PID AND a future listen window, so it distinguishes an ACTIVE listen from the register-then-die heartbeat.
+`cab-bridge overview` prints, in ONE call and with NO `--session-id`, your whole world: who you are (id, scope, state), your paired peer (the complementary role in your scope), and your pending inbox — human-readable by default (`--json` for scripting). It collapses the `peers` + `whoami` + inbox-listing dance into one scannable view, and is worktree-aware (it resolves "you" from the cwd). **(v0.7, A-3/F-86)** it also accepts `--session-id=<id>` — pass it in a worktree or shared scope where the bare cwd lookup would resolve the wrong session (the explicit id wins; the default stays id-free). **(v0.6, F-81)** overview also prints a `listener:` line — `listening (PID, expires in Y)` / `not listening` — true only for a live PID AND a future listen window, so it distinguishes an ACTIVE listen from the register-then-die heartbeat.
 
 ## Seeing your own sends — `cab sent`
 
@@ -117,20 +118,31 @@ Closing a window/session does not delete its session — it lingers as an orphan
 
 `cab-bridge inbox --session-id=<id> --list [--json]` lists `inbox/` (pending) and `processed/` (consumed) messages WITHOUT consuming them — id, from, type, timestamp, one-line preview, with a `box` field distinguishing the two. It replaces a fragile `ls inbox/*.json` and is how you recover a reply that `listen`/`receive` already archived to `processed/` (completes F-30). `cab-bridge inbox --session-id=<id> --tidy` archives every well-formed `inbox/` message to `processed/` (lossless sweep) — the explicit "I handled what `--list` showed" hygiene action. `--list` and `--tidy` are mutually exclusive.
 
+## CLI ergonomics (v0.7, Tier A)
+
+Small quality-of-life fixes distilled from real dogfooding:
+- **`ask --type=question` works** (A-2): "question" is accepted as an alias for `query` (the wire type stays `query`); an unknown type fails fast with the valid list + a "did you mean 'query'?" instead of being silently lost to the strict enum.
+- **`ask` echoes `replying_to=<id>` on stderr** (A-4) whenever `--in-reply-to` is set (including `=last` after resolution) — confirm you threaded onto the right message; stdout stays the bare new msg-id (so `$(cab-bridge ask ...)` capture is intact).
+- **The unread-peer warning suggests an EXECUTABLE command** (A-1): `cab-bridge read --session-id=<your-id> <msg-id>` (flag before the positional) — runnable as-is even in a shared scope.
+- **`register`/`inspect` reject `--session-id` with an actionable error** (A-5): `register` points at `--resume`, `inspect` at its positional `cab-bridge inspect <id>` — not the cryptic stdlib "flag provided but not defined".
+
 ## Command quick reference
 
 ```
 cab-bridge bootstrap --role=<val|esc> [--agent-name=<name>] [--until-deadline=<dur>]   # zero-config onboarding (v0.5)
 cab-bridge register --role=<val|esc|architect|observer|neutral|custom> --agent-name=<name> [--team=<name>] [--resume] [--force-new]
-cab-bridge listen   --session-id=<id> [--wait-one] [--until-deadline=<dur, e.g. 2h>] [--no-auto-ack]
-cab-bridge ask      --session-id=<id> --to=<peer> [--content=... | --file=path] [--type=query|response|notify|ack] [--in-reply-to=last|msg-...] [--strict-reply] [--allow-mesh]
-cab-bridge receive  --session-id=<id> (--msg-id=<msg-...> | --any) --max-deadline=<sec>   # --any: id-less wake (v0.5)
+cab-bridge listen   --session-id=<id> [--wait-one] [--until-deadline=<dur, e.g. 2h>] [--no-auto-ack] [--emit=json|content]
+cab-bridge ask      --session-id=<id> --to=<peer> [--content=... | --file=path] [--type=query|response|notify|ack|question] [--in-reply-to=last|msg-...] [--strict-reply] [--allow-mesh]
+cab-bridge receive  --session-id=<id> (--msg-id=<msg-...> | --any [--unseen]) --max-deadline=<sec>   # --any: id-less wake (v0.5)
+cab-bridge read     [--session-id=<id>] <msg-id> [--json]      # full content, no-consume; flag BEFORE the positional
 cab-bridge state    --session-id=<id> <idle|working|done|orchestrating>     # flag BEFORE the value
 cab-bridge inbox    --session-id=<id> (--list [--json] | --tidy)
 cab-bridge peers    [--json] [--team=<name>] [--all-scopes] [--include-stale]
 cab-bridge status   --session-id=<id>
 cab-bridge whoami   [--session-id=<id>] [--json]
-cab-bridge overview [--json]                                   # me + peer + inbox + listener-status, one call, no id (v0.5/F-81)
+cab-bridge overview [--session-id=<id>] [--json]               # me + peer + inbox + listener-status, one call (id-free, or --session-id in a shared scope — v0.7/A-3)
+
+# env: CAB_BRIDGE_STRICT_SESSION_LOOKUP=1 promotes a shared-scope warning to a hard error (B-1)
 cab-bridge notify-watch --session-id=<id> [--watch-name=<n>] [--poll-interval=<dur>] [--allow-concurrent-consumer] -- <hook argv>   # external wake for a no-push peer (v0.6, F-66)
 cab-bridge sent     [--session-id=<id>] [--json]
 cab-bridge connect  --session-id=<id> <peer>
