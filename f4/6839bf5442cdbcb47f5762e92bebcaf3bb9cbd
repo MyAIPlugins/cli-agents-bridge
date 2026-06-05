@@ -1,0 +1,25 @@
+internal/session/manager.go
+  s_7098059e940d0a::t_f71059ae5d7045 117
+internal/session/manifest.go
+  s_7098059e940d0a::t_6ad265f9b4355d 109-114,116-117
+  s_7098059e940d0a::t_4bc98c73f1bebe 115
+internal/session/reconnect.go
+  s_7098059e940d0a::t_5f003551b3f348 32
+  s_7098059e940d0a::t_888cea7d64a6d1 24-26,28-29,31,34,36-45,55-65,67,70-82,84-86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "f46839bf5442cdbcb47f5762e92bebcaf3bb9cbd",
+  "prompts": {},
+  "sessions": {
+    "s_7098059e940d0a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "244cef3a-0042-428a-8e94-2011d38cf511",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
