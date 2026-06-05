@@ -8,12 +8,6 @@ import (
 	"sort"
 )
 
-// ErrIdentityLive is returned by Register (with Resume) when every session
-// matching the requested identity is currently held by a live process: the
-// session is not ours to take, and a silent duplicate must not be created. The
-// caller surfaces it; --force-new creates a deliberate second instance.
-var ErrIdentityLive = errors.New("a live session already exists with this identity")
-
 // errReuseNoMatch is the internal sentinel meaning "no session matched the
 // identity" — Register treats it as "fall through to a fresh register" (the
 // idempotent reconnect-or-register behaviour). Never surfaced to callers.
@@ -27,23 +21,28 @@ type identityMatch struct {
 	mf *Manifest
 }
 
-// tryReuse implements the F-27 reconnect: it finds sessions whose identity
-// matches opts (agent-name + role + scope + team), most-recent first, and
-// resumes the first one NOT held by a live process — reusing its sessionId,
+// tryReuse implements the F-27 reconnect, B-2 DEFAULT-RECLAIM variant: it finds
+// sessions whose identity matches opts (agent-name + role + scope + team),
+// most-recent first, and RECLAIMS the most-recent one — reusing its sessionId,
 // inbox, processed, outbox and state, updating only PID + heartbeat (and
-// backfilling a missing scope from opts). Returns:
+// backfilling a missing scope from opts), after revoking any previous listener
+// so an orphan cannot keep consuming (F2/F3). Returns:
 //
-//   - (mf, release, nil)            resumed an existing session
-//   - (nil, nil, ErrIdentityLive)   matches exist but every one is live
+//   - (mf, release, nil)            reclaimed/resumed an existing session
+//     (mf.LastReclaim reports what it superseded)
 //   - (nil, nil, errReuseNoMatch)   no match -> caller registers fresh
+//   - (nil, nil, err)               lock contention / IO failure
 //
-// Liveness is the manifest PID via IsProcessAlive — NOT the lock file. A running
-// `listen` keeps the manifest PID alive (AdoptPID + heartbeat goroutine) but
-// does NOT hold the lock (register acquires and immediately releases it), so the
-// lock is free even while a session is live; the manifest PID is the correct
-// "is the owner alive" signal, the same convention BUG-6 and the auto-gc use. A
-// live owner is never stolen. The lock is then acquired only as the claim step,
-// to serialize against a concurrent register/reconnect taking the same session.
+// B-2 inverts F-27: a live manifest PID is NO LONGER a reason to refuse. It
+// proves only that a `listen` is alive, NOT that the Claude that owned it is —
+// after a /clear the agent is gone but its background listen may still run as an
+// orphan. The identity (agent-name+role+scope+team) + --resume IS the semantic
+// claim to that session's continuity, so we reclaim it: revoke the previous
+// listener (a new token via reclaimListenerLocked → the orphan's IsListenerCurrent
+// goes false, it stops consuming) then adopt. Two SIMULTANEOUS --resume of the
+// same identity is an operator error (one wins the lock; the other gets a
+// contended error) — a deliberate second instance uses --force-new (which never
+// enters tryReuse). The lock is held across revoke+adopt so they are atomic.
 func (m *Manager) tryReuse(absProj string, opts RegisterOpts) (*Manifest, func() error, error) {
 	matches, err := m.findIdentityMatches(absProj, opts)
 	if err != nil {
@@ -53,35 +52,38 @@ func (m *Manager) tryReuse(absProj string, opts RegisterOpts) (*Manifest, func()
 		return nil, nil, errReuseNoMatch
 	}
 
-	sawLive := false
-	for _, c := range matches {
-		if IsProcessAlive(c.mf.PID) {
-			sawLive = true // a live process owns this session — never steal it
-			continue
+	// The most-recent match is my identity's continuity (findIdentityMatches
+	// sorts most-recent first). Reclaim it whether its PID is alive (orphan) or
+	// dead (post-compact).
+	c := matches[0]
+	release, lerr := AcquireLock(filepath.Join(m.sessionDir(c.id), "lock"), false)
+	if lerr != nil {
+		if errors.Is(lerr, ErrLockHeld) {
+			// Another register/reconnect is mid-claim on this very session: do not
+			// race it into a duplicate (two simultaneous --resume of the same
+			// identity is an operator error). --force-new for a 2nd instance.
+			return nil, nil, fmt.Errorf("reuse: %s claim contended: %w (use --force-new for a deliberate second instance)", c.id, lerr)
 		}
-		// Dead owner -> reusable. Acquire the lock to serialize against a
-		// concurrent claim, then resume.
-		release, lerr := AcquireLock(filepath.Join(m.sessionDir(c.id), "lock"), false)
-		if lerr != nil {
-			if errors.Is(lerr, ErrLockHeld) {
-				sawLive = true // another register/reconnect is mid-claim — contended
-			}
-			continue
-		}
-		mf, aerr := m.adoptAndBackfill(c.id, opts.Scope)
-		if aerr != nil {
-			_ = release()
-			return nil, nil, fmt.Errorf("reuse: resume %s: %w", c.id, aerr)
-		}
-		return mf, release, nil
+		return nil, nil, fmt.Errorf("reuse: lock %s: %w", c.id, lerr)
 	}
 
-	if sawLive {
-		return nil, nil, fmt.Errorf("%w: use --force-new for a second instance", ErrIdentityLive)
+	// Revoke the previous listener BEFORE adopting, under the lock we hold, so
+	// revoke + adopt are one atomic critical section (a concurrent claim cannot
+	// interleave). The orphan listener, at its next pre-move ownership check, sees
+	// a token mismatch and stops consuming (B-2 fencing).
+	reclaimInfo, rerr := m.reclaimListenerLocked(c.id)
+	if rerr != nil {
+		_ = release()
+		return nil, nil, fmt.Errorf("reuse: revoke listener %s: %w", c.id, rerr)
 	}
-	// Matches existed but none reusable (transient lock contention on all) —
-	// safest is to register fresh.
-	return nil, nil, errReuseNoMatch
+	mf, aerr := m.adoptAndBackfill(c.id, opts.Scope)
+	if aerr != nil {
+		_ = release()
+		return nil, nil, fmt.Errorf("reuse: resume %s: %w", c.id, aerr)
+	}
+	ri := reclaimInfo
+	mf.LastReclaim = &ri
+	return mf, release, nil
 }
 
 // findIdentityMatches scans all session manifests and returns those matching the

@@ -106,6 +106,15 @@ type Manifest struct {
 	// message.InReplyTo is *string). Optional and additive:
 	// Validate/ApplyV1Defaults ignore it, like TeamID/State.
 	ListenUntil *time.Time `json:"listenUntil,omitempty"`
+
+	// LastReclaim, when non-nil, reports what a `register --resume` RECLAIM just
+	// superseded (B-2). It is set IN-MEMORY by tryReuse on the returned manifest
+	// and read by the cmd layer for the reclaim output. json:"-": it is NEVER
+	// persisted (it describes a single operation, not session state) and
+	// LoadManifest never populates it — distinct from the on-disk listener.json
+	// ownership record. Kept off Register's signature (30 call-sites) by riding
+	// on the manifest the call already returns.
+	LastReclaim *ReclaimInfo `json:"-"`
 }
 
 // Validate checks that the manifest has the minimum required fields for

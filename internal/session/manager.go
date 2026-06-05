@@ -114,7 +114,7 @@ func (m *Manager) Register(ctx context.Context, opts RegisterOpts) (*Manifest, f
 			return mf, release, nil // resumed an existing session
 		}
 		if !errors.Is(rerr, errReuseNoMatch) {
-			return nil, nil, rerr // ErrIdentityLive or a genuine failure
+			return nil, nil, rerr // a genuine failure (lock contention / IO) — surface it
 		}
 		// errReuseNoMatch -> fall through to a fresh register below.
 	}

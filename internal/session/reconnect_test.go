@@ -76,11 +76,15 @@ func TestRegister_Resume_ResumesOwnStale(t *testing.T) {
 	assert.Equal(t, os.Getpid(), mf2.PID, "resume adopts the current PID")
 }
 
-// TestRegister_Resume_DoesNotStealLive is the CRITICAL F-27 regression: a
-// matching session whose lock is held by a live FOREIGN process (pid 1, NOT our
-// own re-entrant pid) must NOT be resumed — Register returns ErrIdentityLive and
-// the live session's manifest is left untouched.
-func TestRegister_Resume_DoesNotStealLive(t *testing.T) {
+// TestRegister_Resume_ReclaimsLiveOrphan is the B-2 INVERSION of F-27 (was
+// TestRegister_Resume_DoesNotStealLive): a matching session whose manifest PID
+// is alive is now an ORPHAN to reclaim, not a live owner to refuse. A live PID
+// proves only that a `listen` survived (e.g. a /clear killed the Claude that
+// owned it, leaving its background listen running); the identity + --resume is
+// the semantic claim to that session's continuity. register --resume reuses the
+// same session, adopts our PID, bumps the listener generation (revoking the
+// orphan), and reports the supersession via mf.LastReclaim.
+func TestRegister_Resume_ReclaimsLiveOrphan(t *testing.T) {
 	t.Parallel()
 	dataDir := t.TempDir()
 	projDir := t.TempDir()
@@ -92,21 +96,54 @@ func TestRegister_Resume_DoesNotStealLive(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, rel1())
 
-	// Simulate a LIVE owner: set the MANIFEST PID to a foreign, known-alive PID
-	// (1 = init/launchd, always exists, NOT os.Getpid()). A running listen keeps
-	// the manifest PID alive via AdoptPID; the lock is not a liveness signal.
+	// A live orphan: manifest PID = a foreign, known-alive PID (1 = init/launchd).
 	mf1.PID = 1
 	require.NoError(t, mgr.SaveManifest(mf1))
 
-	_, _, err = mgr.Register(context.Background(), RegisterOpts{
+	mf2, rel2, err := mgr.Register(context.Background(), RegisterOpts{
 		ProjectPath: projDir, AgentName: "ESC-x", Role: RoleEsc, Scope: "/proj/root", Resume: true,
 	})
-	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrIdentityLive, "a live identity match must not be stolen")
+	require.NoError(t, err, "B-2: a live orphan is reclaimed, not refused")
+	t.Cleanup(func() { _ = rel2() })
 
-	reloaded, err := mgr.LoadManifest(mf1.SessionID)
+	assert.Equal(t, mf1.SessionID, mf2.SessionID, "reclaim reuses the same session")
+	assert.Equal(t, os.Getpid(), mf2.PID, "reclaim adopts our PID")
+	require.NotNil(t, mf2.LastReclaim, "a reclaim reports what it superseded")
+	assert.Equal(t, 1, mf2.LastReclaim.NewGeneration, "the listener generation is bumped (orphan revoked)")
+
+	o, ok, rerr := mgr.ReadListener(mf1.SessionID)
+	require.NoError(t, rerr)
+	require.True(t, ok)
+	assert.Equal(t, 1, o.Generation)
+	assert.Equal(t, 0, o.PID, "reclaim-pending until the new listen claims")
+}
+
+// TestRegister_ForceNew_DoesNotReclaim is B-2 test 7: --force-new is a
+// DELIBERATE second instance — it bypasses tryReuse entirely, so it creates a
+// fresh session and does NOT revoke the previous session's listener.
+func TestRegister_ForceNew_DoesNotReclaim(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	projDir := t.TempDir()
+	mgr := NewManager(dataDir, time.Second)
+
+	mf1, rel1, err := mgr.Register(context.Background(), RegisterOpts{
+		ProjectPath: projDir, AgentName: "ESC-x", Role: RoleEsc, Scope: "/proj/root",
+	})
 	require.NoError(t, err)
-	assert.Equal(t, 1, reloaded.PID, "live session manifest PID must be unchanged (not adopted)")
+	require.NoError(t, rel1())
+	o1, err := mgr.ClaimListener(mf1.SessionID)
+	require.NoError(t, err)
+
+	mf2, rel2, err := mgr.Register(context.Background(), RegisterOpts{
+		ProjectPath: projDir, AgentName: "ESC-x", Role: RoleEsc, Scope: "/proj/root", ForceNew: true,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = rel2() })
+
+	assert.NotEqual(t, mf1.SessionID, mf2.SessionID, "force-new creates a fresh session")
+	assert.Nil(t, mf2.LastReclaim, "force-new does not reclaim")
+	assert.True(t, mgr.IsListenerCurrent(mf1.SessionID, o1.Token), "the previous listener is NOT revoked by force-new")
 }
 
 func TestRegister_Resume_NoMatch_RegistersNew(t *testing.T) {
