@@ -1,0 +1,22 @@
+plugins/cli-agents-bridge/skills/bridge-workflow/SKILL.md
+  s_025d35dfb36b27::t_81341753987422 24
+  s_025d35dfb36b27::t_ae582a11fda8c8 88
+  s_025d35dfb36b27::t_b42ef775a9fa2b 3
+  s_025d35dfb36b27::t_7c399d1a44d592 121-128,134-137,143-145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "7cc667beb825b9d3a7788a70d5c8128b49fecd45",
+  "prompts": {},
+  "sessions": {
+    "s_025d35dfb36b27": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9bda736c-f58b-46f3-b127-0840b23a7049",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
