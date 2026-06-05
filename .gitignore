@@ -32,6 +32,7 @@ docs/.claude/
 # Internal VAL/ESC reports & archived planning — not for publication
 briefing/
 iterations/
+feedback/
 
 # Git worktrees for VAL/ESC pairs (separate checkouts under the repo, never tracked).
 # Dotted name: go ./... and recursive search ignore it regardless; gitignore keeps git clean.
