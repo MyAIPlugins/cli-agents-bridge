@@ -116,3 +116,37 @@ func TestPollInboxOwned_OwnerLost_EmitsNothing(t *testing.T) {
 	}
 	assert.True(t, inInbox(t, inbox, m.ID), "the message stays in inbox")
 }
+
+// TestPollInboxOwned_MoveThenCancel_StillDelivers is the B-2 P1 regression: once
+// a message is MOVED out of inbox/, it MUST reach the consumer even if the
+// context is canceled before the hand-off — never stranded in processed/ with no
+// consumer ("consumed ⇒ delivered", the F3 invariant in the streaming path).
+func TestPollInboxOwned_MoveThenCancel_StillDelivers(t *testing.T) {
+	t.Parallel()
+	inbox := filepath.Join(t.TempDir(), "inbox")
+	require.NoError(t, os.MkdirAll(inbox, 0o700))
+	m := validQueryMessage(t, "msg-aaaaaaaaaaaa", "abc123ef", "def456ab")
+	writeMessage(t, inbox, m)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// ownerOK=true → the message is moved; we deliberately do NOT read yet, so the
+	// producer blocks on the post-move send.
+	ch := PollInboxOwned(ctx, inbox, 10*time.Millisecond, 65536, func() bool { return true })
+
+	// Wait until the message has been MOVED to processed/ (producer now blocked on
+	// the post-move send).
+	require.Eventually(t, func() bool {
+		return inProcessed(t, inbox, m.ID) && !inInbox(t, inbox, m.ID)
+	}, 2*time.Second, 10*time.Millisecond, "the message must be moved out of inbox/ before we cancel")
+
+	// Cancel AFTER the move, BEFORE we read: the moved message must still arrive.
+	cancel()
+	select {
+	case got, ok := <-ch:
+		require.True(t, ok, "the moved message must still be delivered, not lost (P1)")
+		assert.Equal(t, m.ID, got.ID)
+	case <-time.After(2 * time.Second):
+		t.Fatal("a moved message was stranded — never delivered after cancel (P1 regression)")
+	}
+}

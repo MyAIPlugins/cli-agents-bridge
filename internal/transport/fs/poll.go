@@ -64,7 +64,7 @@ func pollInbox(ctx context.Context, inboxDir string, interval time.Duration, max
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				emitInboxOnce(ctx, out, inboxDir, maxContentBytes, ownerOK)
+				emitInboxOnce(out, inboxDir, maxContentBytes, ownerOK)
 			}
 		}
 	}()
@@ -76,7 +76,7 @@ func pollInbox(ctx context.Context, inboxDir string, interval time.Duration, max
 // swallowed silently: a transient read failure should not crash the
 // polling goroutine — the next tick will retry. (Persistent failures
 // surface elsewhere via the manifest status lifecycle, Sprint 4+.)
-func emitInboxOnce(ctx context.Context, out chan<- *message.Message, inboxDir string, maxContentBytes int, ownerOK func() bool) {
+func emitInboxOnce(out chan<- *message.Message, inboxDir string, maxContentBytes int, ownerOK func() bool) {
 	entries, err := os.ReadDir(inboxDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -96,10 +96,14 @@ func emitInboxOnce(ctx context.Context, out chan<- *message.Message, inboxDir st
 		if !ok {
 			continue
 		}
-		select {
-		case <-ctx.Done():
-			return
-		case out <- m:
-		}
+		// B-2 P1: m has now been MOVED out of inbox/ — it MUST reach the consumer
+		// ("consumed ⇒ delivered"). A BLOCKING send, NOT a select on ctx.Done():
+		// abandoning the send after the move would strand m in processed/ with no
+		// consumer (the F3 loss, in the streaming path) if ctx is canceled between
+		// the move and the hand-off. This cannot deadlock: the listen default loop
+		// keeps reading from the channel even after ctx.Done() (its `case
+		// <-ctx.Done()` is a no-op that loops), and PollInbox closes the channel
+		// only after this send returns.
+		out <- m
 	}
 }
