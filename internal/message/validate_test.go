@@ -34,6 +34,19 @@ func TestValidate_HappyPath(t *testing.T) {
 	require.NoError(t, Validate(validMessage(), 65536))
 }
 
+// TestIsValidType covers the A-2 DRY helper: it reports membership in the same
+// validTypes set the gateway uses, including the auto-emitted "ack" (a canonical
+// type even though the CLI omits it from its user-facing list).
+func TestIsValidType(t *testing.T) {
+	t.Parallel()
+	for _, ty := range []string{TypeQuery, TypeResponse, TypePing, TypeNotify, TypeEvent, TypeAck} {
+		assert.True(t, IsValidType(ty), ty+" is a canonical message type")
+	}
+	for _, ty := range []string{"question", "questions", "foobar", ""} {
+		assert.False(t, IsValidType(ty), ty+" is not a canonical message type")
+	}
+}
+
 func TestValidate_RejectsInvalidMessageID(t *testing.T) {
 	t.Parallel()
 

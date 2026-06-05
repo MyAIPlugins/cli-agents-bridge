@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
@@ -40,6 +41,23 @@ func runAsk(args []string) error {
 	}
 	if *content != "" && *contentFile != "" {
 		return errors.New("ask: --content and --file are mutually exclusive")
+	}
+
+	// A-2: "question" is the natural word for a query; accept it as a CLI-input
+	// alias so a `--type=question` is not silently lost to a strict-enum rejection
+	// deep in the write gateway (the message would never reach the wire). The wire
+	// type stays "query" — the schema enum is untouched (the alias is a courtesy
+	// of THIS command, not of sendMessage/auto-ack, which use constants). Any
+	// other unknown type fails HERE with an actionable error (the user-facing list
+	// + a "did you mean" when the input looks like "question"), before touching
+	// config or the filesystem.
+	normalizedType, typeSuggestion := normalizeAskType(*msgType)
+	*msgType = normalizedType
+	if !message.IsValidType(*msgType) {
+		if typeSuggestion != "" {
+			return fmt.Errorf("ask: invalid --type %q (valid: query|response|ping|notify|event); did you mean %q?", *msgType, typeSuggestion)
+		}
+		return fmt.Errorf("ask: invalid --type %q (valid: query|response|ping|notify|event)", *msgType)
 	}
 
 	body := *content
@@ -162,4 +180,25 @@ func runAsk(args []string) error {
 	// subsequent `cab-bridge receive --msg-id=<id>`).
 	fmt.Println(msgID)
 	return nil
+}
+
+// normalizeAskType maps a user-supplied --type onto the canonical enum for the
+// CLI `ask` command — a courtesy input layer; the wire schema enum is untouched
+// (A-2). It returns the normalized type plus an optional "did you mean"
+// suggestion:
+//   - "question" (any case) → "query", no suggestion: the natural word for a
+//     query is accepted as a silent alias.
+//   - a value that otherwise looks like "question" (lowercased prefix "quest",
+//     e.g. "questions") → returned unchanged with "query" suggested, so the
+//     caller emits an actionable error instead of silently guessing.
+//   - anything else → returned unchanged, no suggestion (a plain invalid type).
+func normalizeAskType(input string) (normalized, suggestion string) {
+	lower := strings.ToLower(input)
+	if lower == "question" {
+		return message.TypeQuery, ""
+	}
+	if strings.HasPrefix(lower, "quest") {
+		return input, message.TypeQuery
+	}
+	return input, ""
 }

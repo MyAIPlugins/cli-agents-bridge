@@ -50,6 +50,17 @@ var (
 	}
 )
 
+// IsValidType reports whether t is a canonical message type. Exported so the
+// CLI input layer (ask) can validate a user-supplied --type against the SAME
+// enum the schema gateway uses, without duplicating the set (DRY — no drift
+// between the two). The CLI may present a narrower, user-facing list in its
+// error text (e.g. ask omits the auto-emitted "ack"), but membership is decided
+// here against validTypes.
+func IsValidType(t string) bool {
+	_, ok := validTypes[t]
+	return ok
+}
+
 // Message is the v2 on-disk JSON shape (PLAN §4.4 trimmed). The struct order
 // mirrors the canonical JSON ordering so writers produce deterministic
 // output, easier to diff under audit.

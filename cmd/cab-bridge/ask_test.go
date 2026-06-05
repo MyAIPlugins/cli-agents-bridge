@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -78,4 +79,80 @@ func TestRunAsk_UnreadWarning_SuggestsExecutableReadCommand(t *testing.T) {
 	// `read <id>` or a trailing flag would not match.
 	assert.Contains(t, stderr, "cab-bridge read --session-id="+sender+" "+unreadID,
 		"warning must suggest an executable read command with --session-id before the msg-id")
+}
+
+// TestNormalizeAskType is the A-2 pure-function table: the "question" alias (any
+// case) → "query"; a near-miss → the same input plus a "query" suggestion; a
+// real type or an unrelated unknown → unchanged with no suggestion.
+func TestNormalizeAskType(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name, input, wantNorm, wantSuggest string
+	}{
+		{"exact alias", "question", message.TypeQuery, ""},
+		{"alias mixed case", "Question", message.TypeQuery, ""},
+		{"alias upper", "QUESTION", message.TypeQuery, ""},
+		{"near-miss plural", "questions", "questions", message.TypeQuery},
+		{"near-miss stem", "quest", "quest", message.TypeQuery},
+		{"valid query untouched", "query", "query", ""},
+		{"valid response untouched", "response", "response", ""},
+		{"unrelated unknown", "foobar", "foobar", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotNorm, gotSuggest := normalizeAskType(tc.input)
+			assert.Equal(t, tc.wantNorm, gotNorm, "normalized type")
+			assert.Equal(t, tc.wantSuggest, gotSuggest, "suggestion")
+		})
+	}
+}
+
+// TestRunAsk_QuestionTypeAlias_NormalizedToQueryAndSent is the A-2 integration
+// happy path: `--type=question` must NOT be lost — the message is delivered and
+// its wire type is the canonical "query", not "question".
+func TestRunAsk_QuestionTypeAlias_NormalizedToQueryAndSent(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	const sender = "escq0001"
+	const target = "valq0001"
+	plantOverviewSession(t, dataDir, sender, session.RoleEsc, "ESC-x", "/repo/x", "", "working")
+	plantOverviewSession(t, dataDir, target, session.RoleVal, "VAL-x", "/repo/x", "", session.StateOrchestrating)
+
+	var runErr error
+	out := captureStdout(t, func() {
+		_ = captureStderr(t, func() {
+			runErr = runAsk([]string{"--session-id=" + sender, "--to=" + target, "--type=question", "--content=hi"})
+		})
+	})
+	require.NoError(t, runErr, "the question alias must not reject the send")
+
+	msgID := firstLine(out)
+	require.NotEmpty(t, msgID, "ask must print the delivered msg-id on stdout")
+	m, _, err := findMessage(filepath.Join(dataDir, "sessions", target), msgID, 65536)
+	require.NoError(t, err, "the message must be delivered to the target inbox")
+	assert.Equal(t, message.TypeQuery, m.Type, "the wire type must be normalized to query, not question")
+}
+
+// TestRunAsk_UnknownTypeWithSuggestion_RejectedNotSent is the A-2 error path: a
+// near-miss type is rejected with an actionable error (valid list + did-you-mean)
+// and nothing is delivered. The reject fires before any FS access.
+func TestRunAsk_UnknownTypeWithSuggestion_RejectedNotSent(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	const sender = "escq0002"
+	const target = "valq0002"
+	plantOverviewSession(t, dataDir, sender, session.RoleEsc, "ESC-x", "/repo/x", "", "working")
+	plantOverviewSession(t, dataDir, target, session.RoleVal, "VAL-x", "/repo/x", "", session.StateOrchestrating)
+
+	err := runAsk([]string{"--session-id=" + sender, "--to=" + target, "--type=questions", "--content=hi"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `invalid --type "questions"`)
+	assert.Contains(t, err.Error(), `did you mean "query"`)
+
+	entries, _ := os.ReadDir(filepath.Join(dataDir, "sessions", target, "inbox"))
+	assert.Empty(t, entries, "an invalid type must not deliver a message")
 }
