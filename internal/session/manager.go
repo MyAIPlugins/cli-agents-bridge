@@ -283,6 +283,138 @@ func (m *Manager) LongestPrefixLookup(cwd string) (string, error) {
 // ProjectPath matches the given cwd.
 var ErrNoSessionForCwd = errors.New("no session matches cwd or its ancestors")
 
+// Candidate is one session manifest relevant to a cwd resolution (B-1). It
+// carries only the fields the cmd-layer guardrail needs to disambiguate a tie
+// and warn on a shared scope. ID is the directory name (NEW-1), never the
+// attacker-influenceable mf.SessionID. AgentName/Role are diagnostic only — the
+// guardrail must never pick a session by them (design-gate constraint #7).
+type Candidate struct {
+	ID          string
+	ProjectPath string
+	Scope       string
+	AgentName   string
+	Role        string
+}
+
+// Resolution is the pure result of LookupByCWDDetails (B-1): which session a cwd
+// maps to, plus the two collision signals the guardrail acts on.
+//
+//   - SelectedID    the chosen session id: the longest-prefix match, and the
+//                   first in ReadDir (lexical) order among equal-length ties —
+//                   deterministic. Empty only when the call returns an error.
+//   - Candidates    every match at the MAXIMUM prefix length (the contenders).
+//   - HardAmbiguous len(Candidates) > 1: two or more manifests match cwd at the
+//                   same maximum length, so the pick is a coin toss
+//                   (LongestPrefixLookup silently takes the first).
+//   - ScopeSiblings other sessions sharing the selected session's NON-empty
+//                   Scope with a DIFFERENT ProjectPath — the shared-scope hazard
+//                   (e.g. VAL at the repo root + ESC in a worktree of the same
+//                   repo: same scope, different project paths).
+type Resolution struct {
+	SelectedID    string
+	Candidates    []Candidate
+	HardAmbiguous bool
+	ScopeSiblings []Candidate
+}
+
+// LookupByCWDDetails is the pure, scope-aware sibling of LongestPrefixLookup
+// (B-1). It resolves cwd to a session the SAME way (longest ProjectPath prefix)
+// but, in ONE scan of the sessions dir, also surfaces the two collision signals
+// the cmd-layer guardrail acts on: a hard ambiguity (2+ manifests matching at
+// the same maximum prefix length — LongestPrefixLookup silently picks the first)
+// and a shared-scope hazard (other sessions in the selected session's scope with
+// a different ProjectPath). Returns ErrNoSessionForCwd when nothing matches.
+//
+// PURE: no stderr, no mutation — the cmd layer owns the policy and the I/O. cwd
+// is taken as an argument (not os.Getwd) so it is trivially testable.
+//
+// By design it does NOT (design-gate constraints): prefer live/non-stale
+// sessions (#3), filter by team (#4), canonicalize ProjectPath via symlinks
+// (#6 — lexical Clean only, like LongestPrefixLookup), or pick by AgentName/Role
+// (#7 — those are carried for the diagnostic message only). LongestPrefixLookup
+// is left untouched: Register's collision check still uses it (manager.go:129).
+func (m *Manager) LookupByCWDDetails(cwd string) (Resolution, error) {
+	absCwd, err := filepath.Abs(cwd)
+	if err != nil {
+		return Resolution{}, fmt.Errorf("lookupdetails: resolve cwd %q: %w", cwd, err)
+	}
+
+	sessionsRoot := filepath.Join(m.DataDir, "sessions")
+	entries, err := os.ReadDir(sessionsRoot)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return Resolution{}, ErrNoSessionForCwd
+		}
+		return Resolution{}, fmt.Errorf("lookupdetails: read sessions dir %q: %w", sessionsRoot, err)
+	}
+
+	// One pass: load every manifest once. Keep each as a Candidate plus its
+	// prefix-match length against cwd (-1 when it does not match), so the
+	// max-length contenders AND the scope siblings can both be computed from the
+	// single in-memory slice without a second scan.
+	type scanned struct {
+		cand     Candidate
+		matchLen int
+	}
+	all := make([]scanned, 0, len(entries))
+	bestLen := -1
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		mf, lerr := m.LoadManifest(e.Name())
+		if lerr != nil {
+			// Corrupt manifest — skip silently, same policy as LongestPrefixLookup.
+			continue
+		}
+		matchLen := -1
+		if isPathDescendantOrEqual(absCwd, mf.ProjectPath) {
+			matchLen = len(mf.ProjectPath)
+			if matchLen > bestLen {
+				bestLen = matchLen
+			}
+		}
+		all = append(all, scanned{
+			cand: Candidate{
+				ID:          e.Name(), // NEW-1: dir name, not mf.SessionID
+				ProjectPath: mf.ProjectPath,
+				Scope:       mf.Scope,
+				AgentName:   mf.AgentName,
+				Role:        mf.Role,
+			},
+			matchLen: matchLen,
+		})
+	}
+
+	if bestLen < 0 {
+		return Resolution{}, ErrNoSessionForCwd
+	}
+
+	var res Resolution
+	for _, s := range all {
+		if s.matchLen == bestLen {
+			res.Candidates = append(res.Candidates, s.cand)
+		}
+	}
+	res.HardAmbiguous = len(res.Candidates) > 1
+	res.SelectedID = res.Candidates[0].ID // ReadDir order makes this deterministic
+	selected := res.Candidates[0]
+
+	// Shared-scope siblings: other sessions in the selected session's NON-empty
+	// scope with a DIFFERENT ProjectPath. Lexical Clean compare (constraint #6,
+	// no symlink resolution). A session with the SAME ProjectPath is a hard-tie
+	// contender, not a sibling, so the path inequality excludes it.
+	if selected.Scope != "" {
+		selProj := filepath.Clean(selected.ProjectPath)
+		for _, s := range all {
+			if s.cand.Scope == selected.Scope && filepath.Clean(s.cand.ProjectPath) != selProj {
+				res.ScopeSiblings = append(res.ScopeSiblings, s.cand)
+			}
+		}
+	}
+	return res, nil
+}
+
 // ErrSessionExistsForProject is returned by Register when a live session
 // already exists for the given ProjectPath. Override with RegisterOpts.ForceNew
 // (passed through from --force-new CLI flag). BUG-6 fix per PLAN §4.5.

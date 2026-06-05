@@ -158,6 +158,129 @@ func TestLongestPrefixLookup_NoMatch(t *testing.T) {
 	assert.ErrorIs(t, err, ErrNoSessionForCwd)
 }
 
+// plantManifestDetails writes a complete, valid manifest under mgr.DataDir with
+// caller-controlled ProjectPath/Scope/AgentName/Role, so LookupByCWDDetails can
+// be exercised on arbitrary scope/path layouts without going through Register
+// (no lock, no collision check, no real filesystem paths — the lookup is lexical).
+func plantManifestDetails(t *testing.T, mgr *Manager, id, projectPath, scope, agentName, role string) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(filepath.Join(mgr.DataDir, "sessions", id), 0o700))
+	now := time.Now().UTC()
+	mf := &Manifest{
+		SessionID:     id,
+		SchemaVersion: SchemaVersionV2,
+		ProjectName:   filepath.Base(projectPath),
+		ProjectPath:   projectPath,
+		AgentName:     agentName,
+		Role:          role,
+		PID:           os.Getpid(),
+		StartedAt:     now,
+		LastHeartbeat: now,
+		Status:        StatusActive,
+		Capabilities:  []string{"query"},
+		Scope:         scope,
+	}
+	require.NoError(t, mgr.SaveManifest(mf))
+}
+
+// TestLookupByCWDDetails_SingleAndNested: one session resolves from its exact
+// path and from a nested subdir — no ambiguity, no siblings (same behaviour as
+// LongestPrefixLookup, now with the richer result).
+func TestLookupByCWDDetails_SingleAndNested(t *testing.T) {
+	t.Parallel()
+	mgr := NewManager(t.TempDir(), time.Second)
+	plantManifestDetails(t, mgr, "lkupsing", "/repo/p1", "/repo/p1", "ESC-x", RoleEsc)
+
+	for _, cwd := range []string{"/repo/p1", "/repo/p1/sub/nested"} {
+		res, err := mgr.LookupByCWDDetails(cwd)
+		require.NoError(t, err)
+		assert.Equal(t, "lkupsing", res.SelectedID, "cwd %q", cwd)
+		assert.False(t, res.HardAmbiguous)
+		assert.Len(t, res.Candidates, 1)
+		assert.Empty(t, res.ScopeSiblings)
+	}
+}
+
+// TestLookupByCWDDetails_NestedLongestPrefixWins: p1 and p1/sub both match a deep
+// cwd, but the longer prefix wins and it is NOT a hard ambiguity (different
+// lengths). Mirrors TestLongestPrefixLookup's nested case.
+func TestLookupByCWDDetails_NestedLongestPrefixWins(t *testing.T) {
+	t.Parallel()
+	mgr := NewManager(t.TempDir(), time.Second)
+	plantManifestDetails(t, mgr, "lkupp1aa", "/repo/p1", "", "VAL-x", RoleVal)
+	plantManifestDetails(t, mgr, "lkupp1sb", "/repo/p1/sub", "", "ESC-x", RoleEsc)
+
+	res, err := mgr.LookupByCWDDetails("/repo/p1/sub/deeper")
+	require.NoError(t, err)
+	assert.Equal(t, "lkupp1sb", res.SelectedID, "longest prefix wins")
+	assert.False(t, res.HardAmbiguous, "different prefix lengths are not a tie")
+	assert.Len(t, res.Candidates, 1)
+}
+
+// TestLookupByCWDDetails_HardAmbiguity: two sessions with the SAME ProjectPath
+// match a cwd at the same maximum length → HardAmbiguous, both contenders
+// surfaced (LongestPrefixLookup would silently pick the first).
+func TestLookupByCWDDetails_HardAmbiguity(t *testing.T) {
+	t.Parallel()
+	mgr := NewManager(t.TempDir(), time.Second)
+	plantManifestDetails(t, mgr, "lkupamb1", "/repo/shared", "", "VAL-x", RoleVal)
+	plantManifestDetails(t, mgr, "lkupamb2", "/repo/shared", "", "ESC-x", RoleEsc)
+
+	res, err := mgr.LookupByCWDDetails("/repo/shared")
+	require.NoError(t, err)
+	assert.True(t, res.HardAmbiguous)
+	assert.Len(t, res.Candidates, 2, "both equal-length matches are contenders")
+	assert.NotEmpty(t, res.SelectedID, "a deterministic pick is still made")
+}
+
+// TestLookupByCWDDetails_SharedScopeSiblings: VAL@root + ESC@worktree share one
+// Scope with different ProjectPaths. From the worktree cwd the ESC is selected
+// and the VAL is the shared-scope sibling; from the root it is symmetric.
+func TestLookupByCWDDetails_SharedScopeSiblings(t *testing.T) {
+	t.Parallel()
+	mgr := NewManager(t.TempDir(), time.Second)
+	scope := "/repo/main"
+	plantManifestDetails(t, mgr, "lkupval0", "/repo/main", scope, "VAL-x", RoleVal)
+	plantManifestDetails(t, mgr, "lkupesc0", "/repo/main-wt", scope, "ESC-x", RoleEsc)
+
+	res, err := mgr.LookupByCWDDetails("/repo/main-wt/internal")
+	require.NoError(t, err)
+	assert.Equal(t, "lkupesc0", res.SelectedID)
+	assert.False(t, res.HardAmbiguous)
+	require.Len(t, res.ScopeSiblings, 1)
+	assert.Equal(t, "lkupval0", res.ScopeSiblings[0].ID)
+
+	res2, err := mgr.LookupByCWDDetails("/repo/main")
+	require.NoError(t, err)
+	assert.Equal(t, "lkupval0", res2.SelectedID)
+	require.Len(t, res2.ScopeSiblings, 1)
+	assert.Equal(t, "lkupesc0", res2.ScopeSiblings[0].ID)
+}
+
+// TestLookupByCWDDetails_EmptyScopeNoSiblings: with no scope (legacy/v1), there
+// is no shared-scope hazard even with multiple distinct-path sessions.
+func TestLookupByCWDDetails_EmptyScopeNoSiblings(t *testing.T) {
+	t.Parallel()
+	mgr := NewManager(t.TempDir(), time.Second)
+	plantManifestDetails(t, mgr, "lkupemp1", "/repo/a", "", "VAL-x", RoleVal)
+	plantManifestDetails(t, mgr, "lkupemp2", "/repo/b", "", "ESC-x", RoleEsc)
+
+	res, err := mgr.LookupByCWDDetails("/repo/a")
+	require.NoError(t, err)
+	assert.Equal(t, "lkupemp1", res.SelectedID)
+	assert.Empty(t, res.ScopeSiblings, "empty scope → no shared-scope siblings")
+}
+
+// TestLookupByCWDDetails_NoMatch: a cwd matching nothing → ErrNoSessionForCwd,
+// like LongestPrefixLookup.
+func TestLookupByCWDDetails_NoMatch(t *testing.T) {
+	t.Parallel()
+	mgr := NewManager(t.TempDir(), time.Second)
+	plantManifestDetails(t, mgr, "lkupnom1", "/repo/a", "/repo/a", "VAL-x", RoleVal)
+	_, err := mgr.LookupByCWDDetails("/totally/unrelated")
+	assert.ErrorIs(t, err, ErrNoSessionForCwd)
+}
+
 func TestLongestPrefixLookup_NoSessionsDirYet(t *testing.T) {
 	t.Parallel()
 
