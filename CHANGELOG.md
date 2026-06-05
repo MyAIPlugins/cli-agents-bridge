@@ -5,7 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.0] — 2026-06-05
+
+A single `v0.7.0` tag that also ships the previously-unreleased v0.6 work (the F-39/F-81/F-66 section below, never tagged standalone). Built end-to-end via the cab-bridge dogfooding triad over the bridge itself (VAL + ESC Claude Code + CRI Codex): Tier A by independent VAL-gate; **B-1 and B-2 by the full cross-vendor round** (CRI design-gate → impl → VAL gate → CRI diff-gate → fix → re-gate). The B-1 diff-gate caught 3 P3s, the B-2 diff-gate caught **2 concurrency P1s invisible to the green `-race` gate and the smoke** — without that round B-2 would have shipped a silent brief-loss. Distilled from 7 real chatterence-bi feedbacks.
 
 ### Tier A — CLI ergonomics (distilled from 7 real dogfooding feedbacks)
 
@@ -44,7 +46,7 @@ After a `/clear` the previous Claude is gone but its background `listen` can sti
 - **Listener-ownership fencing (F3 correctness)**: a per-session `listener.json` (SEPARATE from the manifest so a stale heartbeat RMW cannot clobber a revocation) carries a monotone `generation` + a random per-claim `token` — the ownership discriminant, **fail-closed** (missing/parse-error/mismatch all read "not current"). `listen` claims it at startup; `register --resume` revokes it on reclaim. The consume path (`consumeInboxEntry`) re-checks ownership IMMEDIATELY before `MoveToProcessed` (closes the ReadDir→move race) AND the streaming path hands the moved message off with a **blocking send** (closes the move→deliver race) — so a revoked orphan never consumes, and a moved message is always delivered. The fenced heartbeat serializes its manifest RMW with the same session lock and re-checks ownership under it (closes the check→write TOCTOU). `receive --any` is one-shot and stays unfenced. Soft-eviction only — no `kill`.
 - **Reclaim observability**: `register --resume` reports the superseded listener (generation/PID); `overview`/`inspect` show `listener.json` (generation, PID, claimed-at, reclaim-pending).
 
-## [0.6.0] — unreleased (in `main`, pending push/tag/deploy)
+## [0.6.0] — shipped within the v0.7.0 tag (never released standalone)
 
 Built by the cross-vendor TRIAD on the bridge itself (VAL Claude + ESC Claude + CRI Codex over `cab-bridge`): F-39/F-81 = brief → independent VAL gate → merge; **F-66 with the full rigor** — CRI design-gate (naive-loop → serious-watcher) → ESC impl → VAL gate → CRI diff-gate (two P1s the green gate did not see) → ESC fix → VAL re-gate → CRI check → merge. Independent VAL gate `go test -race -count=1 ./...` green + code audit + real smoke per feature.
 
