@@ -1,0 +1,49 @@
+cmd/cab-bridge/whoami.go
+  s_7098059e940d0a::t_ec5af5ee97837a 53
+cmd/cab-bridge/read.go
+  s_7098059e940d0a::t_b0a9b90cf049ef 54
+cmd/cab-bridge/scope_guardrail_test.go
+  ai_agent 1-133
+cmd/cab-bridge/overview.go
+  s_7098059e940d0a::t_f07335d6c3bfb5 88-94
+cmd/cab-bridge/ask.go
+  s_7098059e940d0a::t_96bece39ec41ec 78
+cmd/cab-bridge/receive.go
+  s_7098059e940d0a::t_732ec1cf263d96 100-102
+cmd/cab-bridge/common.go
+  ai_agent 268-274
+  s_7098059e940d0a::t_180d06e26e2f8b 251-266,275-308
+  s_7098059e940d0a::t_36e6cab51eb015 267
+cmd/cab-bridge/connect.go
+  s_7098059e940d0a::t_088db38c377ef9 64
+cmd/cab-bridge/cleanup.go
+  s_7098059e940d0a::t_04d27a92a305a7 49
+cmd/cab-bridge/listen.go
+  s_7098059e940d0a::t_83ac995502b489 78
+cmd/cab-bridge/notify_watch.go
+  s_7098059e940d0a::t_533a7460f4cad7 114
+cmd/cab-bridge/sent.go
+  s_7098059e940d0a::t_72bdf56499628f 47
+cmd/cab-bridge/state.go
+  s_7098059e940d0a::t_7b0875e9c98027 46
+cmd/cab-bridge/inbox.go
+  s_7098059e940d0a::t_f65f0c5ca981f5 67
+cmd/cab-bridge/status.go
+  s_7098059e940d0a::t_aad7e389f3a3f9 57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "571b792a5feee7db1d462f684a374b394e47937a",
+  "prompts": {},
+  "sessions": {
+    "s_7098059e940d0a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "244cef3a-0042-428a-8e94-2011d38cf511",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
