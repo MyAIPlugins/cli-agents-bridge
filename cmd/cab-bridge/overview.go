@@ -16,12 +16,13 @@ import (
 
 // overviewReport is the F-42 at-a-glance view of a session's world in ONE call:
 // who I am, my paired peer (the complementary role in my scope), and my pending
-// inbox — all resolved from the cwd, no --session-id to type or transcribe.
-// Worktree-aware by construction: "me" comes from the cwd lookup on ProjectPath,
-// the peer from the shared scope (F-41 makes a VAL at the main repo and an ESC
-// in a worktree of the same repo share that scope). It reuses the existing
-// building blocks (LongestPrefixLookup, collectPeers/selectPeer, collectInbox)
-// rather than duplicating them.
+// inbox — resolved id-free from the cwd by default, or from an explicit
+// --session-id (A-3/F-86, for a worktree or shared scope where the cwd lookup
+// would resolve the wrong session). Worktree-aware by construction: "me" is
+// resolved through resolveCurrentSession (the B-1 scope guardrail), the peer
+// from the shared scope (F-41 makes a VAL at the main repo and an ESC in a
+// worktree of the same repo share that scope). It reuses the existing building
+// blocks (collectPeers/selectPeer, collectInbox) rather than duplicating them.
 type overviewReport struct {
 	Me overviewSelf `json:"me"`
 

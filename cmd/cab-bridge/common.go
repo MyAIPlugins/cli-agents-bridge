@@ -122,36 +122,23 @@ func runAutoGC(cfg config.Config, logw io.Writer) []cleanup.Orphan {
 	return removed
 }
 
-// resolveSessionID returns the session ID to operate on. If flagValue is
-// non-empty it is validated via SC-4 and returned. Otherwise the function
-// looks up the longest-prefix-match for the current working directory and
-// returns that ID. Returns a wrapped error suitable for stderr+exit on
-// any failure.
-func resolveSessionID(mgr *session.Manager, flagValue string) (string, error) {
-	if flagValue != "" {
-		if err := security.ValidateSessionID(flagValue); err != nil {
-			return "", err
-		}
-		return flagValue, nil
+// validateExplicitSessionID validates an EXPLICIT --session-id and returns it.
+// It is the bypass primitive behind resolveCurrentSession's flag!="" branch:
+// any command that resolves "me" from the cwd MUST go through
+// resolveCurrentSession (which applies the B-1 scope guardrail), never here.
+//
+// An empty id is a CALLER programming error, not a cwd lookup — returning an
+// explicit error keeps a future id-free caller from silently re-bypassing the
+// guardrail through this function (the dead-branch trap, closed in B-1: this
+// function no longer does a cwd LongestPrefixLookup).
+func validateExplicitSessionID(sessionID string) (string, error) {
+	if sessionID == "" {
+		return "", errors.New("validateExplicitSessionID: empty session id — id-free resolution must go through resolveCurrentSession")
 	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("getwd for session lookup: %w", err)
+	if err := security.ValidateSessionID(sessionID); err != nil {
+		return "", err
 	}
-	sid, err := mgr.LongestPrefixLookup(cwd)
-	if err != nil {
-		if errors.Is(err, session.ErrNoSessionForCwd) {
-			return "", fmt.Errorf("no session found for cwd %q — register first with `cab-bridge register` or pass --session-id", cwd)
-		}
-		return "", fmt.Errorf("session lookup from cwd %q: %w", cwd, err)
-	}
-	// Defensive SC-4 re-validation (consistent with receive.go). LongestPrefixLookup
-	// now returns the directory name (NEW-1), already safe, but validating here
-	// keeps the contract uniform across all session-resolution paths.
-	if err := security.ValidateSessionID(sid); err != nil {
-		return "", fmt.Errorf("session lookup returned invalid id %q: %w", sid, err)
-	}
-	return sid, nil
+	return sessionID, nil
 }
 
 // resolveScope derives the F-17 project-root scope for path: it resolves $HOME,
@@ -253,7 +240,7 @@ func formatSharedScopeWarning(cmdName, cwd string, res session.Resolution) strin
 // applying the B-1 scope-collision guardrail. It is the SINGLE chokepoint every
 // id-free command routes through, so the policy lives in one place.
 //
-//   - An explicit --session-id BYPASSES the guardrail (resolveSessionID
+//   - An explicit --session-id BYPASSES the guardrail (validateExplicitSessionID
 //     validates and returns it). A disciplined caller that always passes the id
 //     sees zero warnings — the warning appears only when the id is omitted in a
 //     scope where it is genuinely ambiguous.
@@ -267,7 +254,7 @@ func resolveCurrentSession(mgr *session.Manager, cmdName, sessionIDFlag string) 
 		// Explicit id: bypass the guardrail (no lookup, no warning). Wrap the
 		// validation error with cmdName so the bypass path is as well-labelled as
 		// the lookup path below.
-		sid, err := resolveSessionID(mgr, sessionIDFlag)
+		sid, err := validateExplicitSessionID(sessionIDFlag)
 		if err != nil {
 			return "", fmt.Errorf("%s: %w", cmdName, err)
 		}
@@ -291,7 +278,7 @@ func resolveCurrentSession(mgr *session.Manager, cmdName, sessionIDFlag string) 
 	if warnMsg != "" {
 		fmt.Fprintln(os.Stderr, warnMsg)
 	}
-	// Defensive SC-4 re-validation, consistent with resolveSessionID.
+	// Defensive SC-4 re-validation, consistent with validateExplicitSessionID.
 	if err := security.ValidateSessionID(sid); err != nil {
 		return "", fmt.Errorf("%s: session lookup returned invalid id %q: %w", cmdName, sid, err)
 	}
