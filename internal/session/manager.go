@@ -300,16 +300,16 @@ type Candidate struct {
 // maps to, plus the two collision signals the guardrail acts on.
 //
 //   - SelectedID    the chosen session id: the longest-prefix match, and the
-//                   first in ReadDir (lexical) order among equal-length ties —
-//                   deterministic. Empty only when the call returns an error.
+//     first in ReadDir (lexical) order among equal-length ties —
+//     deterministic. Empty only when the call returns an error.
 //   - Candidates    every match at the MAXIMUM prefix length (the contenders).
 //   - HardAmbiguous len(Candidates) > 1: two or more manifests match cwd at the
-//                   same maximum length, so the pick is a coin toss
-//                   (LongestPrefixLookup silently takes the first).
+//     same maximum length, so the pick is a coin toss
+//     (LongestPrefixLookup silently takes the first).
 //   - ScopeSiblings other sessions sharing the selected session's NON-empty
-//                   Scope with a DIFFERENT ProjectPath — the shared-scope hazard
-//                   (e.g. VAL at the repo root + ESC in a worktree of the same
-//                   repo: same scope, different project paths).
+//     Scope with a DIFFERENT ProjectPath — the shared-scope hazard
+//     (e.g. VAL at the repo root + ESC in a worktree of the same
+//     repo: same scope, different project paths).
 type Resolution struct {
 	SelectedID    string
 	Candidates    []Candidate
