@@ -176,6 +176,16 @@ func runAsk(args []string) error {
 		return err
 	}
 
+	// A-4 (F-80): when this is a reply, echo the RESOLVED in-reply-to id so the
+	// sender can confirm it threaded onto the right message — especially with
+	// --in-reply-to=last, where the resolved id is otherwise opaque (an
+	// anti-confabulation aid, LL-13). On stderr, NOT stdout: stdout must stay the
+	// bare msgID for `$(cab-bridge ask ...)` capture (the contract below); the
+	// echo is diagnostic, like the F-34/F-43 warnings above.
+	if inReplyToPtr != nil {
+		fmt.Fprintf(os.Stderr, "ask: replying_to=%s\n", *inReplyToPtr)
+	}
+
 	// Print the message ID on stdout for caller to capture (e.g. for a
 	// subsequent `cab-bridge receive --msg-id=<id>`).
 	fmt.Println(msgID)

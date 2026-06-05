@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -155,4 +156,39 @@ func TestRunAsk_UnknownTypeWithSuggestion_RejectedNotSent(t *testing.T) {
 
 	entries, _ := os.ReadDir(filepath.Join(dataDir, "sessions", target, "inbox"))
 	assert.Empty(t, entries, "an invalid type must not deliver a message")
+}
+
+// TestRunAsk_ReplyingTo_EchoedOnStderrNotStdout is the A-4 (F-80) check: a reply
+// echoes the RESOLVED in-reply-to id (here from --in-reply-to=last) on stderr,
+// while stdout stays the bare msg-id so `$(cab-bridge ask ...)` capture is intact.
+func TestRunAsk_ReplyingTo_EchoedOnStderrNotStdout(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	const sender = "escr0001"
+	const target = "valr0001"
+	const briefID = "msg-cccccccccccc"
+	plantOverviewSession(t, dataDir, sender, session.RoleEsc, "ESC-x", "/repo/x", "", "working")
+	plantOverviewSession(t, dataDir, target, session.RoleVal, "VAL-x", "/repo/x", "", session.StateOrchestrating)
+	// A non-ack message from the target → --in-reply-to=last resolves to it.
+	plantInboxAt(t, dataDir, sender, briefID, target, message.TypeQuery, "brief", time.Now().UTC())
+
+	var runErr error
+	var stderr string
+	stdout := captureStdout(t, func() {
+		stderr = captureStderr(t, func() {
+			runErr = runAsk([]string{"--session-id=" + sender, "--to=" + target, "--type=response", "--in-reply-to=last", "--content=reply"})
+		})
+	})
+	require.NoError(t, runErr)
+
+	// A-4: the resolved in-reply-to id is echoed on STDERR.
+	assert.Contains(t, stderr, "replying_to="+briefID, "the resolved in-reply-to id must be echoed on stderr")
+	// Contract: stdout stays the bare new msg-id (capturable with $(...)), no echo.
+	out := strings.TrimSpace(stdout)
+	assert.True(t, strings.HasPrefix(out, "msg-"), "stdout is the new msg id")
+	assert.NotEqual(t, briefID, out, "stdout is the NEW id, not the replied-to id")
+	assert.NotContains(t, out, "replying_to", "the echo must not pollute stdout")
+	assert.NotContains(t, out, "\n", "stdout is a single line (the msg id only)")
 }
