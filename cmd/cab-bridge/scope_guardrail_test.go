@@ -131,3 +131,51 @@ func TestRunReceiveAny_SharedScope_WarnsStderrStdoutValidJSON(t *testing.T) {
 	assert.Contains(t, stderr, "warning", "the shared-scope hazard warns on stderr")
 	assert.Contains(t, stderr, valID, "the warning names the sibling")
 }
+
+// TestRunListen_SharedScope_NDJSONCleanWarnsStderr is the P3-2 listen leg of
+// vincolo #5: `listen --wait-one --emit=json` resolves through the guardrail
+// (warning on stderr), then on an empty short window exits 0 with a JSON timeout
+// payload on stdout — the warning must not pollute the NDJSON stream.
+func TestRunListen_SharedScope_NDJSONCleanWarnsStderr(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	_, valID := sharedScopePair(t, dataDir)
+
+	var runErr error
+	var stderr string
+	stdout := captureStdout(t, func() {
+		stderr = captureStderr(t, func() {
+			runErr = runListen([]string{"--wait-one", "--emit=json", "--until-deadline=1s", "--no-auto-ack"})
+		})
+	})
+	require.NoError(t, runErr, "an empty --wait-one window exits 0 with a timeout payload (F-24)")
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal([]byte(stdout), &payload), "stdout must be a valid JSON timeout payload, not polluted by the warning")
+	assert.Equal(t, "timeout", payload["status"])
+
+	assert.Contains(t, stderr, "warning", "the shared-scope hazard warns on stderr")
+	assert.Contains(t, stderr, valID, "the warning names the sibling")
+}
+
+// TestRunWhoami_StrictSharedScope_RejectsEndToEnd is the P3-2 strict leg: with
+// CAB_BRIDGE_STRICT_SESSION_LOOKUP=1, an id-free command in a shared scope is
+// REJECTED end-to-end (the warning is promoted to an error) — no silent pick.
+// Complements the pure-predicate strict test in common_test.go.
+func TestRunWhoami_StrictSharedScope_RejectsEndToEnd(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	t.Setenv("CAB_BRIDGE_STRICT_SESSION_LOOKUP", "1")
+	_, valID := sharedScopePair(t, dataDir)
+
+	var runErr error
+	_ = captureStdout(t, func() {
+		_ = captureStderr(t, func() {
+			runErr = runWhoami(nil) // id-free
+		})
+	})
+	require.Error(t, runErr, "strict mode rejects the shared-scope hazard instead of silently picking")
+	assert.Contains(t, runErr.Error(), valID, "the error names the sibling")
+}
