@@ -22,11 +22,19 @@ func runRegister(args []string) error {
 	resume := fs.Bool("resume", false, "resume an existing matching session (same agent-name/role/scope/team) instead of creating a new one — the idempotent post-compact/restart bootstrap (F-27); errors if a live session with this identity already exists (use --force-new for a second instance)")
 	team := fs.String("team", "", "team label isolating this pair from others in the same data dir (F-5); peers --team filters on it")
 	asJSON := fs.Bool("json", true, "emit registration manifest as JSON on stdout (default true)")
+	// A-5: register has no --session-id (the id is DERIVED, not supplied). Define
+	// it only to reject it with an actionable message — the "always pass
+	// --session-id" rule (correct for the shared-scope collision) otherwise hits
+	// the cryptic stdlib "flag provided but not defined: -session-id" here.
+	sessionIDFlag := fs.String("session-id", "", "not supported here — register derives the id from (agent-name, role, scope); use --resume to reconnect an existing session")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
 		return err
+	}
+	if *sessionIDFlag != "" {
+		return errors.New("register: --session-id is not supported here — register derives the id from (agent-name, role, scope); to resume an existing session use `cab-bridge register --resume`")
 	}
 
 	// Validate the team label only when provided — empty is valid ("no team").

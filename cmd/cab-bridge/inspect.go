@@ -17,11 +17,18 @@ func runInspect(args []string) error {
 	fs := flag.NewFlagSet("inspect", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	asJSON := fs.Bool("json", true, "emit JSON on stdout (default true)")
+	// A-5: inspect takes the id as a POSITIONAL argument, not a flag. Define
+	// --session-id only to reject it with an actionable message instead of the
+	// cryptic stdlib "flag provided but not defined: -session-id".
+	sessionIDFlag := fs.String("session-id", "", "not supported here — pass the session id as a positional argument: `cab-bridge inspect <id>`")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
 		return err
+	}
+	if *sessionIDFlag != "" {
+		return errors.New("inspect: --session-id is not supported here — pass the session id as a positional argument: `cab-bridge inspect <id>`")
 	}
 
 	rest := fs.Args()

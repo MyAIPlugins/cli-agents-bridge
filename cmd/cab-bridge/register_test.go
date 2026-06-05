@@ -158,6 +158,19 @@ func TestRunRegister_PopulatesScope(t *testing.T) {
 	assert.Equal(t, wantBare, mf2.Scope, "no marker -> scope is the (canonical) project path itself")
 }
 
+// TestRunRegister_SessionIDFlag_Rejected is the A-5 check: register has no use
+// for --session-id (the id is derived from agent-name/role/scope), so passing
+// it returns an actionable error naming --resume — not the cryptic stdlib
+// "flag provided but not defined: -session-id". The check fires before any FS
+// access, so no CAB_DATA_DIR setup is needed.
+func TestRunRegister_SessionIDFlag_Rejected(t *testing.T) {
+	t.Parallel()
+	err := runRegister([]string{"--session-id=abc123", "--role=esc"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "register: --session-id is not supported here")
+	assert.Contains(t, err.Error(), "--resume", "the message must teach the correct alternative")
+}
+
 // captureStdout redirects os.Stdout for the duration of fn and returns what was
 // written, so register's manifest/ID output does not pollute test logs.
 func captureStdout(t *testing.T, fn func()) string {
