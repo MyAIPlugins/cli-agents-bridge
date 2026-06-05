@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -190,4 +191,60 @@ func resolveScope(path string) string {
 		return resolved
 	}
 	return scope
+}
+
+// evaluateResolution is the PURE B-1 guardrail predicate: given a cwd Resolution
+// it decides what an id-free command should do, with NO I/O. It returns either
+// an error (a HARD ambiguity always; a shared-scope hazard only under strict
+// mode) or the selected id plus an optional warning string to print on stderr
+// (a shared-scope hazard in the default mode). Kept separate from
+// resolveCurrentSession so the policy is table-testable without os.Getwd/stderr.
+//
+// Every message names the remediation `--session-id=<id>` with the flag BEFORE
+// any positional, consistent with A-1/A-5 — in a shared scope the caller must be
+// able to copy-paste an EXECUTABLE command.
+func evaluateResolution(cmdName, cwd string, res session.Resolution, strict bool) (sid, warnMsg string, err error) {
+	if res.HardAmbiguous {
+		return "", "", fmt.Errorf("%s: ambiguous: %d sessions match this cwd %q at the same path depth — pass one of: %s",
+			cmdName, len(res.Candidates), cwd, formatCandidateChoices(res.Candidates))
+	}
+	if len(res.ScopeSiblings) > 0 {
+		msg := formatSharedScopeWarning(cmdName, cwd, res)
+		if strict {
+			// Opt-in CAB_BRIDGE_STRICT_SESSION_LOOKUP=1 promotes the hazard to a
+			// hard error (same text, no "warning:" prefix nuance needed — it is
+			// returned as an error, which the cmd layer surfaces on stderr+exit 1).
+			return "", "", errors.New(msg)
+		}
+		return res.SelectedID, msg, nil
+	}
+	return res.SelectedID, "", nil
+}
+
+// formatCandidateChoices renders the hard-ambiguity contenders as a list of
+// executable `--session-id=<id> (<projectPath>)` choices, so the caller copies
+// one verbatim. Flag-before-value, consistent with A-1/A-5.
+func formatCandidateChoices(cands []session.Candidate) string {
+	parts := make([]string, 0, len(cands))
+	for _, c := range cands {
+		parts = append(parts, fmt.Sprintf("--session-id=%s (%s)", c.ID, c.ProjectPath))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// formatSharedScopeWarning renders the shared-scope hazard message: the resolved
+// session, the sibling sessions sharing its scope with a different project path,
+// and the executable remediation. Multi-line, on stderr only (the cmd layer
+// keeps stdout clean for --json / --emit). The remediation names the resolved
+// id with the flag before any positional (A-1/A-5).
+func formatSharedScopeWarning(cmdName, cwd string, res session.Resolution) string {
+	sel := res.Candidates[0] // == the SelectedID candidate
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s: warning: cwd %q resolved to session %s (%s, role %s, project %s), but %d other session(s) share its scope %q with a different project path:",
+		cmdName, cwd, sel.ID, sel.AgentName, sel.Role, sel.ProjectPath, len(res.ScopeSiblings), sel.Scope)
+	for _, s := range res.ScopeSiblings {
+		fmt.Fprintf(&b, "\n  - %s (%s, role %s, project %s)", s.ID, s.AgentName, s.Role, s.ProjectPath)
+	}
+	fmt.Fprintf(&b, "\n  pass --session-id=<id> to be explicit (e.g. cab-bridge %s --session-id=%s ...)", cmdName, sel.ID)
+	return b.String()
 }

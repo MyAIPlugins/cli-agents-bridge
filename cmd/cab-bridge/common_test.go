@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
 // SC-7 boot check (FINDING-1). Owner-mismatch (Stat_t.Uid != Getuid) is not
@@ -16,6 +18,66 @@ import (
 // NOTE: package main's init() sets Umask(0o077), so to simulate a loose-perms
 // directory we must Chmod explicitly after creation (MkdirAll would be masked
 // back to 0700).
+
+// --- B-1 guardrail predicate (evaluateResolution) — pure, table-style ---
+
+func resWith(selected string, candidates, siblings []session.Candidate, hard bool) session.Resolution {
+	return session.Resolution{
+		SelectedID:    selected,
+		Candidates:    candidates,
+		HardAmbiguous: hard,
+		ScopeSiblings: siblings,
+	}
+}
+
+func TestEvaluateResolution_CleanSingle(t *testing.T) {
+	t.Parallel()
+	sel := session.Candidate{ID: "sel00001", ProjectPath: "/repo/p", Scope: "/repo/p", AgentName: "ESC-x", Role: "esc"}
+	sid, warn, err := evaluateResolution("ask", "/repo/p", resWith("sel00001", []session.Candidate{sel}, nil, false), false)
+	require.NoError(t, err)
+	assert.Equal(t, "sel00001", sid)
+	assert.Empty(t, warn, "a clean single match warns nothing")
+}
+
+func TestEvaluateResolution_HardAmbiguityRejects(t *testing.T) {
+	t.Parallel()
+	cands := []session.Candidate{
+		{ID: "amb00001", ProjectPath: "/repo/x", AgentName: "VAL-x", Role: "val"},
+		{ID: "amb00002", ProjectPath: "/repo/x", AgentName: "ESC-x", Role: "esc"},
+	}
+	sid, warn, err := evaluateResolution("read", "/repo/x", resWith("amb00001", cands, nil, true), false)
+	require.Error(t, err)
+	assert.Empty(t, sid)
+	assert.Empty(t, warn)
+	assert.Contains(t, err.Error(), "read: ambiguous")
+	assert.Contains(t, err.Error(), "--session-id=amb00001")
+	assert.Contains(t, err.Error(), "--session-id=amb00002", "both contenders are offered as executable choices")
+}
+
+func TestEvaluateResolution_SharedScopeWarnsNotStrict(t *testing.T) {
+	t.Parallel()
+	sel := session.Candidate{ID: "esc00001", ProjectPath: "/repo/wt", Scope: "/repo/main", AgentName: "ESC-x", Role: "esc"}
+	sib := session.Candidate{ID: "val00001", ProjectPath: "/repo/main", Scope: "/repo/main", AgentName: "VAL-x", Role: "val"}
+	sid, warn, err := evaluateResolution("overview", "/repo/wt/internal", resWith("esc00001", []session.Candidate{sel}, []session.Candidate{sib}, false), false)
+	require.NoError(t, err, "default mode warns, does not reject")
+	assert.Equal(t, "esc00001", sid)
+	assert.Contains(t, warn, "overview: warning")
+	assert.Contains(t, warn, "/repo/main", "names the shared scope")
+	assert.Contains(t, warn, "val00001", "lists the sibling")
+	assert.Contains(t, warn, "--session-id=esc00001", "executable remediation")
+}
+
+func TestEvaluateResolution_SharedScopeStrictRejects(t *testing.T) {
+	t.Parallel()
+	sel := session.Candidate{ID: "esc00001", ProjectPath: "/repo/wt", Scope: "/repo/main", AgentName: "ESC-x", Role: "esc"}
+	sib := session.Candidate{ID: "val00001", ProjectPath: "/repo/main", Scope: "/repo/main", AgentName: "VAL-x", Role: "val"}
+	sid, warn, err := evaluateResolution("state", "/repo/wt", resWith("esc00001", []session.Candidate{sel}, []session.Candidate{sib}, false), true)
+	require.Error(t, err, "strict mode promotes the hazard to an error")
+	assert.Empty(t, sid)
+	assert.Empty(t, warn)
+	assert.Contains(t, err.Error(), "/repo/main")
+	assert.Contains(t, err.Error(), "val00001")
+}
 
 func TestBootstrapDataDir_FirstRunCreates0700(t *testing.T) {
 	base := filepath.Join(t.TempDir(), "newbase")
