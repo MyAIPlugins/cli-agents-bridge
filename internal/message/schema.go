@@ -69,19 +69,28 @@ func IsValidType(t string) bool {
 // "inReplyTo": null in JSON (semantically distinct from "" empty-but-present).
 // The Patil upstream format uses null, and PLAN keeps the convention.
 type Message struct {
-	ID            string   `json:"id"`
-	SchemaVersion int      `json:"schemaVersion"`
-	From          string   `json:"from"`
-	FromRole      string   `json:"fromRole"`
-	FromAgentName string   `json:"fromAgentName"`
-	To            string   `json:"to"`
-	ToRole        string   `json:"toRole"`
-	Type          string   `json:"type"`
-	Timestamp     string   `json:"timestamp"`
-	Status        string   `json:"status"`
-	Content       string   `json:"content"`
-	InReplyTo     *string  `json:"inReplyTo"`
-	Metadata      Metadata `json:"metadata"`
+	ID            string  `json:"id"`
+	SchemaVersion int     `json:"schemaVersion"`
+	From          string  `json:"from"`
+	FromRole      string  `json:"fromRole"`
+	FromAgentName string  `json:"fromAgentName"`
+	To            string  `json:"to"`
+	ToRole        string  `json:"toRole"`
+	Type          string  `json:"type"`
+	Timestamp     string  `json:"timestamp"`
+	Status        string  `json:"status"`
+	Content       string  `json:"content"`
+	InReplyTo     *string `json:"inReplyTo"`
+	// Closes lists every message this reply archives (DESIGN v0.8 §2.3). The
+	// schema has a single InReplyTo, which carries the ANCHOR — the oldest open
+	// ask of the set — while Closes carries the full set. Without it, a reply
+	// that closes two asks would imply two identities for one response, while
+	// the interface promises exactly one.
+	//
+	// omitempty: only a reply ever sets it, so every other message stays
+	// byte-identical to what earlier versions produced.
+	Closes   []string `json:"closes,omitempty"`
+	Metadata Metadata `json:"metadata"`
 }
 
 // Metadata is the inner object reserved for routing/observability fields

@@ -27,37 +27,29 @@ func TestScenario1_OneValOneEscRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	dataDir := t.TempDir()
-	projVal := t.TempDir()
-	projEsc := t.TempDir()
+	// One scope, two working directories: the shape the v0.8 verbs need to
+	// resolve a recipient by agent name.
+	dirs := sharedScopeDirs(t, "val", "esc")
+	projVal, projEsc := dirs[0], dirs[1]
 
-	// Register VAL
-	out, errOut, exit := run(t, []string{"register", "--role=val", "--agent-name=VAL-int", "--project-path=" + projVal}, dataDirEnv(dataDir))
-	require.Equal(t, 0, exit, "register VAL must succeed (stderr: %s)", errOut)
-	valID := mustJSONField(t, out, "sessionId")
+	valID := registerIn(t, dataDir, projVal, "val", "VAL-int")
 	require.NotEmpty(t, valID)
-
-	// Register ESC
-	out, errOut, exit = run(t, []string{"register", "--role=esc", "--agent-name=ESC-int", "--project-path=" + projEsc}, dataDirEnv(dataDir))
-	require.Equal(t, 0, exit, "register ESC must succeed (stderr: %s)", errOut)
-	escID := mustJSONField(t, out, "sessionId")
+	escID := registerIn(t, dataDir, projEsc, "esc", "ESC-int")
 	require.NotEmpty(t, escID)
+	_ = projEsc
 
-	// VAL sends 10 messages alternating type=query / ping / notify
-	types := []string{"query", "ping", "notify", "query", "ping", "notify", "query", "query", "ping", "notify"}
-	sentIDs := make([]string, 0, len(types))
-	for i, ty := range types {
+	// VAL sends 10 messages alternating the two outbound verbs. The verb now
+	// carries the type (ask=query, tell=notify), so the old --type list is
+	// expressed as an alternation; what this scenario asserts is that none of
+	// the ten is lost, not which type each one had.
+	verbs := []string{"ask", "tell", "ask", "tell", "ask", "tell", "ask", "ask", "tell", "tell"}
+	sentIDs := make([]string, 0, len(verbs))
+	for i, verb := range verbs {
 		content := "msg-" + string(rune('a'+i))
-		args := []string{
-			"ask",
-			"--to=" + escID,
-			"--type=" + ty,
-			"--content=" + content,
-			"--session-id=" + valID,
-		}
-		out, errOut, exit = run(t, args, dataDirEnv(dataDir))
-		require.Equal(t, 0, exit, "ask %d must succeed (stderr: %s)", i, errOut)
-		msgID := strings.TrimSpace(out)
-		require.True(t, strings.HasPrefix(msgID, "msg-"), "ask must emit message ID; got %q", msgID)
+		out, errOut, exit := runInDir(t, projVal, []string{verb, "ESC-int", content}, dataDirEnv(dataDir))
+		require.Equal(t, 0, exit, "%s %d must succeed (stderr: %s)", verb, i, errOut)
+		msgID := extractMsgID(out)
+		require.True(t, strings.HasPrefix(msgID, "msg-"), "%s must echo the message ID; got %q", verb, out)
 		sentIDs = append(sentIDs, msgID)
 	}
 
@@ -74,7 +66,7 @@ func TestScenario1_OneValOneEscRoundTrip(t *testing.T) {
 	assert.Equal(t, 10, gotJSON, "ESC inbox must contain all 10 dispatched messages")
 
 	// status on ESC reports inboxCount=10
-	out, _, exit = run(t, []string{"status", "--session-id=" + escID}, dataDirEnv(dataDir))
-	require.Equal(t, 0, exit)
-	assert.Contains(t, out, `"inboxCount": 10`, "status must report inboxCount=10")
+	statusOut, _, statusExit := run(t, []string{"status", "--session-id=" + escID}, dataDirEnv(dataDir))
+	require.Equal(t, 0, statusExit)
+	assert.Contains(t, statusOut, `"inboxCount": 10`, "status must report inboxCount=10")
 }

@@ -74,10 +74,7 @@ func TestScenarioAutoAck_ListenAcksQuerySender(t *testing.T) {
 	require.Equal(t, 0, exit, "register ESC: %s", errOut)
 	escID := mustJSONField(t, out, "sessionId")
 
-	out, errOut, exit = run(t, []string{"ask", "--session-id=" + valID, "--to=" + escID, "--type=query", "--content=brief"}, dataDirEnv(dataDir))
-	require.Equal(t, 0, exit, "ask: %s", errOut)
-	queryID := strings.TrimSpace(out)
-	require.True(t, strings.HasPrefix(queryID, "msg-"), "ask must emit a message id; got %q", queryID)
+	queryID := plantQuery(t, dataDir, escID, valID, "val", "VAL-aa", "brief")
 
 	listenCmd := exec.Command(bin, "listen", "--session-id="+escID)
 	listenCmd.Env = append(os.Environ(), dataDirEnv(dataDir)...)
@@ -117,9 +114,7 @@ func TestScenarioAutoAck_NoAutoAckFlagSuppresses(t *testing.T) {
 	require.Equal(t, 0, exit, "register ESC: %s", errOut)
 	escID := mustJSONField(t, out, "sessionId")
 
-	out, errOut, exit = run(t, []string{"ask", "--session-id=" + valID, "--to=" + escID, "--type=query", "--content=brief"}, dataDirEnv(dataDir))
-	require.Equal(t, 0, exit, "ask: %s", errOut)
-	queryID := strings.TrimSpace(out)
+	queryID := plantQuery(t, dataDir, escID, valID, "val", "VAL-aa", "brief")
 
 	listenCmd := exec.Command(bin, "listen", "--session-id="+escID, "--no-auto-ack")
 	listenCmd.Env = append(os.Environ(), dataDirEnv(dataDir)...)

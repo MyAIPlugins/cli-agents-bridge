@@ -9,13 +9,16 @@ package integration
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -113,4 +116,104 @@ func mustJSONField(t *testing.T, jsonOut, fieldName string) string {
 		}
 	}
 	return tail
+}
+
+// plantQuery writes a query straight into the recipient's inbox and returns its
+// id, without going through any sending command.
+//
+// Tests that exercise the CONSUME side (auto-ack, inbox observability) only
+// needed `ask` as a way to produce an inbound message; coupling them to the
+// sending surface made them fail whenever that surface changed, which says
+// nothing about the behaviour under test. The v0.8 verbs resolve recipients by
+// agent name within a shared scope, a setup these tests have no reason to
+// build just to obtain one file on disk.
+func plantQuery(t *testing.T, dataDir, toSID, fromSID, fromRole, fromName, content string) string {
+	t.Helper()
+	inbox := filepath.Join(dataDir, "sessions", toSID, "inbox")
+	require.NoError(t, os.MkdirAll(inbox, 0o700))
+
+	id, err := message.GenerateMessageID()
+	require.NoError(t, err)
+
+	m := message.Message{
+		ID:            id,
+		SchemaVersion: message.SchemaVersionV2,
+		From:          fromSID,
+		FromRole:      fromRole,
+		FromAgentName: fromName,
+		To:            toSID,
+		ToRole:        "esc",
+		Type:          message.TypeQuery,
+		Timestamp:     time.Now().UTC().Format(time.RFC3339Nano),
+		Status:        message.StatusPending,
+		Content:       content,
+		Metadata:      message.Metadata{FromProject: "itest", ProcessingState: message.StatusPending},
+	}
+	data, err := json.Marshal(&m)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(inbox, id+".json"), data, 0o600))
+	return id
+}
+
+// runInDir is run() with an explicit working directory, needed by the v0.8
+// verbs: they resolve the caller's session from the cwd and take no
+// --session-id.
+func runInDir(t *testing.T, dir string, args []string, env []string) (stdout, stderr string, exit int) {
+	t.Helper()
+	bin := buildBinary(t)
+	cmd := exec.Command(bin, args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), env...)
+	var outB, errB bytes.Buffer
+	cmd.Stdout = &outB
+	cmd.Stderr = &errB
+
+	err := cmd.Run()
+	if err == nil {
+		return outB.String(), errB.String(), 0
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return outB.String(), errB.String(), exitErr.ExitCode()
+	}
+	t.Fatalf("subprocess invocation error (not an ExitError): %v\nstderr: %s", err, errB.String())
+	return outB.String(), errB.String(), -1
+}
+
+// sharedScopeDirs creates a base holding a git marker plus one working
+// directory per name, so every session registered there shares ONE scope while
+// keeping a distinct projectPath — the same shape real git worktrees have, and
+// the shape the v0.8 verbs need to resolve a recipient by agent name.
+func sharedScopeDirs(t *testing.T, names ...string) []string {
+	t.Helper()
+	base := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700))
+	dirs := make([]string, 0, len(names))
+	for _, n := range names {
+		d := filepath.Join(base, n)
+		require.NoError(t, os.MkdirAll(d, 0o700))
+		dirs = append(dirs, d)
+	}
+	return dirs
+}
+
+// registerIn registers a session from dir and returns its id.
+func registerIn(t *testing.T, dataDir, dir, role, agentName string) string {
+	t.Helper()
+	out, errOut, exit := runInDir(t, dir, []string{"register", "--role=" + role, "--agent-name=" + agentName}, dataDirEnv(dataDir))
+	require.Equal(t, 0, exit, "register %s: %s", agentName, errOut)
+	return mustJSONField(t, out, "sessionId")
+}
+
+// extractMsgID pulls the message id out of a verb's echo line
+// ("→ ESC-int (msg-abc123...)").
+func extractMsgID(out string) string {
+	if i := strings.Index(out, "msg-"); i >= 0 {
+		rest := out[i:]
+		if j := strings.IndexAny(rest, " )\n\t,"); j > 0 {
+			return rest[:j]
+		}
+		return strings.TrimSpace(rest)
+	}
+	return strings.TrimSpace(out)
 }

@@ -65,9 +65,7 @@ func TestScenarioObserve_PeersAndStatusExposeInboxAndLastConsumed(t *testing.T) 
 	require.Equal(t, 0, exit, "register ESC: %s", errOut)
 	escID := mustJSONField(t, out, "sessionId")
 
-	out, errOut, exit = run(t, []string{"ask", "--session-id=" + valID, "--to=" + escID, "--type=query", "--content=brief"}, dataDirEnv(dataDir))
-	require.Equal(t, 0, exit, "ask: %s", errOut)
-	queryID := trimSpaceLocal(out)
+	queryID := plantQuery(t, dataDir, escID, valID, "val", "VAL-obs", "brief")
 
 	// Before consumption: ESC has 1 pending, no lastConsumed.
 	st := statusOf(t, dataDir, escID)

@@ -52,7 +52,11 @@ func main() {
 	case "next":
 		exitFromErr(runNext(os.Args[2:]))
 	case "ask":
-		exitFromErr(runAsk(os.Args[2:]))
+		exitFromErr(runAskVerb(os.Args[2:]))
+	case "tell":
+		exitFromErr(runTell(os.Args[2:]))
+	case "reply":
+		exitFromErr(runReply(os.Args[2:]))
 	case "connect":
 		exitFromErr(runConnect(os.Args[2:]))
 	case "receive":

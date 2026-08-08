@@ -55,9 +55,7 @@ func TestScenarioWaitOne_SingleMessage_ExitsZero(t *testing.T) {
 
 	valID, escID := registerPair(t, dataDir, "wo1")
 
-	out, errOut, exit := run(t, []string{"ask", "--session-id=" + valID, "--to=" + escID, "--type=query", "--content=brief"}, dataDirEnv(dataDir))
-	require.Equal(t, 0, exit, "ask: %s", errOut)
-	queryID := strings.TrimSpace(out)
+	queryID := plantQuery(t, dataDir, escID, valID, "val", "VAL-x", "brief")
 	require.True(t, strings.HasPrefix(queryID, "msg-"))
 
 	stdout, errOut, exit := run(t, []string{"listen", "--wait-one", "--session-id=" + escID},
@@ -85,13 +83,9 @@ func TestScenarioWaitOne_TwoMessages_NoneLost(t *testing.T) {
 
 	valID, escID := registerPair(t, dataDir, "wo2")
 
-	out, errOut, exit := run(t, []string{"ask", "--session-id=" + valID, "--to=" + escID, "--type=query", "--content=first"}, dataDirEnv(dataDir))
-	require.Equal(t, 0, exit, "ask 1: %s", errOut)
-	id1 := strings.TrimSpace(out)
+	id1 := plantQuery(t, dataDir, escID, valID, "val", "VAL-x", "first")
 
-	out, errOut, exit = run(t, []string{"ask", "--session-id=" + valID, "--to=" + escID, "--type=query", "--content=second"}, dataDirEnv(dataDir))
-	require.Equal(t, 0, exit, "ask 2: %s", errOut)
-	id2 := strings.TrimSpace(out)
+	id2 := plantQuery(t, dataDir, escID, valID, "val", "VAL-x", "second")
 	require.NotEqual(t, id1, id2)
 
 	stdout, errOut, exit := run(t, []string{"listen", "--wait-one", "--session-id=" + escID},
@@ -114,9 +108,7 @@ func TestScenarioWaitOne_NoAutoAck_SuppressesReceipt(t *testing.T) {
 
 	valID, escID := registerPair(t, dataDir, "wona")
 
-	out, errOut, exit := run(t, []string{"ask", "--session-id=" + valID, "--to=" + escID, "--type=query", "--content=brief"}, dataDirEnv(dataDir))
-	require.Equal(t, 0, exit, "ask: %s", errOut)
-	queryID := strings.TrimSpace(out)
+	queryID := plantQuery(t, dataDir, escID, valID, "val", "VAL-x", "brief")
 
 	stdout, errOut, exit := run(t, []string{"listen", "--wait-one", "--no-auto-ack", "--session-id=" + escID},
 		dataDirEnv(dataDir, "CAB_POLL_INTERVAL_MS=50"))
