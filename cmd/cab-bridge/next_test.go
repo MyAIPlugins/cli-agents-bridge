@@ -808,3 +808,34 @@ func TestNext_SummaryCarriesOutboundAndOpenAsks(t *testing.T) {
 
 	assert.Equal(t, 1, page.OpenAsks, "the ask just delivered is now open on my side")
 }
+
+// TestNext_InterruptedRecordCarriesOutbound is "and the branch next door?"
+// applied to the summary itself.
+//
+// outbound was added to the EMITTING pass; its complement is the pass that
+// emits nothing, and that is exactly where "did my brief arrive?" is asked
+// hardest — the agent asked, waited, and got nothing back. openAsks is
+// deliberately absent: no page was emitted, so that number has not changed.
+func TestNext_InterruptedRecordCarriesOutbound(t *testing.T) {
+	mgr, cfg, sid, dataDir := newNextSession(t)
+	const peer = "valint01"
+	plantOverviewSession(t, dataDir, peer, session.RoleVal, "VAL-int", "/repo/next", "", session.StateOrchestrating)
+
+	now := time.Now().UTC()
+	plantInboxAt(t, dataDir, peer, "msg-aaaaaaaaaaaa", sid, message.TypeQuery, "my brief", now.Add(-20*time.Minute))
+	plantOutboxAt(t, dataDir, sid, "msg-aaaaaaaaaaaa", peer, message.TypeQuery, "my brief", now.Add(-20*time.Minute))
+
+	// An empty mailbox: the wait is interrupted having delivered nothing.
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, nextRun(ctx, mgr, cfg, sid, &stdout, &stderr))
+
+	var rec nextCommitRecord
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &rec))
+	require.Equal(t, nextStatusInterrupted, rec.Status)
+	require.Len(t, rec.Outbound, 1, "the one thing the agent cannot work out for itself must be here")
+	assert.Equal(t, "VAL-int", rec.Outbound[0].To)
+	assert.NotEmpty(t, rec.Outbound[0].Age)
+	assert.NotNil(t, rec.Confirmed, "confirmed stays an array on every path")
+}

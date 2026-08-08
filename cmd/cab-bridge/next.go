@@ -139,7 +139,13 @@ type nextCommitRecord struct {
 	// Confirmed is always an array, never null: a consumer that iterates it
 	// should not have to special-case the paths that confirm nothing.
 	Confirmed []string `json:"confirmed"`
-	Hint      string   `json:"hint"`
+	// Outbound rides on the interrupted record too. That path is the complement
+	// of the emitting one, and it is where "did my brief arrive?" is asked
+	// hardest: the agent asked, waited, and got nothing back. openAsks is NOT
+	// repeated here — no page was emitted, so that number has not changed and
+	// restating it would be noise.
+	Outbound []outboundAsk `json:"outbound,omitempty"`
+	Hint     string        `json:"hint"`
 }
 
 // newCommitRecord keeps Confirmed non-nil for every exit path.
@@ -318,7 +324,10 @@ func nextRun(parent context.Context, mgr *session.Manager, cfg config.Config, si
 			// zero bytes leaves a wrapper unable to tell "interrupted while
 			// waiting" from "nothing happened at all", and every other exit path
 			// here says what it did.
-			return enc.Encode(newCommitRecord(nextStatusInterrupted, sid, owner.Generation, nil, "the wait was interrupted before anything arrived — nothing was delivered; run next again when you are ready"))
+			rec := newCommitRecord(nextStatusInterrupted, sid, owner.Generation, nil,
+				"the wait was interrupted before anything arrived — nothing was delivered; run next again when you are ready")
+			rec.Outbound = collectOutboundAsks(mgr, cfg, sid)
+			return enc.Encode(rec)
 		case <-time.After(pollInterval):
 		}
 	}
