@@ -1,0 +1,19 @@
+docs/DESIGN-v0.8-mailbox.md
+  s_c3a7b4ab630317::t_1e5467468ddd69 103,105-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "cdb21dccdf031f274afb46227a6dcd10d0b4d900",
+  "prompts": {},
+  "sessions": {
+    "s_c3a7b4ab630317": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54f2afc1-7dea-42b7-a40d-0d4c6f0e3eea",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
