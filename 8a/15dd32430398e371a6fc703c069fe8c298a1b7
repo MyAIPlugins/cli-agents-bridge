@@ -1,0 +1,39 @@
+internal/session/wakecursor.go
+  s_13b14428c16427::t_5116eca9d83b9d 135-176
+cmd/cab-bridge/join_test.go
+  s_13b14428c16427::t_79c936e77825c7 5,10,133-189
+tests/integration/scenario2_test.go
+  s_13b14428c16427::t_05d594fe2f445a 47-52
+cmd/cab-bridge/verbs.go
+  s_13b14428c16427::t_e6b049dadc39cb 348-356
+  s_13b14428c16427::t_2df0e9e3ccf655 119
+  s_13b14428c16427::t_7e840a357d38c1 273,596-597,610-649
+  s_13b14428c16427::t_4cc470e7ea2387 15,41-44,251-257,263-270
+  s_13b14428c16427::t_b32a39780e2d96 339-345,379-381,395-398,414,444-453,481-492
+  s_13b14428c16427::t_eaa4bd7fde100e 112-118,120-123
+  s_13b14428c16427::t_a36f41c908f830 650
+cmd/cab-bridge/verbs_test.go
+  s_13b14428c16427::t_7401e126cc6ff1 254,261,268,275,282,289,472,475
+cmd/cab-bridge/dedup.go
+  s_13b14428c16427::t_7dd337c9e032df 43,45,79
+  s_13b14428c16427::t_72e979ca8fc781 31-39
+cmd/cab-bridge/join.go
+  s_13b14428c16427::t_5116eca9d83b9d 14-15,140-156,169-188
+  s_13b14428c16427::t_58b3d122c23d10 189-190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "8a15dd32430398e371a6fc703c069fe8c298a1b7",
+  "prompts": {},
+  "sessions": {
+    "s_13b14428c16427": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5bb10dbc-fcae-44e8-acd6-603d11cfd57f",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
