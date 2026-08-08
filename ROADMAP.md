@@ -7,7 +7,9 @@
 
 ## Status corrente — 2026-08-08
 
-**Fase**: 🎯 **v0.8 — arco "KISS per AI" IMPLEMENTATO, ultimo giro di gate prima del merge**
+**Fase**: ✅ **v0.8 — arco "KISS per AI" MERGIATO in `main`, binario installato, `origin/main` pushato. NON taggato: il tag `v0.8.0` e la Release aspettano l'uso reale** (decisione di Alan, 8 ago — è la rottura più grande del progetto e ogni release precedente è stata taggata dopo il testing sul campo).
+
+Merge `f6cb926` (25 commit, gate indipendente verde a ognuno) · CHANGELOG `[0.8.0]` `9bb1faf` · binario in PATH **`0.7.0-60-g9bb1faf`** · **le tre skill riscritte** `d6d9735` (la pubblica nel repo; la personale VAL e quella Codex fuori dal repo) — riscritte e non ritoccate, perché il modello mentale è cambiato per intero e quasi tutto il contenuto operativo precedente descriveva meccanismi rimossi. Gate finale su `main` dopo il merge (LL-11: è codice diverso da quello gattato sul branch): `go vet` rc=0, `go test -race -count=1 ./...` **11/11 zero cached**, `gofmt` pulito.
 
 Design doc: `docs/DESIGN-v0.8-mailbox.md` — **rev.7**, dopo **quattro giri completi** di design-gate con CRI (Codex, cross-vendor) e CRI2 (Fable, lente ergonomia). Setup: quadriade VAL/ESC/CRI/CRI2 — ESC in worktree, i critici in cartelle del repo principale (`docs/`, `cmd/`) — coordinata sul bridge stesso.
 
