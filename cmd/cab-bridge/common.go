@@ -180,6 +180,40 @@ func resolveScope(path string) string {
 	return scope
 }
 
+// resolveEnvSessionID reads CAB_SESSION_ID, the middle rung of the precedence
+// ladder: --session-id > CAB_SESSION_ID > lookup-by-cwd.
+//
+// It exists for the setup where several agents work from different directories
+// of the SAME repository. There the dangerous case is not a command that fails
+// — F-97 makes that one readable — but one that SUCCEEDS wrongly: an agent
+// running from the repo root resolves the session that lives at the root, reads
+// somebody else's mail, and nothing anywhere reports a problem. A stolen
+// delivery, in silence. With the identity in the environment the cwd stops
+// being a semantic input and the case cannot arise.
+//
+// Set once when the shell starts, never transcribed per command: it is
+// environment, not an id the agent maneuvers (LL-14).
+//
+// FAIL-CLOSED, both ways. A malformed value is an error, and so is a
+// well-formed one naming a session that does not exist — a stale export (the
+// session was cleaned up, or came from another data dir) must not silently fall
+// back to the cwd, because that would resurrect exactly the ambiguity this
+// variable removes. AllOrNothing: no implicit fallback.
+func resolveEnvSessionID(mgr *session.Manager, cmdName string) (sid string, ok bool, err error) {
+	raw := strings.TrimSpace(os.Getenv("CAB_SESSION_ID"))
+	if raw == "" {
+		return "", false, nil
+	}
+	sid, verr := validateExplicitSessionID(raw)
+	if verr != nil {
+		return "", false, fmt.Errorf("%s: CAB_SESSION_ID=%q is not a valid session id: %w (unset it, or fix it — it is not ignored)", cmdName, raw, verr)
+	}
+	if _, lerr := mgr.LoadManifest(sid); lerr != nil {
+		return "", false, fmt.Errorf("%s: CAB_SESSION_ID=%s names a session that does not exist in this data dir — unset it or point it at a live session; it is NOT ignored in favour of the current directory", cmdName, sid)
+	}
+	return sid, true, nil
+}
+
 // evaluateResolution is the PURE B-1 guardrail predicate: given a cwd Resolution
 // it decides what an id-free command should do, with NO I/O. It returns either
 // an error (a HARD ambiguity always; a shared-scope hazard only under strict
@@ -257,6 +291,9 @@ func formatSharedScopeWarning(cmdName, cwd string, res session.Resolution) strin
 //     validates and returns it). A disciplined caller that always passes the id
 //     sees zero warnings — the warning appears only when the id is omitted in a
 //     scope where it is genuinely ambiguous.
+//   - Otherwise CAB_SESSION_ID is consulted (see resolveEnvSessionID): it makes
+//     identity explicit without the agent ever transcribing an id — it is set
+//     once when the shell starts, not typed per command (LL-14).
 //   - Otherwise "me" is resolved from the cwd via LookupByCWDDetails and the pure
 //     evaluateResolution predicate is applied: a HARD ambiguity is rejected; a
 //     shared-scope hazard warns on stderr (or, with
@@ -273,6 +310,12 @@ func resolveCurrentSession(mgr *session.Manager, cmdName, sessionIDFlag string) 
 		}
 		return sid, nil
 	}
+	if sid, ok, err := resolveEnvSessionID(mgr, cmdName); err != nil {
+		return "", err
+	} else if ok {
+		return sid, nil
+	}
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("%s: getwd for session lookup: %w", cmdName, err)

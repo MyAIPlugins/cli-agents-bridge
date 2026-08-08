@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
@@ -218,4 +219,70 @@ func TestRunWhoami_StrictSharedScope_RejectsEndToEnd(t *testing.T) {
 	})
 	require.Error(t, runErr, "strict mode rejects the shared-scope hazard instead of silently picking")
 	assert.Contains(t, runErr.Error(), valID, "the error names the sibling")
+}
+
+// --- CAB_SESSION_ID in input (1c voce B) ------------------------------------
+
+// TestResolveCurrentSession_EnvPrecedence pins the ladder
+// --session-id > CAB_SESSION_ID > lookup-by-cwd, and the fail-closed behaviour
+// that makes the middle rung trustworthy.
+func TestResolveCurrentSession_EnvPrecedence(t *testing.T) {
+	setup := func(t *testing.T) (*session.Manager, string, string) {
+		t.Helper()
+		dataDir := t.TempDir()
+		t.Setenv("CAB_DATA_DIR", dataDir)
+		t.Setenv("CAB_AUTO_GC_HOURS", "0")
+		escID, valID := sharedScopePair(t, dataDir) // cwd == ESC's projectPath
+		cfg := config.DefaultConfig()
+		cfg.DataDir = dataDir
+		return newSessionManager(cfg), escID, valID
+	}
+
+	t.Run("env_wins_over_cwd", func(t *testing.T) {
+		mgr, escID, valID := setup(t)
+		t.Setenv("CAB_SESSION_ID", valID)
+		got, err := resolveCurrentSession(mgr, "next", "")
+		require.NoError(t, err)
+		assert.Equal(t, valID, got, "the environment decides, not the directory")
+		assert.NotEqual(t, escID, got)
+	})
+
+	t.Run("flag_wins_over_env", func(t *testing.T) {
+		mgr, escID, valID := setup(t)
+		t.Setenv("CAB_SESSION_ID", valID)
+		got, err := resolveCurrentSession(mgr, "read", escID)
+		require.NoError(t, err)
+		assert.Equal(t, escID, got, "an explicit flag outranks the environment")
+	})
+
+	t.Run("cwd_used_when_env_unset", func(t *testing.T) {
+		mgr, escID, _ := setup(t)
+		got, err := resolveCurrentSession(mgr, "next", "")
+		require.NoError(t, err)
+		assert.Equal(t, escID, got)
+	})
+
+	t.Run("malformed_env_is_an_error_not_a_fallback", func(t *testing.T) {
+		mgr, _, _ := setup(t)
+		t.Setenv("CAB_SESSION_ID", "NOT A VALID ID")
+		_, err := resolveCurrentSession(mgr, "next", "")
+		require.Error(t, err, "a bad value must never be ignored in favour of the cwd")
+		assert.Contains(t, err.Error(), "CAB_SESSION_ID")
+	})
+
+	t.Run("nonexistent_env_session_is_an_error", func(t *testing.T) {
+		mgr, _, _ := setup(t)
+		t.Setenv("CAB_SESSION_ID", "deadbe01")
+		_, err := resolveCurrentSession(mgr, "next", "")
+		require.Error(t, err, "a stale export must be reported, not silently replaced by the cwd")
+		assert.Contains(t, err.Error(), "does not exist")
+	})
+
+	t.Run("empty_env_is_treated_as_unset", func(t *testing.T) {
+		mgr, escID, _ := setup(t)
+		t.Setenv("CAB_SESSION_ID", "   ")
+		got, err := resolveCurrentSession(mgr, "next", "")
+		require.NoError(t, err)
+		assert.Equal(t, escID, got)
+	})
 }
