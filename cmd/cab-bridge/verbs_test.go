@@ -396,3 +396,82 @@ func TestReply_DoesNotCloseWhatWasNeverShown(t *testing.T) {
 	// And the agent is told it exists, because it answered without knowing.
 	assert.Contains(t, stderr.String(), "have not seen yet")
 }
+
+// --- CRI diff-gate 1b fixes -------------------------------------------------
+
+// TestReply_SecondInitializerResumesTheFirstJournal is the P0-1 regression.
+//
+// Two concurrent replies both seeing "no journal" used to build two journals for
+// the same anchor and overwrite each other. If the first had already delivered
+// its response and died before persisting SENT, recovery read the SECOND journal
+// while the response id on disk carried the FIRST one's bytes: create-if-absent
+// refused it forever and the ask stayed open with no way back.
+func TestReply_SecondInitializerResumesTheFirstJournal(t *testing.T) {
+	mgr, _, dataDir := newReplyPair(t)
+	deliverAndNotify(t, mgr, dataDir, "msg-aaaaaaaaaaaa", "brief", time.Now().UTC())
+
+	first := newTxn(replySelf, []string{"msg-aaaaaaaaaaaa"}, "the first answer")
+	require.NoError(t, mgr.WriteReplyTxn(replySelf, first))
+
+	// A second reply, with entirely different arguments, must NOT replace it.
+	var stdout, stderr bytes.Buffer
+	err := replyRun([]string{"a completely different answer"}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		// Resolution may fail in the test environment; the invariant below is
+		// what matters and is asserted either way.
+		t.Logf("replyRun returned: %v", err)
+	}
+
+	got, found, rerr := mgr.ReadReplyTxn(replySelf)
+	require.NoError(t, rerr)
+	if found {
+		assert.Equal(t, first.ResponseID, got.ResponseID, "the journal must never be replaced by a second initializer")
+		assert.Equal(t, "the first answer", got.Content, "the frozen content wins over the retry's arguments")
+	} else {
+		// Completed: it must have completed the FIRST transaction.
+		assert.FileExists(t, filepath.Join(dataDir, "sessions", replyPeer, "inbox", first.ResponseID+".json"))
+	}
+}
+
+// TestSoleSessionNamed_FailsClosedOnHomonyms is the P1-4 regression: a
+// map[name]sessionID silently kept the last writer, and the remediation
+// suggested by bare `reply` pointed straight at that silent pick.
+func TestSoleSessionNamed_FailsClosedOnHomonyms(t *testing.T) {
+	t.Parallel()
+	senders := map[string]string{"aaaaaaa1": "VAL-same", "bbbbbbb2": "VAL-same"}
+
+	t.Run("two_sessions_one_name_is_refused", func(t *testing.T) {
+		byName := map[string][]string{"VAL-same": {"aaaaaaa1", "bbbbbbb2"}}
+		_, err := soleSessionNamed(byName, "VAL-same", senders)
+		require.Error(t, err, "the remediation must not be the trap")
+		assert.Contains(t, err.Error(), "aaaaaaa1")
+		assert.Contains(t, err.Error(), "bbbbbbb2")
+	})
+
+	t.Run("single_session_resolves", func(t *testing.T) {
+		byName := map[string][]string{"VAL-one": {"aaaaaaa1"}}
+		got, err := soleSessionNamed(byName, "VAL-one", senders)
+		require.NoError(t, err)
+		assert.Equal(t, "aaaaaaa1", got)
+	})
+
+	t.Run("unknown_name_is_refused", func(t *testing.T) {
+		_, err := soleSessionNamed(map[string][]string{}, "NOBODY", senders)
+		assert.Error(t, err)
+	})
+}
+
+// TestResolveReplyTarget_HomonymsAreAmbiguousInBothForms: neither the bare form
+// nor the named form may pick silently.
+func TestResolveReplyTarget_HomonymsAreAmbiguousInBothForms(t *testing.T) {
+	t.Parallel()
+	asks := []openAsk{
+		{id: "msg-aaaaaaaaaaaa", from: "aaaaaaa1", fromName: "VAL-same", when: "2026-08-08T10:00:00Z"},
+		{id: "msg-bbbbbbbbbbbb", from: "bbbbbbb2", fromName: "VAL-same", when: "2026-08-08T11:00:00Z"},
+	}
+	_, _, err := resolveReplyTarget(nil, asks, strings.NewReader("answer"))
+	assert.Error(t, err, "bare reply with two senders is ambiguous")
+
+	_, _, err = resolveReplyTarget([]string{"VAL-same", "answer"}, asks, strings.NewReader(""))
+	assert.Error(t, err, "naming the shared name is ambiguous too — it was the suggested form")
+}

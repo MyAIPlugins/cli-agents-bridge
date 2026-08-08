@@ -58,11 +58,17 @@ func resolveMessagePayload(arg string, hasArg bool, stdin io.Reader) (string, er
 // By name and not by id because the id an agent re-types every day is its own
 // peer's, and that is the one it confabulates after a compact (LL-13/LL-14).
 func resolveRecipientByName(cfg config.Config, mgr *session.Manager, name, selfSID string) (string, error) {
-	cwd, err := os.Getwd()
+	// Scope and team come from MY OWN manifest, never from the cwd
+	// (CRI diff-gate P1-3). Once resolveCurrentSession has decided who I am —
+	// possibly from CAB_SESSION_ID — the directory stops participating: fixing
+	// "who I am" without fixing "which world I live in" leaves the hole open,
+	// and a peer of the same name in the cwd's scope would silently receive a
+	// message carrying my other identity as sender.
+	me, err := mgr.LoadManifest(selfSID)
 	if err != nil {
-		return "", fmt.Errorf("resolve recipient: cwd: %w", err)
+		return "", fmt.Errorf("resolve recipient: load my own manifest %s: %w", selfSID, err)
 	}
-	peers, _, err := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, true, "", resolveScope(cwd))
+	peers, _, err := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, true, me.TeamID, me.Scope)
 	if err != nil {
 		return "", fmt.Errorf("resolve recipient: %w", err)
 	}
@@ -271,51 +277,76 @@ func replyRun(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	// Resume first: an in-flight journal outranks anything the arguments say,
-	// because finishing a delivered reply must never depend on the retry being
-	// spelled the same way.
-	if txn, found, terr := mgr.ReadReplyTxn(sid); terr != nil {
-		return fmt.Errorf("reply: %w", terr)
-	} else if found {
-		return finishReplyTxn(mgr, cfg, sid, txn, stdout, stderr)
-	}
-
-	asks, err := collectOpenAsks(mgr, cfg, sid)
-	if err != nil {
-		return fmt.Errorf("reply: %w", err)
-	}
-	if len(asks) == 0 {
-		return fmt.Errorf("reply (%s): nothing to reply to — no ask of yours is open (a tell is fire-and-forget: answer it with tell or ask)", whoIThoughtIWas(mgr, sid))
-	}
-
-	target, content, err := resolveReplyTarget(args, asks, stdin)
-	if err != nil {
-		return fmt.Errorf("reply (%s): %w", whoIThoughtIWas(mgr, sid), err)
-	}
-
-	var closeIDs []string
-	for _, a := range asks {
-		if a.from == target {
-			closeIDs = append(closeIDs, a.id)
+	// EVERYTHING up to and including the journal's creation happens inside ONE
+	// critical section (CRI diff-gate P0-1).
+	//
+	// Reading the journal outside the lock and writing it with an overwrite let
+	// two concurrent replies both see "no journal", build J1 and J2 for the same
+	// anchor, and write them in sequence. If the first then delivered its
+	// response and died before persisting SENT, recovery would read J2 while the
+	// response id on disk carries J1's bytes: create-if-absent refuses it — as it
+	// should — and every retry fails identically. The ask stays open forever and
+	// exactly-once stops being recoverable.
+	//
+	// So a second initializer must RESUME J1, never replace it. The set is also
+	// frozen in here, not before: a snapshot taken outside the lock could be
+	// stale by the time it is persisted.
+	var txn *session.ReplyTxn
+	lockErr := mgr.WithSessionLock(sid, func() error {
+		existing, found, terr := mgr.ReadReplyTxn(sid)
+		if terr != nil {
+			return terr
 		}
+		if found {
+			// An in-flight journal outranks anything the arguments say: finishing
+			// a delivered reply must not depend on the retry being spelled the
+			// same way.
+			txn = existing
+			return nil
+		}
+
+		asks, aerr := collectOpenAsks(mgr, cfg, sid)
+		if aerr != nil {
+			return aerr
+		}
+		if len(asks) == 0 {
+			return errNothingToReplyTo
+		}
+		target, content, rerr := resolveReplyTarget(args, asks, stdin)
+		if rerr != nil {
+			return rerr
+		}
+
+		var closeIDs []string
+		for _, a := range asks {
+			if a.from == target {
+				closeIDs = append(closeIDs, a.id)
+			}
+		}
+		txn = &session.ReplyTxn{
+			ResponseID: session.DeterministicResponseID(sid, closeIDs[0]),
+			To:         target,
+			Anchor:     closeIDs[0],
+			CloseIDs:   closeIDs,
+			State:      session.ReplyTxnPending,
+			Timestamp:  time.Now().UTC(),
+			Content:    content,
+		}
+		return mgr.WriteReplyTxn(sid, txn)
+	})
+	if lockErr != nil {
+		if errors.Is(lockErr, errNothingToReplyTo) {
+			return fmt.Errorf("reply (%s): nothing to reply to — no ask of yours is open (a tell is fire-and-forget: answer it with tell or ask)", whoIThoughtIWas(mgr, sid))
+		}
+		return fmt.Errorf("reply (%s): %w", whoIThoughtIWas(mgr, sid), lockErr)
 	}
 
-	txn := &session.ReplyTxn{
-		ResponseID: session.DeterministicResponseID(sid, closeIDs[0]),
-		To:         target,
-		Anchor:     closeIDs[0],
-		CloseIDs:   closeIDs,
-		State:      session.ReplyTxnPending,
-		Timestamp:  time.Now().UTC(),
-		Content:    content,
-	}
-	// Freeze the set under the session lock. An ask that lands after this
-	// snapshot stays open and will be closed by the NEXT reply.
-	if err := mgr.WithSessionLock(sid, func() error { return mgr.WriteReplyTxn(sid, txn) }); err != nil {
-		return fmt.Errorf("reply: %w", err)
-	}
 	return finishReplyTxn(mgr, cfg, sid, txn, stdout, stderr)
 }
+
+// errNothingToReplyTo is raised inside the locked section so the caller can
+// phrase it with the identity label, without holding the lock to do so.
+var errNothingToReplyTo = errors.New("no open ask")
 
 // resolveReplyTarget decides who is being answered and with what.
 //
@@ -333,26 +364,32 @@ func replyRun(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 // Deterministic and inspectable; the residual collision (a message whose whole
 // text equals a peer's name) is reported rather than guessed.
 func resolveReplyTarget(args []string, asks []openAsk, stdin io.Reader) (target, content string, err error) {
-	senders := map[string]string{} // sessionID -> agent name
-	byName := map[string]string{}  // agent name -> sessionID
+	senders := map[string]string{}  // sessionID -> agent name
+	byName := map[string][]string{} // agent name -> EVERY sessionID with that name
 	for _, a := range asks {
 		senders[a.from] = a.fromName
 		if a.fromName != "" {
-			byName[a.fromName] = a.from
+			if !contains(byName[a.fromName], a.from) {
+				byName[a.fromName] = append(byName[a.fromName], a.from)
+			}
 		}
 	}
 
 	switch len(args) {
 	case 2:
-		sid, ok := byName[args[0]]
-		if !ok {
-			return "", "", fmt.Errorf("%q has no open ask of yours — open asks are from: %s", args[0], strings.Join(sortedNames(senders), ", "))
+		sid, rerr := soleSessionNamed(byName, args[0], senders)
+		if rerr != nil {
+			return "", "", rerr
 		}
 		content, err = resolveMessagePayload(args[1], true, stdin)
 		return sid, content, err
 
 	case 1:
-		if sid, ok := byName[args[0]]; ok {
+		if _, named := byName[args[0]]; named {
+			sid, rerr := soleSessionNamed(byName, args[0], senders)
+			if rerr != nil {
+				return "", "", rerr
+			}
 			content, err = resolveMessagePayload("", false, stdin)
 			return sid, content, err
 		}
@@ -371,6 +408,39 @@ func resolveReplyTarget(args []string, asks []openAsk, stdin io.Reader) (target,
 		content, err = resolveMessagePayload("", false, stdin)
 		return target, content, err
 	}
+}
+
+// soleSessionNamed resolves an agent NAME to the single session behind it,
+// fail-closed on duplicates.
+//
+// Two sessions can share a name — Register only blocks a second one on the same
+// ProjectPath, and --force-new bypasses even that — and a map[name]sessionID
+// silently kept the last writer. The worst shape was that bare `reply` correctly
+// refused the ambiguity and then suggested `reply <name>`: the very form that
+// picked one arbitrarily, sent it the response and CLOSED its asks. The
+// remediation was the trap (CRI diff-gate P1-4). Same posture as
+// resolveRecipientByName already had for ask/tell.
+func soleSessionNamed(byName map[string][]string, name string, senders map[string]string) (string, error) {
+	ids, ok := byName[name]
+	if !ok || len(ids) == 0 {
+		return "", fmt.Errorf("%q has no open ask of yours — open asks are from: %s", name, strings.Join(sortedNames(senders), ", "))
+	}
+	if len(ids) > 1 {
+		sorted := append([]string(nil), ids...)
+		sort.Strings(sorted)
+		return "", fmt.Errorf("%d sessions have open asks under the name %q (%s) — this is ambiguous, so nothing was sent; clean up the duplicate with `cab-bridge cleanup --session-id=<id>`",
+			len(sorted), name, strings.Join(sorted, ", "))
+	}
+	return ids[0], nil
+}
+
+func contains(xs []string, x string) bool {
+	for _, v := range xs {
+		if v == x {
+			return true
+		}
+	}
+	return false
 }
 
 // soleSender returns the only sender with open asks, or an error naming the
@@ -525,12 +595,28 @@ func deliverResponse(cfg config.Config, mgr *session.Manager, sid string, txn *s
 		return false, err
 	}
 
+	// The delivery runs under the TARGET's session lock, and re-validates that
+	// the target still exists inside it (CRI diff-gate P0-2). cleanup now takes
+	// the same lock for its whole decide-archive-remove, so the two can no
+	// longer interleave into the case where a response is linked in and then
+	// deleted by a RemoveAll that had already snapshotted the directory —
+	// leaving the ask closed and the answer nowhere.
+	//
+	// Only ONE lock is held at a time: the responder's own was released before
+	// this point, so there is no ordering to get wrong.
 	targetInbox := filepath.Join(cfg.DataDir, "sessions", txn.To, "inbox")
-	if err := os.MkdirAll(targetInbox, 0o700); err != nil {
-		return false, fmt.Errorf("mkdir target inbox: %w", err)
-	}
-	created, err := transportfs.WriteIfAbsentBytes(filepath.Join(targetInbox, txn.ResponseID+".json"), data, 0o600)
-	if err != nil {
+	var created bool
+	if err := mgr.WithSessionLock(txn.To, func() error {
+		if _, rerr := mgr.LoadManifest(txn.To); rerr != nil {
+			return fmt.Errorf("recipient %s disappeared before delivery: %w", txn.To, rerr)
+		}
+		if merr := os.MkdirAll(targetInbox, 0o700); merr != nil {
+			return fmt.Errorf("mkdir target inbox: %w", merr)
+		}
+		var werr error
+		created, werr = transportfs.WriteIfAbsentBytes(filepath.Join(targetInbox, txn.ResponseID+".json"), data, 0o600)
+		return werr
+	}); err != nil {
 		return false, fmt.Errorf("deliver response: %w", err)
 	}
 
