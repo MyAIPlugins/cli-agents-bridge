@@ -1,0 +1,25 @@
+cmd/cab-bridge/next.go
+  s_13b14428c16427::t_99bd1ea1b205f4 85-88,456
+internal/session/listener_test.go
+  s_13b14428c16427::t_bb8cf3b835a4c9 193-203,207-208,210-216
+  s_13b14428c16427::t_f95f88a07de744 204-206,209
+  s_13b14428c16427::t_2e9b43bdf93730 167-169,188-190
+internal/session/manager.go
+  s_13b14428c16427::t_787440f9964281 454-460,467-472,478-479,482-487,494-507,519-525,529,531-532
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "7f107b2566c5bad3c48b3972fab4d13e5af0d1e8",
+  "prompts": {},
+  "sessions": {
+    "s_13b14428c16427": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5bb10dbc-fcae-44e8-acd6-603d11cfd57f",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
