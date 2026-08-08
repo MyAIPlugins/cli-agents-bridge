@@ -110,6 +110,8 @@ Ne discendono tre semplificazioni: sparisce un valore da configurare (§0: un pa
 
 Il rischio residuo non cambia ed è benigno: se il processo muore comunque (teardown della TUI, restart, sleep), l'harness notifica e l'agente rilancia. È il comportamento di oggi, solo molto più raro — ed è la ragione per cui `join` deve rimettere in coda gli `ask` non confermati (§2.3).
 
+**I verbi non hanno alcun flag, e questo include `--allow-mesh`.** Non era scritto da nessuna parte: l'ho deciso implicitamente togliendo i flag dal percorso caldo, e il codice l'ha implementato senza che il contratto lo dicesse — così l'errore `esc→esc` continuava a consigliare un flag che i verbi rifiutano, cioè un **vicolo cieco** identico a quello di F-91 (CRI2, lente 1b). Registrato ora: sul LOOP il routing `esc→esc` non è instradabile, punto. Le due strade esistenti sono passare dal VAL, oppure — per un critico — registrarsi con `role=architect`, che non è ristretto (`internal/routing/role.go:7-13`). L'errore deve nominare quelle, mai un flag inesistente.
+
 **`ask` / `tell` / `reply`** — tre verbi invece di uno con destinatario e tipo opzionali, perché "opzionale" è una decisione. Nessun `--type` (**lo dice il verbo**, vedi la tabella sopra: era "si deduce", che non specificava niente), nessun `--in-reply-to` (`reply` lo mette da sé), nessun id da trascrivere.
 
 **`tell` accetta il NOME dell'agente, non l'id** — `tell ESC-bridge "..."`, risolto in-scope, **fail-closed**: zero match → errore; più di un match vivo → errore con i candidati, mai una scelta silenziosa. Senza questo LL-14 resterebbe incompiuto proprio nel caso più frequente: `link` copre il cross-repo, ma l'id che si ricopia *ogni giorno* è quello del proprio ESC. (CRI2 P1-4, CRI F6.)
