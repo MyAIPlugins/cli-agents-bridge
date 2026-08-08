@@ -334,6 +334,9 @@ Nessuno cercato: tutti emersi **usando** il bridge per coordinare il lavoro su s
   Chi vuole entrambe le cose deve scegliere quale difetto subire. Non è che sia stato scelto lo strumento sbagliato: **non c'è uno strumento giusto.** In v0.8 `next` deve fare entrambe — e non è un requisito aggiuntivo, è la ragione per cui i due comandi vanno fusi in uno.
 
   Mitigazione col tool attuale: `state orchestrating`, esente dal controllo di staleness (F-23a). Funziona, ma è un workaround che un agente deve *sapere* — cioè pensiero, cioè §0 violato.
+- **F-96** — **Falso-negativo di consegna: un `ask` riuscito sembra fallito.** L'esito di un invio andato a buon fine è visivamente sommerso — il warning shared-scope B-1 multi-riga (F-91) più `replying_to` (A-4, su stderr per design), mentre lo stdout col msg-id è una riga sola in mezzo. Il VAL ha **dichiarato rotto F-39** su questa base, e CRI2 ha dimostrato con la ground-truth su disco che risoluzione e consegna erano entrambe corrette. È il **duale di F-24**: là un timeout sembrava un fallimento, qui un successo sembra un errore. Requisito v0.8: **l'esito di un send riuscito dev'essere inequivocabile a colpo d'occhio**, e la conferma non può vivere sommersa da avvisi su stderr.
+
+  Corollario di metodo: **F-16 vale anche per il VAL.** Nello stesso resoconto avevo scritto "12 response" (erano 15) e "9 ACK" (erano 11) — il disco vince sul resoconto anche quando il resoconto è di chi tiene il gate.
 - **F-89** (noto, esteso) — `read <id> --session-id=X` fallisce: i flag devono precedere il positional. Vale anche per `state`.
 
 ---
