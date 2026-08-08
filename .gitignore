@@ -29,6 +29,9 @@ vendor/
 .claude/
 docs/.claude/
 
+# Serena MCP local index/cache — machine-local, never project state
+.serena/
+
 # Internal VAL/ESC reports & archived planning — not for publication
 briefing/
 iterations/
