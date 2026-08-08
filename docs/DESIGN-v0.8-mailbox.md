@@ -100,10 +100,15 @@ Sul filo: lo schema ha un solo `inReplyTo`, quindi la response porta `inReplyTo`
 **`next`** — l'unico comando del ciclo, **funziona uguale in ogni stato** e non rifiuta mai di partire:
 
 - ci sono messaggi mai notificati → li stampa e ritorna subito;
-- non ce n'è nessuno → aspetta fino a **24h**, poi stampa quelli arrivati;
-- la finestra scade a vuoto → esce dicendo "niente, rilanciami".
+- non ce n'è nessuno → **aspetta, senza scadenza**, e ritorna quando qualcosa arriva.
 
-Nessun flag: né durata, né formato, né filtro, né session-id (risolto da cwd).
+Nessun flag: né durata, né formato, né filtro, né session-id (risolto da cwd). **E nessun timeout, nemmeno in config.**
+
+**Perché indeterminata e non 24h** (decisione di Alan, conseguenza della regola di autorità): *una finestra che scade è il waiter che congeda se stesso*. Il VAL non ha il potere di chiudere una sessione — solo Alan ce l'ha — e un listener che smette di ascoltare da solo è quella stessa decisione presa da un timer. L'ascolto finisce quando la sessione finisce o quando qualcuno lo termina volontariamente, mai perché è passato del tempo.
+
+Ne discendono tre semplificazioni: sparisce un valore da configurare (§0: un parametro in meno anche fuori dalla CLI), sparisce lo stato `timeout` dal payload, e sparisce la domanda "24 ore bastano?" — che §7 non poteva chiudere e che avrebbe richiesto una matrice di misure per vendor.
+
+Il rischio residuo non cambia ed è benigno: se il processo muore comunque (teardown della TUI, restart, sleep), l'harness notifica e l'agente rilancia. È il comportamento di oggi, solo molto più raro — ed è la ragione per cui `join` deve rimettere in coda gli `ask` non confermati (§2.3).
 
 **`ask` / `tell` / `reply`** — tre verbi invece di uno con destinatario e tipo opzionali, perché "opzionale" è una decisione. Nessun `--type` (**lo dice il verbo**, vedi la tabella sopra: era "si deduce", che non specificava niente), nessun `--in-reply-to` (`reply` lo mette da sé), nessun id da trascrivere.
 
