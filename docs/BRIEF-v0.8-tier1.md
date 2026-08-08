@@ -1,7 +1,7 @@
 # BRIEF ESC — v0.8 Tier 1
 
-> Da VAL. Pronto, **non ancora consegnato** (ESC impegnato sullo spike transport).
-> Contratto: `docs/DESIGN-v0.8-mailbox.md` **rev.7** (`a5b739d`). Leggilo prima: §0, §1, §2, §3. Le sezioni §8/§9 sono **narrative, non normative** — contengono affermazioni superate, in conflitto vince §2.
+> Da VAL. Consegnato. Fasi 1a e 1b **chiuse e gated verdi** (`f32c8c9` + `7f107b2`); la 1c è in corso.
+> Contratto: `docs/DESIGN-v0.8-mailbox.md` — leggi sempre l'ultima revisione su `main`, non una copia. Leggilo prima: §0, §1, §2, §3. Le sezioni §8/§9 sono **narrative, non normative** — contengono affermazioni superate, in conflitto vince §2.
 
 ---
 
@@ -55,7 +55,7 @@ Il cuore. Tutto il resto ci si appoggia.
 ## Cosa NON fare
 
 - **Non toccare i docs.** ROADMAP, CHANGELOG, CLAUDE.md, skill e il design doc sono miei. Segnala e vado io.
-- **Non implementare il Tier 2/3** (cross-repo `link`, `fromScope`, F-91/F-92, reminder). Un'altra volta.
+- **Non implementare il Tier 2/3**: cross-repo `link`, `fromScope`, **F-92** (`overview` che sceglie un peer arbitrario), reminder dei non-letti. Un'altra volta. *(F-91 e `CAB_SESSION_ID` sono stati promossi nella 1c — vedi sopra: erano Tier 2, non lo sono più.)*
 - **Non aggiungere flag** sul percorso caldo perché "torna comodo". Se ne serve uno, fermati e chiedi: è una decisione di design, e §0 dice che ogni flag lì è un difetto finché non dimostra il contrario.
 - **Non introdurre dipendenze.** Il binario di produzione oggi ha zero dipendenze (`testify` è solo di test) e resta così.
 
