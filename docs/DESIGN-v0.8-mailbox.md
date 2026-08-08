@@ -1,8 +1,8 @@
 # DESIGN v0.8 — KISS per AI
 
-> Stato: **rev.3 — post design-gate primo giro (CRI + CRI2), in attesa del secondo giro**
+> Stato: **rev.6 — post terzo giro di design-gate (CRI + CRI2)**
 > Autore: VAL · Data: 2026-08-08
-> Ratificato da Alan: rottura netta · ACK eliminati · **"il non far pensare vince"** · `next` pure-read con cursore di wake
+> Ratificato da Alan: rottura netta · ACK eliminati · **"il non far pensare vince"** · opzione A (`reply` è la boundary) · una regola sola per payload brevi e lunghi
 
 ---
 
@@ -54,17 +54,40 @@ Finestra di default **540s** (`internal/config/config.go:122`, usata in `cmd/cab
 
 Oggi tutto è allo stesso livello: `migrate-from-patil` e `listen` sono due voci dello stesso help. L'agente vede venti comandi e deve capire quali lo riguardano.
 
-- **Superficie LOOP** — quello che un agente usa lavorando. **Quattro comandi, zero flag.** È tutto ciò che deve sapere.
-- **Superficie SERVIZIO** — ispezione, manutenzione, amministrazione. Esiste, è documentata, **non serve conoscerla** per lavorare.
+- **Superficie LOOP** — quello che un agente usa lavorando. **Cinque comandi, zero flag.** È tutto ciò che deve sapere.
+- **Superficie SERVIZIO** — ispezione e manutenzione. Va **elencata** nel doc e nella skill, non solo promessa: per un LLM un comando non documentato non è "assente", è **da inventare** (LL-13), e l'agente che al primo intoppo non trova il comando fruga in `sessions/` a mano e confabula id. È la P2 che CRI2 indica come la più dannosa se lasciata fuori.
+
+| Servizio | A cosa serve |
+|---|---|
+| `read <id>` | rileggere un messaggio, anche già archiviato (scansiona `inbox/` poi `processed/`) |
+| `sent` | cosa ho mandato e in che stato è |
+| `who` | chi c'è adesso — oppure si dichiara che `join` è anche il chi-c'è, rilanciabile a volontà |
+| `state` | F-23, da confermare o assorbire nel modello nuovo |
+| `cleanup`, `inspect`, `migrate-*`, `notify-watch` | amministrazione, mai nel ciclo di lavoro |
 
 ### 2.2 La superficie LOOP
 
 ```
-cab-bridge join            una volta, all'inizio
-cab-bridge next            all'infinito: l'unico comando del ciclo
-cab-bridge reply "..."     risponde a chi ha scritto per ultimo
-cab-bridge tell <chi> "..."    scrive a qualcuno
+cab-bridge join              una volta, all'inizio
+cab-bridge next              all'infinito: l'unico comando del ciclo
+cab-bridge ask <chi> "..."   chiedo qualcosa — aspetta una risposta
+cab-bridge tell <chi> "..."  informo — non aspetta risposta
+cab-bridge reply "..."       rispondo a chi ha chiesto — chiude
 ```
+
+**Cinque comandi, non quattro — e il quinto ripaga.** La rev.5 ne aveva quattro e liquidava il tipo del messaggio con "si deduce", senza dire come. CRI2 ha mostrato che **il tipo è load-bearing**: da esso dipendono cosa conta la riga outbound, cosa il `join` rimette in coda, cosa pota la retention. Dedurlo da `tell→query` avrebbe lasciato il **fire-and-forget senza un verbo**, e ogni `tell` non risposto sarebbe diventato un falso-pendente che inquina outbound e replay.
+
+La distinzione vive nel **verbo**, non in un flag né in una deduzione: *sto chiedendo* o *sto informando* è una cosa che chi scrive sa già — è linguaggio naturale, non configurazione. Il criterio §0 chiede che l'agente non debba domandarsi *quale uso*; qui non se lo domanda, perché la risposta è già nella sua intenzione.
+
+| Verbo | Tipo | Outbound | Replay al `join` | Chiude |
+|---|---|---|---|---|
+| `ask` | query | **sì**, finché non risposto | **sì**, resta azionabile | — |
+| `tell` | notify | no | no, one-shot | — |
+| `reply` | response | no | no | **sì**: archivia gli `ask` aperti di quel mittente |
+
+Tre nodi sciolti da una scelta sola: la riga outbound conta solo ciò che aspetta davvero (niente assuefazione), il `join` rimette in coda solo ciò che è ancora azionabile (niente notifiche di tre giorni fa), e l'**aggiornamento di metà lavoro è un `tell`, non un `reply`** — quindi non chiude niente. Quest'ultimo punto chiude il P1 di CRI2 sul reply intermedio senza affidarlo a una frase da ricordare in una skill: il metodo VAL/ESC insegna gli aggiornamenti a checkpoint, e con verbi distinti l'agente comunicativo non archivia più per sbaglio un brief su cui sta ancora lavorando.
+
+**`reply` archivia tutti gli `ask` aperti di quel mittente** (CRI2 P1-1b), elencandoli nell'echo: `→ VAL-bridge (chiusi: msg-A, msg-A2)`. Il caso quotidiano è brief + correzione coperti da una sola risposta; archiviarne uno solo lascerebbe l'altro `NOTIFIED` per sempre, falso-pendente. I `tell` non sono mai "aperti", quindi non entrano.
 
 **`join`** — registra, deriva ruolo e nome dal contesto, e **stampa chi c'è** (tutti i peer vivi nello scope, non "il peer"). Sostituisce `register`/`bootstrap`/`whoami`/`overview` iniziali. Idempotente: rilanciarlo dopo un compact riaggancia la stessa sessione. Su mismatch di nome con una sessione esistente stesso `(ruolo, scope, projectPath)` **si ferma e chiede**, mai crea in silenzio la seconda sessione che blocca tutto (chiude F-90).
 
@@ -76,7 +99,7 @@ cab-bridge tell <chi> "..."    scrive a qualcuno
 
 Nessun flag: né durata, né formato, né filtro, né session-id (risolto da cwd).
 
-**`reply` / `tell`** — due comandi invece di uno con destinatario opzionale, perché "opzionale" è una decisione. Nessun `--type` (si deduce), nessun `--in-reply-to` (`reply` lo mette da sé), nessun id da trascrivere.
+**`ask` / `tell` / `reply`** — tre verbi invece di uno con destinatario e tipo opzionali, perché "opzionale" è una decisione. Nessun `--type` (**lo dice il verbo**, vedi la tabella sopra: era "si deduce", che non specificava niente), nessun `--in-reply-to` (`reply` lo mette da sé), nessun id da trascrivere.
 
 **`tell` accetta il NOME dell'agente, non l'id** — `tell ESC-bridge "..."`, risolto in-scope, **fail-closed**: zero match → errore; più di un match vivo → errore con i candidati, mai una scelta silenziosa. Senza questo LL-14 resterebbe incompiuto proprio nel caso più frequente: `link` copre il cross-repo, ma l'id che si ricopia *ogni giorno* è quello del proprio ESC. (CRI2 P1-4, CRI F6.)
 
@@ -123,48 +146,66 @@ Lo scenario che lo dimostra: arriva A, l'agente lo legge, ci lavora 40 minuti. N
 | Stato | Dove vive | Significato |
 |---|---|---|
 | `UNREAD` | file in `inbox/`, non nel cursore | arrivato, mai notificato |
-| `WAKE-NOTIFIED` | file in `inbox/`, id nel cursore di wake | consegnato a un `next`, non ancora confermato |
+| `NOTIFIED` | file in `inbox/`, id nel cursore di wake | consegnato a un `next`, non ancora confermato |
 | `ARCHIVED` | file in `processed/` | consegnato **e** confermato |
 
 **Il cursore di wake è separato da inbox/processed** e persistito per message-id, sul modello di quello che `notify-watch` ha già (`notify_watch_state.go:20-42`, `notify_watch.go:240-318`): un id ci entra **solo dopo** che `next` ha emesso con successo.
 
-**Transizioni:**
+**Transizioni — contratto normativo, nessuna altra è ammessa:**
 
-- `next` consegna gli `UNREAD` → li segna `WAKE-NOTIFIED`. **Non sposta nessun file: è pure-read.**
-- `next`, al giro **successivo**, archivia i `WAKE-NOTIFIED` del giro precedente → `ARCHIVED`.
+| Comando | Transizione | Tocca i file? |
+|---|---|---|
+| `next` | `UNREAD` → `NOTIFIED` | **no, mai** — pure-read, scrive solo il cursore |
+| `reply` | `NOTIFIED` → `ARCHIVED` (del messaggio a cui risponde) | sì, ed è l'unico |
+| retention | `NOTIFIED` → `expired/unconfirmed` allo scadere del TTL | sì |
 
-L'archiviazione avviene **con un giro di ritardo**, e la conferma è implicita: *il fatto che l'agente stia richiamando `next` prova che il wake precedente è andato a segno*. È un ACK implicito, senza messaggi e senza nulla da ricordare.
+**`next` non archivia nulla, in nessuna circostanza.** Questa riga è il contratto: due implementazioni non possono essere entrambe conformi.
 
-**Ma vale solo DENTRO una vita dell'agente** — questo è il P0 che CRI2 ha trovato nella rev.3, ed è la risposta affermativa alla domanda §6.1 ("esiste una sequenza in cui il cursore diverge?"):
+### Perché `reply` e non il `next` successivo
 
-1. `next` di ESC emette il brief A, esce con successo → cursore = `{A}`;
-2. la notifica si perde: compact del turno, `/clear`, chiusura, restart — tutti teardown che §7 elenca come **non dimostrati**;
-3. al resume ESC esegue il protocollo: `join` → `next`;
-4. quel `next` trova A tra i `WAKE-NOTIFIED` del giro precedente e lo **archivia come confermato**; A non è più `UNREAD`, quindi non viene emesso. Output: "niente, aspetto";
-5. A è in `processed/`, mai visto da nessuno — e il VAL che interroga `sent` legge **`archived`**.
+La rev.3 faceva archiviare a `next(N+1)` il batch di `next(N)`, prendendo il richiamo come conferma implicita. **Sbagliato per due tracce indipendenti**, trovate da CRI2 e CRI:
 
-**Il sistema certificherebbe una consegna mai avvenuta.** È peggio di un messaggio nascosto: è un messaggio nascosto *con la ricevuta di lettura*. Il mio errore è stato assumere la continuità di vita dell'agente: richiamare `next` non prova che ha visto qualcosa, prova solo che sta eseguendo il protocollo — e post-compact lo esegue *perché il protocollo dice così*.
+- **Traccia A — attraverso le vite.** `next` emette A ed esce (cursore `{A}`); la notifica si perde in un compact o un restart; al resume l'agente esegue `join` → `next`, e quel `next` archivia A **come confermato** senza averlo mai mostrato. Il mittente che interroga `sent` legge `archived`: **il sistema certifica una consegna mai avvenuta** — un messaggio nascosto *con la ricevuta di lettura*. Richiamare `next` non prova che l'agente ha visto qualcosa, prova che sta eseguendo il protocollo.
+- **Traccia B — dentro una vita, nel flusso raccomandato.** L'agente riceve A, inizia un lavoro lungo e arma subito `next(N+1)` in background per restare svegliabile su B — *il flusso anti-F-14*. `next(N+1)` archivia A all'avvio, mentre A è in lavorazione; un crash lascia A in `processed/`, fuori dalla coda azionabile. Nessun riavvio: il sistema fa esattamente ciò per cui era progettato.
 
-**Fix, due pezzi componibili e senza flag:**
+E il precedente che avevo citato non autorizzava il salto: `notify-watch` marca che **l'hook di wake è riuscito** (`notify_watch.go:296-318`), non archivia il messaggio.
 
-- **`join` resetta il cursore** (`WAKE-NOTIFIED` → `UNREAD`). `join` è già il comando del resume, quindi la semantica diventa naturale: *"sono rinato — ri-mostrami tutto ciò che non ho confermato"*. Dentro una vita la conferma implicita resta valida; attraverso le vite il primo `next` dopo `join` ri-consegna. Deterministico.
-- **`next` stampa ciò che archivia**, una riga per id: `chiuso: msg-X da VAL-bridge "Brief F-91…"`. Così anche l'agente che riarma per riflesso **vede** cosa sta confermando, e se non lo riconosce ha il segnale per fare `read`. È la stessa medicina del P1-2 del primo giro — lossless-visibility — applicata all'unico comando che ora sposta file. E rende innocuo l'unico rito che il protocollo non può imporre: "leggi prima di riarmare".
+Con `reply` come boundary entrambe cadono: `next(N+1)` non tocca niente, quindi A resta in `inbox/` finché non c'è una risposta, e qualunque crash lo lascia ri-consegnabile. **E la conferma non è un rito**: un agente che risponde ha lavorato, quindi la garanzia si aggancia a un gesto che compie comunque (§0).
 
-**Ri-consegna dopo un riavvio**: l'agente non deve *decidere* se è un duplicato. La regola è che la distinzione sia irrilevante — at-least-once con idempotenza a valle: "trattalo come nuovo; se ricordi di averlo già gestito, rispondi solo quello al mittente". Entrambi i rami sono corretti senza pensiero. Il marcatore è **testo umano nel sommario**, non un campo da interpretare: `(ri-consegnato: era già stato consegnato prima di un riavvio — trattalo normalmente)`. Un `redelivered: true` nudo sarebbe pensiero in più — l'agente dovrebbe sapere cosa implica.
+### La transazione di `reply` — recupero idempotente, non falsa atomicità
 
-**Cosa garantisce:**
+`reply` fa **due** mutazioni su directory diverse (la inbox del destinatario, la propria `inbox/`→`processed/`) e **non esiste transazione filesystem comune**: `atomic.go:38-88` garantisce il singolo rename, non la coppia. L'ordine è obbligato — **send, poi archive**: l'inverso perderebbe la query azionabile se il send fallisse.
 
-- **Crash-safe.** Crash tra la consegna e il lavoro → i file sono ancora in `inbox/`, e il primo `next` al resume li ri-consegna. La perdita che la rev.2 accettava come "caso residuo raro" **sparisce**, invece di essere pagata.
-- **Nessun re-wake infinito.** Il cursore, non l'archiviazione, impedisce di risvegliarsi sugli stessi messaggi. È per questo che `next` può permettersi di non spostare nulla.
-- **Il wake non dipende dal consumo.** B sveglia l'agente anche se A è ancora in lavorazione — lo scenario di CRI è chiuso.
-- **Zero pensiero.** L'agente conosce un comando solo e non marca niente.
+Resta il crash gap: risposta consegnata, originale ancora `NOTIFIED`, e un retry oggi **genera un msg-id nuovo** (`send.go:44-47`) → risposta duplicata. Il contratto deve quindi garantire **exactly-once logico**:
 
-**Invariante da enunciare nel package doc ed esercitare con un test dedicato:**
+1. sotto il lock della sessione locale, scrivere un journal `reply-txn` ancorato all'id inbound;
+2. **idempotency key deterministica** per `(sessione responder, inbound-id)` — non un id casuale a ogni tentativo;
+3. consegna **create-if-absent**, oppure accettare un file esistente solo se byte-identico (il rename sovrascrivente non basta);
+4. persistere `SENT` → spostare **esattamente quell'inbound** in `processed/` → `ARCHIVED` → rimuovere il journal;
+5. al retry, riprendere dal journal: se `SENT`, **completare l'archiviazione senza rispedire**.
 
-> Si segna `WAKE-NOTIFIED` solo ciò che si è emesso, e si emette sempre tutto ciò che è `UNREAD` (entro i limiti di §2.7, che sono dichiarati nell'output).
-> Si archivia solo per id esplicito dal cursore, **mai** con una nuova scansione della directory.
+`--skip-duplicate` non è la soluzione (`ask.go:83-102`): è opzionale, dipende da contenuto e finestra temporale, e si appoggia a un outbox best-effort — non identifica la transazione inbound.
 
-La seconda riga chiude il P0 di CRI su `handled --all`: l'attuale `tidyInbox` prende un nuovo snapshot con `os.ReadDir` e muove tutto ciò che trova (`inbox.go:158-198`). Un messaggio arrivato tra la consegna e l'archiviazione verrebbe archiviato **senza essere mai stato mostrato**. Con l'archiviazione per id dal cursore, la race non esiste.
+Non tenere due session-lock insieme: serve un ordine globale dei lock oppure consegna idempotente più cleanup coordinato. **Anche `cleanup` deve rispettare lo stesso fencing**, altrimenti può rimuovere una sessione mentre `reply` sta operando (`scope.go:174-200`).
+
+### Redelivery: dipende dal tipo, e il `join`-reset globale è eliminato
+
+Un reset indiscriminato al `join` risveglierebbe una notifica di tre giorni prima, non più azionabile. La policy è per tipo:
+
+- **query / task** (richiedono risposta): redelivery **at-least-once fino a `reply`**, anche attraverso una nuova incarnation. Se restano azionabili per sempre è una scelta onesta, ma va dichiarata con backpressure e osservabilità.
+- **notify / event / ping** (non richiedono risposta): **one-shot per cursore**, nessun reset su un `join` normale. Restano osservabili come `NOTIFIED`, non risvegliano più.
+- **TTL esplicito anche per la inbox viva**, basato su un `notifiedAt` **locale** — mai sul timestamp del mittente, che non è fidato. Allo scadere il messaggio va in archivio come `expired/unconfirmed`, **mai** come `confirmed`. La retention attuale non copre questo caso: pota solo directory datate sotto `archive/` (`scope.go:204-233`), quindi una sessione viva accumulerebbe `NOTIFIED` all'infinito.
+
+L'incarnation resta utile per audit e fencing, ma **non è da sola una policy di redelivery**.
+
+**Ri-consegna**: l'agente non deve *decidere* se è un duplicato — la distinzione dev'essere irrilevante (at-least-once con idempotenza a valle). Il marcatore è testo umano nel sommario, non un campo da interpretare: `(ri-consegnato: già consegnato prima di un riavvio — trattalo normalmente)`. Un `redelivered: true` nudo sarebbe pensiero in più.
+
+### Invariante da enunciare nel package doc ed esercitare con un test dedicato
+
+> Si segna `NOTIFIED` solo ciò che si è emesso, e si emette sempre tutto ciò che è `UNREAD` (entro i limiti di §2.7, dichiarati nell'output).
+> Il solo comando che sposta un file è `reply`, e sposta **esattamente** l'inbound a cui risponde — **mai** per scansione della directory.
+
+La seconda riga chiude anche il P0 del primo giro su `handled --all`: `tidyInbox` prende un nuovo snapshot con `os.ReadDir` e muove tutto ciò che trova (`inbox.go:158-198`), quindi un messaggio arrivato tra la consegna e l'archiviazione sparirebbe **senza essere mai stato mostrato**. Con lo spostamento per id esatto, la race non esiste.
 
 ### 2.4 ACK: sostituiti da stato interrogabile — e onesto
 
