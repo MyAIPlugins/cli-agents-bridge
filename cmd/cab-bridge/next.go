@@ -45,6 +45,10 @@ const (
 	// Commit-record statuses: the actual outcome, written after the fact.
 	nextStatusCommitted    = "committed"
 	nextStatusNotCommitted = "not-committed"
+	// nextStatusInterrupted: the wait ended without a delivery (a signal, or a
+	// parent that cancelled). Not a failure and not a timeout — there is no
+	// timeout any more — but it must not be silent either.
+	nextStatusInterrupted = "interrupted"
 )
 
 // Hints for the not-committed cases. They are constants because their wording
@@ -65,6 +69,13 @@ const (
 )
 
 type nextMessage struct {
+	// Redelivered marks a message this session had already been shown before a
+	// crash or restart. §2.3 asks for the marker INLINE: the join line that
+	// announced the replay is on another command's stderr, minutes earlier and
+	// without ids, which is exactly the correlation-at-a-distance the inline
+	// field exists to avoid (CRI2 P1-3).
+	Redelivered   bool   `json:"redelivered,omitempty"`
+	Note2         string `json:"-"`
 	ID            string `json:"id"`
 	From          string `json:"from"`
 	FromAgentName string `json:"fromAgentName,omitempty"`
@@ -113,10 +124,11 @@ type nextCommitRecord struct {
 
 // mailboxEntry is one decoded message file still sitting in inbox/.
 type mailboxEntry struct {
-	msg   *message.Message
-	path  string
-	bytes int
-	when  time.Time
+	msg      *message.Message
+	path     string
+	bytes    int
+	when     time.Time
+	replayed bool
 }
 
 func runNext(args []string) error {
@@ -283,9 +295,17 @@ func nextRun(parent context.Context, mgr *session.Manager, cfg config.Config, si
 
 		select {
 		case <-ctx.Done():
-			// Reached only via a signal, a reclaim, or a cancelled parent —
-			// never by elapsed time. There is no empty return to report.
-			return nil
+			// Reached only via a signal, a reclaim or a cancelled parent — never
+			// by elapsed time. It still gets a RECORD (CRI2 P1-1): exiting 0 with
+			// zero bytes leaves a wrapper unable to tell "interrupted while
+			// waiting" from "nothing happened at all", and every other exit path
+			// here says what it did.
+			return enc.Encode(nextCommitRecord{
+				Status:     nextStatusInterrupted,
+				Session:    sid,
+				Generation: owner.Generation,
+				Hint:       "the wait was interrupted before anything arrived — nothing was delivered; run next again when you are ready",
+			})
 		case <-time.After(pollInterval):
 		}
 	}
@@ -316,6 +336,7 @@ func collectNextPage(mgr *session.Manager, cfg config.Config, sid, inboxDir stri
 	for _, e := range entries {
 		present[e.msg.ID] = true
 		if !cursor.IsNotified(e.msg.ID) {
+			e.replayed = cursor.WasReplayed(e.msg.ID)
 			unread = append(unread, e)
 		}
 	}
@@ -442,10 +463,17 @@ func newNextMessage(e mailboxEntry, oversize bool) nextMessage {
 		Timestamp:     e.msg.Timestamp,
 		Bytes:         e.bytes,
 	}
+	if e.replayed {
+		m.Redelivered = true
+		m.Note = "re-delivered: you were shown this before a restart — treat it normally"
+	}
 	if oversize {
 		m.Oversize = true
 		m.BodyFile = e.path
-		m.Note = "body too large to inline — read the file at bodyFile to get it (you can read it in parts)"
+		if m.Note != "" {
+			m.Note += " · "
+		}
+		m.Note += "body too large to inline — read the file at bodyFile to get it (you can read it in parts)"
 		return m
 	}
 	m.Content = e.msg.Content

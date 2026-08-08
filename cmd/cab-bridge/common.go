@@ -323,7 +323,11 @@ func resolveCurrentSession(mgr *session.Manager, cmdName, sessionIDFlag string) 
 	res, err := mgr.LookupByCWDDetails(cwd)
 	if err != nil {
 		if errors.Is(err, session.ErrNoSessionForCwd) {
-			return "", fmt.Errorf("%s: no session for cwd %q — register first (or `cab-bridge bootstrap`), or pass --session-id=<id>", cmdName, cwd)
+			// `bootstrap` is gone (v0.8), and pointing at it sends the agent to
+			// "unknown subcommand" — a dead end. And do NOT suggest an id here:
+			// the only one it has just read is somebody ELSE's, so the advice
+			// would route it into impersonation (CRI2 P0).
+			return "", fmt.Errorf("%s: no session for this directory (%s) — run `cab-bridge join --role=val|esc` here first", cmdName, cwd)
 		}
 		return "", fmt.Errorf("%s: session lookup from cwd %q: %w", cmdName, cwd, err)
 	}

@@ -594,7 +594,12 @@ func finishReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *se
 		name = mf.AgentName
 	}
 	fmt.Fprintln(stdout, formatSendEcho(myName(mgr, sid), name, txn.ResponseID, txn.Content, "reply"))
-	fmt.Fprintf(stdout, "  closed: %s\n", strings.Join(txn.CloseIDs, ", "))
+	// Each closed ask with a preview and its age (CRI2 P2): a list of opaque ids
+	// tells you HOW MANY you closed, never WHICH — and "did you notice what you
+	// just closed?" is the question §2.3/F-34 puts precisely on this echo.
+	for _, line := range describeClosed(cfg, sid, txn.CloseIDs) {
+		fmt.Fprintf(stdout, "  closed: %s\n", line)
+	}
 
 	// F-34 in its v0.8 shape. Nothing unseen is ever CLOSED — collectOpenAsks
 	// only considers NOTIFIED messages — but the agent may still be answering
@@ -646,6 +651,46 @@ func humanSize(n int) string {
 		return fmt.Sprintf("%d B", n)
 	}
 	return fmt.Sprintf("%.1f KB", float64(n)/1024)
+}
+
+// describeClosed renders each archived ask as "id · preview · age", reading it
+// back from processed/ where reply has just put it. An id that cannot be read
+// degrades to the bare id rather than failing the echo: this runs AFTER a
+// successful delivery, and losing the confirmation over a cosmetic lookup would
+// be a poor trade.
+func describeClosed(cfg config.Config, sid string, ids []string) []string {
+	processedDir := filepath.Join(cfg.DataDir, "sessions", sid, "processed")
+	byID := map[string]*message.Message{}
+	if entries, err := os.ReadDir(processedDir); err == nil {
+		for _, e := range entries {
+			id := archivedID(e.Name())
+			if id == "" {
+				continue
+			}
+			data, rerr := os.ReadFile(filepath.Join(processedDir, e.Name()))
+			if rerr != nil {
+				continue
+			}
+			if m, derr := message.DecodeLenient(data, cfg.MaxMessageBytes); derr == nil {
+				byID[id] = m
+			}
+		}
+	}
+
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		m, ok := byID[id]
+		if !ok {
+			out = append(out, id)
+			continue
+		}
+		age := ""
+		if t, terr := time.Parse(time.RFC3339, m.Timestamp); terr == nil {
+			age = " · " + time.Since(t).Round(time.Minute).String() + " old"
+		}
+		out = append(out, fmt.Sprintf("%s · %q%s", id, previewContent(m.Content, 40), age))
+	}
+	return out
 }
 
 // countUnseenInbound counts messages sitting in inbox/ that no next has emitted

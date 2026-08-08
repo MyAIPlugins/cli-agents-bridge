@@ -34,6 +34,17 @@ const wakeCursorFile = "wake-cursor.json"
 type WakeCursor struct {
 	SchemaVersion int                  `json:"schemaVersion"`
 	Notified      map[string]time.Time `json:"notified"`
+	// Replayed holds ids that were moved back to UNREAD by a join, so the next
+	// delivery can SAY they are a re-delivery. Without it ForgetNotified erased
+	// them without a trace and a replayed message was indistinguishable from a
+	// fresh one — the marker §2.3 asks for could not be produced at all.
+	// Cleared as soon as the message is emitted again.
+	Replayed map[string]bool `json:"replayed,omitempty"`
+}
+
+// WasReplayed reports whether id is being delivered again after a join replay.
+func (c *WakeCursor) WasReplayed(id string) bool {
+	return c != nil && c.Replayed[id]
 }
 
 // IsNotified reports whether id has already been delivered to a `next`.
@@ -117,6 +128,8 @@ func (m *Manager) CommitWakeCursor(sessionID string, ids []string, now time.Time
 	}
 	for _, id := range ids {
 		cursor.Notified[id] = now.UTC()
+		// Delivered again: the replay marker has served its purpose.
+		delete(cursor.Replayed, id)
 	}
 	if prune != nil {
 		for id := range cursor.Notified {
@@ -162,6 +175,10 @@ func (m *Manager) ForgetNotified(sessionID string, ids []string) error {
 	for _, id := range ids {
 		if _, ok := cursor.Notified[id]; ok {
 			delete(cursor.Notified, id)
+			if cursor.Replayed == nil {
+				cursor.Replayed = map[string]bool{}
+			}
+			cursor.Replayed[id] = true
 			changed = true
 		}
 	}

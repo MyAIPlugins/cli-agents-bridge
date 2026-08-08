@@ -166,10 +166,10 @@ func TestNext_NeverMovesAFile(t *testing.T) {
 	_, err := os.Stat(processed)
 	assert.True(t, os.IsNotExist(err), "next must not even create processed/")
 
-	// And a second run does not re-deliver what is already NOTIFIED: with no
-	// window it simply keeps waiting, emitting nothing, until cancelled.
-	assert.Empty(t, runNextUntilCancel(t, mgr, cfg, sid, 200*time.Millisecond),
-		"nothing may be emitted when there is nothing new")
+	// And a second run does not re-deliver what is already NOTIFIED: it keeps
+	// waiting and reports only the interruption, never a page.
+	assert.NotContains(t, runNextUntilCancel(t, mgr, cfg, sid, 200*time.Millisecond), nextStatusEmitted,
+		"nothing may be delivered when there is nothing new")
 }
 
 // --- crash between print and commit ----------------------------------------
@@ -444,7 +444,8 @@ func TestNext_ReturnsOnlyOnDeliverySignalOrReclaim_NeverOnTime(t *testing.T) {
 		select {
 		case err := <-done:
 			require.NoError(t, err)
-			assert.Empty(t, stdout.String(), "an interrupted wait has no empty payload to report")
+			assert.NotContains(t, stdout.String(), nextStatusEmitted, "an interrupted wait delivers nothing")
+			assert.Contains(t, stdout.String(), nextStatusInterrupted, "but it says that it was interrupted")
 		case <-time.After(3 * time.Second):
 			t.Fatal("next did not return after cancel — the teardown must not depend on a deadline")
 		}
@@ -539,9 +540,9 @@ func TestNext_LegacyAcksNeverWake(t *testing.T) {
 	plantInboxAt(t, dataDir, sid, "msg-aaaaaaaaaaaa", "valxxx01", message.TypeAck, "ACK msg-x: received", base)
 	plantInboxAt(t, dataDir, sid, "msg-bbbbbbbbbbbb", "valxxx01", message.TypeAck, "ACK msg-y: received", base)
 
-	// An inbox of nothing but acks must look idle: next keeps waiting and emits
-	// nothing at all.
-	assert.Empty(t, runNextUntilCancel(t, mgr, cfg, sid, 300*time.Millisecond),
+	// An inbox of nothing but acks must look idle: next keeps waiting and never
+	// emits a page.
+	assert.NotContains(t, runNextUntilCancel(t, mgr, cfg, sid, 300*time.Millisecond), nextStatusEmitted,
 		"acks must not wake next")
 
 	cursor, _, err := mgr.ReadWakeCursor(sid)
@@ -725,4 +726,52 @@ func TestNext_DeliversAMessageArrivingMidWait(t *testing.T) {
 	var commit nextCommitRecord
 	require.NoError(t, dec.Decode(&commit))
 	assert.Equal(t, nextStatusCommitted, commit.Status)
+}
+
+// TestNext_MarksARedeliveryInline is the §2.3 marker (CRI2 P1-3): after a join
+// replay, the message must SAY it is a re-delivery where the agent reads it.
+//
+// The join line announcing the replay lives on another command's stderr, minutes
+// earlier and without ids — exactly the correlation-at-a-distance the inline
+// field exists to remove.
+func TestNext_MarksARedeliveryInline(t *testing.T) {
+	mgr, cfg, sid, dataDir := newNextSession(t)
+	plantInboxAt(t, dataDir, sid, "msg-aaaaaaaaaaaa", "valxxx01", message.TypeQuery, "the brief", time.Now().UTC())
+
+	first := runNextOnce(t, mgr, cfg, sid, 2*time.Second)
+	require.Equal(t, []string{"msg-aaaaaaaaaaaa"}, messageIDs(first))
+	assert.False(t, first.Messages[0].Redelivered, "a first delivery is not a re-delivery")
+
+	// A join replays it (the crash-then-resume path).
+	require.NoError(t, mgr.ForgetNotified(sid, []string{"msg-aaaaaaaaaaaa"}))
+
+	second := runNextOnce(t, mgr, cfg, sid, 2*time.Second)
+	require.Equal(t, []string{"msg-aaaaaaaaaaaa"}, messageIDs(second))
+	assert.True(t, second.Messages[0].Redelivered, "the replay must be visible ON the message")
+	assert.Contains(t, second.Messages[0].Note, "re-delivered")
+	assert.Contains(t, second.Messages[0].Note, "treat it normally", "and say what to do about it: nothing")
+
+	// The marker is one-shot: a third delivery is not a re-delivery again.
+	require.NoError(t, mgr.ForgetNotified(sid, []string{"msg-aaaaaaaaaaaa"}))
+	_, err := mgr.CommitWakeCursor(sid, []string{"msg-aaaaaaaaaaaa"}, time.Now().UTC(), nil, nil)
+	require.NoError(t, err)
+	cursor, _, err := mgr.ReadWakeCursor(sid)
+	require.NoError(t, err)
+	assert.False(t, cursor.WasReplayed("msg-aaaaaaaaaaaa"), "the marker is cleared once re-delivered")
+}
+
+// TestNext_InterruptedWaitSaysSo: exiting 0 with zero bytes left a wrapper
+// unable to tell "interrupted while waiting" from "nothing happened" (CRI2 P1-1).
+func TestNext_InterruptedWaitSaysSo(t *testing.T) {
+	mgr, cfg, sid, _ := newNextSession(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, nextRun(ctx, mgr, cfg, sid, &stdout, &stderr))
+
+	var rec nextCommitRecord
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &rec), "an interrupted wait must still report: %q", stdout.String())
+	assert.Equal(t, nextStatusInterrupted, rec.Status)
+	assert.Contains(t, rec.Hint, "run next again")
 }

@@ -77,6 +77,13 @@ func deriveAgentName(myRole, scopeBase string, peers []peerSummary) (name, basis
 		scopeBase = "session" // never produce a bare "ESC-" on a degenerate scope
 	}
 	for _, p := range peers {
+		// Inherit a suffix only from a DIFFERENT role. The convergence exists to
+		// pair complements (VAL-x -> ESC-x); applied between two agents of the
+		// same role it makes them converge on ONE name, which is the collision
+		// this derivation is supposed to avoid (CRI2 P0).
+		if p.Role == myRole {
+			continue
+		}
 		peerPrefix := roleUpper(p.Role) + "-"
 		if strings.HasPrefix(p.AgentName, peerPrefix) {
 			suffix := strings.TrimPrefix(p.AgentName, peerPrefix)

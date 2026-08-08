@@ -96,11 +96,28 @@ func runJoin(args []string) error {
 
 	name := *agentName
 	if name == "" {
-		name, _ = deriveAgentName(*role, filepath.Base(scope), peers)
+		// Derive from the WORKING DIRECTORY, not the scope (CRI2 P0). Deriving
+		// from the scope is not injective: every agent of the same role in one
+		// repository lands on the same name, so the collision is not an edge
+		// case, it is the DEFAULT — and in a quadriad the first fresh reviewer
+		// running `join --role=esc` used to walk straight into it.
+		name, _ = deriveAgentName(*role, filepath.Base(pp), peers)
 	}
 
-	// F-90 stop-and-ask, BEFORE registering anything.
+	// F-90 stop-and-ask, BEFORE registering anything — extended to the case that
+	// actually happens (CRI2 P0): the SAME name already in use from a DIFFERENT
+	// directory. A resume means "the same agent, back in its own directory";
+	// anything else must stop, because letting both register leaves two
+	// identically-named sessions and merely moves the ambiguity downstream, to
+	// every command that resolves a recipient by name.
 	if !*forceNew {
+		if occupant, clash := findNameElsewhere(mgr, peers, *role, pp, name); clash {
+			return fmt.Errorf("join: the name %q is already taken by %s, which lives in %s — not this directory.\n"+
+				"  Two sessions with one name would make every by-name recipient ambiguous.\n"+
+				"  Either pick your own name:  cab-bridge join --role=%s --agent-name=<name>\n"+
+				"  or run this from %s if you ARE that agent coming back",
+				name, occupant.SessionID, occupant.ProjectName, *role, occupant.ProjectName)
+		}
 		if occupant, clash := findNameClash(mgr, peers, *role, pp, name); clash {
 			return fmt.Errorf("join: this working directory already has a %s session named %q (%s), and you asked to join as %q.\n"+
 				"  Registering both would leave two sessions on one project path, which blocks every command that resolves by directory.\n"+
@@ -201,6 +218,26 @@ func findNameClash(mgr *session.Manager, peers []peerSummary, role, projectPath,
 			continue
 		}
 		if filepath.Clean(mf.ProjectPath) == filepath.Clean(projectPath) {
+			return p, true
+		}
+	}
+	return peerSummary{}, false
+}
+
+// findNameElsewhere reports a LIVE session already using this name from a
+// different project path. Stale ones do not count: a dead session's name is
+// free, and refusing on its behalf would strand an agent whose predecessor
+// simply died.
+func findNameElsewhere(mgr *session.Manager, peers []peerSummary, role, projectPath, wantName string) (peerSummary, bool) {
+	for _, p := range peers {
+		if p.AgentName != wantName || p.Stale {
+			continue
+		}
+		mf, err := mgr.LoadManifest(p.SessionID)
+		if err != nil {
+			continue
+		}
+		if filepath.Clean(mf.ProjectPath) != filepath.Clean(projectPath) {
 			return p, true
 		}
 	}

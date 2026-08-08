@@ -209,21 +209,24 @@ func TestBuildOverview_ListenerDeadPID(t *testing.T) {
 	assert.False(t, rep.ListenerActive, "future window but dead PID → not listening")
 }
 
+var nowForOverviewTest = time.Now().UTC()
+
 func TestPrintOverviewHuman_ListenerActive(t *testing.T) {
 	t.Parallel()
 	until := time.Now().UTC().Add(30 * time.Minute)
 	rep := overviewReport{
 		Me:             overviewSelf{SessionID: "esc12345", AgentName: "ESC-x", Role: "esc", Stale: false},
-		ListenerActive: true,
-		ListenerPid:    4321,
-		ListenerUntil:  &until,
-		Inbox:          []overviewMsg{},
+		ListenerActive: true, ListenerSince: &nowForOverviewTest,
+		ListenerPid:   4321,
+		ListenerUntil: &until,
+		Inbox:         []overviewMsg{},
 	}
 	var b bytes.Buffer
 	printOverviewHuman(&b, rep)
 	out := b.String()
 	assert.Contains(t, out, "listener: listening (PID 4321", "the listener line names the pid")
-	assert.Contains(t, out, "expires in", "and the remaining window")
+	assert.NotContains(t, out, "expires in", "there is no window left to expire (§2.2 rev. cdb21dc)")
+	assert.Contains(t, out, "waiting since", "what is observable now is when the wait began")
 }
 
 func TestPrintOverviewHuman_ListenerNotListening(t *testing.T) {
