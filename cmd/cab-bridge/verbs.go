@@ -378,6 +378,14 @@ func sortedNames(senders map[string]string) []string {
 // actionable query if the send failed. The gap between them is what the
 // journal covers.
 func finishReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *session.ReplyTxn, stdout, stderr io.Writer) error {
+	// Entering already SENT means we are resuming after a crash in the gap.
+	// Say so: completing a recovery in silence would look identical to having
+	// just sent the text of THIS invocation, which is not what happened — the
+	// delivered response is the one frozen in the journal.
+	if txn.State == session.ReplyTxnSent {
+		fmt.Fprintf(stderr, "reply: resuming an interrupted reply — response %s was already delivered, finishing the archiving without sending again\n", txn.ResponseID)
+	}
+
 	if txn.State == session.ReplyTxnPending {
 		delivered, err := deliverResponse(cfg, mgr, sid, txn)
 		if err != nil {
