@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — 2026-08-08
+
+**Breaking.** The delivery model changes: from **wake coupled to consume** to a **mailbox with explicit states**. Whoever woke an agent used to have already eaten its messages and handed them over on stdout — one defect behind three symptoms reported from daily use: an orchestrator that forgets to re-arm its listener and loses messages, ACKs that agents mistake for content, and commands that hide the other messages that arrived alongside.
+
+Ordering principle for the whole arc: **not making the agent think wins**, ahead of API elegance and orthogonality. Every option on the hot path costs thinking on every cycle, on every agent, forever.
+
+### The LOOP surface — five commands, zero flags
+
+```
+cab-bridge join              once, at the start
+cab-bridge next              forever: the only command of the cycle
+cab-bridge ask <who> "..."   asking — waits for an answer
+cab-bridge tell <who> "..."  informing — does not
+cab-bridge reply "..."       answering whoever asked — closes it
+```
+
+**The verb carries the type.** No `--type`, no `--in-reply-to`, no id to transcribe: whether you are asking or informing is something the writer already knows, so it is language, not configuration. Outbound line, replay on `join` and retention all follow from the verb.
+
+A **SERVICE surface** (`read`, `sent`, `state`, `peers`, `overview`, `cleanup`, `inspect`, `notify-watch`) is *listed*, not merely promised — for an LLM an undocumented command is not absent, it is *to be invented* (LL-13).
+
+### Added
+- **`next`** — the one command of the cycle. Delivers what is `UNREAD`, marks it `NOTIFIED`, and **never moves a file under any circumstance**. Wake cursor in a separate schema-versioned file, every read-modify-write under the cross-process session lock. Order is mandatory: **print first, commit the cursor after** — a crash in between duplicates (harmless, at-least-once), the reverse order loses silently. **No window**: no timeout, not even in config — a deadline would be the waiter dismissing itself.
+- **`join`** — idempotent entry point; prints **everyone who is here**, never a chosen peer. Stops and asks on a name mismatch instead of creating the second session that blocks every id-free command (F-90). Replays open asks so a compact cannot bury a brief.
+- **`ask` / `tell` / `reply`** — recipient **by agent name**, fail-closed: zero matches is an error listing who is here, several live matches is an error listing the candidates. Never a silent pick. Payload: **argument present → it is the message; absent → stdin to EOF**.
+- **`reply` is transactional** — it closes *all* the open asks of one sender: frozen set under lock, one journal, deterministic idempotency key, create-if-absent delivery, `SENT` → archive with a progress index → journal removed. A retry completes **without resending**.
+- **Outbound and open-ask lines in `next`'s summary** — the compensating half of removing ACKs: the sender sees whether a brief landed without having to remember a command.
+- **`architect` in `join --role`** — a real routing role that the entry point did not advertise, so a fresh reviewer picked `esc` and hit the `esc→esc` wall before discovering the role meant for it.
+- **`CAB_SESSION_ID` read as input** — precedence `--session-id` > `CAB_SESSION_ID` > cwd, never a silent fallback. The prerequisite for running several agents from folders of one repo: the dangerous case is not the command that fails, it is the one that **succeeds** as somebody else.
+
+### Removed
+- **`listen`, `receive`, `bootstrap`, and the ACKs.** Clean break, no compatibility shims, no aliases: there were no active sessions, so this was the moment. ACKs are replaced by queryable state (`sent`, with honest states — an I/O error is an *error*, never a state).
+
+### Fixed
+- **`deriveAgentName` was not injective** — it derived from the scope basename, so every agent of the same role in one repository landed on the same name: not an edge case, the default. A second `join --role=esc` resumed the first agent's session, replayed its asks and evicted its `next`. Now the name derives from the working directory, and pair inheritance is gone entirely: once the suffix *is* a directory, inheriting it puts somebody else's directory in your name.
+- **F-91** — the shared-scope guardrail warned on an exact match and advised `--session-id`, which the LOOP commands reject: an unexecutable suggestion on every command is a dead end, not noise.
+- **F-95** — there was no way to be alive *and* not woken by ACKs: `listen` held the heartbeat but woke on ACKs, `receive --any` ignored them but did not heartbeat. It was not the wrong tool being chosen — there was no right tool. The two commands became one.
+- Re-delivery is marked **inline on the message**, not on another command's stderr minutes earlier; an interrupted wait reports `interrupted` instead of exiting 0 with zero bytes; `overview` tells the truth during a genuine wait.
+
+### Known limitations
+- **No TTL on the live inbox** (deferred to Tier 2, stated in the design contract): already-read `tell`s and responses stay in `inbox/` as `NOTIFIED` and accumulate in a long-lived session. Slow degradation, not a correctness defect — `next` never re-emits them. A time-based pruner over a live mailbox is a new mechanism deserving its own design round, not a pre-merge patch.
+- **Quoting is not solved.** The shell interprets backticks and `$` *before* the binary exists, so no tool-side defence is possible: the command succeeds while the message leaves in pieces. Send from a file. The structural fix is the MCP server (F-72), where content travels as a structured parameter.
+
+### Method
+Four full design-gate rounds with two cross-vendor critics (Codex and Fable) before a line of production code, then per-phase diff-gates. **Six P0s, four of them inside the VAL's own syntheses** — a synthesis that resolves a critic's objection arrives at the next round *pre-validated*, and that patina makes it hard to question, most of all for whoever wrote it. The final acceptance pass found a P0 deeper than the one just closed, on the branch the gate had not named. See `docs/DESIGN-v0.8-mailbox.md` for the normative contract and CLAUDE.md LL-18.
+
 ## [0.7.0] — 2026-06-05
 
 A single `v0.7.0` tag that also ships the previously-unreleased v0.6 work (the F-39/F-81/F-66 section below, never tagged standalone). Built end-to-end via the cab-bridge dogfooding triad over the bridge itself (VAL + ESC Claude Code + CRI Codex): Tier A by independent VAL-gate; **B-1 and B-2 by the full cross-vendor round** (CRI design-gate → impl → VAL gate → CRI diff-gate → fix → re-gate). The B-1 diff-gate caught 3 P3s, the B-2 diff-gate caught **2 concurrency P1s invisible to the green `-race` gate and the smoke** — without that round B-2 would have shipped a silent brief-loss. Distilled from 7 real chatterence-bi feedbacks.
