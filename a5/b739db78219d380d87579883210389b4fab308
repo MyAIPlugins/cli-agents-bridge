@@ -1,0 +1,29 @@
+docs/DESIGN-v0.8-mailbox.md
+  s_c3a7b4ab630317::t_72c513003bbf7c 207-208,210-213
+  s_c3a7b4ab630317::t_280582bef50317 142-143,146
+  s_c3a7b4ab630317::t_17133cd6b6d0fd 285-287
+  s_c3a7b4ab630317::t_b74f1bae4fc290 96,127,144-145,235
+  s_c3a7b4ab630317::t_c4b031822c5b87 112,350,352,354
+  s_c3a7b4ab630317::t_e716941bc451c6 92-95,97
+  s_c3a7b4ab630317::t_68939cc4c34acb 169-186
+  s_c3a7b4ab630317::t_60e83f1153fa33 223-225
+  s_c3a7b4ab630317::t_4001772406cb50 378-380,410-412,437-439
+  s_c3a7b4ab630317::t_b9363149a0ed26 64-65
+  s_c3a7b4ab630317::t_1235572267f3b4 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "a5b739db78219d380d87579883210389b4fab308",
+  "prompts": {},
+  "sessions": {
+    "s_c3a7b4ab630317": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54f2afc1-7dea-42b7-a40d-0d4c6f0e3eea",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
