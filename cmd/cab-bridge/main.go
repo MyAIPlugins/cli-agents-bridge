@@ -45,6 +45,8 @@ func main() {
 		printUsage()
 	case "bootstrap":
 		exitFromErr(runBootstrap(os.Args[2:]))
+	case "join":
+		exitFromErr(runJoin(os.Args[2:]))
 	case "register":
 		exitFromErr(runRegister(os.Args[2:]))
 	case "listen":
