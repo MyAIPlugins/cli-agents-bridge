@@ -97,6 +97,14 @@ type nextMessage struct {
 	Note string `json:"note,omitempty"`
 }
 
+// outboundAsk is one of MY asks still waiting for an answer.
+type outboundAsk struct {
+	MsgID string `json:"msgId"`
+	To    string `json:"to"`
+	Age   string `json:"age"`
+	State string `json:"state"`
+}
+
 type nextPayload struct {
 	Status       string        `json:"status"`
 	Session      string        `json:"session"`
@@ -108,17 +116,38 @@ type nextPayload struct {
 	Corrupt      []string      `json:"corrupt,omitempty"`
 	Messages     []nextMessage `json:"messages"`
 	Warnings     []string      `json:"warnings,omitempty"`
-	Hint         string        `json:"hint"`
+	// Outbound and OpenAsks are the summary §2.2 asks for, and they are here
+	// rather than in a command of their own on purpose: `next` is run anyway, so
+	// this is information at zero cost instead of one more thing to choose.
+	//
+	// They are what stitches back the only thing lost by removing the ACKs —
+	// otherwise "did they get my brief?" would require REMEMBERING to run `sent`,
+	// i.e. spending the scarce resource. Outbound counts only asks: a tell is
+	// fire-and-forget, and a counter that grows forever is a counter the agent
+	// learns to ignore.
+	Outbound []outboundAsk `json:"outbound,omitempty"`
+	OpenAsks int           `json:"openAsks"`
+	Hint     string        `json:"hint"`
 }
 
 // nextCommitRecord is the second JSONL record: what actually happened to the
 // cursor. It is the only record allowed to state an outcome.
 type nextCommitRecord struct {
-	Status     string   `json:"status"`
-	Session    string   `json:"session"`
-	Generation int      `json:"generation"`
-	Confirmed  []string `json:"confirmed"`
-	Hint       string   `json:"hint"`
+	Status     string `json:"status"`
+	Session    string `json:"session"`
+	Generation int    `json:"generation"`
+	// Confirmed is always an array, never null: a consumer that iterates it
+	// should not have to special-case the paths that confirm nothing.
+	Confirmed []string `json:"confirmed"`
+	Hint      string   `json:"hint"`
+}
+
+// newCommitRecord keeps Confirmed non-nil for every exit path.
+func newCommitRecord(status, sid string, generation int, confirmed []string, hint string) nextCommitRecord {
+	if confirmed == nil {
+		confirmed = []string{}
+	}
+	return nextCommitRecord{Status: status, Session: sid, Generation: generation, Confirmed: confirmed, Hint: hint}
 }
 
 // mailboxEntry is one decoded message file still sitting in inbox/.
@@ -272,23 +301,13 @@ func nextRun(parent context.Context, mgr *session.Manager, cfg config.Config, si
 
 			switch {
 			case emitErr != nil:
-				_ = enc.Encode(nextCommitRecord{
-					Status: nextStatusNotCommitted, Session: sid, Generation: payload.page.Generation,
-					Hint: hintCommitFailed,
-				})
+				_ = enc.Encode(newCommitRecord(nextStatusNotCommitted, sid, payload.page.Generation, nil, hintCommitFailed))
 				return fmt.Errorf("next: %w", emitErr)
 			case evicted:
-				_ = enc.Encode(nextCommitRecord{
-					Status: nextStatusNotCommitted, Session: sid, Generation: payload.page.Generation,
-					Hint: hintTakeoverBeforeEmit,
-				})
+				_ = enc.Encode(newCommitRecord(nextStatusNotCommitted, sid, payload.page.Generation, nil, hintTakeoverBeforeEmit))
 				return errors.New("next: another instance of this session took over")
 			default:
-				return enc.Encode(nextCommitRecord{
-					Status: nextStatusCommitted, Session: sid, Generation: payload.page.Generation,
-					Confirmed: payload.emittedIDs,
-					Hint:      "these messages are yours; run next again to stay reachable",
-				})
+				return enc.Encode(newCommitRecord(nextStatusCommitted, sid, payload.page.Generation, payload.emittedIDs, "these messages are yours; run next again to stay reachable"))
 			}
 		}
 
@@ -299,12 +318,7 @@ func nextRun(parent context.Context, mgr *session.Manager, cfg config.Config, si
 			// zero bytes leaves a wrapper unable to tell "interrupted while
 			// waiting" from "nothing happened at all", and every other exit path
 			// here says what it did.
-			return enc.Encode(nextCommitRecord{
-				Status:     nextStatusInterrupted,
-				Session:    sid,
-				Generation: owner.Generation,
-				Hint:       "the wait was interrupted before anything arrived — nothing was delivered; run next again when you are ready",
-			})
+			return enc.Encode(newCommitRecord(nextStatusInterrupted, sid, owner.Generation, nil, "the wait was interrupted before anything arrived — nothing was delivered; run next again when you are ready"))
 		case <-time.After(pollInterval):
 		}
 	}
@@ -428,6 +442,22 @@ func collectNextPage(mgr *session.Manager, cfg config.Config, sid, inboxDir stri
 		used += size
 	}
 
+	// Computed only on the emitting pass, never per poll: it costs one outbox
+	// scan plus one index per distinct recipient.
+	page.Outbound = collectOutboundAsks(mgr, cfg, sid)
+	if open, oerr := collectOpenAsks(mgr, cfg, sid); oerr == nil {
+		// Counted AFTER this page, not before: the asks being emitted right now
+		// become open the moment the agent reads them, and the number it needs
+		// is the one describing the situation it is about to be in — that is the
+		// context `reply` works against.
+		page.OpenAsks = len(open)
+		for _, m := range page.Messages {
+			if m.Type == message.TypeQuery {
+				page.OpenAsks++
+			}
+		}
+	}
+
 	page.Returned = len(page.Messages)
 	page.HasMore = page.Returned < page.Total
 	// The output declares its own next action, so the agent never looks for a
@@ -439,6 +469,51 @@ func collectNextPage(mgr *session.Manager, cfg config.Config, sid, inboxDir stri
 	}
 
 	return pageResult{page: page, emittedIDs: emitted, present: present}, true, nil
+}
+
+// collectOutboundAsks lists MY asks that are still waiting for an answer, with
+// the state seen from the recipient's side.
+//
+// Best-effort by design: this is a summary line, so a mailbox that cannot be
+// read costs its rows, never the delivery that the agent is actually waiting
+// for.
+func collectOutboundAsks(mgr *session.Manager, cfg config.Config, sid string) []outboundAsk {
+	sentRows, err := collectSent(filepath.Join(cfg.DataDir, "sessions", sid, "outbox"), cfg.MaxMessageBytes)
+	if err != nil {
+		return nil
+	}
+	var asks []sentSummary
+	for _, r := range sentRows {
+		if r.Type == message.TypeQuery {
+			asks = append(asks, r)
+		}
+	}
+	if len(asks) == 0 {
+		return nil
+	}
+	if err := annotateSentStates(cfg, mgr, asks); err != nil {
+		return nil
+	}
+
+	var out []outboundAsk
+	for _, r := range asks {
+		// Still open = it reached them and they have not replied. `archived`
+		// means their reply closed it; the rest are not "waiting on them".
+		if r.State != sentStateUnread && r.State != sentStateNotified {
+			continue
+		}
+		age := ""
+		if t, terr := time.Parse(time.RFC3339, r.Timestamp); terr == nil {
+			age = time.Since(t).Round(time.Minute).String()
+		}
+		name := r.To
+		if mf, merr := mgr.LoadManifest(r.To); merr == nil && mf.AgentName != "" {
+			name = mf.AgentName
+		}
+		out = append(out, outboundAsk{MsgID: r.MsgID, To: name, Age: age, State: r.State})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].MsgID < out[j].MsgID })
+	return out
 }
 
 // serializedSize is how many bytes this message will occupy in the emitted
@@ -464,7 +539,7 @@ func newNextMessage(e mailboxEntry, oversize bool) nextMessage {
 	}
 	if e.replayed {
 		m.Redelivered = true
-		m.Note = "re-delivered: you were shown this before a restart — treat it normally"
+		m.Note = "re-delivered: you have been shown this before — treat it normally"
 	}
 	if oversize {
 		m.Oversize = true

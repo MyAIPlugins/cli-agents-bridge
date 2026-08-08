@@ -88,14 +88,26 @@ func runSent(args []string) error {
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "MSG_ID\tTO\tTYPE\tSTATE\tTIMESTAMP\tIN_REPLY_TO")
-	for _, s := range sent {
+	for _, row := range sent {
 		inReplyTo := "-"
-		if s.InReplyTo != nil {
-			inReplyTo = *s.InReplyTo
+		if row.InReplyTo != nil {
+			inReplyTo = *row.InReplyTo
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", s.MsgID, s.To, s.Type, s.State, s.Timestamp, inReplyTo)
+		// The agent NAME, not the raw id: this was the last surface still
+		// showing opaque ids after an arc spent removing them.
+		to := row.To
+		if mf, err := mgr.LoadManifest(row.To); err == nil && mf.AgentName != "" {
+			to = mf.AgentName
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", row.MsgID, to, row.Type, row.State, row.Timestamp, inReplyTo)
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	// A one-line gloss: the state names are precise but they do not explain
+	// themselves, and none of them means "the work is done".
+	fmt.Fprintln(os.Stdout, "\nunread = still in their inbox · notified = handed to their next · archived = they replied · expired/unreadable/unknown = see docs")
+	return nil
 }
 
 // collectSent reads the sender's outbox and returns one summary per message in

@@ -750,6 +750,8 @@ func TestNext_MarksARedeliveryInline(t *testing.T) {
 	assert.True(t, second.Messages[0].Redelivered, "the replay must be visible ON the message")
 	assert.Contains(t, second.Messages[0].Note, "re-delivered")
 	assert.Contains(t, second.Messages[0].Note, "treat it normally", "and say what to do about it: nothing")
+	assert.NotContains(t, second.Messages[0].Note, "restart",
+		"a replay can come from a re-join in the SAME life: asserting a restart would be false in the benign case")
 
 	// The marker is one-shot: a third delivery is not a re-delivery again.
 	require.NoError(t, mgr.ForgetNotified(sid, []string{"msg-aaaaaaaaaaaa"}))
@@ -774,4 +776,35 @@ func TestNext_InterruptedWaitSaysSo(t *testing.T) {
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &rec), "an interrupted wait must still report: %q", stdout.String())
 	assert.Equal(t, nextStatusInterrupted, rec.Status)
 	assert.Contains(t, rec.Hint, "run next again")
+}
+
+// TestNext_SummaryCarriesOutboundAndOpenAsks is the §2.2 stitch: with the ACKs
+// gone, "did they get my brief?" would otherwise require REMEMBERING to run
+// `sent` — i.e. spending the scarce resource that §2.2 itself rules out.
+//
+// It lives in next's payload, not in a command of its own, because next is run
+// anyway: information at zero cost instead of one more thing to choose.
+func TestNext_SummaryCarriesOutboundAndOpenAsks(t *testing.T) {
+	mgr, cfg, sid, dataDir := newNextSession(t)
+	const peer = "valsum01"
+	plantOverviewSession(t, dataDir, peer, session.RoleVal, "VAL-sum", "/repo/next", "", session.StateOrchestrating)
+
+	now := time.Now().UTC()
+	// An ask I sent that is still sitting unread in THEIR inbox.
+	plantInboxAt(t, dataDir, peer, "msg-out111111111"[:16], sid, message.TypeQuery, "my brief to them", now.Add(-30*time.Minute))
+	plantOutboxAt(t, dataDir, sid, "msg-out111111111"[:16], peer, message.TypeQuery, "my brief to them", now.Add(-30*time.Minute))
+	// A tell I sent: must NOT appear — fire and forget.
+	plantOutboxAt(t, dataDir, sid, "msg-out222222222"[:16], peer, message.TypeNotify, "an update", now)
+	// And an ask THEY sent me, waiting to be delivered.
+	plantInboxAt(t, dataDir, sid, "msg-aaaaaaaaaaaa", peer, message.TypeQuery, "their brief", now)
+
+	page := runNextOnce(t, mgr, cfg, sid, 2*time.Second)
+	require.Equal(t, []string{"msg-aaaaaaaaaaaa"}, messageIDs(page))
+
+	require.Len(t, page.Outbound, 1, "only asks count: a tell would grow the counter forever")
+	assert.Equal(t, "VAL-sum", page.Outbound[0].To, "by name, not by opaque id")
+	assert.Equal(t, sentStateUnread, page.Outbound[0].State, "they have not even been shown it yet")
+	assert.NotEmpty(t, page.Outbound[0].Age)
+
+	assert.Equal(t, 1, page.OpenAsks, "the ask just delivered is now open on my side")
 }

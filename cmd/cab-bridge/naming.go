@@ -71,33 +71,27 @@ func selectPeer(myRole string, peers []peerSummary) (*peerSummary, bool) {
 //
 // peers holds at most the single selectPeer result; it is a slice so the helper
 // stays pure (no selectPeer call inside) and trivially table-testable.
-func deriveAgentName(myRole, scopeBase string, peers []peerSummary) (name, basis string) {
+func deriveAgentName(myRole, dirBase string, peers []peerSummary) (name, basis string) {
+	// ALWAYS the caller's own working directory. No inheritance from a peer.
+	//
+	// The convergence existed when the suffix was the PROJECT (VAL-bridge ->
+	// ESC-bridge), where copying it meant "same team". Now that the suffix is a
+	// directory — which is what made the name injective — copying it would put
+	// SOMEBODY ELSE'S directory into your name: an esc started in escdir would
+	// be called ESC-valdir. The name would stop being a fact, and the stop-and-ask
+	// that reasons in terms of directories ("lives in valdir — not this one")
+	// would be reasoning over names that lie about directories.
+	//
+	// Injectivity comes for free: two sessions in one directory are already
+	// refused (F-90), and who pairs with whom is visible in `peers` and in the
+	// scope — it never needed encoding in a string.
 	myPrefix := roleUpper(myRole)
-	if scopeBase == "" || scopeBase == "." || scopeBase == string(filepath.Separator) {
-		scopeBase = "session" // never produce a bare "ESC-" on a degenerate scope
+	if dirBase == "" || dirBase == "." || dirBase == string(filepath.Separator) {
+		dirBase = "session" // never produce a bare "ESC-" on a degenerate path
 	}
-	for _, p := range peers {
-		// Inherit a suffix only from a DIFFERENT role. The convergence exists to
-		// pair complements (VAL-x -> ESC-x); applied between two agents of the
-		// same role it makes them converge on ONE name, which is the collision
-		// this derivation is supposed to avoid (CRI2 P0).
-		if p.Role == myRole {
-			continue
-		}
-		peerPrefix := roleUpper(p.Role) + "-"
-		if strings.HasPrefix(p.AgentName, peerPrefix) {
-			suffix := strings.TrimPrefix(p.AgentName, peerPrefix)
-			if suffix != "" {
-				return myPrefix + "-" + suffix, "peer:" + p.SessionID
-			}
-		}
-	}
-	return myPrefix + "-" + scopeBase, "scope-basename"
+	return myPrefix + "-" + dirBase, "working-dir"
 }
 
-// roleUpper renders a role as its name prefix: val->VAL, esc->ESC; any other
-// role is uppercased as-is so observer/architect/neutral still produce a sane,
-// stable prefix.
 func roleUpper(role string) string {
 	return strings.ToUpper(role)
 }
