@@ -11,6 +11,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
@@ -135,6 +137,23 @@ func runJoin(args []string) error {
 		}
 	}
 
+	// Redelivery across lives (DESIGN §2.3, CRI2 P1-4): an ask that was already
+	// handed to a `next` in a previous incarnation goes back to UNREAD, so this
+	// life sees it. Without this the cursor only grows — a page lost to a compact
+	// left its asks NOTIFIED forever, invisible to every later `next`, and the
+	// next reply closed them without anyone having read them.
+	//
+	// ASKS ONLY: `tell` and `response` are one-shot per cursor, and re-waking a
+	// notification from three days ago is precisely the indiscriminate reset the
+	// design rules out.
+	replayed, rerr := replayOpenAsks(mgr, cfg, mf.SessionID)
+	if rerr != nil {
+		return fmt.Errorf("join: replay open asks: %w", rerr)
+	}
+	if replayed > 0 {
+		fmt.Fprintf(os.Stderr, "join: %d open ask(s) from a previous session will be delivered again by next\n", replayed)
+	}
+
 	report := joinReport{
 		SessionID: mf.SessionID,
 		AgentName: mf.AgentName,
@@ -145,6 +164,28 @@ func runJoin(args []string) error {
 		Hint:      "run next to receive work",
 	}
 	return printJoinReport(os.Stdout, report)
+}
+
+// replayOpenAsks moves every still-open ask back to UNREAD and reports how many.
+func replayOpenAsks(mgr *session.Manager, cfg config.Config, sid string) (int, error) {
+	cursor, _, err := mgr.ReadWakeCursor(sid)
+	if err != nil {
+		return 0, err
+	}
+	entries, _, err := readMailbox(filepath.Join(cfg.DataDir, "sessions", sid, "inbox"), cfg.MaxMessageBytes)
+	if err != nil {
+		return 0, err
+	}
+	var ids []string
+	for _, e := range entries {
+		if e.msg.Type == message.TypeQuery && cursor.IsNotified(e.msg.ID) {
+			ids = append(ids, e.msg.ID)
+		}
+	}
+	if err := mgr.ForgetNotified(sid, ids); err != nil {
+		return 0, err
+	}
+	return len(ids), nil
 }
 
 // findNameClash reports an existing session with the same (role, scope,

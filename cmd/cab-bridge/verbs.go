@@ -12,6 +12,7 @@ import (
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/routing"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 	transportfs "github.com/myAIPlugins/cli-agents-bridge/internal/transport/fs"
 )
@@ -37,7 +38,10 @@ import (
 func resolveMessagePayload(arg string, hasArg bool, stdin io.Reader) (string, error) {
 	if hasArg {
 		if strings.TrimSpace(arg) == "" {
-			return "", errors.New("empty message")
+			// An empty ARGUMENT is exactly the shell-ate-the-text case (a stray
+			// backtick, a $, an apostrophe), so this is where the guidance is
+			// most needed — it used to be the one path without it.
+			return "", errors.New("empty message: the shell may have swallowed it (backticks, $, quotes) — pipe it on stdin instead, e.g. `... < message.md`")
 		}
 		return arg, nil
 	}
@@ -105,8 +109,18 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, name, selfS
 		for _, c := range candidates {
 			ids = append(ids, c.SessionID)
 		}
-		return "", fmt.Errorf("%d live agents are named %q (%s) — this is ambiguous, so nothing was sent; clean up the duplicates with `cab-bridge cleanup --session-id=<id>`",
-			len(candidates), name, strings.Join(ids, ", "))
+		// List WHAT distinguishes them (CRI2 P2-6). The old message named no
+		// discriminator — "which of the two?" — while advising to destroy a
+		// session the tool itself classifies as alive. With projectPath and
+		// heartbeat age the choice becomes mechanical, and removal stays a last
+		// resort rather than the first suggestion.
+		var lines []string
+		for _, c := range candidates {
+			lines = append(lines, fmt.Sprintf("\n    %s  project %s  last seen %s ago", c.SessionID, c.ProjectName, time.Since(c.LastHeartbeat).Round(time.Second)))
+		}
+		sort.Strings(lines)
+		return "", fmt.Errorf("%d live agents are named %q, so nothing was sent:%s\n  they are different sessions: check which is the one you mean, and remove the stale one with `cab-bridge cleanup --session-id=<id>` only if it is genuinely dead",
+			len(candidates), name, strings.Join(lines, ""))
 	}
 }
 
@@ -234,17 +248,29 @@ func runSendVerb(verb, msgType string, args []string, stdin io.Reader, stdout, s
 	// silently skip: the second send may well be deliberate.
 	if cfg.DedupWindowSeconds > 0 {
 		outbox := filepath.Join(cfg.DataDir, "sessions", sid, "outbox")
-		if dupID, derr := findRecentDuplicate(outbox, to, msgType, content, cfg.DedupWindowSeconds, cfg.MaxMessageBytes, time.Now().UTC()); derr == nil && dupID != "" {
-			fmt.Fprintf(stderr, "%s: warning: an identical message to %s went out %ds ago as %s — sending anyway; if that was a double-invoke, the recipient now has two\n",
-				verb, args[0], cfg.DedupWindowSeconds, dupID)
+		now := time.Now().UTC()
+		if dupID, dupAt, derr := findRecentDuplicateAt(outbox, to, msgType, content, cfg.DedupWindowSeconds, cfg.MaxMessageBytes, now); derr == nil && dupID != "" {
+			// The AGE, not the window: printing DedupWindowSeconds said "10s ago"
+			// one second after the fact — a statement of something that did not
+			// happen, in the very message meant to help spot a double-invoke.
+			fmt.Fprintf(stderr, "%s: warning: an identical message to %s went out %s ago as %s — sending anyway; if that was a double-invoke, the recipient now has two\n",
+				verb, args[0], now.Sub(dupAt).Round(time.Second), dupID)
 		}
 	}
 
 	msgID, err := sendMessage(cfg, mgr, sid, to, msgType, content, nil, false)
 	if err != nil {
+		// The routing layer suggests --allow-mesh, a flag the LOOP verbs reject:
+		// following it lands on "takes no flags", i.e. a bounce between two
+		// contradicting instructions — the same dead end as F-91 (CRI2 P1-2).
+		// Say the route that actually exists instead.
+		if errors.Is(err, routing.ErrEscToEscForbidden) {
+			return fmt.Errorf("%s (%s): two executors cannot message each other on the loop — route it through the val, or register as role=architect if you are a reviewer (the loop verbs take no flags, so there is no override here)",
+				verb, whoIThoughtIWas(mgr, sid))
+		}
 		return fmt.Errorf("%s (%s): %w", verb, whoIThoughtIWas(mgr, sid), err)
 	}
-	fmt.Fprintf(stdout, "→ %s (%s)\n", args[0], msgID)
+	fmt.Fprintln(stdout, formatSendEcho(myName(mgr, sid), args[0], msgID, content, verb))
 	return nil
 }
 
@@ -310,9 +336,24 @@ func replyRun(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 			return aerr
 		}
 		if len(asks) == 0 {
+			// The state the agent is actually in matters here (CRI2 P1-3): with an
+			// ask sitting UNREAD, "no ask of yours is open" is FALSE from where the
+			// agent stands — it knows it was asked something — and the tool
+			// contradicts its memory with no bridge across. Say which state it is.
+			if n := countUnseenInbound(mgr, cfg, sid); n > 0 {
+				return fmt.Errorf("%w: %d message(s) are waiting to be delivered — run next first, then reply", errUndeliveredWaiting, n)
+			}
 			return errNothingToReplyTo
 		}
-		target, content, rerr := resolveReplyTarget(args, asks, stdin)
+		// The names registered in my scope: used only to tell a near-miss from
+		// a genuine message, never to route.
+		var known []string
+		if me, merr := mgr.LoadManifest(sid); merr == nil {
+			if peers, _, perr := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, true, me.TeamID, me.Scope); perr == nil {
+				known = knownAgentNames(peers, sid)
+			}
+		}
+		target, content, rerr := resolveReplyTarget(args, asks, known, stdin)
 		if rerr != nil {
 			return rerr
 		}
@@ -335,6 +376,9 @@ func replyRun(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return mgr.WriteReplyTxn(sid, txn)
 	})
 	if lockErr != nil {
+		if errors.Is(lockErr, errUndeliveredWaiting) {
+			return fmt.Errorf("reply (%s): %w", whoIThoughtIWas(mgr, sid), lockErr)
+		}
 		if errors.Is(lockErr, errNothingToReplyTo) {
 			return fmt.Errorf("reply (%s): nothing to reply to — no ask of yours is open (a tell is fire-and-forget: answer it with tell or ask)", whoIThoughtIWas(mgr, sid))
 		}
@@ -347,6 +391,10 @@ func replyRun(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 // errNothingToReplyTo is raised inside the locked section so the caller can
 // phrase it with the identity label, without holding the lock to do so.
 var errNothingToReplyTo = errors.New("no open ask")
+
+// errUndeliveredWaiting separates "you have nothing" from "you have something
+// you have not read yet" — two states that the same message would flatten.
+var errUndeliveredWaiting = errors.New("nothing NOTIFIED to reply to")
 
 // resolveReplyTarget decides who is being answered and with what.
 //
@@ -363,7 +411,7 @@ var errNothingToReplyTo = errors.New("no open ask")
 // when it exactly matches the agent name of a sender with an open ask.
 // Deterministic and inspectable; the residual collision (a message whose whole
 // text equals a peer's name) is reported rather than guessed.
-func resolveReplyTarget(args []string, asks []openAsk, stdin io.Reader) (target, content string, err error) {
+func resolveReplyTarget(args []string, asks []openAsk, known []string, stdin io.Reader) (target, content string, err error) {
 	senders := map[string]string{}  // sessionID -> agent name
 	byName := map[string][]string{} // agent name -> EVERY sessionID with that name
 	for _, a := range asks {
@@ -393,6 +441,16 @@ func resolveReplyTarget(args []string, asks []openAsk, stdin io.Reader) (target,
 			content, err = resolveMessagePayload("", false, stdin)
 			return sid, content, err
 		}
+		// A near-miss on a name must NOT quietly become the message (CRI2 P1-1).
+		// `reply VAL-brige < report.md` used to send the string "VAL-brige" as the
+		// answer, never read the report, close the ask and exit 0 — after which
+		// the retry said "nothing to reply to", which from the agent's side is
+		// incomprehensible. Case-insensitive, because that is how the near-miss
+		// actually arrives.
+		if match, ok := nameLookalike(known, args[0]); ok {
+			return "", "", fmt.Errorf("%q is not one of the agents with an open ask, but it looks like %q — if you meant to answer them use `reply %s \"...\"`; if %q really is your message, pipe it on stdin instead",
+				args[0], match, match, args[0])
+		}
 		target, err = soleSender(senders)
 		if err != nil {
 			return "", "", err
@@ -420,6 +478,18 @@ func resolveReplyTarget(args []string, asks []openAsk, stdin io.Reader) (target,
 // picked one arbitrarily, sent it the response and CLOSED its asks. The
 // remediation was the trap (CRI diff-gate P1-4). Same posture as
 // resolveRecipientByName already had for ask/tell.
+// nameLookalike reports whether s is a case-insensitive match of a known agent
+// name. Deliberately NOT a fuzzy distance: a rule an agent cannot predict is
+// worse than none, and case is the near-miss that actually happens.
+func nameLookalike(known []string, s string) (string, bool) {
+	for _, k := range known {
+		if strings.EqualFold(k, s) {
+			return k, true
+		}
+	}
+	return "", false
+}
+
 func soleSessionNamed(byName map[string][]string, name string, senders map[string]string) (string, error) {
 	ids, ok := byName[name]
 	if !ok || len(ids) == 0 {
@@ -523,7 +593,8 @@ func finishReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *se
 	if mf, err := mgr.LoadManifest(txn.To); err == nil && mf.AgentName != "" {
 		name = mf.AgentName
 	}
-	fmt.Fprintf(stdout, "→ %s (%s, closed: %s)\n", name, txn.ResponseID, strings.Join(txn.CloseIDs, ", "))
+	fmt.Fprintln(stdout, formatSendEcho(myName(mgr, sid), name, txn.ResponseID, txn.Content, "reply"))
+	fmt.Fprintf(stdout, "  closed: %s\n", strings.Join(txn.CloseIDs, ", "))
 
 	// F-34 in its v0.8 shape. Nothing unseen is ever CLOSED — collectOpenAsks
 	// only considers NOTIFIED messages — but the agent may still be answering
@@ -534,6 +605,47 @@ func finishReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *se
 		fmt.Fprintf(stderr, "reply: note: %d message(s) arrived that you have not seen yet — none was closed by this reply; run next to read them\n", n)
 	}
 	return nil
+}
+
+// formatSendEcho is the success line, and it is doing four jobs at once
+// (CRI2 R-1) — with no new option, because it is pure confirmation:
+//
+//   - it shows a PREVIEW of what was actually sent, so a mistyped recipient
+//     that silently became the message is visible instead of invisible;
+//   - it names the VERB's contract ("open until they reply" vs "no reply
+//     expected"), so using the wrong one is self-evident at the one moment it
+//     could be caught;
+//   - it names the SENDER, which closes the half of F-97 that lives on the
+//     success path: the dangerous CAB_SESSION_ID case is a silent success from
+//     the wrong directory, and until now only errors said who you were;
+//   - it gives the size, so a truncated payload is noticeable.
+//
+// It is §0 applied to the output an agent sees most often, which we had only
+// ever hardened on the error path.
+func formatSendEcho(from, to, msgID, content, verb string) string {
+	suffix := ""
+	switch verb {
+	case "ask":
+		suffix = " — open until they reply"
+	case "tell":
+		suffix = " — no reply expected"
+	}
+	return fmt.Sprintf("%s → %s (%s) %q [%s]%s", from, to, msgID, previewContent(content, 40), humanSize(len(content)), suffix)
+}
+
+// myName labels the sender by agent name, falling back to the id.
+func myName(mgr *session.Manager, sid string) string {
+	if mf, err := mgr.LoadManifest(sid); err == nil && mf.AgentName != "" {
+		return mf.AgentName
+	}
+	return sid
+}
+
+func humanSize(n int) string {
+	if n < 1024 {
+		return fmt.Sprintf("%d B", n)
+	}
+	return fmt.Sprintf("%.1f KB", float64(n)/1024)
 }
 
 // countUnseenInbound counts messages sitting in inbox/ that no next has emitted

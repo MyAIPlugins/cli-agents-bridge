@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -127,4 +129,61 @@ func TestRunJoin_EndToEndIsIdempotent(t *testing.T) {
 	assert.Contains(t, err.Error(), "ESC-j", "the error names the existing session")
 	assert.Contains(t, err.Error(), "--force-new", "and the deliberate way out")
 	assert.True(t, strings.Contains(err.Error(), "join --role=esc"), "with a runnable command")
+}
+
+// TestJoin_ReplaysOpenAsksAcrossLives is the F-34 cross-life gap (CRI2 P1-4).
+//
+// Within one life the guard holds — collectOpenAsks only counts NOTIFIED. But
+// the cursor only ever grew: a page of `next` lost to a compact left its asks
+// NOTIFIED forever, no later `next` re-showed them, and the next reply to that
+// sender CLOSED them without this life having ever seen them.
+func TestJoin_ReplaysOpenAsksAcrossLives(t *testing.T) {
+	dataDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.DataDir = dataDir
+	mgr := newSessionManager(cfg)
+
+	const sid = "jrepl001"
+	plantOverviewSession(t, dataDir, sid, session.RoleEsc, "ESC-r", "/repo/r", "", "working")
+
+	now := time.Now().UTC()
+	plantInboxAt(t, dataDir, sid, "msg-aaaaaaaaaaaa", "valxxx01", message.TypeQuery, "the brief", now)
+	plantInboxAt(t, dataDir, sid, "msg-bbbbbbbbbbbb", "valxxx01", message.TypeNotify, "an update", now)
+	plantInboxAt(t, dataDir, sid, "msg-cccccccccccc", "valxxx01", message.TypeResponse, "an answer", now)
+	_, err := mgr.CommitWakeCursor(sid, []string{"msg-aaaaaaaaaaaa", "msg-bbbbbbbbbbbb", "msg-cccccccccccc"}, now, nil, nil)
+	require.NoError(t, err)
+
+	n, err := replayOpenAsks(mgr, cfg, sid)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n, "only the ask is replayed")
+
+	cursor, _, err := mgr.ReadWakeCursor(sid)
+	require.NoError(t, err)
+	assert.False(t, cursor.IsNotified("msg-aaaaaaaaaaaa"), "the ask goes back to UNREAD")
+	assert.True(t, cursor.IsNotified("msg-bbbbbbbbbbbb"), "a tell is one-shot: never re-woken")
+	assert.True(t, cursor.IsNotified("msg-cccccccccccc"), "a response is one-shot too")
+}
+
+// TestForgetNotified_IsIdempotentAndBounded: replaying twice changes nothing
+// more, and unknown ids are simply absent.
+func TestForgetNotified_IsIdempotentAndBounded(t *testing.T) {
+	dataDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.DataDir = dataDir
+	mgr := newSessionManager(cfg)
+
+	const sid = "jrepl002"
+	plantOverviewSession(t, dataDir, sid, session.RoleEsc, "ESC-r2", "/repo/r2", "", "working")
+	now := time.Now().UTC()
+	_, err := mgr.CommitWakeCursor(sid, []string{"msg-aaaaaaaaaaaa"}, now, nil, nil)
+	require.NoError(t, err)
+
+	require.NoError(t, mgr.ForgetNotified(sid, []string{"msg-aaaaaaaaaaaa"}))
+	require.NoError(t, mgr.ForgetNotified(sid, []string{"msg-aaaaaaaaaaaa"}))
+	require.NoError(t, mgr.ForgetNotified(sid, nil))
+	require.NoError(t, mgr.ForgetNotified(sid, []string{"msg-neverexisted"}))
+
+	cursor, _, err := mgr.ReadWakeCursor(sid)
+	require.NoError(t, err)
+	assert.Empty(t, cursor.Notified)
 }

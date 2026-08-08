@@ -132,3 +132,45 @@ func (m *Manager) CommitWakeCursor(sessionID string, ids []string, now time.Time
 	}
 	return false, nil
 }
+
+// ForgetNotified removes ids from the NOTIFIED set under the session lock, so
+// they become UNREAD again and the next `next` re-delivers them.
+//
+// This is the redelivery half of the state machine (DESIGN §2.3), and without
+// it the cursor only ever grows: a page of `next` lost to a compact left its
+// asks NOTIFIED forever, no later `next` showed them again, and the next reply
+// to that sender CLOSED them without this life having ever seen them.
+//
+// Applied to ASKS ONLY by the caller — a query stays actionable until answered,
+// while `tell` and `response` are one-shot per cursor and must not be woken
+// again days later.
+func (m *Manager) ForgetNotified(sessionID string, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	release, err := AcquireLock(filepath.Join(m.sessionDir(sessionID), "lock"), false)
+	if err != nil {
+		return fmt.Errorf("wake cursor: acquire session lock: %w", err)
+	}
+	defer func() { _ = release() }()
+
+	cursor, _, err := m.ReadWakeCursor(sessionID)
+	if err != nil {
+		return err
+	}
+	changed := false
+	for _, id := range ids {
+		if _, ok := cursor.Notified[id]; ok {
+			delete(cursor.Notified, id)
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	cursor.SchemaVersion = WakeCursorSchemaVersion
+	if err := transportfs.AtomicWriteJSON(m.wakeCursorPath(sessionID), cursor); err != nil {
+		return fmt.Errorf("wake cursor: write: %w", err)
+	}
+	return nil
+}

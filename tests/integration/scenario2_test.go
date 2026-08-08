@@ -44,7 +44,12 @@ func TestScenario2_RoleRoutingEnforcement(t *testing.T) {
 	// override still exists in sendMessage for callers that pass it.
 	_, errOut, exit = runInDir(t, escADir, []string{"ask", "ESC-B", "secret"}, dataDirEnv(dataDir))
 	assert.NotEqual(t, 0, exit, "ESC→ESC must fail")
-	assert.Contains(t, errOut, "esc", "error must mention the offending roles")
+	// The message must offer a route that EXISTS. It used to suggest
+	// --allow-mesh, a flag the loop verbs reject, so following the advice landed
+	// on "takes no flags": a bounce between two contradicting instructions.
+	assert.NotContains(t, errOut, "--allow-mesh", "never advise a flag the loop verbs reject")
+	assert.Contains(t, errOut, "val", "it must name the route that works")
+	assert.Contains(t, errOut, "architect", "and the role a reviewer should register as")
 
 	// Case 3: observer → VAL structurally blocked (no flag relaxes it)
 	_, errOut, exit = runInDir(t, obsDir, []string{"ask", "VAL-routing", "should-not-send"}, dataDirEnv(dataDir))

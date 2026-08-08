@@ -251,42 +251,42 @@ func TestResolveReplyTarget(t *testing.T) {
 	twoSenders = append(twoSenders, openAsk{id: "msg-bbbbbbbbbbbb", from: "cribbbbb", fromName: "CRI-two", when: "2026-08-08T11:00:00Z"})
 
 	t.Run("no_args_infers_the_sole_sender_and_reads_stdin", func(t *testing.T) {
-		to, content, err := resolveReplyTarget(nil, asks, strings.NewReader("piped answer"))
+		to, content, err := resolveReplyTarget(nil, asks, nil, strings.NewReader("piped answer"))
 		require.NoError(t, err)
 		assert.Equal(t, "valaaaaa", to)
 		assert.Equal(t, "piped answer", content)
 	})
 
 	t.Run("one_arg_is_the_message_when_it_is_not_a_sender_name", func(t *testing.T) {
-		to, content, err := resolveReplyTarget([]string{"the answer"}, asks, strings.NewReader(""))
+		to, content, err := resolveReplyTarget([]string{"the answer"}, asks, nil, strings.NewReader(""))
 		require.NoError(t, err)
 		assert.Equal(t, "valaaaaa", to)
 		assert.Equal(t, "the answer", content)
 	})
 
 	t.Run("one_arg_matching_a_sender_name_is_the_recipient_stdin_the_message", func(t *testing.T) {
-		to, content, err := resolveReplyTarget([]string{"VAL-one"}, asks, strings.NewReader("from stdin"))
+		to, content, err := resolveReplyTarget([]string{"VAL-one"}, asks, nil, strings.NewReader("from stdin"))
 		require.NoError(t, err)
 		assert.Equal(t, "valaaaaa", to)
 		assert.Equal(t, "from stdin", content)
 	})
 
 	t.Run("two_args_are_recipient_and_message", func(t *testing.T) {
-		to, content, err := resolveReplyTarget([]string{"CRI-two", "answer"}, twoSenders, strings.NewReader(""))
+		to, content, err := resolveReplyTarget([]string{"CRI-two", "answer"}, twoSenders, nil, strings.NewReader(""))
 		require.NoError(t, err)
 		assert.Equal(t, "cribbbbb", to)
 		assert.Equal(t, "answer", content)
 	})
 
 	t.Run("bare_reply_with_two_open_askers_is_fail_closed", func(t *testing.T) {
-		_, _, err := resolveReplyTarget(nil, twoSenders, strings.NewReader("answer"))
+		_, _, err := resolveReplyTarget(nil, twoSenders, nil, strings.NewReader("answer"))
 		require.Error(t, err, "never pick silently: the report would reach the wrong agent with no error")
 		assert.Contains(t, err.Error(), "VAL-one")
 		assert.Contains(t, err.Error(), "CRI-two")
 	})
 
 	t.Run("unknown_name_with_two_args_is_refused", func(t *testing.T) {
-		_, _, err := resolveReplyTarget([]string{"NOBODY", "answer"}, asks, strings.NewReader(""))
+		_, _, err := resolveReplyTarget([]string{"NOBODY", "answer"}, asks, nil, strings.NewReader(""))
 		assert.Error(t, err)
 	})
 }
@@ -469,9 +469,9 @@ func TestResolveReplyTarget_HomonymsAreAmbiguousInBothForms(t *testing.T) {
 		{id: "msg-aaaaaaaaaaaa", from: "aaaaaaa1", fromName: "VAL-same", when: "2026-08-08T10:00:00Z"},
 		{id: "msg-bbbbbbbbbbbb", from: "bbbbbbb2", fromName: "VAL-same", when: "2026-08-08T11:00:00Z"},
 	}
-	_, _, err := resolveReplyTarget(nil, asks, strings.NewReader("answer"))
+	_, _, err := resolveReplyTarget(nil, asks, nil, strings.NewReader("answer"))
 	assert.Error(t, err, "bare reply with two senders is ambiguous")
 
-	_, _, err = resolveReplyTarget([]string{"VAL-same", "answer"}, asks, strings.NewReader(""))
+	_, _, err = resolveReplyTarget([]string{"VAL-same", "answer"}, asks, nil, strings.NewReader(""))
 	assert.Error(t, err, "naming the shared name is ambiguous too — it was the suggested form")
 }
