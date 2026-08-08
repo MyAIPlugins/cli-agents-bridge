@@ -185,14 +185,14 @@ func collectOpenAsks(mgr *session.Manager, cfg config.Config, sid string) ([]ope
 // --- ask / tell -------------------------------------------------------------
 
 func runAskVerb(args []string) error {
-	return runSendVerb("ask", message.TypeQuery, args, os.Stdin, os.Stdout)
+	return runSendVerb("ask", message.TypeQuery, args, os.Stdin, os.Stdout, os.Stderr)
 }
 
 func runTell(args []string) error {
-	return runSendVerb("tell", message.TypeNotify, args, os.Stdin, os.Stdout)
+	return runSendVerb("tell", message.TypeNotify, args, os.Stdin, os.Stdout, os.Stderr)
 }
 
-func runSendVerb(verb, msgType string, args []string, stdin io.Reader, stdout io.Writer) error {
+func runSendVerb(verb, msgType string, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return fmt.Errorf("%s: usage: cab-bridge %s <agent-name> [\"message\"]   (without the message, it is read from stdin)", verb, verb)
 	}
@@ -220,6 +220,18 @@ func runSendVerb(verb, msgType string, args []string, stdin io.Reader, stdout io
 	to, err := resolveRecipientByName(cfg, mgr, args[0], sid)
 	if err != nil {
 		return fmt.Errorf("%s (%s): %w", verb, whoIThoughtIWas(mgr, sid), err)
+	}
+
+	// F-43, carried over from the old flag surface: ask and tell are NOT
+	// idempotent (reply is, by construction), so a degraded agent re-invoking
+	// one before the first send's stdout returns sends it twice. Warn — never
+	// silently skip: the second send may well be deliberate.
+	if cfg.DedupWindowSeconds > 0 {
+		outbox := filepath.Join(cfg.DataDir, "sessions", sid, "outbox")
+		if dupID, derr := findRecentDuplicate(outbox, to, msgType, content, cfg.DedupWindowSeconds, cfg.MaxMessageBytes, time.Now().UTC()); derr == nil && dupID != "" {
+			fmt.Fprintf(stderr, "%s: warning: an identical message to %s went out %ds ago as %s — sending anyway; if that was a double-invoke, the recipient now has two\n",
+				verb, args[0], cfg.DedupWindowSeconds, dupID)
+		}
 	}
 
 	msgID, err := sendMessage(cfg, mgr, sid, to, msgType, content, nil, false)
@@ -442,7 +454,37 @@ func finishReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *se
 		name = mf.AgentName
 	}
 	fmt.Fprintf(stdout, "→ %s (%s, closed: %s)\n", name, txn.ResponseID, strings.Join(txn.CloseIDs, ", "))
+
+	// F-34 in its v0.8 shape. Nothing unseen is ever CLOSED — collectOpenAsks
+	// only considers NOTIFIED messages — but the agent may still be answering
+	// without knowing something newer arrived. Say so: the original finding was
+	// "I am replying without having read the last thing sent to me", and that
+	// half survives even though the dangerous half does not.
+	if n := countUnseenInbound(mgr, cfg, sid); n > 0 {
+		fmt.Fprintf(stderr, "reply: note: %d message(s) arrived that you have not seen yet — none was closed by this reply; run next to read them\n", n)
+	}
 	return nil
+}
+
+// countUnseenInbound counts messages sitting in inbox/ that no next has emitted
+// yet (UNREAD). They are untouched by reply; this is purely so the agent knows
+// they exist.
+func countUnseenInbound(mgr *session.Manager, cfg config.Config, sid string) int {
+	cursor, _, err := mgr.ReadWakeCursor(sid)
+	if err != nil {
+		return 0
+	}
+	entries, _, err := readMailbox(filepath.Join(cfg.DataDir, "sessions", sid, "inbox"), cfg.MaxMessageBytes)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range entries {
+		if !cursor.IsNotified(e.msg.ID) {
+			n++
+		}
+	}
+	return n
 }
 
 // deliverResponse writes the response into the recipient's inbox under the

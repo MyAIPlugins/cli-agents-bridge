@@ -344,3 +344,55 @@ func TestErrorsDeclareTheAssumedIdentity(t *testing.T) {
 	// Unknown session: still says the id rather than losing the context.
 	assert.Contains(t, whoIThoughtIWas(mgr, "nosuch01"), "nosuch01")
 }
+
+// TestVerbs_RefuseAnEmptyMessage is the check the VAL's own empty message asks
+// for: a send with nothing in it must be refused, not delivered.
+//
+// An empty message that arrives looks like a delivery failure and costs the
+// recipient a round trip to find out it was never a message at all.
+func TestVerbs_RefuseAnEmptyMessage(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		arg    string
+		hasArg bool
+		stdin  string
+	}{
+		{"empty_argument", "", true, ""},
+		{"whitespace_argument", "   \n\t ", true, ""},
+		{"empty_stdin", "", false, ""},
+		{"whitespace_stdin", "", false, "\n\n  \n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := resolveMessagePayload(tc.arg, tc.hasArg, strings.NewReader(tc.stdin))
+			require.Error(t, err, "an empty send must be refused explicitly")
+			assert.Contains(t, err.Error(), "empty")
+		})
+	}
+}
+
+// TestReply_DoesNotCloseWhatWasNeverShown is the F-34 verification the VAL asked
+// for: reply archives only NOTIFIED asks, so a message that arrived after the
+// last next cannot be closed without ever having been seen.
+func TestReply_DoesNotCloseWhatWasNeverShown(t *testing.T) {
+	mgr, cfg, dataDir := newReplyPair(t)
+	base := time.Now().UTC()
+	deliverAndNotify(t, mgr, dataDir, "msg-aaaaaaaaaaaa", "the brief I read", base)
+	// Arrived after the last next: UNREAD, never shown to the agent.
+	plantInboxAt(t, dataDir, replySelf, "msg-eeeeeeeeeeee", replyPeer, message.TypeQuery, "urgent correction", base.Add(time.Minute))
+
+	open, err := collectOpenAsks(mgr, cfg, replySelf)
+	require.NoError(t, err)
+	require.Len(t, open, 1, "an unseen ask is not open")
+	assert.Equal(t, "msg-aaaaaaaaaaaa", open[0].id)
+
+	txn := newTxn(replySelf, []string{"msg-aaaaaaaaaaaa"}, "my answer")
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, finishReplyTxn(mgr, cfg, replySelf, txn, &stdout, &stderr))
+
+	assert.FileExists(t, filepath.Join(dataDir, "sessions", replySelf, "inbox", "msg-eeeeeeeeeeee.json"),
+		"the unseen message must survive the reply untouched")
+	// And the agent is told it exists, because it answered without knowing.
+	assert.Contains(t, stderr.String(), "have not seen yet")
+}
