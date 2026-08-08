@@ -33,6 +33,22 @@ BASE="$ROOT/repo"; mkdir -p "$BASE/.git"
 VALDIR="$BASE/val"; ESCDIR="$BASE/esc"
 mkdir -p "$VALDIR" "$ESCDIR"
 
+# Reap every background `next` on ANY exit, including the failure paths.
+#
+# Until v0.8 the wait window did this for free: a forgotten listener died at its
+# deadline. With the window removed (§2.2 rev. cdb21dc) a stray background
+# process is IMMORTAL, and a suite run several times leaves a pile of them —
+# fifteen were found after one evening. The window was removed for the agent,
+# and nothing had re-examined who else was relying on it: these scripts were.
+BG_PIDS=()
+reap() {
+  for pid in "${BG_PIDS[@]:-}"; do
+    [ -n "$pid" ] && kill "$pid" 2>/dev/null
+  done
+  wait 2>/dev/null
+}
+trap reap EXIT INT TERM
+
 pass=0; fail=0
 check() { # check <description> <exit-status>
   if [ "$2" = "0" ]; then echo "  PASS  $1"; pass=$((pass+1)); else echo "  FAIL  $1"; fail=$((fail+1)); fi
@@ -45,8 +61,10 @@ echo "  VAL=$VALID  ESC=$ESCID"
 [ -n "$VALID" ] && [ -n "$ESCID" ]; check "both sessions registered" $?
 
 echo "== 1. next waits, and while waiting the session is ALIVE (F-95) =="
-( cd "$ESCDIR" && "$BIN" next > "$ROOT/next1.out" 2> "$ROOT/next1.err" ) &
-NEXTPID=$!
+# exec: without it $! is the SUBSHELL's pid, and killing the shell leaves the
+# binary running — which is how the strays survived a trap that looked correct.
+( cd "$ESCDIR" && exec "$BIN" next > "$ROOT/next1.out" 2> "$ROOT/next1.err" ) &
+NEXTPID=$!; BG_PIDS+=("$NEXTPID")
 sleep 3
 kill -0 "$NEXTPID" 2>/dev/null; check "next is still waiting (did not exit early)" $?
 
@@ -81,8 +99,8 @@ PERM=$(stat -f "%OLp" "$CURSOR" 2>/dev/null || stat -c "%a" "$CURSOR")
 [ "$PERM" = "600" ]; check "cursor permissions are 0600 (got $PERM)" $?
 
 echo "== 5. a second next does NOT re-deliver what is already NOTIFIED =="
-( cd "$ESCDIR" && "$BIN" next > "$ROOT/next2.out" 2>&1 ) &
-NEXT2=$!
+( cd "$ESCDIR" && exec "$BIN" next > "$ROOT/next2.out" 2>&1 ) &
+NEXT2=$!; BG_PIDS+=("$NEXT2")
 sleep 4
 kill -0 "$NEXT2" 2>/dev/null; check "second next is waiting, not re-delivering" $?
 # Not "output is empty": in a shared scope the B-1 guardrail prints a warning
@@ -91,8 +109,8 @@ kill -0 "$NEXT2" 2>/dev/null; check "second next is waiting, not re-delivering" 
 ! grep -q '"status": "emitted"' "$ROOT/next2.out"; check "second next re-delivered nothing" $?
 
 echo "== 6. a second next elsewhere RECLAIMS wait ownership (single waiter) =="
-( cd "$ESCDIR" && "$BIN" next > "$ROOT/next3.out" 2> "$ROOT/next3.err" ) &
-NEXT3=$!
+( cd "$ESCDIR" && exec "$BIN" next > "$ROOT/next3.out" 2> "$ROOT/next3.err" ) &
+NEXT3=$!; BG_PIDS+=("$NEXT3")
 sleep 4
 if kill -0 "$NEXT2" 2>/dev/null; then kill "$NEXT2" 2>/dev/null; RECLAIMED=1; else RECLAIMED=0; fi
 [ "$RECLAIMED" = "0" ]; check "the superseded next exited on reclaim" $?
