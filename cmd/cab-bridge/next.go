@@ -82,6 +82,10 @@ type nextMessage struct {
 	// agent to print it as the message.
 	BodyFile string `json:"bodyFile,omitempty"`
 	Oversize bool   `json:"oversize,omitempty"`
+	// Note carries the instruction inline, next to the field it is about: an
+	// agent reading one message must not have to correlate it with a hint at
+	// the top of the page to work out that the body is a path, not the text.
+	Note string `json:"note,omitempty"`
 }
 
 type nextPayload struct {
@@ -449,6 +453,7 @@ func newNextMessage(e mailboxEntry, oversize bool) nextMessage {
 	if oversize {
 		m.Oversize = true
 		m.BodyFile = e.path
+		m.Note = "body too large to inline — read the file at bodyFile to get it (you can read it in parts)"
 		return m
 	}
 	m.Content = e.msg.Content

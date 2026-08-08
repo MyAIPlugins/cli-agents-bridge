@@ -451,25 +451,58 @@ func (m *Manager) StartHeartbeatOwned(ctx context.Context, sessionID string, own
 		ticker := time.NewTicker(m.HeartbeatInterval)
 		defer ticker.Stop()
 
+		// Failure policy. Swallowing every write error is tolerable for a 9-minute
+		// listen and NOT for a 24h waiter: a permissions or disk failure would
+		// make it silently stale — declaring itself alive while nothing on disk
+		// says so — and the done channel carries no error to notice it by. Warn
+		// on stderr, rate-limited so a persistent failure cannot itself become
+		// the flood.
+		consecutiveFailures := 0
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
 				if ownerOK == nil {
-					_ = m.touchHeartbeat(sessionID) // unfenced: original behaviour, no lock
+					if err := m.touchHeartbeat(sessionID); err != nil {
+						consecutiveFailures++
+						m.warnHeartbeatFailure(sessionID, consecutiveFailures, err)
+					} else {
+						consecutiveFailures = 0
+					}
 					continue
 				}
 				if !ownerOK() {
 					return // fast un-locked pre-check: cheap early stop on eviction
 				}
-				if m.touchHeartbeatOwned(sessionID, ownerOK) {
+				evicted, err := m.touchHeartbeatOwned(sessionID, ownerOK)
+				if evicted {
 					return // evicted, CONFIRMED under the session lock (P2) — stop
 				}
+				if err != nil {
+					consecutiveFailures++
+					m.warnHeartbeatFailure(sessionID, consecutiveFailures, err)
+					continue
+				}
+				consecutiveFailures = 0
 			}
 		}
 	}()
 	return done
+}
+
+// heartbeatWarnAfter is how many consecutive failed beats pass before the first
+// warning, and the interval between the ones after it. Contention skips a beat
+// without counting as a failure, so this only fires on real write errors.
+const heartbeatWarnAfter = 3
+
+func (m *Manager) warnHeartbeatFailure(sessionID string, consecutive int, err error) {
+	if consecutive < heartbeatWarnAfter || consecutive%heartbeatWarnAfter != 0 {
+		return
+	}
+	fmt.Fprintf(os.Stderr,
+		"cab-bridge: heartbeat for session %s has failed %d times in a row (%v) — this session may look stale to peers while it is in fact alive\n",
+		sessionID, consecutive, err)
 }
 
 // touchHeartbeatOwned refreshes LastHeartbeat for a FENCED listener (B-2 P2),
@@ -483,17 +516,20 @@ func (m *Manager) StartHeartbeatOwned(ctx context.Context, sessionID string, own
 // Returns evicted=true when the under-lock re-check fails (a reclaim happened):
 // the caller stops the heartbeat. Lock contention (a concurrent claim/reclaim)
 // returns evicted=false — best-effort, skip this beat and retry next tick.
-func (m *Manager) touchHeartbeatOwned(sessionID string, ownerOK func() bool) (evicted bool) {
-	release, err := AcquireLock(filepath.Join(m.sessionDir(sessionID), "lock"), false)
-	if err != nil {
-		return false // contended — skip this beat (best-effort), not evicted
+func (m *Manager) touchHeartbeatOwned(sessionID string, ownerOK func() bool) (evicted bool, err error) {
+	release, lerr := AcquireLock(filepath.Join(m.sessionDir(sessionID), "lock"), false)
+	if lerr != nil {
+		// Contended — skip this beat (best-effort). NOT reported as a failure:
+		// a concurrent claim/reclaim is normal and self-resolving, and counting
+		// it would produce warnings about a healthy system.
+		return false, nil
 	}
 	defer func() { _ = release() }()
 	if !ownerOK() {
-		return true // a reclaim revoked us (confirmed under the lock) — do not write
+		return true, nil // a reclaim revoked us (confirmed under the lock) — do not write
 	}
-	_ = m.touchHeartbeat(sessionID) // RMW now serialized cross-process by the lock we hold
-	return false
+	// RMW now serialized cross-process by the lock we hold.
+	return false, m.touchHeartbeat(sessionID)
 }
 
 // touchHeartbeat reads manifest, sets LastHeartbeat = now, atomic-writes back.
