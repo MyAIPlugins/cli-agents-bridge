@@ -1,0 +1,29 @@
+internal/codexws/smoke_test.go
+  s_13b14428c16427::t_1c4dcfffac2470 61-86
+  s_13b14428c16427::t_e182e29cb15240 1-60,87-89
+internal/codexws/frame.go
+  s_13b14428c16427::t_6a82020503b22e 1-175
+internal/codexws/conn.go
+  s_13b14428c16427::t_b9f1d1c3c54628 1-13,15-238
+  s_13b14428c16427::t_3decf995fc83ca 14
+docs/spike-codex-app-server.md
+  s_13b14428c16427::t_0c6478248355f9 268-344
+internal/codexws/codexws_test.go
+  s_13b14428c16427::t_97cdb62efceaeb 1-373
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "bed3c8cfbe8839fe13bbcd602369475b359d6626",
+  "prompts": {},
+  "sessions": {
+    "s_13b14428c16427": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5bb10dbc-fcae-44e8-acd6-603d11cfd57f",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
