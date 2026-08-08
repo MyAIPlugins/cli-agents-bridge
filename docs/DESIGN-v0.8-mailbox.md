@@ -171,6 +171,10 @@ Lo scenario che lo dimostra: arriva A, l'agente lo legge, ci lavora 40 minuti. N
 
 **Ordine obbligato in `next`: prima la stampa, poi il cursore.** Un crash tra le due produce una consegna doppia — innocua, il modello è at-least-once. L'ordine inverso produrrebbe una **perdita silenziosa**, e per un `tell` (one-shot per cursore) sarebbe definitiva e senza segnale.
 
+**Corollario che la rev.7 aveva mancato** (CRI, diff-gate 1a): con la stampa prima del commit, **nessun singolo record JSON può dichiarare un esito che non è ancora accaduto**. Il primo record deve dire **`emitted`** — un fatto vero nel momento in cui viene scritto — e **mai** `delivered`/`confirmed`. L'esito del commit arriva come **record finale o contratto di uscita**: exit 0 solo a commit riuscito, errore tipizzato su eviction o fallimento del lock (in alternativa JSONL `page` + `commit`).
+
+Senza questo, un reclaim nel varco fra stampa e commit produce uno stdout che dichiara `delivered` mentre il commit rifiuta — e per giunta con exit 0. È lo stesso difetto della conferma implicita (§8-bis), in una forma più piccola: **certificare come avvenuto qualcosa che deve ancora accadere**. La prescrizione "stampa prima" era giusta e resta; era il *contenuto* del record a promettere troppo.
+
 ### La matrice completa per tipo
 
 Le quattro proprietà vanno lette insieme, non sezione per sezione — è la composizione che nessuno aveva verificato:
