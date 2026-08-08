@@ -80,7 +80,13 @@ Nessun flag: né durata, né formato, né filtro, né session-id (risolto da cwd
 
 **`tell` accetta il NOME dell'agente, non l'id** — `tell ESC-bridge "..."`, risolto in-scope, **fail-closed**: zero match → errore; più di un match vivo → errore con i candidati, mai una scelta silenziosa. Senza questo LL-14 resterebbe incompiuto proprio nel caso più frequente: `link` copre il cross-repo, ma l'id che si ricopia *ogni giorno* è quello del proprio ESC. (CRI2 P1-4, CRI F6.)
 
-**Riga outbound nel sommario di `next`**: `outbound: 2 non ancora letti dai destinatari da >30m`. Ricuce a costo zero l'unica cosa che si perde eliminando gli ACK — prima la ricevuta ti *raggiungeva*, ora "ESC ha preso il brief?" richiederebbe di ricordarsi di lanciare `sent`, cioè disciplina, cioè la risorsa scarsa. (CRI2 P2-7.)
+**`reply` è ancorato all'ultimo messaggio EMESSO da un `next`** — mai a un `UNREAD` non ancora visto: lo stato del tool e quello nella testa dell'agente devono coincidere per definizione. E su un batch con **più mittenti** `reply` nudo è ambiguo → **fail-closed con i candidati** (`l'ultimo batch ha 2 mittenti — usa tell VAL-bridge / tell CRI-bridge`), mai una scelta silenziosa. `reply` stampa sempre a chi ha risposto: `→ VAL-bridge (in reply a msg-X)`.
+
+Senza questo, nel gruppo `reply` è una roulette (CRI2 P1-2): il VAL manda il brief, CRI manda una nota mentre lavoro, e il report finisce a CRI. **Errore silenzioso** — il messaggio parte, nessuno segnala niente, il VAL non riceve mai nulla. Peggio di un id trascritto, perché non c'è nemmeno l'occasione di accorgersene.
+
+**Payload lungo** (CRI2 P1-3): `tell <chi> "..."` inline non copre il brief da 200 righe — ed è percorso **caldo**, non caso raro: il VAL manda brief lunghi ogni giorno, e FRIC-2 (quoting hell) era esattamente la ragione di `ask --file`. La superficie zero-flag deve dichiarare come viaggia un file, altrimenti ogni agente inventa la sua convenzione: `cab-bridge tell ESC-bridge < brief.md` (stdin) oppure `tell ESC-bridge @/tmp/brief.md`. **Da decidere nel design, non lasciare implicito.**
+
+**Riga outbound nel sommario di `next`**: `outbound: 2 non ancora consegnati ai destinatari da >30m`. ("Consegnati", non "letti": *letto* è la parola che la rev.3 ha bandito, e comparirebbe proprio nel testo che l'agente vede più spesso.) Ricuce a costo zero l'unica cosa che si perde eliminando gli ACK — prima la ricevuta ti *raggiungeva*, ora "ESC ha preso il brief?" richiederebbe di ricordarsi di lanciare `sent`, cioè disciplina, cioè la risorsa scarsa. (CRI2 P2-7.)
 
 ### 2.3 La state machine — il cuore del design
 
@@ -103,7 +109,24 @@ Lo scenario che lo dimostra: arriva A, l'agente lo legge, ci lavora 40 minuti. N
 - `next` consegna gli `UNREAD` → li segna `WAKE-NOTIFIED`. **Non sposta nessun file: è pure-read.**
 - `next`, al giro **successivo**, archivia i `WAKE-NOTIFIED` del giro precedente → `ARCHIVED`.
 
-L'archiviazione avviene **con un giro di ritardo**, e la conferma è implicita: *il fatto stesso che l'agente stia richiamando `next` prova che il wake precedente è andato a segno*. È un ACK implicito, senza messaggi e senza nulla da ricordare.
+L'archiviazione avviene **con un giro di ritardo**, e la conferma è implicita: *il fatto che l'agente stia richiamando `next` prova che il wake precedente è andato a segno*. È un ACK implicito, senza messaggi e senza nulla da ricordare.
+
+**Ma vale solo DENTRO una vita dell'agente** — questo è il P0 che CRI2 ha trovato nella rev.3, ed è la risposta affermativa alla domanda §6.1 ("esiste una sequenza in cui il cursore diverge?"):
+
+1. `next` di ESC emette il brief A, esce con successo → cursore = `{A}`;
+2. la notifica si perde: compact del turno, `/clear`, chiusura, restart — tutti teardown che §7 elenca come **non dimostrati**;
+3. al resume ESC esegue il protocollo: `join` → `next`;
+4. quel `next` trova A tra i `WAKE-NOTIFIED` del giro precedente e lo **archivia come confermato**; A non è più `UNREAD`, quindi non viene emesso. Output: "niente, aspetto";
+5. A è in `processed/`, mai visto da nessuno — e il VAL che interroga `sent` legge **`archived`**.
+
+**Il sistema certificherebbe una consegna mai avvenuta.** È peggio di un messaggio nascosto: è un messaggio nascosto *con la ricevuta di lettura*. Il mio errore è stato assumere la continuità di vita dell'agente: richiamare `next` non prova che ha visto qualcosa, prova solo che sta eseguendo il protocollo — e post-compact lo esegue *perché il protocollo dice così*.
+
+**Fix, due pezzi componibili e senza flag:**
+
+- **`join` resetta il cursore** (`WAKE-NOTIFIED` → `UNREAD`). `join` è già il comando del resume, quindi la semantica diventa naturale: *"sono rinato — ri-mostrami tutto ciò che non ho confermato"*. Dentro una vita la conferma implicita resta valida; attraverso le vite il primo `next` dopo `join` ri-consegna. Deterministico.
+- **`next` stampa ciò che archivia**, una riga per id: `chiuso: msg-X da VAL-bridge "Brief F-91…"`. Così anche l'agente che riarma per riflesso **vede** cosa sta confermando, e se non lo riconosce ha il segnale per fare `read`. È la stessa medicina del P1-2 del primo giro — lossless-visibility — applicata all'unico comando che ora sposta file. E rende innocuo l'unico rito che il protocollo non può imporre: "leggi prima di riarmare".
+
+**Ri-consegna dopo un riavvio**: l'agente non deve *decidere* se è un duplicato. La regola è che la distinzione sia irrilevante — at-least-once con idempotenza a valle: "trattalo come nuovo; se ricordi di averlo già gestito, rispondi solo quello al mittente". Entrambi i rami sono corretti senza pensiero. Il marcatore è **testo umano nel sommario**, non un campo da interpretare: `(ri-consegnato: era già stato consegnato prima di un riavvio — trattalo normalmente)`. Un `redelivered: true` nudo sarebbe pensiero in più — l'agente dovrebbe sapere cosa implica.
 
 **Cosa garantisce:**
 
@@ -276,3 +299,29 @@ Adottati: F-91 chirurgico (P1-3), `tell` by-name (P1-4), `join` stop-and-ask (P2
 - **P1-7** 24h non dimostrato → **accolto**, §7 con matrice per vendor.
 
 E ha trovato **F-93**, un difetto nel codice di oggi che nessun gate precedente aveva colto.
+
+---
+
+## 9. Esito design-gate — secondo giro
+
+### CRI2 sulla rev.3 — un P0 nella sintesi VAL
+
+**Il P0 è mio, non di CRI**: la conferma implicita è falsa attraverso le vite dell'agente, e nel caso peggiore il sistema **certifica una consegna mai avvenuta**. Accolto e corretto in §2.3 (join-reset + echo dell'archiviazione). CRI2 lo riassume meglio di me: *"l'unica cosa peggiore di un messaggio nascosto è un messaggio nascosto con la ricevuta di lettura"*.
+
+Adottati anche: `reply` ancorato all'ultimo emesso + fail-closed multi-mittente + echo del destinatario (P1-2, §2.2); payload lungo dichiarato nel design (P1-3, §2.2); marcatore di ri-consegna come frase-policy invece che booleano (P3, §2.3); riga outbound corretta da "letti" a "consegnati" (P2).
+
+**Da riportare nelle sezioni relative, non ancora fatto:**
+
+- **§2.7** deve dire che *il paging si consuma col medesimo richiamo*: `hasMore: true — i prossimi arrivano col prossimo next`. Senza quella frase un agente cercherà un `--page` che non esiste — thinking sprecato, difetto §0. Principio generale: **l'output dichiara la propria azione successiva**, non solo i comandi.
+- **§2.1** deve **elencare** la superficie SERVIZIO, che oggi è promessa ma non nominata: `read <id>`, `sent`, il chi-c'è, e una decisione su `state working/done` (F-23 vive ancora — visto in `peers` stasera). Un agente fresco deve sapere *cosa esiste*: bastano sei righe.
+- **`who` è citato una volta sola** (piano Tier 2) e mai definito. O si dichiara che `join` è anche il chi-c'è — rilanciabile a volontà, e col join-reset la ri-consegna è innocua e marcata — oppure si definisce `who`.
+- **§2.4**: la chiosa di `archived` va resa onesta fino in fondo. Con la conferma implicita prova *"il destinatario ha richiamato `next` dopo la consegna"*, non "confermato". È la regola di CRI (F5) applicata al mio stesso testo.
+- **§6.2 risolta**: cursore in un **file separato** nella session dir. Oltre al locking, due ragioni operative di CRI2: il cleanup se lo porta via gratis con la directory, e `inspect` può mostrarlo — lo stato resta ispezionabile dove un operatore già guarda. Un cursore nel manifest accoppierebbe due cicli di vita diversi (identità vs progresso di lettura) in un file che altri comandi riscrivono.
+
+### F-92 rafforzato — con misrouting reale osservato
+
+CRI2 ha ricostruito la propria cronologia: al suo arrivo `overview` gli ha mostrato `peer: VAL-v08 (62033f21)` e il suo poke di presenza è andato **lì** — alla sessione che io ho poi cancellato come duplicato di F-90. Il brief vero gli è arrivato da `VAL-bridge (679b7060)`, un'altra sessione. E ora, con quattro sessioni vive, `overview` gli mostra un **terzo** peer ancora.
+
+Quindi F-92 non è "dice nessuno quando ce ne sono tre": è **"ne mostra UNO, arbitrario, e cambia tra invocazioni"** — e il primo contatto di un agente fresco viene instradato da quel risultato. Il fix non è mostrare *il peer giusto*: è **smettere di scegliere**. `join` e il chi-c'è mostrano sempre la lista completa dei vivi.
+
+Nota: questo spiega perché il primo messaggio di CRI2 era finito nella sessione `62033f21`. Due difetti si sono composti — F-90 ha creato il duplicato, F-92 ci ha instradato sopra il primo contatto.

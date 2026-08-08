@@ -94,7 +94,7 @@ PLAN.md §3.5 + §12. Time-box 4h. Esito determina distribution path (self-marke
 
 ### Commit discipline
 - Commit messages: `<type>(<scope>): <subject>` — types: `feat`, `fix`, `chore`, `docs`, `test`, `refactor`, `release` (per version bump commits es. `release(v0.2.0): ...`)
-- Co-author trailer: `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>` mandatory (modello aggiornato 2026-05-28 da Opus 4.7 a 4.8; i commit storici Sprint 0-5 portano il trailer 4.7 e NON vanno riscritti — git history immutabile)
+- Co-author trailer: `Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>` mandatory. **Il trailer deve dire il vero: usa il modello che sta effettivamente scrivendo il commit, non quello scritto qui.** Se sei un modello diverso, firma col tuo nome e segnala al VAL di aggiornare questa riga (catch di ESC, 2026-08-08). Storico: 4.7 → 4.8 il 2026-05-28, → 5 il 2026-08-08. I commit passati NON vanno riscritti — git history immutabile, e questo vale anche per i 5 commit VAL del 2026-08-08 che portano erroneamente il trailer 4.8.
 - NO emoji in commit messages, code, or docs (unless explicitly requested by Alan)
 - Commit one logical unit at a time. NOT one commit per micro-change.
 - VAL commits docs separately from ESC code commits (audit clarity)
