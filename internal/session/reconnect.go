@@ -90,11 +90,19 @@ func (m *Manager) tryReuse(absProj string, opts RegisterOpts) (*Manifest, func()
 // reconnect identity, sorted most-recent first (LastHeartbeat desc, then
 // StartedAt desc, then id) for a deterministic multi-match resolution.
 //
-// Identity = effective agent-name + effective role + scope + team, where the
-// effective agent-name/role apply the SAME defaults Register uses (so a resume
-// with empty agent-name still matches a session registered with the basename
-// default). scopeMatch: equal non-empty scopes, OR a legacy candidate (empty
-// scope) whose projectPath is an ancestor-or-equal of absProj.
+// Identity = effective agent-name + effective role + scope + team + PROJECT
+// PATH, where the effective agent-name/role apply the SAME defaults Register
+// uses (so a resume with empty agent-name still matches a session registered
+// with the basename default). scopeMatch: equal non-empty scopes, OR a legacy
+// candidate (empty scope) whose projectPath is an ancestor-or-equal of absProj.
+//
+// projectPath is part of the identity (§2.2, CRI diff-gate 1c P1-4). Without it
+// two agents of the same name and role in different worktrees of ONE repo share
+// a scope and match each other: a join from A would resume B's session — the
+// most recent one wins — and the new life would adopt B's waiter and work on
+// the WRONG MAILBOX while believing it started in A. A legacy candidate with no
+// scope keeps the old ancestor rule, since it has no projectPath discipline to
+// compare against.
 func (m *Manager) findIdentityMatches(absProj string, opts RegisterOpts) ([]identityMatch, error) {
 	wantAgent := defaultIfEmpty(opts.AgentName, filepath.Base(absProj))
 	wantRole := defaultIfEmpty(opts.Role, RoleNeutral)
@@ -124,6 +132,9 @@ func (m *Manager) findIdentityMatches(absProj string, opts RegisterOpts) ([]iden
 			continue
 		}
 		if !scopeMatches(mf, opts.Scope, absProj) {
+			continue
+		}
+		if mf.Scope != "" && filepath.Clean(mf.ProjectPath) != filepath.Clean(absProj) {
 			continue
 		}
 		out = append(out, identityMatch{id: e.Name(), mf: mf})

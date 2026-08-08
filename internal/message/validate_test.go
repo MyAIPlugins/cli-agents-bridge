@@ -1,6 +1,7 @@
 package message
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -34,17 +35,42 @@ func TestValidate_HappyPath(t *testing.T) {
 	require.NoError(t, Validate(validMessage(), 65536))
 }
 
-// TestIsValidType covers the A-2 DRY helper: it reports membership in the same
-// validTypes set the gateway uses, including the auto-emitted "ack" (a canonical
-// type even though the CLI omits it from its user-facing list).
+// TestIsValidType covers the write side. Since v0.8 it is deliberately NARROWER
+// than what can be decoded: "ack" is retired (DESIGN §2.4) and may no longer be
+// produced, while remaining readable forever — see TestRetiredTypeStaysReadable.
 func TestIsValidType(t *testing.T) {
 	t.Parallel()
-	for _, ty := range []string{TypeQuery, TypeResponse, TypePing, TypeNotify, TypeEvent, TypeAck} {
-		assert.True(t, IsValidType(ty), ty+" is a canonical message type")
+	for _, ty := range []string{TypeQuery, TypeResponse, TypePing, TypeNotify, TypeEvent} {
+		assert.True(t, IsValidType(ty), ty+" is a writable message type")
 	}
-	for _, ty := range []string{"question", "questions", "foobar", ""} {
-		assert.False(t, IsValidType(ty), ty+" is not a canonical message type")
+	for _, ty := range []string{TypeAck, "question", "questions", "foobar", ""} {
+		assert.False(t, IsValidType(ty), ty+" must not be writable")
 	}
+	assert.True(t, IsReadableType(TypeAck), "a retired type stays readable")
+}
+
+// TestRetiredTypeStaysReadable is the compatibility half of retiring a type: the
+// acks already sitting in mailboxes must decode normally. Had the enum simply
+// shrunk, every one of them would have started looking like a corrupt file.
+func TestRetiredTypeStaysReadable(t *testing.T) {
+	t.Parallel()
+	m := &Message{
+		ID: "msg-aaaaaaaaaaaa", SchemaVersion: SchemaVersionV2,
+		From: "escaaaaa", FromRole: "esc", To: "valbbbbb", ToRole: "val",
+		Type: TypeAck, Timestamp: "2026-08-08T12:00:00Z", Status: StatusPending,
+		Content: "ACK msg-x: received",
+	}
+	raw, err := json.Marshal(m)
+	require.NoError(t, err)
+
+	decoded, err := DecodeLenient(raw, 65536)
+	require.NoError(t, err, "an ack on disk must still decode")
+	assert.Equal(t, TypeAck, decoded.Type)
+
+	_, err = EncodeStrict(m, 65536)
+	require.Error(t, err, "but writing a new one must be refused")
+	assert.ErrorIs(t, err, ErrInvalidType)
+	assert.Contains(t, err.Error(), "retired")
 }
 
 func TestValidate_RejectsInvalidMessageID(t *testing.T) {

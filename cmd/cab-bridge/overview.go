@@ -34,6 +34,9 @@ type overviewReport struct {
 	ListenerActive bool       `json:"listenerActive"`
 	ListenerPid    int        `json:"listenerPid,omitempty"`
 	ListenerUntil  *time.Time `json:"listenerUntil,omitempty"`
+	// ListenerSince is when the current wait started. It replaces ListenerUntil
+	// as the observable fact now that the wait has no end (§2.2 rev. cdb21dc).
+	ListenerSince *time.Time `json:"listenerSince,omitempty"`
 
 	// B-2 listener ownership, from listener.json — distinct from the F-81 active
 	// signal above (which is manifest PID + window). Generation is the monotone
@@ -146,10 +149,16 @@ func buildOverview(mgr *session.Manager, cfg config.Config, sid string) (overvie
 	// so a dead listen (PID gone after the process exits) or an expired window
 	// both read as "not listening" — no false positive from a stale ListenUntil
 	// left in the manifest. listen writes ListenUntil at startup (SetListenUntil).
-	if session.IsProcessAlive(me.PID) && me.ListenUntil != nil && me.ListenUntil.After(now) {
+	// `next` has no window (§2.2 rev. cdb21dc), so there is no deadline left to
+	// check: the marker is WaitingSince, and it only counts alongside a live PID
+	// — the marker survives a crash, the PID does not, so the pair cannot report
+	// a dead waiter as listening. A live PID on its own would NOT do: a val is a
+	// live process that waits for nothing.
+	if session.IsProcessAlive(me.PID) && me.WaitingSince != nil {
 		report.ListenerActive = true
 		report.ListenerPid = me.PID
 		report.ListenerUntil = me.ListenUntil
+		report.ListenerSince = me.WaitingSince
 	}
 
 	// B-2: the listener ownership record (generation + reclaim-pending), separate
@@ -208,12 +217,21 @@ func printOverviewHuman(w io.Writer, r overviewReport) {
 	// remaining window is computed at display time (now-relative), truncated to
 	// the second.
 	switch {
-	case r.ListenerActive && r.ListenerUntil != nil:
+	case r.ListenerActive:
+		// No expiry to print: the wait has no window (§2.2 rev. cdb21dc). The
+		// renderer used to require ListenerUntil, so after the window was removed
+		// buildOverview said listening and THIS said the opposite — a migration
+		// left half-done, on the one command an agent uses to check "am I still
+		// waiting, is this normal?" (CRI2 P1-2).
 		gen := ""
 		if r.ListenerGeneration > 0 {
 			gen = fmt.Sprintf(", generation %d", r.ListenerGeneration)
 		}
-		fmt.Fprintf(w, "listener: listening (PID %d, expires in %s%s)\n", r.ListenerPid, time.Until(*r.ListenerUntil).Truncate(time.Second), gen)
+		since := ""
+		if r.ListenerSince != nil {
+			since = fmt.Sprintf(", waiting since %s", r.ListenerSince.Format("15:04:05"))
+		}
+		fmt.Fprintf(w, "listener: listening (PID %d%s%s)\n", r.ListenerPid, since, gen)
 	case r.ListenerReclaimPending:
 		fmt.Fprintf(w, "listener: reclaim-pending (generation %d — revoked, no listener has re-claimed yet)\n", r.ListenerGeneration)
 	default:

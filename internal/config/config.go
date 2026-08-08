@@ -109,6 +109,22 @@ type Config struct {
 	// user config.json is ignored (applyUserFile skips zero-values) — disable via
 	// the env var instead.
 	DedupWindowSeconds int `json:"dedup_window_seconds"`
+
+	// MaxPageMessages bounds how many messages one `next` emits. MaxMessageBytes
+	// caps a single message but not the count (DESIGN §2.7), so without this a
+	// backlog could produce hundreds of MB and saturate stdout, the harness
+	// capture and the agent's context.
+	// Default: 50.
+	// Env override: CAB_MAX_PAGE_MESSAGES.
+	MaxPageMessages int `json:"max_page_messages"`
+
+	// MaxPageBytes bounds the serialized size of one `next` page. Two limits are
+	// needed, not one: 50 messages of 64 KB each would still be 3 MB.
+	// Default: 131072 (128 KiB). PROVISIONAL — DESIGN §2.7 asks for a value
+	// tuned to real vendor capture limits, which has not been measured yet;
+	// it lives in config precisely so it can be corrected without a rebuild.
+	// Env override: CAB_MAX_PAGE_BYTES.
+	MaxPageBytes int `json:"max_page_bytes"`
 }
 
 // DefaultConfig returns the source-of-truth default values. The DataDir is
@@ -126,6 +142,8 @@ func DefaultConfig() Config {
 		HeartbeatTickMs:    30000,
 		AutoGCHours:        24,
 		DedupWindowSeconds: 10,
+		MaxPageMessages:    50,
+		MaxPageBytes:       131072,
 	}
 }
 
@@ -218,6 +236,12 @@ func applyUserFile(cfg *Config, path string) error {
 	if override.DedupWindowSeconds != 0 {
 		cfg.DedupWindowSeconds = override.DedupWindowSeconds
 	}
+	if override.MaxPageMessages != 0 {
+		cfg.MaxPageMessages = override.MaxPageMessages
+	}
+	if override.MaxPageBytes != 0 {
+		cfg.MaxPageBytes = override.MaxPageBytes
+	}
 	return nil
 }
 
@@ -254,6 +278,12 @@ func applyEnv(cfg *Config) []string {
 		warnings = append(warnings, w)
 	}
 	if w := envInt("CAB_DEDUP_WINDOW_SECONDS", &cfg.DedupWindowSeconds); w != "" {
+		warnings = append(warnings, w)
+	}
+	if w := envInt("CAB_MAX_PAGE_MESSAGES", &cfg.MaxPageMessages); w != "" {
+		warnings = append(warnings, w)
+	}
+	if w := envInt("CAB_MAX_PAGE_BYTES", &cfg.MaxPageBytes); w != "" {
 		warnings = append(warnings, w)
 	}
 

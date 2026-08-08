@@ -116,6 +116,10 @@ func EncodeStrict(m *Message, maxContentBytes int) ([]byte, error) {
 	if err := Validate(m, maxContentBytes); err != nil {
 		return nil, fmt.Errorf("encode: %w", err)
 	}
+	// Write side only: a retired type decodes fine but must never be produced.
+	if _, ok := writableTypes[m.Type]; !ok {
+		return nil, fmt.Errorf("encode: %w: %q is retired and can no longer be sent", ErrInvalidType, m.Type)
+	}
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("encode marshal: %w", err)

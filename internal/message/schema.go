@@ -16,11 +16,13 @@ import (
 // SchemaVersionV2 is the wire format emitted by cli-agents-bridge v0.2+.
 const SchemaVersionV2 = 2
 
-// Message types (PLAN §4.4 enum). TypeAck (F-12) is a lightweight delivery
-// receipt emitted automatically by listen when it hands a query to its
-// consumer, so an orchestrator can tell "received" from "lost" without manual
-// discipline. It must never itself trigger an ack (loop prevention) — see the
-// auto-ack allow-list in cmd/cab-bridge/listen.go.
+// Message types (PLAN §4.4 enum).
+//
+// TypeAck is RETIRED as of v0.8 (DESIGN §2.4): delivery receipts were noise the
+// agent mistook for content, and the mailbox states replace them — `sent`
+// derives the real state from the recipient's mailbox. It stays in this enum
+// because messages already on disk must remain READABLE; what it may no longer
+// be is WRITTEN (see writableTypes).
 const (
 	TypeQuery    = "query"
 	TypeResponse = "response"
@@ -42,8 +44,17 @@ const (
 // validTypes / validStatuses are the canonical enum sets used by Validate.
 // Order is irrelevant — we use them as set lookups.
 var (
+	// validTypes is the READ side: everything that may appear in a file we have
+	// to be able to decode, retired types included.
 	validTypes = map[string]struct{}{
 		TypeQuery: {}, TypeResponse: {}, TypePing: {}, TypeNotify: {}, TypeEvent: {}, TypeAck: {},
+	}
+	// writableTypes is the WRITE side, and it is deliberately smaller. Splitting
+	// the two is what lets a type be retired without turning every existing file
+	// of that type into an unreadable one — decoding runs through validTypes, so
+	// a single shrinking enum would have made yesterday's acks look corrupt.
+	writableTypes = map[string]struct{}{
+		TypeQuery: {}, TypeResponse: {}, TypePing: {}, TypeNotify: {}, TypeEvent: {},
 	}
 	validStatuses = map[string]struct{}{
 		StatusPending: {}, StatusProcessing: {}, StatusCompleted: {}, StatusFailed: {},
@@ -57,6 +68,13 @@ var (
 // error text (e.g. ask omits the auto-emitted "ack"), but membership is decided
 // here against validTypes.
 func IsValidType(t string) bool {
+	_, ok := writableTypes[t]
+	return ok
+}
+
+// IsReadableType reports whether t can be decoded from a file on disk. It is a
+// superset of IsValidType: retired types stay readable forever.
+func IsReadableType(t string) bool {
 	_, ok := validTypes[t]
 	return ok
 }
@@ -69,19 +87,28 @@ func IsValidType(t string) bool {
 // "inReplyTo": null in JSON (semantically distinct from "" empty-but-present).
 // The Patil upstream format uses null, and PLAN keeps the convention.
 type Message struct {
-	ID            string   `json:"id"`
-	SchemaVersion int      `json:"schemaVersion"`
-	From          string   `json:"from"`
-	FromRole      string   `json:"fromRole"`
-	FromAgentName string   `json:"fromAgentName"`
-	To            string   `json:"to"`
-	ToRole        string   `json:"toRole"`
-	Type          string   `json:"type"`
-	Timestamp     string   `json:"timestamp"`
-	Status        string   `json:"status"`
-	Content       string   `json:"content"`
-	InReplyTo     *string  `json:"inReplyTo"`
-	Metadata      Metadata `json:"metadata"`
+	ID            string  `json:"id"`
+	SchemaVersion int     `json:"schemaVersion"`
+	From          string  `json:"from"`
+	FromRole      string  `json:"fromRole"`
+	FromAgentName string  `json:"fromAgentName"`
+	To            string  `json:"to"`
+	ToRole        string  `json:"toRole"`
+	Type          string  `json:"type"`
+	Timestamp     string  `json:"timestamp"`
+	Status        string  `json:"status"`
+	Content       string  `json:"content"`
+	InReplyTo     *string `json:"inReplyTo"`
+	// Closes lists every message this reply archives (DESIGN v0.8 §2.3). The
+	// schema has a single InReplyTo, which carries the ANCHOR — the oldest open
+	// ask of the set — while Closes carries the full set. Without it, a reply
+	// that closes two asks would imply two identities for one response, while
+	// the interface promises exactly one.
+	//
+	// omitempty: only a reply ever sets it, so every other message stays
+	// byte-identical to what earlier versions produced.
+	Closes   []string `json:"closes,omitempty"`
+	Metadata Metadata `json:"metadata"`
 }
 
 // Metadata is the inner object reserved for routing/observability fields

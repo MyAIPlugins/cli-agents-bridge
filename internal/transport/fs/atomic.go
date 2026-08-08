@@ -17,9 +17,11 @@
 package fs
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -103,4 +105,57 @@ func ReadJSON(path string, v interface{}) error {
 		return fmt.Errorf("unmarshal %q: %w", path, err)
 	}
 	return nil
+}
+
+// WriteIfAbsentBytes creates path with data only if path does not exist yet,
+// and reports whether it did the creating.
+//
+// If path already holds byte-identical content the call succeeds with
+// created=false: that is the "already delivered" case of an idempotent retry
+// (DESIGN v0.8 §2.3). Different content under the same name is an ERROR — two
+// distinct messages collided on one id, which must never pass silently.
+//
+// Create-if-absent is done with link(2) rather than a stat-then-write: link
+// fails with EEXIST atomically, so two concurrent retries cannot both believe
+// they created the file. The payload is written to a temp file in the same
+// directory first, so the linked file is never partially visible.
+func WriteIfAbsentBytes(path string, data []byte, mode os.FileMode) (created bool, err error) {
+	dir := filepath.Dir(path)
+
+	f, err := os.CreateTemp(dir, ".tmp.*")
+	if err != nil {
+		return false, fmt.Errorf("create temp for %q: %w", path, err)
+	}
+	tmpPath := f.Name()
+	defer func() { _ = os.Remove(tmpPath) }()
+
+	if _, werr := f.Write(data); werr != nil {
+		_ = f.Close()
+		return false, fmt.Errorf("write temp for %q: %w", path, werr)
+	}
+	if serr := f.Sync(); serr != nil {
+		_ = f.Close()
+		return false, fmt.Errorf("sync temp for %q: %w", path, serr)
+	}
+	if cerr := f.Close(); cerr != nil {
+		return false, fmt.Errorf("close temp for %q: %w", path, cerr)
+	}
+	if cerr := os.Chmod(tmpPath, mode); cerr != nil {
+		return false, fmt.Errorf("chmod temp for %q: %w", path, cerr)
+	}
+
+	if lerr := os.Link(tmpPath, path); lerr == nil {
+		return true, nil
+	} else if !errors.Is(lerr, fs.ErrExist) {
+		return false, fmt.Errorf("link temp to %q: %w", path, lerr)
+	}
+
+	existing, rerr := os.ReadFile(path)
+	if rerr != nil {
+		return false, fmt.Errorf("read existing %q: %w", path, rerr)
+	}
+	if !bytes.Equal(existing, data) {
+		return false, fmt.Errorf("%q already exists with different content — refusing to overwrite", path)
+	}
+	return false, nil
 }

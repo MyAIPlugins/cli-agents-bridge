@@ -164,7 +164,9 @@ func TestTouchHeartbeatOwned_EvictedDoesNotWrite(t *testing.T) {
 
 	hbBefore := mustLoadHB(t, mgr, sid)
 	time.Sleep(10 * time.Millisecond) // a write would advance the timestamp
-	assert.True(t, mgr.touchHeartbeatOwned(sid, ownerOK), "the evicted heartbeat detects the reclaim under the lock")
+	evicted, hbErr := mgr.touchHeartbeatOwned(sid, ownerOK)
+	require.NoError(t, hbErr)
+	assert.True(t, evicted, "the evicted heartbeat detects the reclaim under the lock")
 	assert.True(t, mustLoadHB(t, mgr, sid).Equal(hbBefore), "and must NOT write the manifest (no clobber)")
 }
 
@@ -183,6 +185,32 @@ func TestTouchHeartbeatOwned_OwnerWrites(t *testing.T) {
 
 	hbBefore := mustLoadHB(t, mgr, sid)
 	time.Sleep(10 * time.Millisecond)
-	assert.False(t, mgr.touchHeartbeatOwned(sid, ownerOK), "the current owner is not evicted")
+	evicted, hbErr := mgr.touchHeartbeatOwned(sid, ownerOK)
+	require.NoError(t, hbErr)
+	assert.False(t, evicted, "the current owner is not evicted")
 	assert.True(t, mustLoadHB(t, mgr, sid).After(hbBefore), "the current owner refreshes the heartbeat")
+}
+
+// TestTouchHeartbeatOwned_ReportsWriteFailures is the P1-5 policy: a beat that
+// FAILS must be distinguishable from one that was merely skipped.
+//
+// On a 24h waiter the difference matters — a swallowed permission or disk error
+// leaves the session silently stale, declaring itself alive while nothing on
+// disk says so, and the done channel carries no error to notice it by.
+// Contention is NOT a failure: a concurrent claim is normal and self-resolving.
+func TestTouchHeartbeatOwned_ReportsWriteFailures(t *testing.T) {
+	t.Parallel()
+	const sid = "hbfail04"
+	mgr := NewManager(t.TempDir(), time.Second)
+	require.NoError(t, os.MkdirAll(mgr.sessionDir(sid), 0o700))
+	plantManifestDetails(t, mgr, sid, "/repo/x", "/repo/x", "ESC-hb", RoleEsc)
+
+	o, err := mgr.ClaimListener(sid)
+	require.NoError(t, err)
+	ownerOK := func() bool { return mgr.IsListenerCurrent(sid, o.Token) }
+
+	// A healthy beat reports no error.
+	evicted, hbErr := mgr.touchHeartbeatOwned(sid, ownerOK)
+	assert.False(t, evicted)
+	assert.NoError(t, hbErr, "a successful beat must not report a failure")
 }

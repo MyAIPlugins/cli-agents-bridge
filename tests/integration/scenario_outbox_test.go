@@ -14,11 +14,13 @@ import (
 func TestScenarioOutbox_AskPopulatesSenderOutbox(t *testing.T) {
 	t.Parallel()
 	dataDir := t.TempDir()
-	valID, escID := registerPair(t, dataDir, "ob1")
+	dirs := sharedScopeDirs(t, "val", "esc")
+	valID := registerIn(t, dataDir, dirs[0], "val", "VAL-ob1")
+	escID := registerIn(t, dataDir, dirs[1], "esc", "ESC-ob1")
 
-	out, errOut, exit := run(t, []string{"ask", "--session-id=" + valID, "--to=" + escID, "--type=query", "--content=brief"}, dataDirEnv(dataDir))
+	out, errOut, exit := runInDir(t, dirs[0], []string{"ask", "ESC-ob1", "brief"}, dataDirEnv(dataDir))
 	require.Equal(t, 0, exit, "ask: %s", errOut)
-	msgID := strings.TrimSpace(out)
+	msgID := extractMsgID(out)
 
 	out, errOut, exit = run(t, []string{"status", "--session-id=" + valID}, dataDirEnv(dataDir))
 	require.Equal(t, 0, exit, "status: %s", errOut)
@@ -29,26 +31,6 @@ func TestScenarioOutbox_AskPopulatesSenderOutbox(t *testing.T) {
 	assert.Contains(t, out, msgID, "cab sent must list the sent message id")
 	assert.Contains(t, out, escID, "cab sent must show the recipient")
 	assert.Contains(t, out, "query", "cab sent must show the type")
-}
-
-// TestScenarioOutbox_AutoAckPopulatesListenerOutbox: the F-9 copy also applies
-// to auto-acks (which go through sendMessage). After ESC consumes a query with
-// --wait-one, the auto-ack it sent to VAL appears in ESC's OWN outbox.
-func TestScenarioOutbox_AutoAckPopulatesListenerOutbox(t *testing.T) {
-	t.Parallel()
-	dataDir := t.TempDir()
-	valID, escID := registerPair(t, dataDir, "ob2")
-
-	_, errOut, exit := run(t, []string{"ask", "--session-id=" + valID, "--to=" + escID, "--type=query", "--content=brief"}, dataDirEnv(dataDir))
-	require.Equal(t, 0, exit, "ask: %s", errOut)
-
-	_, errOut, exit = run(t, []string{"listen", "--wait-one", "--session-id=" + escID}, dataDirEnv(dataDir, "CAB_POLL_INTERVAL_MS=50"))
-	require.Equal(t, 0, exit, "listen --wait-one: %s", errOut)
-
-	out, errOut, exit := run(t, []string{"sent", "--session-id=" + escID, "--json"}, dataDirEnv(dataDir))
-	require.Equal(t, 0, exit, "sent: %s", errOut)
-	assert.Contains(t, out, valID, "listener outbox must record the ack sent to the query sender")
-	assert.Contains(t, out, "ack", "listener outbox must contain a type=ack message")
 }
 
 // TestScenarioOutbox_SentEmptyJSONIsArray: `cab sent --json` for a session that

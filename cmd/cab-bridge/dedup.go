@@ -28,12 +28,21 @@ import (
 // Unreadable, malformed, .tmp.* or non-.json files are skipped, as is any file
 // whose Timestamp does not parse — none is a usable duplicate signal.
 func findRecentDuplicate(outboxDir, to, msgType, content string, windowSeconds, maxContentBytes int, now time.Time) (string, error) {
+	id, _, err := findRecentDuplicateAt(outboxDir, to, msgType, content, windowSeconds, maxContentBytes, now)
+	return id, err
+}
+
+// findRecentDuplicateAt is findRecentDuplicate plus WHEN the duplicate went out.
+// The caller needs the real age: reporting the configured window as if it were
+// the elapsed time states something that did not happen, inside the very
+// warning meant to help spot a double-invoke (CRI2 P3-7).
+func findRecentDuplicateAt(outboxDir, to, msgType, content string, windowSeconds, maxContentBytes int, now time.Time) (string, time.Time, error) {
 	entries, err := os.ReadDir(outboxDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return "", nil // no outbox yet — nothing sent, no duplicate
+			return "", time.Time{}, nil // no outbox yet — nothing sent, no duplicate
 		}
-		return "", fmt.Errorf("dedup: read outbox: %w", err)
+		return "", time.Time{}, fmt.Errorf("dedup: read outbox: %w", err)
 	}
 
 	cutoff := now.Add(-time.Duration(windowSeconds) * time.Second)
@@ -67,5 +76,5 @@ func findRecentDuplicate(outboxDir, to, msgType, content string, windowSeconds, 
 			bestTime = ts
 		}
 	}
-	return bestID, nil
+	return bestID, bestTime, nil
 }

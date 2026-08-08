@@ -48,6 +48,12 @@ const (
 // ErrUnknownScope is returned by Run for any scope outside the constants.
 var ErrUnknownScope = errors.New("unknown cleanup scope")
 
+// ErrSessionBusy means a session was SKIPPED because it is locked or has a
+// reply transaction in flight. It is not a failure of cleanup: a session
+// mid-transaction is by definition not abandoned, and the next pass finds it
+// again (CRI diff-gate P0-2).
+var ErrSessionBusy = errors.New("cleanup: session busy")
+
 // ErrOwnSessionRequired is returned when scope=my-session but OwnSessionID
 // is empty. Caller must resolve the ID before calling Run.
 var ErrOwnSessionRequired = errors.New("cleanup my-session: OwnSessionID required")
@@ -171,9 +177,29 @@ var messageSubdirs = []string{"inbox", "outbox", "processed"}
 // Subdir layout (vs a flat dir) keeps provenance explicit and removes any
 // name-collision risk between a message that sits in inbox/ and a same-named
 // copy in processed/.
+// FENCING (CRI diff-gate P0-2): the whole decide-archive-remove runs while
+// holding the session lock, and refuses outright if a reply transaction is in
+// flight. Without it, cleanup could snapshot inbox/, a concurrent reply could
+// link(2) its response in and report success, and the following RemoveAll would
+// delete that brand-new file — leaving the ask CLOSED, the response gone from
+// both inbox and archive, and the journal removed. No retry can repair that:
+// it is a direct violation of the guarantee the transaction exists for.
+//
+// Refusing is right rather than merely delaying: a session mid-transaction is
+// by definition not abandoned, and the next cleanup pass will find it again.
 func archiveAndRemoveSession(dataDir, sid string, now func() time.Time) error {
 	sessionDir := filepath.Join(dataDir, "sessions", sid)
 	dateDir := now().UTC().Format("2006-01-02")
+
+	release, lerr := session.AcquireLock(filepath.Join(sessionDir, "lock"), false)
+	if lerr != nil {
+		return fmt.Errorf("%w: session %q is busy: %v", ErrSessionBusy, sid, lerr)
+	}
+	defer func() { _ = release() }()
+
+	if _, err := os.Stat(filepath.Join(sessionDir, "reply-txn.json")); err == nil {
+		return fmt.Errorf("%w: session %q has a reply transaction in flight", ErrSessionBusy, sid)
+	}
 
 	for _, sub := range messageSubdirs {
 		srcDir := filepath.Join(sessionDir, sub)

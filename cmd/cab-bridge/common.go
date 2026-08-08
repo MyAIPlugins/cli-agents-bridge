@@ -180,6 +180,40 @@ func resolveScope(path string) string {
 	return scope
 }
 
+// resolveEnvSessionID reads CAB_SESSION_ID, the middle rung of the precedence
+// ladder: --session-id > CAB_SESSION_ID > lookup-by-cwd.
+//
+// It exists for the setup where several agents work from different directories
+// of the SAME repository. There the dangerous case is not a command that fails
+// — F-97 makes that one readable — but one that SUCCEEDS wrongly: an agent
+// running from the repo root resolves the session that lives at the root, reads
+// somebody else's mail, and nothing anywhere reports a problem. A stolen
+// delivery, in silence. With the identity in the environment the cwd stops
+// being a semantic input and the case cannot arise.
+//
+// Set once when the shell starts, never transcribed per command: it is
+// environment, not an id the agent maneuvers (LL-14).
+//
+// FAIL-CLOSED, both ways. A malformed value is an error, and so is a
+// well-formed one naming a session that does not exist — a stale export (the
+// session was cleaned up, or came from another data dir) must not silently fall
+// back to the cwd, because that would resurrect exactly the ambiguity this
+// variable removes. AllOrNothing: no implicit fallback.
+func resolveEnvSessionID(mgr *session.Manager, cmdName string) (sid string, ok bool, err error) {
+	raw := strings.TrimSpace(os.Getenv("CAB_SESSION_ID"))
+	if raw == "" {
+		return "", false, nil
+	}
+	sid, verr := validateExplicitSessionID(raw)
+	if verr != nil {
+		return "", false, fmt.Errorf("%s: CAB_SESSION_ID=%q is not a valid session id: %w (unset it, or fix it — it is not ignored)", cmdName, raw, verr)
+	}
+	if _, lerr := mgr.LoadManifest(sid); lerr != nil {
+		return "", false, fmt.Errorf("%s: CAB_SESSION_ID=%s names a session that does not exist in this data dir — unset it or point it at a live session; it is NOT ignored in favour of the current directory", cmdName, sid)
+	}
+	return sid, true, nil
+}
+
 // evaluateResolution is the PURE B-1 guardrail predicate: given a cwd Resolution
 // it decides what an id-free command should do, with NO I/O. It returns either
 // an error (a HARD ambiguity always; a shared-scope hazard only under strict
@@ -195,7 +229,15 @@ func evaluateResolution(cmdName, cwd string, res session.Resolution, strict bool
 		return "", "", fmt.Errorf("%s: ambiguous: %d sessions match this cwd %q at the same path depth — pass one of: %s",
 			cmdName, len(res.Candidates), cwd, formatCandidateChoices(res.Candidates))
 	}
-	if len(res.ScopeSiblings) > 0 {
+	// F-91: warn on the WEAKNESS of the resolution, not on the mere existence of
+	// other agents. At an exact match the command came from that session's own
+	// working directory and siblings elsewhere change nothing — warning there is
+	// pure noise, printed before EVERY id-free command in the setup v0.8 makes
+	// normal (peers must share a scope for name resolution to work). Worse, its
+	// remediation named --session-id, which the v0.8 loop commands REJECT: a
+	// dead end on every command. Prefix matches still warn — that is the case
+	// where the caller might genuinely be someone who never registered.
+	if len(res.ScopeSiblings) > 0 && !res.ExactMatch {
 		msg := formatSharedScopeWarning(cmdName, cwd, res)
 		if strict {
 			// Opt-in CAB_BRIDGE_STRICT_SESSION_LOOKUP=1 promotes the hazard to a
@@ -232,7 +274,12 @@ func formatSharedScopeWarning(cmdName, cwd string, res session.Resolution) strin
 	for _, s := range res.ScopeSiblings {
 		fmt.Fprintf(&b, "\n  - %s (%s, role %s, project %s)", s.ID, s.AgentName, s.Role, s.ProjectPath)
 	}
-	fmt.Fprintf(&b, "\n  pass --session-id=<id> to be explicit (e.g. cab-bridge %s --session-id=%s ...)", cmdName, sel.ID)
+	// Remediation, id-free FIRST: the whole point of LL-14 is that an agent
+	// should never have to transcribe an id. Running from the worktree root is
+	// the fix; the id is the last resort, and only for the commands that accept
+	// it (the v0.8 loop commands do not).
+	fmt.Fprintf(&b, "\n  run your commands from the root of your own worktree (%s) and this resolves cleanly", sel.ProjectPath)
+	fmt.Fprintf(&b, "\n  as a last resort, commands that accept it take --session-id=%s before any positional", sel.ID)
 	return b.String()
 }
 
@@ -244,6 +291,9 @@ func formatSharedScopeWarning(cmdName, cwd string, res session.Resolution) strin
 //     validates and returns it). A disciplined caller that always passes the id
 //     sees zero warnings — the warning appears only when the id is omitted in a
 //     scope where it is genuinely ambiguous.
+//   - Otherwise CAB_SESSION_ID is consulted (see resolveEnvSessionID): it makes
+//     identity explicit without the agent ever transcribing an id — it is set
+//     once when the shell starts, not typed per command (LL-14).
 //   - Otherwise "me" is resolved from the cwd via LookupByCWDDetails and the pure
 //     evaluateResolution predicate is applied: a HARD ambiguity is rejected; a
 //     shared-scope hazard warns on stderr (or, with
@@ -260,6 +310,12 @@ func resolveCurrentSession(mgr *session.Manager, cmdName, sessionIDFlag string) 
 		}
 		return sid, nil
 	}
+	if sid, ok, err := resolveEnvSessionID(mgr, cmdName); err != nil {
+		return "", err
+	} else if ok {
+		return sid, nil
+	}
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("%s: getwd for session lookup: %w", cmdName, err)
@@ -267,7 +323,11 @@ func resolveCurrentSession(mgr *session.Manager, cmdName, sessionIDFlag string) 
 	res, err := mgr.LookupByCWDDetails(cwd)
 	if err != nil {
 		if errors.Is(err, session.ErrNoSessionForCwd) {
-			return "", fmt.Errorf("%s: no session for cwd %q — register first (or `cab-bridge bootstrap`), or pass --session-id=<id>", cmdName, cwd)
+			// `bootstrap` is gone (v0.8), and pointing at it sends the agent to
+			// "unknown subcommand" — a dead end. And do NOT suggest an id here:
+			// the only one it has just read is somebody ELSE's, so the advice
+			// would route it into impersonation (CRI2 P0).
+			return "", fmt.Errorf("%s: no session for this directory (%s) — run `cab-bridge join --role=val|esc` here first", cmdName, cwd)
 		}
 		return "", fmt.Errorf("%s: session lookup from cwd %q: %w", cmdName, cwd, err)
 	}

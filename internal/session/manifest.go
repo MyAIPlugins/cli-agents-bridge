@@ -107,6 +107,16 @@ type Manifest struct {
 	// Validate/ApplyV1Defaults ignore it, like TeamID/State.
 	ListenUntil *time.Time `json:"listenUntil,omitempty"`
 
+	// WaitingSince is when the current `next` started waiting. It replaces
+	// ListenUntil as the "I am listening" signal now that the wait has NO
+	// deadline (§2.2 rev. cdb21dc): there is no expiry to publish, and a live
+	// PID alone is not the same claim — a val is a live process that is not
+	// waiting for anything.
+	//
+	// Read together with a live PID it is exact: the marker persists if the
+	// waiter dies, but the dead PID then makes the pair read "not listening".
+	WaitingSince *time.Time `json:"waitingSince,omitempty"`
+
 	// LastReclaim, when non-nil, reports what a `register --resume` RECLAIM just
 	// superseded (B-2). It is set IN-MEMORY by tryReuse on the returned manifest
 	// and read by the cmd layer for the reclaim output. json:"-": it is NEVER

@@ -315,6 +315,14 @@ type Resolution struct {
 	Candidates    []Candidate
 	HardAmbiguous bool
 	ScopeSiblings []Candidate
+	// ExactMatch reports that the cwd IS the selected session's ProjectPath,
+	// not merely a descendant of it. It separates two very different degrees of
+	// certainty (F-91): an exact match means the command was issued from that
+	// session's own working directory, so siblings elsewhere in the scope do not
+	// make the resolution any less certain — this is the NORMAL case. A prefix
+	// match is where the caller might genuinely be somebody else who never
+	// registered, which is the case worth warning about.
+	ExactMatch bool
 }
 
 // LookupByCWDDetails is the pure, scope-aware sibling of LongestPrefixLookup
@@ -399,6 +407,7 @@ func (m *Manager) LookupByCWDDetails(cwd string) (Resolution, error) {
 	res.HardAmbiguous = len(res.Candidates) > 1
 	res.SelectedID = res.Candidates[0].ID // ReadDir order makes this deterministic
 	selected := res.Candidates[0]
+	res.ExactMatch = filepath.Clean(absCwd) == filepath.Clean(selected.ProjectPath)
 
 	// Shared-scope siblings: other sessions in the selected session's NON-empty
 	// scope with a DIFFERENT ProjectPath. Lexical Clean compare (constraint #6,
@@ -451,25 +460,58 @@ func (m *Manager) StartHeartbeatOwned(ctx context.Context, sessionID string, own
 		ticker := time.NewTicker(m.HeartbeatInterval)
 		defer ticker.Stop()
 
+		// Failure policy. Swallowing every write error is tolerable for a 9-minute
+		// listen and NOT for a 24h waiter: a permissions or disk failure would
+		// make it silently stale — declaring itself alive while nothing on disk
+		// says so — and the done channel carries no error to notice it by. Warn
+		// on stderr, rate-limited so a persistent failure cannot itself become
+		// the flood.
+		consecutiveFailures := 0
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
 				if ownerOK == nil {
-					_ = m.touchHeartbeat(sessionID) // unfenced: original behaviour, no lock
+					if err := m.touchHeartbeat(sessionID); err != nil {
+						consecutiveFailures++
+						m.warnHeartbeatFailure(sessionID, consecutiveFailures, err)
+					} else {
+						consecutiveFailures = 0
+					}
 					continue
 				}
 				if !ownerOK() {
 					return // fast un-locked pre-check: cheap early stop on eviction
 				}
-				if m.touchHeartbeatOwned(sessionID, ownerOK) {
+				evicted, err := m.touchHeartbeatOwned(sessionID, ownerOK)
+				if evicted {
 					return // evicted, CONFIRMED under the session lock (P2) — stop
 				}
+				if err != nil {
+					consecutiveFailures++
+					m.warnHeartbeatFailure(sessionID, consecutiveFailures, err)
+					continue
+				}
+				consecutiveFailures = 0
 			}
 		}
 	}()
 	return done
+}
+
+// heartbeatWarnAfter is how many consecutive failed beats pass before the first
+// warning, and the interval between the ones after it. Contention skips a beat
+// without counting as a failure, so this only fires on real write errors.
+const heartbeatWarnAfter = 3
+
+func (m *Manager) warnHeartbeatFailure(sessionID string, consecutive int, err error) {
+	if consecutive < heartbeatWarnAfter || consecutive%heartbeatWarnAfter != 0 {
+		return
+	}
+	fmt.Fprintf(os.Stderr,
+		"cab-bridge: heartbeat for session %s has failed %d times in a row (%v) — this session may look stale to peers while it is in fact alive\n",
+		sessionID, consecutive, err)
 }
 
 // touchHeartbeatOwned refreshes LastHeartbeat for a FENCED listener (B-2 P2),
@@ -483,17 +525,20 @@ func (m *Manager) StartHeartbeatOwned(ctx context.Context, sessionID string, own
 // Returns evicted=true when the under-lock re-check fails (a reclaim happened):
 // the caller stops the heartbeat. Lock contention (a concurrent claim/reclaim)
 // returns evicted=false — best-effort, skip this beat and retry next tick.
-func (m *Manager) touchHeartbeatOwned(sessionID string, ownerOK func() bool) (evicted bool) {
-	release, err := AcquireLock(filepath.Join(m.sessionDir(sessionID), "lock"), false)
-	if err != nil {
-		return false // contended — skip this beat (best-effort), not evicted
+func (m *Manager) touchHeartbeatOwned(sessionID string, ownerOK func() bool) (evicted bool, err error) {
+	release, lerr := AcquireLock(filepath.Join(m.sessionDir(sessionID), "lock"), false)
+	if lerr != nil {
+		// Contended — skip this beat (best-effort). NOT reported as a failure:
+		// a concurrent claim/reclaim is normal and self-resolving, and counting
+		// it would produce warnings about a healthy system.
+		return false, nil
 	}
 	defer func() { _ = release() }()
 	if !ownerOK() {
-		return true // a reclaim revoked us (confirmed under the lock) — do not write
+		return true, nil // a reclaim revoked us (confirmed under the lock) — do not write
 	}
-	_ = m.touchHeartbeat(sessionID) // RMW now serialized cross-process by the lock we hold
-	return false
+	// RMW now serialized cross-process by the lock we hold.
+	return false, m.touchHeartbeat(sessionID)
 }
 
 // touchHeartbeat reads manifest, sets LastHeartbeat = now, atomic-writes back.
@@ -579,6 +624,19 @@ func (m *Manager) Touch(sessionID string) error {
 	return m.touchHeartbeat(sessionID)
 }
 
+// SetWaitingSince marks (or clears, with a nil time) that this session has a
+// `next` waiting. Paired with a live PID it is the listening signal.
+func (m *Manager) SetWaitingSince(sessionID string, t *time.Time) error {
+	m.manifestMu.Lock()
+	defer m.manifestMu.Unlock()
+	manifest, err := m.LoadManifest(sessionID)
+	if err != nil {
+		return err
+	}
+	manifest.WaitingSince = t
+	return m.SaveManifest(manifest)
+}
+
 // AdoptPID claims sessionID for the current process by writing its PID into the
 // manifest (and refreshing the heartbeat). The long-running listen command
 // calls this at startup so collision detection (BUG-6) and stale detection
@@ -654,4 +712,19 @@ func defaultCapabilities(caps []string) []string {
 		return []string{"query", "context-dump", "conversation"}
 	}
 	return caps
+}
+
+// adoptPIDLocked is AdoptPID for callers that already hold the session lock.
+// The lock is what makes adopt+claim one indivisible startup (see StartWait);
+// manifestMu alone only serialises writers inside this process.
+func (m *Manager) adoptPIDLocked(sessionID string) error {
+	m.manifestMu.Lock()
+	defer m.manifestMu.Unlock()
+	manifest, err := m.LoadManifest(sessionID)
+	if err != nil {
+		return err
+	}
+	manifest.PID = os.Getpid()
+	manifest.LastHeartbeat = m.now()
+	return m.SaveManifest(manifest)
 }
