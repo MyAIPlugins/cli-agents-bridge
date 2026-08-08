@@ -1,0 +1,19 @@
+cmd/cab-bridge/verbs_test.go
+  s_13b14428c16427::t_902f1fb95433dd 411-414,424-428
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "58cbb374b2e242d116d61d1dc664a6db7beaea38",
+  "prompts": {},
+  "sessions": {
+    "s_13b14428c16427": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5bb10dbc-fcae-44e8-acd6-603d11cfd57f",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
