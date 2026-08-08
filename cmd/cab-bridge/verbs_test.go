@@ -475,3 +475,60 @@ func TestResolveReplyTarget_HomonymsAreAmbiguousInBothForms(t *testing.T) {
 	_, _, err = resolveReplyTarget([]string{"VAL-same", "answer"}, asks, nil, strings.NewReader(""))
 	assert.Error(t, err, "naming the shared name is ambiguous too — it was the suggested form")
 }
+
+// TestReply_CrashWithMultipleAsksAndOneArrivingMidTransaction composes the three
+// cases that are covered separately and never together: several open asks from
+// one sender, a crash between SENT and archiving, and a NEW ask landing from the
+// same sender while the transaction is open.
+//
+// Each piece is tested on its own; a defect in their interaction would show in
+// none of them. What must hold: the retry closes exactly the frozen set, the
+// late ask survives untouched, no second response is delivered, and a following
+// reply can still close the late one.
+func TestReply_CrashWithMultipleAsksAndOneArrivingMidTransaction(t *testing.T) {
+	mgr, cfg, dataDir := newReplyPair(t)
+	base := time.Now().UTC()
+
+	deliverAndNotify(t, mgr, dataDir, "msg-aaaaaaaaaaaa", "first brief", base)
+	deliverAndNotify(t, mgr, dataDir, "msg-bbbbbbbbbbbb", "a correction", base.Add(time.Minute))
+
+	// The set is frozen on the two, the response is delivered, then a crash
+	// lands before any archiving.
+	txn := newTxn(replySelf, []string{"msg-aaaaaaaaaaaa", "msg-bbbbbbbbbbbb"}, "one answer for both")
+	delivered, err := deliverResponse(cfg, mgr, replySelf, txn)
+	require.NoError(t, err)
+	require.True(t, delivered)
+	txn.State = session.ReplyTxnSent
+	require.NoError(t, mgr.WriteReplyTxn(replySelf, txn))
+
+	// A THIRD ask arrives from the same sender while the journal is open.
+	deliverAndNotify(t, mgr, dataDir, "msg-cccccccccccc", "urgent third", base.Add(2*time.Minute))
+
+	// The retry resumes the frozen transaction.
+	resumed, found, err := mgr.ReadReplyTxn(replySelf)
+	require.NoError(t, err)
+	require.True(t, found)
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, finishReplyTxn(mgr, cfg, replySelf, resumed, &stdout, &stderr))
+
+	inbox := filepath.Join(dataDir, "sessions", replySelf, "inbox")
+	assert.NoFileExists(t, filepath.Join(inbox, "msg-aaaaaaaaaaaa.json"), "the frozen set is archived")
+	assert.NoFileExists(t, filepath.Join(inbox, "msg-bbbbbbbbbbbb.json"))
+	assert.FileExists(t, filepath.Join(inbox, "msg-cccccccccccc.json"),
+		"an ask that arrived after the snapshot must NOT be closed by a transaction that never saw it")
+	assert.Len(t, peerInbox(t, dataDir), 1, "still exactly one response — the retry must not resend")
+
+	// The late ask is still open, and a following reply closes it.
+	open, err := collectOpenAsks(mgr, cfg, replySelf)
+	require.NoError(t, err)
+	require.Len(t, open, 1)
+	assert.Equal(t, "msg-cccccccccccc", open[0].id)
+
+	second := newTxn(replySelf, []string{"msg-cccccccccccc"}, "answering the third")
+	assert.NotEqual(t, txn.ResponseID, second.ResponseID, "a different anchor means a different response id")
+	var out2, err2 bytes.Buffer
+	require.NoError(t, finishReplyTxn(mgr, cfg, replySelf, second, &out2, &err2))
+
+	assert.NoFileExists(t, filepath.Join(inbox, "msg-cccccccccccc.json"), "the late ask is closed by the NEXT reply")
+	assert.Len(t, peerInbox(t, dataDir), 2, "two replies, two responses — never one, never three")
+}
