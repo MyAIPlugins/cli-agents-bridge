@@ -61,7 +61,7 @@ Oggi tutto è allo stesso livello: `migrate-from-patil` e `listen` sono due voci
 |---|---|
 | `read <id>` | rileggere un messaggio, anche già archiviato (scansiona `inbox/` poi `processed/`) |
 | `sent` | cosa ho mandato e in che stato è |
-| `who` | chi c'è adesso — **esiste come comando**, non è "`join` rilanciabile": un agente a metà sessione che vuole solo guardare non deve invocare qualcosa che ha effetti di registrazione |
+| `peers` / `overview` | chi c'è adesso, senza effetti di registrazione — un agente a metà sessione che vuole solo guardare non deve invocare `join`. *(Correzione dell'accettazione finale, CRI2: le revisioni precedenti prescrivevano qui un comando `who`, che non è mai stato implementato. Il bisogno era reale ed è coperto; il comando in più no — e un contratto che nomina un comando inesistente è la sorgente da cui tre skill scriverebbero il falso.)* |
 | `state` | **resta** (F-23, `working`/`done`/`orchestrating`): dice cosa sta *facendo* un agente, informazione ortogonale alla mailbox e che il modello nuovo non assorbe |
 | `cleanup`, `inspect`, `migrate-*`, `notify-watch` | amministrazione, mai nel ciclo di lavoro |
 
@@ -189,8 +189,10 @@ Le quattro proprietà vanno lette insieme, non sezione per sezione — è la com
 | Tipo | Outbound (mittente) | Replay al `join` | TTL in inbox viva | Chi lo chiude |
 |---|---|---|---|---|
 | `ask` (query) | **sì**, finché aperto | **sì** (`NOTIFIED`→`UNREAD`) | **nessuno** — resta azionabile | il `reply` del destinatario |
-| `tell` (notify) | no | no | corto → `expired/unconfirmed` | il TTL |
-| `response` | no | no | corto → `expired/unconfirmed` | il TTL |
+| `tell` (notify) | no | no | corto → `expired/unconfirmed` — **Tier 2, non in v0.8** | il TTL (finché non c'è: niente) |
+| `response` | no | no | corto → `expired/unconfirmed` — **Tier 2, non in v0.8** | il TTL (finché non c'è: niente) |
+
+> **Il TTL della inbox viva NON è in v0.8** — accertato dall'accettazione finale (CRI2): nessuna implementazione, e la riga qui sopra prometteva che *"il TTL li chiude"* mentre in v0.8 non li chiude niente. Conseguenza reale e accettata: in una sessione longeva i `tell` e le `response` già letti restano in `inbox/` come `NOTIFIED` e si accumulano. Non è un difetto di correttezza — `next` non li riemette, quindi non tornano a svegliare nessuno — ma è degrado lento, e va detto invece che promesso. Deferito per una ragione precisa: un potatore a tempo su una mailbox viva è un **meccanismo nuovo** con i suoi modi di rompersi (chi pota mentre un altro legge, cosa succede a un file potato a metà transazione), quindi merita un giro di design suo, non una toppa pre-merge.
 
 **Nessun TTL sugli `ask`**: un `ask` di tre giorni senza risposta è la cosa **più importante da mostrare**, non da potare. L'accumulo è già osservabile dalla riga outbound del mittente, che è il posto giusto — chi ha chiesto è chi deve saperlo.
 
@@ -234,7 +236,7 @@ Un reset indiscriminato al `join` risveglierebbe una notifica di tre giorni prim
 - **query** (`ask` — richiede risposta): redelivery **at-least-once fino a `reply`**, anche attraverso una nuova incarnation. Se resta azionabile per sempre è una scelta onesta, ma va dichiarata con backpressure e osservabilità.
 - **notify / event / ping** (`tell` — non richiede risposta): **one-shot per cursore**, nessun reset su un `join` normale. Restano osservabili come `NOTIFIED`, non risvegliano più.
 - **response** (`reply`): **one-shot come i notify**. Nessun comando chiude una response — sarebbe una catena infinita — quindi segue la stessa policy: nessun replay, e il TTL la porta a `expired/unconfirmed`. Andava assegnata esplicitamente: senza, restava l'unico tipo senza lifecycle dichiarato (CRI, quarto giro).
-- **TTL esplicito anche per la inbox viva**, basato su un `notifiedAt` **locale** — mai sul timestamp del mittente, che non è fidato. Allo scadere il messaggio va in archivio come `expired/unconfirmed`, **mai** come `confirmed`. La retention attuale non copre questo caso: pota solo directory datate sotto `archive/` (`scope.go:204-233`), quindi una sessione viva accumulerebbe `NOTIFIED` all'infinito.
+- **TTL esplicito anche per la inbox viva** — **rinviato a Tier 2, NON in v0.8** (vedi il riquadro in §2.3). Quando si farà: basato su un `notifiedAt` **locale**, mai sul timestamp del mittente che non è fidato; allo scadere il messaggio va in archivio come `expired/unconfirmed`, **mai** come `confirmed`. La retention attuale non copre il caso — pota solo directory datate sotto `archive/` (`scope.go:204-233`) — quindi finché il TTL non c'è **una sessione viva accumula `NOTIFIED` senza limite**, ed è la conseguenza che accettiamo consapevolmente per v0.8.
 
 L'incarnation resta utile per audit e fencing, ma **non è da sola una policy di redelivery**.
 
@@ -363,7 +365,7 @@ Nessuno cercato: tutti emersi **usando** il bridge per coordinare il lavoro su s
 |---|---|---|
 | **0** | Spike Codex app-server: push senza `screen`? Time-box 2h | ESC |
 | **1** | State machine §2.3 + superficie LOOP; ACK rimossi; invariante con test dedicato; `WaitOwner` (§3) | ESC |
-| **2** | Gruppo non coppia: F-91/F-92, `who`; limiti e corrotti (§2.7); `sent` onesto (§2.4) | ESC |
+| **2** | Gruppo non coppia: F-91/F-92; limiti e corrotti (§2.7); `sent` onesto (§2.4); **TTL della inbox viva** (§2.3, rinviato con motivazione) | ESC |
 | **3** | Cross-repo: endpoint logico, `fromScope`, race send/cleanup; matrice runtime (§7); skill riallineate | ESC + VAL |
 
 Nessuna migrazione dati: zero sessioni attive da oltre due giorni (confermato da Alan). `cleanup --scope=global` e si riparte puliti.
@@ -471,7 +473,7 @@ Adottati anche: `reply` ancorato all'ultimo emesso + fail-closed multi-mittente 
 
 - **§2.7** deve dire che *il paging si consuma col medesimo richiamo*: `hasMore: true — i prossimi arrivano col prossimo next`. Senza quella frase un agente cercherà un `--page` che non esiste — thinking sprecato, difetto §0. Principio generale: **l'output dichiara la propria azione successiva**, non solo i comandi.
 - **§2.1** deve **elencare** la superficie SERVIZIO, che oggi è promessa ma non nominata: `read <id>`, `sent`, il chi-c'è, e una decisione su `state working/done` (F-23 vive ancora — visto in `peers` stasera). Un agente fresco deve sapere *cosa esiste*: bastano sei righe.
-- **`who` è citato una volta sola** (piano Tier 2) e mai definito. O si dichiara che `join` è anche il chi-c'è — rilanciabile a volontà, e col join-reset la ri-consegna è innocua e marcata — oppure si definisce `who`.
+- **`who` è citato una volta sola** (piano Tier 2) e mai definito. O si dichiara che `join` è anche il chi-c'è — rilanciabile a volontà, e col join-reset la ri-consegna è innocua e marcata — oppure si definisce `who`. **Risolto all'accettazione finale (CRI2): né l'uno né l'altro.** `peers` e `overview` coprivano già il bisogno senza effetti di registrazione, quindi §2.1 è stata emendata e `who` esce dal contratto. Il difetto vero non era la scelta mancata: era che una revisione successiva aveva promosso `who` a **comando esistente** in §2.1 senza che nessuno lo implementasse — divergenza contratto↔binario che nessun test poteva prendere, perché nessun test guarda entrambe le sponde.
 - **§2.4**: la chiosa di `archived` va resa onesta fino in fondo. Con la conferma implicita prova *"il destinatario ha richiamato `next` dopo la consegna"*, non "confermato". È la regola di CRI (F5) applicata al mio stesso testo.
 - **§6.2 risolta**: cursore in un **file separato** nella session dir. Oltre al locking, due ragioni operative di CRI2: il cleanup se lo porta via gratis con la directory, e `inspect` può mostrarlo — lo stato resta ispezionabile dove un operatore già guarda. Un cursore nel manifest accoppierebbe due cicli di vita diversi (identità vs progresso di lettura) in un file che altri comandi riscrivono.
 
