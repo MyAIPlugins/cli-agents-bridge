@@ -265,3 +265,80 @@ Non è una decisione ESC: la porto al VAL come costo reale della Pista A.
 - **Pista B non è stata necessaria** e non l'ho esplorata: forzare `CODEX_REMOTE_TOKEN` su localhost era il ripiego per il caso in cui il socket non si chiudesse. Il socket si è chiuso.
 - Non verificato: comportamento con socket stale dopo un crash del server (l'errore `ENOTSOCK` osservato suggerisce che un path occupato da non-socket viene rilevato, ma non ho testato il caso socket-orfano); tenuta su lunga durata; `--remote unix://` nudo senza path.
 - La sessione del CRI reale non è stata toccata: TUI di prova dedicata, come da vincolo.
+
+---
+
+# 10. Follow-up 2 — ponte o codec: esito e implementazione
+
+> **Data**: 2026-08-08 · **Mandato**: Pista 3 (`codex app-server proxy`) con time-box 30 min secchi; se non regge, Pista 1 (codec RFC 6455 client-side in stdlib). `gorilla/websocket` esclusa a prescindere.
+
+## 10.1 Passo 1 — il proxy non è il ponte che serve (chiuso in ~6 min)
+
+`codex app-server proxy` **inoltra byte grezzi**, non traduce protocollo. Prova diretta: gli ho passato un handshake WebSocket su stdin e mi ha restituito il `101` su stdout.
+
+```
+stdin  ->  GET /rpc HTTP/1.1 … Upgrade: websocket …
+stdout <-  HTTP/1.1 101 Switching Protocols
+           sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
+```
+
+Quindi parlare col server attraverso il proxy richiede **comunque** un codec WebSocket, con in più un processo figlio da gestire: strettamente peggio che connettersi al socket. Verdetto: **non risparmia nulla**.
+
+Due fatti raccolti nello stesso giro:
+
+- **Il control socket è un endpoint JSON-RPC completo**, non solo di management: risponde a `initialize`. E con `--listen unix://` **nudo** nasce già `srw-------` (0600) in `~/.codex/app-server-control/` — il setup sicuro non richiede nemmeno un path custom.
+- **`--listen stdio://` parla NDJSON puro, senza WebSocket.** Sarebbe il canale ideale… se non fosse **mono-client**: un solo consumatore sullo stdio del processo. Il nostro caso richiede due client sullo stesso server (TUI + iniettore), quindi è inservibile. Vale la pena saperlo: se un giorno servisse un client singolo *senza* TUI, `stdio://` evita il codec del tutto.
+- `codex app-server daemon start` richiede l'install standalone del Codex installer; con l'install npm non è disponibile.
+
+## 10.2 Passo 2 — codec implementato: `internal/codexws`
+
+Package isolato, ~410 righe di codice più ~460 di test, zero dipendenze oltre la stdlib.
+
+| File | Contenuto |
+|---|---|
+| `frame.go` | opcodes, encoding/decoding frame, masking, limiti RFC |
+| `conn.go` | `Dial` (unix e ws), handshake + verifica accept token, `ReadMessage`, `WriteMessage`, `Close` |
+
+**Copre**: handshake HTTP Upgrade con verifica del `Sec-WebSocket-Accept`, masking client con chiave fresca per frame, frame di testo, **riassemblaggio delle continuation**, **ping → pong automatico**, **close handshake** con echo dello status.
+
+**Non copre** (deliberato): ruolo server, `permessage-deflate`, estensioni, negoziazione di subprotocolli.
+
+I tre punti che il gate VAL ha indicato come i più insidiosi sono gestiti esplicitamente:
+
+1. **Continuation** — `ReadMessage` riassembla; i control frame **interleavati tra i fragment** sono gestiti inline senza corrompere il messaggio in ricostruzione (è il caso che rompe i codec scritti in fretta).
+2. **Ping/pong** — risposta automatica dal path di lettura, serializzata con un mutex condiviso con le write del chiamante: senza quello, un pong e una `WriteMessage` concorrenti interlaccerebbero i byte di due frame.
+3. **Close** — echo dello status del peer, `ErrClosed` al chiamante, idempotente; dopo la chiusura `WriteMessage` fallisce invece di scrivere su un socket morto.
+
+Guardrail: limite di dimensione applicato **sul totale riassemblato**, non per frame — molti fragment piccoli aggirerebbero un controllo per-frame.
+
+## 10.3 Verifica
+
+- **38 sottotest**, table-driven, `go test -race -count=1` verde; gate completo del repo verde, nessun package `(cached)`.
+- Coperti: le tre codifiche di lunghezza (7/16/64 bit) inclusi i boundary 125/126/65535 e un payload da 100 KiB; messaggio frammentato da 300 KB; ping tra i fragment; pong non sollecitato; close peer-initiated; 6 violazioni di protocollo (control frammentato, control > 125 B, RSV set, continuation orfana, data frame dentro un messaggio frammentato, opcode ignoto); troncamento dello stream; l'esempio ufficiale di accept token dell'RFC 6455 §1.3.
+- **Mutation testing** — un gate verde non prova che i test siano reali (LL-12). Due mutazioni deliberate, entrambe catturate:
+  - rimosso il pong automatico → `TestReadMessage_AnswersPingInsideFragmentedMessage` rosso;
+  - limite applicato al frame invece che al totale → `fragments_summing_over_limit` rosso.
+- **Smoke con processo reale** (`TestSmoke_AgainstRealAppServer`, opt-in via `CAB_CODEX_SMOKE`): handshake e `initialize` contro un `codex app-server` vero, più una `thread/list` reale da **21.594 byte riassemblati**. I test unitari provano il codec contro frame che costruiamo noi — solo un server vero smentisce un'assunzione sbagliata su cosa il vendor manda davvero.
+
+## 10.4 Fallback dichiarato — NON scoprirlo sul campo
+
+`codex app-server` è `[experimental]` e il transport WebSocket è "unsupported": **il contratto può rompersi a qualunque release di Codex**. La regola, scritta qui perché non venga ricostruita a posteriori:
+
+> Se `internal/codexws` smette di funzionare contro una nuova versione di Codex, **la via di servizio resta `notify-watch` (F-66)**: polling esterno non-consuming + `--on-message`, che non dipende da alcun contratto del vendor. Il codec è un'ottimizzazione del percorso felice, mai l'unico modo di svegliare un peer Codex.
+
+Corollari operativi:
+
+- `notify-watch` non va deprecato né lasciato imputridire: è il fallback ufficiale e va tenuto funzionante.
+- Il package è isolato apposta: se il contratto salta, si elimina `internal/codexws` senza toccare il resto.
+- Il rilevamento di rottura dovrebbe essere esplicito (errore chiaro con indicazione del fallback), non un timeout silenzioso che Alan scopre perché il CRI non si sveglia più.
+
+## 10.5 Cosa manca per un'integrazione vera
+
+Il codec è il livello di trasporto, non la feature. Restano da decidere e costruire:
+
+- il client JSON-RPC sopra il codec (correlazione id↔risposta, notifiche, riconnessione);
+- la strategia di ciclo di vita: chi avvia l'app-server, come si scopre il thread del peer (`thread/loaded/list`), cosa fare se il peer non è `--remote`;
+- il comando bridge che espone tutto questo, e se debba vivere nel binario o accanto;
+- ping/pong keepalive proattivo lato client (oggi rispondiamo ai ping, non ne inviamo).
+
+Nessuna di queste è una decisione ESC. **Il core v0.8 non dipende da questo lavoro**: il package è parallelo e non blocca nulla.
