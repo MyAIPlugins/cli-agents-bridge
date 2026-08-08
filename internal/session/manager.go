@@ -315,6 +315,14 @@ type Resolution struct {
 	Candidates    []Candidate
 	HardAmbiguous bool
 	ScopeSiblings []Candidate
+	// ExactMatch reports that the cwd IS the selected session's ProjectPath,
+	// not merely a descendant of it. It separates two very different degrees of
+	// certainty (F-91): an exact match means the command was issued from that
+	// session's own working directory, so siblings elsewhere in the scope do not
+	// make the resolution any less certain — this is the NORMAL case. A prefix
+	// match is where the caller might genuinely be somebody else who never
+	// registered, which is the case worth warning about.
+	ExactMatch bool
 }
 
 // LookupByCWDDetails is the pure, scope-aware sibling of LongestPrefixLookup
@@ -399,6 +407,7 @@ func (m *Manager) LookupByCWDDetails(cwd string) (Resolution, error) {
 	res.HardAmbiguous = len(res.Candidates) > 1
 	res.SelectedID = res.Candidates[0].ID // ReadDir order makes this deterministic
 	selected := res.Candidates[0]
+	res.ExactMatch = filepath.Clean(absCwd) == filepath.Clean(selected.ProjectPath)
 
 	// Shared-scope siblings: other sessions in the selected session's NON-empty
 	// scope with a DIFFERENT ProjectPath. Lexical Clean compare (constraint #6,

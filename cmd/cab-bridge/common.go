@@ -195,7 +195,15 @@ func evaluateResolution(cmdName, cwd string, res session.Resolution, strict bool
 		return "", "", fmt.Errorf("%s: ambiguous: %d sessions match this cwd %q at the same path depth — pass one of: %s",
 			cmdName, len(res.Candidates), cwd, formatCandidateChoices(res.Candidates))
 	}
-	if len(res.ScopeSiblings) > 0 {
+	// F-91: warn on the WEAKNESS of the resolution, not on the mere existence of
+	// other agents. At an exact match the command came from that session's own
+	// working directory and siblings elsewhere change nothing — warning there is
+	// pure noise, printed before EVERY id-free command in the setup v0.8 makes
+	// normal (peers must share a scope for name resolution to work). Worse, its
+	// remediation named --session-id, which the v0.8 loop commands REJECT: a
+	// dead end on every command. Prefix matches still warn — that is the case
+	// where the caller might genuinely be someone who never registered.
+	if len(res.ScopeSiblings) > 0 && !res.ExactMatch {
 		msg := formatSharedScopeWarning(cmdName, cwd, res)
 		if strict {
 			// Opt-in CAB_BRIDGE_STRICT_SESSION_LOOKUP=1 promotes the hazard to a
@@ -232,7 +240,12 @@ func formatSharedScopeWarning(cmdName, cwd string, res session.Resolution) strin
 	for _, s := range res.ScopeSiblings {
 		fmt.Fprintf(&b, "\n  - %s (%s, role %s, project %s)", s.ID, s.AgentName, s.Role, s.ProjectPath)
 	}
-	fmt.Fprintf(&b, "\n  pass --session-id=<id> to be explicit (e.g. cab-bridge %s --session-id=%s ...)", cmdName, sel.ID)
+	// Remediation, id-free FIRST: the whole point of LL-14 is that an agent
+	// should never have to transcribe an id. Running from the worktree root is
+	// the fix; the id is the last resort, and only for the commands that accept
+	// it (the v0.8 loop commands do not).
+	fmt.Fprintf(&b, "\n  run your commands from the root of your own worktree (%s) and this resolves cleanly", sel.ProjectPath)
+	fmt.Fprintf(&b, "\n  as a last resort, commands that accept it take --session-id=%s before any positional", sel.ID)
 	return b.String()
 }
 

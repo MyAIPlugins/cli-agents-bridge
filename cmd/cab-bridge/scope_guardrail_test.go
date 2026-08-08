@@ -58,6 +58,46 @@ func sharedScopePair(t *testing.T, dataDir string) (escID, valID string) {
 	return "escwt001", "valrt001"
 }
 
+// sharedScopePrefixPair is sharedScopePair with the cwd a SUBDIRECTORY of the
+// session's projectPath, i.e. a prefix match. That is the case the guardrail
+// still warns about after F-91: the caller might genuinely be someone else who
+// never registered (the LL-14 stress-test scenario).
+func sharedScopePrefixPair(t *testing.T, dataDir string) (escID, valID string) {
+	t.Helper()
+	wtDir := t.TempDir()
+	rootDir := t.TempDir()
+	sub := filepath.Join(wtDir, "subdir")
+	require.NoError(t, os.MkdirAll(sub, 0o700))
+	t.Chdir(sub)
+	const scope = "/shared/repo"
+	plantSessionFull(t, dataDir, "escwt001", session.RoleEsc, "ESC-x", scope, wtDir, "working")
+	plantSessionFull(t, dataDir, "valrt001", session.RoleVal, "VAL-x", scope, rootDir, session.StateOrchestrating)
+	return "escwt001", "valrt001"
+}
+
+// TestRunWhoami_ExactMatchInSharedScope_IsSilent is the F-91 fix: with the
+// command issued from the session's OWN working directory, siblings elsewhere in
+// the scope do not weaken the resolution, so there is nothing to warn about.
+//
+// Before the fix this printed a multi-line warning before every id-free command
+// — in the setup v0.8 makes normal, since peers must share a scope for
+// name-based recipients to resolve — and its remediation named --session-id,
+// which the v0.8 loop commands reject. A dead end, on every command.
+func TestRunWhoami_ExactMatchInSharedScope_IsSilent(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	sharedScopePair(t, dataDir) // cwd == projectPath
+
+	stderr := captureStderr(t, func() {
+		_ = captureStdout(t, func() {
+			require.NoError(t, runWhoami(nil))
+		})
+	})
+	assert.NotContains(t, stderr, "warning", "an exact match in a shared scope must be silent")
+	assert.NotContains(t, stderr, "--session-id", "and must not advise a flag the loop commands reject")
+}
+
 // TestRunOverview_SharedScope_WarnsStderrStdoutValidJSON is the B-1 vincolo #5:
 // in a shared scope an id-free `overview --json` resolves the cwd session, warns
 // on STDERR, and keeps STDOUT valid JSON (the warning must never pollute it).
@@ -65,7 +105,7 @@ func TestRunOverview_SharedScope_WarnsStderrStdoutValidJSON(t *testing.T) {
 	dataDir := t.TempDir()
 	t.Setenv("CAB_DATA_DIR", dataDir)
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
-	escID, valID := sharedScopePair(t, dataDir)
+	escID, valID := sharedScopePrefixPair(t, dataDir)
 
 	var runErr error
 	var stderr string
@@ -113,7 +153,7 @@ func TestRunReceiveAny_SharedScope_WarnsStderrStdoutValidJSON(t *testing.T) {
 	dataDir := t.TempDir()
 	t.Setenv("CAB_DATA_DIR", dataDir)
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
-	_, valID := sharedScopePair(t, dataDir)
+	_, valID := sharedScopePrefixPair(t, dataDir)
 
 	var runErr error
 	var stderr string
@@ -140,7 +180,7 @@ func TestRunListen_SharedScope_NDJSONCleanWarnsStderr(t *testing.T) {
 	dataDir := t.TempDir()
 	t.Setenv("CAB_DATA_DIR", dataDir)
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
-	_, valID := sharedScopePair(t, dataDir)
+	_, valID := sharedScopePrefixPair(t, dataDir)
 
 	var runErr error
 	var stderr string
@@ -168,7 +208,7 @@ func TestRunWhoami_StrictSharedScope_RejectsEndToEnd(t *testing.T) {
 	t.Setenv("CAB_DATA_DIR", dataDir)
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 	t.Setenv("CAB_BRIDGE_STRICT_SESSION_LOOKUP", "1")
-	_, valID := sharedScopePair(t, dataDir)
+	_, valID := sharedScopePrefixPair(t, dataDir)
 
 	var runErr error
 	_ = captureStdout(t, func() {
