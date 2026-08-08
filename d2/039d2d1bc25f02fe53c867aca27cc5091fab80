@@ -1,0 +1,36 @@
+internal/config/config.go
+  s_13b14428c16427::t_9a9ab0b13250a2 112-137
+  s_13b14428c16427::t_681d1e64c367e6 155-157,250-258,297-305
+cmd/cab-bridge/next_test.go
+  s_13b14428c16427::t_3d81463731c2de 1-383,413-463
+  s_13b14428c16427::t_511a1ac8e5db70 384-412
+cmd/cab-bridge/next.go
+  s_13b14428c16427::t_7e8f179c61f6fa 196-213
+  s_13b14428c16427::t_b045145d73c713 1-12,14-133,135,137-152,158,160-174,185-195,214-396,398-431
+  s_13b14428c16427::t_1fe0461d82b99f 153-157,159
+  s_13b14428c16427::t_83fae119374f30 13
+  s_13b14428c16427::t_5810a381fb56c4 397
+  s_13b14428c16427::t_dfa2a3e5649750 134,136
+  s_13b14428c16427::t_de14a8dcdbb0eb 175-184
+internal/session/wakecursor.go
+  s_13b14428c16427::t_214d552f9e7a99 1-60,63-134
+  s_13b14428c16427::t_824c460a062126 61-62
+cmd/cab-bridge/main.go
+  s_13b14428c16427::t_83fae119374f30 52-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "d2039d2d1bc25f02fe53c867aca27cc5091fab80",
+  "prompts": {},
+  "sessions": {
+    "s_13b14428c16427": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5bb10dbc-fcae-44e8-acd6-603d11cfd57f",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
