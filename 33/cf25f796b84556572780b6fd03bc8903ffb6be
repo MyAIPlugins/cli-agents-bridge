@@ -1,0 +1,22 @@
+tests/smoke/reply-phase1b.sh
+  s_13b14428c16427::t_0c712dd07287af 112
+  s_13b14428c16427::t_594d19d72f1410 1-111,113-121
+cmd/cab-bridge/verbs.go
+  s_13b14428c16427::t_033e303e713e05 381-388
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "33cf25f796b84556572780b6fd03bc8903ffb6be",
+  "prompts": {},
+  "sessions": {
+    "s_13b14428c16427": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5bb10dbc-fcae-44e8-acd6-603d11cfd57f",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
