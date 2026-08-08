@@ -150,12 +150,14 @@ Accettato. Appende alla history model-visible senza far partire un turno: utile 
 
 ### 5.2 Trappole incontrate (costo reale, ~35 min)
 
+> **RETTIFICA (follow-up §9)**: T1 e T4 qui sotto sono **sbagliate** — corrette in §9.2. `unix://PATH` vuole il file socket (non la directory), e il transport unix funziona: parla WebSocket, non JSON-RPC raw. Lasciate qui per audit trail.
+
 | # | Trappola | Sintomo | Causa/rimedio |
 |---|---|---|---|
-| T1 | `unix://PATH` vuole una **directory**, non un file socket | `socket directory path exists and is not a directory` | passare la dir contenitore |
+| T1 | ~~`unix://PATH` vuole una **directory**, non un file socket~~ **ERRATA, vedi §9.2** | `socket directory path exists and is not a directory` | il messaggio si riferisce al **parent**, che deve essere una dir reale |
 | T2 | `/tmp` su macOS è un **symlink** a `/private/tmp` | stesso errore anche con dir valida | usare il path reale `/private/tmp/...` |
 | T3 | `/private/tmp` è world-writable (sticky) | `Operation not permitted (os error 1)` | il bind non è bloccato dal sandbox (verificato con un bind Python riuscito nello stesso path): è un rifiuto di Codex. Il default `unix://` (in `~/.codex/`) parte correttamente |
-| T4 | Il control socket **non parla JSON-RPC diretto** | connessione OK, zero risposta su NDJSON, `Content-Length` e CRLF; `app-server proxy` esce 0 senza output | canale di *management* (`daemon version` ci risponde correttamente), non l'endpoint client. **Il transport verificato funzionante è solo `ws://`** |
+| T4 | Il control socket **non parla JSON-RPC diretto** | connessione OK, zero risposta su NDJSON, `Content-Length` e CRLF; `app-server proxy` esce 0 senza output | canale di *management* (`daemon version` ci risponde correttamente), non l'endpoint client. ~~Il transport verificato funzionante è solo `ws://`~~ **SUPERATA: mancava l'handshake WebSocket, vedi §9.2** |
 | T5 | Metodi **lowercase**, non PascalCase | `unknown variant 'Thread/loaded/list'` | l'errore `-32600` enumera tutti i metodi validi: usarlo come strumento di scoperta |
 | T6 | La TUI muore se stdout non è un TTY | `Error: stdout is not a terminal` | niente `\| tee`; `script -q <log> codex …` funziona, `screen -dmS bash -lc '… codex'` no |
 
@@ -188,3 +190,78 @@ Il fatto tecnico è netto: **Codex è pushabile senza `screen`**. Cosa farne è 
 ## 8. Pulizia
 
 Processi e artefatti dello spike (app-server ws, TUI di test, thread `019fe27f…`, `/private/tmp/cdx-tui-test`, `/private/tmp/cdxs`) sono temporanei e non lasciano stato nel repo. Il thread di test è persistito in `~/.codex/sessions/2026/08/08/` come qualunque sessione Codex.
+
+---
+
+# 9. Follow-up — transport sicuro (unix socket): RIUSCITO
+
+> **Data**: 2026-08-08 · **Time-box**: 2h (impiegate ~1h05)
+> **Mandato**: il gate VAL ha posto un NO-GO su `ws://127.0.0.1:4500` (porta senza auth che espone `command/exec`, `fs/*`, `thread/list`). Obiettivo: un transport con lo stesso modello di sicurezza del bridge, oppure la dimostrazione documentata che non è ottenibile.
+
+## 9.1 Esito
+
+**Pista A riuscita.** Il push funziona su **unix socket con permessi 0600**, senza alcuna porta di rete. Il criterio di successo è soddisfatto.
+
+```bash
+mkdir -p ~/.codex/cab-spike-sock && chmod 700 ~/.codex/cab-spike-sock
+codex app-server --listen unix:///Users/alan/.codex/cab-spike-sock/as.sock
+codex --remote  unix:///Users/alan/.codex/cab-spike-sock/as.sock
+```
+
+Verifica end-to-end: da un client indipendente connesso direttamente al socket, `thread/loaded/list` → `thread/resume` → `turn/start`, e nella TUI compare
+
+```
+> PUSH VIA UNIX SOCKET: rispondi con la sola parola SICURO
+  (spinner)
+. SICURO
+```
+
+## 9.2 Perché il primo tentativo era fallito (due errori miei)
+
+1. **Sintassi** — `unix://PATH` vuole il **file socket**, non la directory. Il messaggio `socket directory path exists and is not a directory: /tmp` si riferisce al **parent**: fallivo perché su macOS `/tmp` è un symlink a `/private/tmp`. La forma del mio primo tentativo era giusta, il path no. Passando a una dir reale in `$HOME` il socket nasce senza attriti. (Trappola T1 in §5.2 → **rettificata**.)
+2. **Framing** — il transport unix **non parla JSON-RPC raw**: parla **WebSocket sopra unix socket**. Nessun framing testuale poteva funzionare, mancava l'handshake. Ho intercettato il client ufficiale con un proxy di logging e il traffico lo mostra senza ambiguità:
+
+```
+C->S  GET /rpc HTTP/1.1
+      Connection: Upgrade
+      Upgrade: websocket
+      Sec-WebSocket-Version: 13
+      Sec-WebSocket-Key: Q7U87L/XhuNzM6COu+jaWA==
+S->C  HTTP/1.1 101 Switching Protocols
+S->C  <frame> {"id":"initialize","result":{"userAgent":"codex-tui/0.146.0 …"}}
+```
+
+(Trappola T4 in §5.2 → **superata**. Il metodo che ha sbloccato: non indovinare il protocollo, intercettare il client ufficiale.)
+
+Il client di verifica (`cdxws.mjs`, ~120 righe) implementa HTTP Upgrade + RFC 6455 (masking, frame testuali) su `net.Socket`, zero dipendenze.
+
+## 9.3 Proprietà di sicurezza misurate
+
+| Proprietà | `ws://127.0.0.1:4500` | `unix://…/as.sock` |
+|---|---|---|
+| Permessi | nessuno (chiunque si connette) | **`srw-------` = 0600** |
+| Porta TCP aperta | sì, 4500 | **nessuna** (`lsof` sul processo: zero socket IP) |
+| Raggiungibile da una pagina/estensione browser | **sì** (una WebSocket verso localhost è consentita) | **no** — nessuna API web apre AF_UNIX |
+| Raggiungibile da altro UID | sì | no (permessi filesystem) |
+| Dipende dall'umask dell'utente | — | **no**: con `umask 000` il socket nasce comunque 0600 |
+
+Le ultime due righe sono il delta che conta. Il threat model del progetto è same-UID, quindi un processo malevolo che gira **come Alan** può comunque connettersi al socket — la parità col bridge è raggiunta (`drwx------`, SC-2), non superata. Ma la superficie *remota* sparisce: la porta TCP era attaccabile da JavaScript in una qualunque scheda del browser, lo unix socket no. Questo, più il fatto che i permessi non dipendano dall'umask, è quanto di meglio si ottiene senza modificare Codex.
+
+Difesa in profondità: la dir `0700` non è necessaria (il socket è già 0600) ma non costa nulla.
+
+## 9.4 Costo di implementazione per il bridge — da valutare
+
+Il transport è WebSocket. Il bridge ha una policy **zero dipendenze runtime** (CLAUDE.md). Le opzioni:
+
+- implementare in Go stdlib puro l'handshake + il framing RFC 6455 (subset: text frame, masking client, close). Il mio client Node è ~120 righe; in Go stimo 150-250 con i test. Fattibile, ma è codice di protocollo da mantenere;
+- accettare `gorilla/websocket` → **viola la policy zero-deps**;
+- delegare a `codex app-server proxy` come sidecar → da capire cosa faccia davvero (esce 0 muto, §5.2 T4), non l'ho chiarito.
+
+Non è una decisione ESC: la porto al VAL come costo reale della Pista A.
+
+## 9.5 Note metodologiche e limiti
+
+- Durante il test la TUI passava da un proxy di logging mentre il client iniettore era connesso **direttamente** al socket: due connessioni distinte, quindi l'indipendenza dei client è dimostrata (il proxy è trasparente e non altera il risultato).
+- **Pista B non è stata necessaria** e non l'ho esplorata: forzare `CODEX_REMOTE_TOKEN` su localhost era il ripiego per il caso in cui il socket non si chiudesse. Il socket si è chiuso.
+- Non verificato: comportamento con socket stale dopo un crash del server (l'errore `ENOTSOCK` osservato suggerisce che un path occupato da non-socket viene rilevato, ma non ho testato il caso socket-orfano); tenuta su lunga durata; `--remote unix://` nudo senza path.
+- La sessione del CRI reale non è stata toccata: TUI di prova dedicata, come da vincolo.
