@@ -75,7 +75,6 @@ type nextMessage struct {
 	// without ids, which is exactly the correlation-at-a-distance the inline
 	// field exists to avoid (CRI2 P1-3).
 	Redelivered   bool   `json:"redelivered,omitempty"`
-	Note2         string `json:"-"`
 	ID            string `json:"id"`
 	From          string `json:"from"`
 	FromAgentName string `json:"fromAgentName,omitempty"`

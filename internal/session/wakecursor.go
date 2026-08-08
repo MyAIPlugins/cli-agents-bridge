@@ -137,6 +137,15 @@ func (m *Manager) CommitWakeCursor(sessionID string, ids []string, now time.Time
 				delete(cursor.Notified, id)
 			}
 		}
+		// Prune BOTH halves. The invariant is declared on the cursor, so
+		// honouring it on one field only left `replayed` holding ghost ids
+		// forever — a message can vanish from the mailbox between the join that
+		// armed the replay and the next that would have consumed the marker.
+		for id := range cursor.Replayed {
+			if !prune[id] {
+				delete(cursor.Replayed, id)
+			}
+		}
 	}
 	cursor.SchemaVersion = WakeCursorSchemaVersion
 

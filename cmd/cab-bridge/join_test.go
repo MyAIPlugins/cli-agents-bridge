@@ -187,3 +187,38 @@ func TestForgetNotified_IsIdempotentAndBounded(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, cursor.Notified)
 }
+
+// TestJoin_NameTakenElsewhereNamesAReachablePlace: an error that names a place
+// must name one the reader can go to.
+//
+// It used to print ProjectName, which is filepath.Base — so "run this from
+// cridir" pointed at something that is not a directory, and a repo can hold
+// several with that name. Same dead-end class this command had just closed by
+// dropping the reference to `bootstrap`.
+func TestJoin_NameTakenElsewhereNamesAReachablePlace(t *testing.T) {
+	dataDir := t.TempDir()
+	base := t.TempDir()
+	occupantDir := filepath.Join(base, "cridir")
+	mineDir := filepath.Join(base, "valdir")
+	require.NoError(t, os.MkdirAll(occupantDir, 0o700))
+	require.NoError(t, os.MkdirAll(mineDir, 0o700))
+
+	const scope = "/repo/shared"
+	plantSessionFull(t, dataDir, "occup001", session.RoleVal, "VAL-x", scope, occupantDir, session.StateOrchestrating)
+
+	cfg := config.DefaultConfig()
+	cfg.DataDir = dataDir
+	mgr := newSessionManager(cfg)
+	peers, _, err := collectPeers(mgr, dataDir, cfg.StaleSeconds, true, "", scope)
+	require.NoError(t, err)
+
+	occupant, path, clash := findNameElsewhere(mgr, peers, session.RoleVal, mineDir, "VAL-x")
+	require.True(t, clash)
+	assert.Equal(t, "occup001", occupant.SessionID)
+	assert.Equal(t, occupantDir, path, "the full path, not the basename")
+	assert.True(t, filepath.IsAbs(path), "an agent must be able to cd into what the error names")
+
+	// Same directory is a resume, not a clash.
+	_, _, clash = findNameElsewhere(mgr, peers, session.RoleVal, occupantDir, "VAL-x")
+	assert.False(t, clash)
+}

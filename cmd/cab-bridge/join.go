@@ -111,12 +111,16 @@ func runJoin(args []string) error {
 	// identically-named sessions and merely moves the ambiguity downstream, to
 	// every command that resolves a recipient by name.
 	if !*forceNew {
-		if occupant, clash := findNameElsewhere(mgr, peers, *role, pp, name); clash {
+		if occupant, occupantPath, clash := findNameElsewhere(mgr, peers, *role, pp, name); clash {
+			// The FULL path, not the basename: an error that names a place must
+			// name one the reader can go to. ProjectName is filepath.Base, so
+			// "run this from cridir" pointed at something that is not a
+			// directory — and a repo can hold several with that name.
 			return fmt.Errorf("join: the name %q is already taken by %s, which lives in %s — not this directory.\n"+
 				"  Two sessions with one name would make every by-name recipient ambiguous.\n"+
 				"  Either pick your own name:  cab-bridge join --role=%s --agent-name=<name>\n"+
 				"  or run this from %s if you ARE that agent coming back",
-				name, occupant.SessionID, occupant.ProjectName, *role, occupant.ProjectName)
+				name, occupant.SessionID, occupantPath, *role, occupantPath)
 		}
 		if occupant, clash := findNameClash(mgr, peers, *role, pp, name); clash {
 			return fmt.Errorf("join: this working directory already has a %s session named %q (%s), and you asked to join as %q.\n"+
@@ -228,7 +232,7 @@ func findNameClash(mgr *session.Manager, peers []peerSummary, role, projectPath,
 // different project path. Stale ones do not count: a dead session's name is
 // free, and refusing on its behalf would strand an agent whose predecessor
 // simply died.
-func findNameElsewhere(mgr *session.Manager, peers []peerSummary, role, projectPath, wantName string) (peerSummary, bool) {
+func findNameElsewhere(mgr *session.Manager, peers []peerSummary, role, projectPath, wantName string) (peerSummary, string, bool) {
 	for _, p := range peers {
 		if p.AgentName != wantName || p.Stale {
 			continue
@@ -238,10 +242,12 @@ func findNameElsewhere(mgr *session.Manager, peers []peerSummary, role, projectP
 			continue
 		}
 		if filepath.Clean(mf.ProjectPath) != filepath.Clean(projectPath) {
-			return p, true
+			// Return the path too: the caller needs somewhere the reader can
+			// actually go, and it is already loaded here.
+			return p, mf.ProjectPath, true
 		}
 	}
-	return peerSummary{}, false
+	return peerSummary{}, "", false
 }
 
 // othersHere lists everyone except me, live first then stale, each group by

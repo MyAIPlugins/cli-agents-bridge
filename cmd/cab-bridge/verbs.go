@@ -660,11 +660,18 @@ func humanSize(n int) string {
 // be a poor trade.
 func describeClosed(cfg config.Config, sid string, ids []string) []string {
 	processedDir := filepath.Join(cfg.DataDir, "sessions", sid, "processed")
+	// Only the ids we were asked about. Reading and decoding the WHOLE archive
+	// to look up three messages is O(archive) on a command of the working loop,
+	// which is the very shape the brief ruled out for `sent`.
+	want := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		want[id] = true
+	}
 	byID := map[string]*message.Message{}
 	if entries, err := os.ReadDir(processedDir); err == nil {
 		for _, e := range entries {
 			id := archivedID(e.Name())
-			if id == "" {
+			if id == "" || !want[id] {
 				continue
 			}
 			data, rerr := os.ReadFile(filepath.Join(processedDir, e.Name()))
