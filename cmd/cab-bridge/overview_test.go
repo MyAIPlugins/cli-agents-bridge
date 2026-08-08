@@ -150,15 +150,13 @@ func TestBuildOverview_ListenerActive(t *testing.T) {
 	dataDir := t.TempDir()
 	plantOverviewSession(t, dataDir, "lsnov01", session.RoleEsc, "ESC-x", "/repo/x", "", "working") // PID = os.Getpid() (live)
 	mgr := session.NewManager(dataDir, time.Second)
-	until := time.Now().UTC().Add(time.Hour)
-	require.NoError(t, mgr.SetListenUntil("lsnov01", until))
+	since := time.Now().UTC()
+	require.NoError(t, mgr.SetWaitingSince("lsnov01", &since))
 
 	rep, err := buildOverview(mgr, overviewTestCfg(dataDir), "lsnov01")
 	require.NoError(t, err)
-	assert.True(t, rep.ListenerActive, "live PID + future window → listening")
+	assert.True(t, rep.ListenerActive, "live PID + waiting marker → listening")
 	assert.Equal(t, os.Getpid(), rep.ListenerPid)
-	require.NotNil(t, rep.ListenerUntil)
-	assert.WithinDuration(t, until, *rep.ListenerUntil, time.Second, "the window survives the manifest round-trip")
 }
 
 // F-81: a past listen window (the listen exited or its window expired) → not

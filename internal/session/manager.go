@@ -624,6 +624,19 @@ func (m *Manager) Touch(sessionID string) error {
 	return m.touchHeartbeat(sessionID)
 }
 
+// SetWaitingSince marks (or clears, with a nil time) that this session has a
+// `next` waiting. Paired with a live PID it is the listening signal.
+func (m *Manager) SetWaitingSince(sessionID string, t *time.Time) error {
+	m.manifestMu.Lock()
+	defer m.manifestMu.Unlock()
+	manifest, err := m.LoadManifest(sessionID)
+	if err != nil {
+		return err
+	}
+	manifest.WaitingSince = t
+	return m.SaveManifest(manifest)
+}
+
 // AdoptPID claims sessionID for the current process by writing its PID into the
 // manifest (and refreshing the heartbeat). The long-running listen command
 // calls this at startup so collision detection (BUG-6) and stale detection

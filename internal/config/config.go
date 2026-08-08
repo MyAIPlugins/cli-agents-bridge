@@ -110,16 +110,6 @@ type Config struct {
 	// the env var instead.
 	DedupWindowSeconds int `json:"dedup_window_seconds"`
 
-	// WakeWindowHours is how long `next` waits for mail before giving up and
-	// telling the agent to relaunch it (DESIGN v0.8 §2.2). Deliberately NOT a
-	// CLI flag: §0 counts every flag on the hot path as a defect, and a value
-	// the agent has no way to choose well is exactly the case that produced
-	// CRI's --max-deadline=120. It stays in config so an operator can tune it
-	// and tests can shorten it.
-	// Default: 24.
-	// Env override: CAB_WAKE_WINDOW_HOURS.
-	WakeWindowHours int `json:"wake_window_hours"`
-
 	// MaxPageMessages bounds how many messages one `next` emits. MaxMessageBytes
 	// caps a single message but not the count (DESIGN §2.7), so without this a
 	// backlog could produce hundreds of MB and saturate stdout, the harness
@@ -152,7 +142,6 @@ func DefaultConfig() Config {
 		HeartbeatTickMs:    30000,
 		AutoGCHours:        24,
 		DedupWindowSeconds: 10,
-		WakeWindowHours:    24,
 		MaxPageMessages:    50,
 		MaxPageBytes:       131072,
 	}
@@ -247,9 +236,6 @@ func applyUserFile(cfg *Config, path string) error {
 	if override.DedupWindowSeconds != 0 {
 		cfg.DedupWindowSeconds = override.DedupWindowSeconds
 	}
-	if override.WakeWindowHours != 0 {
-		cfg.WakeWindowHours = override.WakeWindowHours
-	}
 	if override.MaxPageMessages != 0 {
 		cfg.MaxPageMessages = override.MaxPageMessages
 	}
@@ -292,9 +278,6 @@ func applyEnv(cfg *Config) []string {
 		warnings = append(warnings, w)
 	}
 	if w := envInt("CAB_DEDUP_WINDOW_SECONDS", &cfg.DedupWindowSeconds); w != "" {
-		warnings = append(warnings, w)
-	}
-	if w := envInt("CAB_WAKE_WINDOW_HOURS", &cfg.WakeWindowHours); w != "" {
 		warnings = append(warnings, w)
 	}
 	if w := envInt("CAB_MAX_PAGE_MESSAGES", &cfg.MaxPageMessages); w != "" {

@@ -146,7 +146,12 @@ func buildOverview(mgr *session.Manager, cfg config.Config, sid string) (overvie
 	// so a dead listen (PID gone after the process exits) or an expired window
 	// both read as "not listening" — no false positive from a stale ListenUntil
 	// left in the manifest. listen writes ListenUntil at startup (SetListenUntil).
-	if session.IsProcessAlive(me.PID) && me.ListenUntil != nil && me.ListenUntil.After(now) {
+	// `next` has no window (§2.2 rev. cdb21dc), so there is no deadline left to
+	// check: the marker is WaitingSince, and it only counts alongside a live PID
+	// — the marker survives a crash, the PID does not, so the pair cannot report
+	// a dead waiter as listening. A live PID on its own would NOT do: a val is a
+	// live process that waits for nothing.
+	if session.IsProcessAlive(me.PID) && me.WaitingSince != nil {
 		report.ListenerActive = true
 		report.ListenerPid = me.PID
 		report.ListenerUntil = me.ListenUntil

@@ -27,7 +27,6 @@ func nextTestConfig(dataDir string) config.Config {
 	cfg.DataDir = dataDir
 	cfg.PollIntervalMs = 10
 	cfg.HeartbeatTickMs = 50
-	cfg.WakeWindowHours = 24
 	return cfg
 }
 
@@ -167,10 +166,10 @@ func TestNext_NeverMovesAFile(t *testing.T) {
 	_, err := os.Stat(processed)
 	assert.True(t, os.IsNotExist(err), "next must not even create processed/")
 
-	// And a second run does not re-deliver what is already NOTIFIED.
-	p := runNextOnce(t, mgr, cfg, sid, 200*time.Millisecond)
-	assert.Equal(t, nextStatusTimeout, p.Status)
-	assert.Empty(t, p.Messages)
+	// And a second run does not re-deliver what is already NOTIFIED: with no
+	// window it simply keeps waiting, emitting nothing, until cancelled.
+	assert.Empty(t, runNextUntilCancel(t, mgr, cfg, sid, 200*time.Millisecond),
+		"nothing may be emitted when there is nothing new")
 }
 
 // --- crash between print and commit ----------------------------------------
@@ -410,48 +409,84 @@ func TestNext_CursorIsPrunedToWhatIsStillInTheMailbox(t *testing.T) {
 // delivered message never sits in the buffer of a process that stays alive.
 // A version of this command that waits out its window before returning still
 // passes every functional assertion — it just holds the message for up to 24h,
-// which is precisely the failure F-94 describes. Only elapsed time catches it.
-func TestNext_ReturnsImmediatelyAfterDelivery(t *testing.T) {
-	mgr, cfg, sid, dataDir := newNextSession(t)
-	plantInboxAt(t, dataDir, sid, "msg-aaaaaaaaaaaa", "valxxx01", message.TypeQuery, "brief", time.Now().UTC())
 
-	// A window far longer than the assertion below: if next waited for it, the
-	// test would blow its budget rather than fail an assertion.
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+// TestNext_ReturnsOnlyOnDeliverySignalOrReclaim_NeverOnTime is the contract of
+// the windowless wait (§2.2 rev. cdb21dc).
+//
+// A window that expires is the waiter dismissing itself, and only Alan closes a
+// session. So `next` must never come back for having waited long enough: the
+// only exits are a delivery, a signal, or another instance taking over.
+func TestNext_ReturnsOnlyOnDeliverySignalOrReclaim_NeverOnTime(t *testing.T) {
+	t.Run("waits_indefinitely_on_an_empty_mailbox", func(t *testing.T) {
+		mgr, cfg, sid, _ := newNextSession(t)
 
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		var stdout, stderr bytes.Buffer
+		go func() { done <- nextRun(ctx, mgr, cfg, sid, &stdout, &stderr) }()
+
+		select {
+		case err := <-done:
+			t.Fatalf("next returned on its own after no time at all (err=%v, out=%q) — it must not dismiss itself", err, stdout.String())
+		case <-time.After(400 * time.Millisecond):
+		}
+
+		// Only an explicit cancel ends it, and it emits nothing.
+		cancel()
+		select {
+		case err := <-done:
+			require.NoError(t, err)
+			assert.Empty(t, stdout.String(), "an interrupted wait has no empty payload to report")
+		case <-time.After(3 * time.Second):
+			t.Fatal("next did not return after cancel — the teardown must not depend on a deadline")
+		}
+	})
+
+	t.Run("returns_as_soon_as_something_arrives", func(t *testing.T) {
+		mgr, cfg, sid, dataDir := newNextSession(t)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := make(chan error, 1)
+		var stdout, stderr bytes.Buffer
+		go func() { done <- nextRun(ctx, mgr, cfg, sid, &stdout, &stderr) }()
+
+		time.Sleep(100 * time.Millisecond)
+		plantInboxAt(t, dataDir, sid, "msg-aaaaaaaaaaaa", "valxxx01", message.TypeQuery, "arrived late", time.Now().UTC())
+
+		select {
+		case err := <-done:
+			require.NoError(t, err)
+			assert.Contains(t, stdout.String(), "msg-aaaaaaaaaaaa")
+		case <-time.After(5 * time.Second):
+			t.Fatal("next did not wake on delivery")
+		}
+	})
+}
+
+// runNextUntilCancel runs next with a parent that is cancelled after d, and
+
+// TestNext_AdoptsPIDWhileWaiting is the F-95 half that survives the windowless
+// contract: a waiting session must be ALIVE, not look stale.
+//
+// The deadline half is gone with the window — there is nothing left to publish,
+// so `listening` now rests on the live PID, which was the load-bearing fact all
+// along.
+func TestNext_AdoptsPIDWhileWaiting(t *testing.T) {
+	mgr, cfg, sid, _ := newNextSession(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
 	var stdout, stderr bytes.Buffer
-	start := time.Now()
-	require.NoError(t, nextRun(ctx, mgr, cfg, sid, &stdout, &stderr))
-	elapsed := time.Since(start)
+	go func() { done <- nextRun(ctx, mgr, cfg, sid, &stdout, &stderr) }()
 
-	dec := json.NewDecoder(bytes.NewReader(stdout.Bytes()))
-	var p nextPayload
-	require.NoError(t, dec.Decode(&p))
-	require.Equal(t, nextStatusEmitted, p.Status)
-	assert.Less(t, elapsed, 2*time.Second,
-		"next must return as soon as it has mail, not hold it until the window expires (F-94)")
-}
-
-func TestNext_TimeoutIsExitZeroWithPayload(t *testing.T) {
-	mgr, cfg, sid, _ := newNextSession(t)
-
-	p := runNextOnce(t, mgr, cfg, sid, 150*time.Millisecond)
-	assert.Equal(t, nextStatusTimeout, p.Status)
-	assert.Empty(t, p.Messages)
-	assert.Contains(t, p.Hint, "again", "an idle window tells the agent what to do next")
-}
-
-func TestNext_AdoptsPIDAndPublishesDeadline(t *testing.T) {
-	mgr, cfg, sid, _ := newNextSession(t)
-
-	runNextOnce(t, mgr, cfg, sid, 150*time.Millisecond)
-
+	time.Sleep(150 * time.Millisecond)
 	mf, err := mgr.LoadManifest(sid)
 	require.NoError(t, err)
-	assert.Equal(t, os.Getpid(), mf.PID, "F-95: a waiting next must own the PID, not look stale")
-	require.NotNil(t, mf.ListenUntil, "the wait deadline must be published (F-81)")
-	assert.True(t, mf.ListenUntil.After(time.Now().UTC().Add(23*time.Hour)), "the published window is the configured 24h")
+	assert.Equal(t, os.Getpid(), mf.PID, "F-95: a waiting next owns the PID and does not look stale")
+
+	cancel()
+	<-done
 }
 
 func TestRunNext_RejectsAnyArgument(t *testing.T) {
@@ -496,10 +531,10 @@ func TestNext_LegacyAcksNeverWake(t *testing.T) {
 	plantInboxAt(t, dataDir, sid, "msg-aaaaaaaaaaaa", "valxxx01", message.TypeAck, "ACK msg-x: received", base)
 	plantInboxAt(t, dataDir, sid, "msg-bbbbbbbbbbbb", "valxxx01", message.TypeAck, "ACK msg-y: received", base)
 
-	// An inbox of nothing but acks must look idle, not busy.
-	p := runNextOnce(t, mgr, cfg, sid, 300*time.Millisecond)
-	assert.Equal(t, nextStatusTimeout, p.Status, "acks must not wake next")
-	assert.Empty(t, p.Messages)
+	// An inbox of nothing but acks must look idle: next keeps waiting and emits
+	// nothing at all.
+	assert.Empty(t, runNextUntilCancel(t, mgr, cfg, sid, 300*time.Millisecond),
+		"acks must not wake next")
 
 	cursor, _, err := mgr.ReadWakeCursor(sid)
 	require.NoError(t, err)
@@ -629,4 +664,16 @@ func TestStartWait_ResumeCannotBeDefeatedByTheWaiterItEvicted(t *testing.T) {
 	assert.Greater(t, fresh.Generation, info.NewGeneration)
 	assert.False(t, mgr.IsListenerCurrent(sid, old.Token))
 	assert.True(t, mgr.IsListenerCurrent(sid, fresh.Token))
+}
+
+// runNextUntilCancel runs next with a parent cancelled after d, and returns
+// whatever it emitted — normally nothing, since a windowless wait has no empty
+// result to report.
+func runNextUntilCancel(t *testing.T, mgr *session.Manager, cfg config.Config, sid string, d time.Duration) string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	defer cancel()
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, nextRun(ctx, mgr, cfg, sid, &stdout, &stderr))
+	return stdout.String()
 }

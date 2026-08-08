@@ -41,7 +41,6 @@ import (
 // produces two instances acting on the same brief.
 const (
 	nextStatusEmitted = "emitted"
-	nextStatusTimeout = "timeout"
 
 	// Commit-record statuses: the actual outcome, written after the fact.
 	nextStatusCommitted    = "committed"
@@ -155,15 +154,21 @@ func nextRun(parent context.Context, mgr *session.Manager, cfg config.Config, si
 	}
 	ownerOK := func() bool { return mgr.IsListenerCurrent(sid, owner.Token) }
 
-	window := time.Duration(cfg.WakeWindowHours) * time.Hour
-	if window <= 0 {
-		window = 24 * time.Hour
+	// NO WINDOW, by contract (DESIGN §2.2, rev. cdb21dc). A window that expires
+	// is the waiter dismissing itself, and only Alan closes a session: an agent
+	// that stops listening on its own has delegated that decision to a timer.
+	//
+	// So the context is cancellable but never scheduled: the run ends on a
+	// delivery, a signal, or a reclaim — never on time. There is also no
+	// deadline left to publish, so `listening` in overview rests on the live PID,
+	// which is the fact that was actually load-bearing all along.
+	waitStart := time.Now().UTC()
+	if err := mgr.SetWaitingSince(sid, &waitStart); err != nil {
+		fmt.Fprintf(stderr, "warning: could not publish the waiting marker: %v\n", err)
 	}
-	if err := mgr.SetListenUntil(sid, time.Now().UTC().Add(window)); err != nil {
-		fmt.Fprintf(stderr, "warning: could not publish wait deadline: %v\n", err)
-	}
+	defer func() { _ = mgr.SetWaitingSince(sid, nil) }()
 
-	ctx, cancel := context.WithTimeout(parent, window)
+	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 
 	sigs := make(chan os.Signal, 1)
@@ -282,17 +287,8 @@ func nextRun(parent context.Context, mgr *session.Manager, cfg config.Config, si
 
 		select {
 		case <-ctx.Done():
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				// Timeout is exit 0 with a payload, never 124 (F-24): an idle
-				// window is not a failure, and a "command failed" every cycle
-				// trains the agent to ignore real errors.
-				return enc.Encode(nextPayload{
-					Status:   nextStatusTimeout,
-					Session:  sid,
-					Messages: []nextMessage{},
-					Hint:     "nothing arrived within the wait window — run next again",
-				})
-			}
+			// Reached only via a signal, a reclaim, or a cancelled parent —
+			// never by elapsed time. There is no empty return to report.
 			return nil
 		case <-time.After(pollInterval):
 		}

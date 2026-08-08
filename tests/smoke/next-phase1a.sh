@@ -51,7 +51,7 @@ sleep 3
 kill -0 "$NEXTPID" 2>/dev/null; check "next is still waiting (did not exit early)" $?
 
 MANIFEST="$CAB_DATA_DIR/sessions/$ESCID/manifest.json"
-grep -q '"listenUntil"' "$MANIFEST"; check "wait deadline published in manifest (F-81)" $?
+grep -q '"waitingSince"' "$MANIFEST"; check "waiting marker published in manifest (F-81 without a deadline)" $?
 MPID=$(grep -oE '"pid": *[0-9]+' "$MANIFEST" | grep -oE '[0-9]+')
 [ -n "$MPID" ] && kill -0 "$MPID" 2>/dev/null; check "manifest PID is a live process — not STALE while waiting (F-95)" $?
 
