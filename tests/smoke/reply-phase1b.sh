@@ -57,7 +57,7 @@ check "tell with stdin succeeded" $?
 
 echo "== 4. next delivers, reply closes =="
 ( cd "$ESCDIR" && "$BIN" next > "$ROOT/next.out" 2>&1 )
-grep -q '"status": "delivered"' "$ROOT/next.out"; check "next delivered the batch" $?
+grep -q '"status": "emitted"' "$ROOT/next.out"; check "next emitted the batch" $?
 INBOX="$CAB_DATA_DIR/sessions/$ESCID/inbox"
 [ "$(countfiles "$INBOX")" = "2" ]; check "both messages still in inbox (next is pure-read)" $?
 

@@ -32,14 +32,37 @@ import (
 // the two re-delivers (harmless, the model is at-least-once); the reverse order
 // loses mail silently, and for a one-shot `tell` that loss would be permanent.
 
-// nextStatus values carried in the payload.
+// Statuses. next emits JSONL: a PAGE record, then a COMMIT record.
+//
+// The page record says "emitted", a fact that is true when it is written. It
+// must never claim "delivered"/"confirmed": with emit-before-commit no single
+// JSON can know its own future (CRI diff-gate P0-2), and an agent believes the
+// structured payload over a later stderr line — so a page that self-certifies
+// produces two instances acting on the same brief.
 const (
-	nextStatusDelivered = "delivered"
-	nextStatusTimeout   = "timeout"
-	// nextStatusUnconfirmed means the messages were emitted but the cursor was
-	// NOT committed because this instance lost wait ownership. They will be
-	// delivered again to whoever owns the session now.
-	nextStatusUnconfirmed = "unconfirmed"
+	nextStatusEmitted = "emitted"
+	nextStatusTimeout = "timeout"
+
+	// Commit-record statuses: the actual outcome, written after the fact.
+	nextStatusCommitted    = "committed"
+	nextStatusNotCommitted = "not-committed"
+)
+
+// Hints for the not-committed cases. They are constants because their wording
+// IS the contract with the agent: it must contradict the page just emitted
+// (an LLM believes structured output over a later log line), forbid the re-run
+// its instinct suggests — which would steal the wait from the instance that
+// replaced this one — and never use internal vocabulary like "wait ownership",
+// a concept the agent has never been shown.
+const (
+	hintTakeoverBeforeEmit = "another instance of this session took over while you were waiting: nothing was delivered to you. " +
+		"Do NOT run next again from here — the other instance is waiting and these messages will reach it."
+
+	hintTakeoverAfterEmit = "IGNORE the emitted page above — treat those messages as NOT received. " +
+		"Another instance of this session took over while you were reading; do NOT run next again from here, the messages will reach it."
+
+	hintCommitFailed = "IGNORE the emitted page above — treat those messages as NOT received. " +
+		"They stay unread and will come back on the next run."
 )
 
 type nextMessage struct {
@@ -52,10 +75,12 @@ type nextMessage struct {
 	Bytes         int    `json:"bytes"`
 	// Content is the message body, omitted when Oversize is set.
 	Content string `json:"content,omitempty"`
-	// Body is the on-disk path of the message, emitted INSTEAD of Content when
-	// the message alone exceeds the page budget (§2.2): the body is already a
-	// file, so a pointer beats a payload the harness might truncate.
-	Body     string `json:"body,omitempty"`
+	// BodyFile is the on-disk PATH of the message, emitted INSTEAD of Content
+	// when the message alone exceeds the page budget (§2.2): the body is already
+	// a file, so a pointer beats a payload the harness might truncate. Named
+	// bodyFile, not body — a field called "body" that holds a path invites the
+	// agent to print it as the message.
+	BodyFile string `json:"bodyFile,omitempty"`
 	Oversize bool   `json:"oversize,omitempty"`
 }
 
@@ -71,6 +96,16 @@ type nextPayload struct {
 	Messages     []nextMessage `json:"messages"`
 	Warnings     []string      `json:"warnings,omitempty"`
 	Hint         string        `json:"hint"`
+}
+
+// nextCommitRecord is the second JSONL record: what actually happened to the
+// cursor. It is the only record allowed to state an outcome.
+type nextCommitRecord struct {
+	Status     string   `json:"status"`
+	Session    string   `json:"session"`
+	Generation int      `json:"generation"`
+	Confirmed  []string `json:"confirmed"`
+	Hint       string   `json:"hint"`
 }
 
 // mailboxEntry is one decoded message file still sitting in inbox/.
@@ -107,13 +142,12 @@ func nextRun(parent context.Context, mgr *session.Manager, cfg config.Config, si
 	// The full listen envelope (§3, F-95). receive --any had only half of it —
 	// it waited without adopting the PID or beating, so a live waiter looked
 	// STALE. next must be alive AND quiet, which is why the two commands merge.
-	if err := mgr.AdoptPID(sid); err != nil {
-		return fmt.Errorf("next: adopt session %s: %w", sid, err)
-	}
-
-	owner, err := mgr.ClaimListener(sid)
+	// Adopt + claim as ONE locked operation: doing them separately lets a
+	// concurrent `register --resume` be defeated by the waiter it just evicted
+	// (CRI diff-gate P0-1).
+	owner, err := mgr.StartWait(sid)
 	if err != nil {
-		return fmt.Errorf("next: claim wait ownership: %w", err)
+		return fmt.Errorf("next (%s): %w", whoIThoughtIWas(mgr, sid), err)
 	}
 	ownerOK := func() bool { return mgr.IsListenerCurrent(sid, owner.Token) }
 
@@ -201,29 +235,45 @@ func nextRun(parent context.Context, mgr *session.Manager, cfg config.Config, si
 			// stderr, and `generation` in the payload lets a reader tell a late
 			// orphan's output from a live one (§3, CRI's GO condition).
 			if !ownerOK() {
-				return enc.Encode(nextPayload{
-					Status:     nextStatusUnconfirmed,
+				_ = enc.Encode(nextCommitRecord{
+					Status:     nextStatusNotCommitted,
 					Session:    sid,
 					Generation: payload.page.Generation,
-					Total:      payload.page.Total,
-					Messages:   []nextMessage{},
-					Hint:       "wait ownership was reclaimed by another instance — this run delivered nothing; the messages stay unread for the current owner",
+					Hint:       hintTakeoverBeforeEmit,
 				})
+				// Exit non-zero: a run that delivered nothing must not look like
+				// a good one to whatever wraps it.
+				return errors.New("next: another instance of this session took over while waiting")
 			}
 
 			// PRINT FIRST — the emission is what the agent actually receives.
 			if err := enc.Encode(payload.page); err != nil {
 				return fmt.Errorf("next: emit: %w", err)
 			}
-			// THEN commit, re-checking ownership inside the lock.
-			evicted, err := mgr.CommitWakeCursor(sid, payload.emittedIDs, time.Now().UTC(), ownerOK, payload.present)
-			if err != nil {
-				return fmt.Errorf("next: commit wake cursor: %w", err)
+			// THEN commit, re-checking ownership inside the lock, and report the
+			// OUTCOME in its own record. Exit is non-zero unless the commit
+			// succeeded, so a wrapper cannot mistake a failed run for a good one.
+			evicted, cerr := mgr.CommitWakeCursor(sid, payload.emittedIDs, time.Now().UTC(), ownerOK, payload.present)
+			switch {
+			case cerr != nil:
+				_ = enc.Encode(nextCommitRecord{
+					Status: nextStatusNotCommitted, Session: sid, Generation: payload.page.Generation,
+					Hint: hintCommitFailed,
+				})
+				return fmt.Errorf("next: commit wake cursor: %w", cerr)
+			case evicted:
+				_ = enc.Encode(nextCommitRecord{
+					Status: nextStatusNotCommitted, Session: sid, Generation: payload.page.Generation,
+					Hint: hintTakeoverAfterEmit,
+				})
+				return errors.New("next: another instance of this session took over before the delivery was confirmed")
+			default:
+				return enc.Encode(nextCommitRecord{
+					Status: nextStatusCommitted, Session: sid, Generation: payload.page.Generation,
+					Confirmed: payload.emittedIDs,
+					Hint:      "these messages are yours; run next again to stay reachable",
+				})
 			}
-			if evicted {
-				fmt.Fprintln(stderr, "wait ownership was reclaimed while emitting — delivery left unconfirmed, these messages stay unread for the current owner")
-			}
-			return nil
 		}
 
 		select {
@@ -274,7 +324,21 @@ func collectNextPage(mgr *session.Manager, cfg config.Config, sid, inboxDir stri
 		}
 	}
 	if len(unread) == 0 {
-		return pageResult{}, false, nil
+		if len(corrupt) == 0 {
+			return pageResult{}, false, nil
+		}
+		// An inbox holding ONLY unreadable files is not an idle inbox: staying
+		// asleep for 24h would hide a broken mailbox behind a normal timeout.
+		// Report it with zero messages and mark nothing.
+		return pageResult{
+			page: nextPayload{
+				Status: nextStatusEmitted, Session: sid, Generation: generation,
+				CorruptCount: len(corrupt), Corrupt: corrupt, Messages: []nextMessage{},
+				Warnings: []string{fmt.Sprintf("%d unreadable file(s) in inbox and nothing else — no action needed from you; they are left in place", len(corrupt))},
+				Hint:     "nothing readable arrived; run next again",
+			},
+			present: present,
+		}, true, nil
 	}
 
 	// Deterministic order: decoded timestamp, id as tie-break. os.ReadDir
@@ -296,7 +360,7 @@ func collectNextPage(mgr *session.Manager, cfg config.Config, sid, inboxDir stri
 	}
 
 	page := nextPayload{
-		Status:       nextStatusDelivered,
+		Status:       nextStatusEmitted,
 		Session:      sid,
 		Generation:   generation,
 		Total:        len(unread),
@@ -312,7 +376,7 @@ func collectNextPage(mgr *session.Manager, cfg config.Config, sid, inboxDir stri
 	if len(corrupt) > 0 {
 		// Declared, never silently skipped (§2.7): a corrupt file must neither
 		// block next forever nor vanish without a trace.
-		page.Warnings = append(page.Warnings, fmt.Sprintf("%d unreadable file(s) left in inbox for inspection", len(corrupt)))
+		page.Warnings = append(page.Warnings, fmt.Sprintf("%d unreadable file(s) left in inbox — no action needed from you", len(corrupt)))
 	}
 
 	var (
@@ -323,9 +387,16 @@ func collectNextPage(mgr *session.Manager, cfg config.Config, sid, inboxDir stri
 		if len(page.Messages) >= maxCount {
 			break
 		}
+		// Budget the SERIALIZED size, not the file size: JSON escaping,
+		// duplicated metadata and the wrapper can inflate a payload well past
+		// the raw bytes on disk, and this limit exists to protect stdout, the
+		// harness capture and the agent's context (CRI diff-gate P1-4).
+		candidate := newNextMessage(e, false)
+		size := serializedSize(candidate)
+
 		// A single message over budget goes out alone as a pointer rather than
 		// starving forever behind a limit it can never fit under.
-		if e.bytes > maxBytes {
+		if size > maxBytes {
 			if len(page.Messages) > 0 {
 				break
 			}
@@ -333,12 +404,12 @@ func collectNextPage(mgr *session.Manager, cfg config.Config, sid, inboxDir stri
 			emitted = append(emitted, e.msg.ID)
 			break
 		}
-		if used+e.bytes > maxBytes && len(page.Messages) > 0 {
+		if used+size > maxBytes && len(page.Messages) > 0 {
 			break
 		}
-		page.Messages = append(page.Messages, newNextMessage(e, false))
+		page.Messages = append(page.Messages, candidate)
 		emitted = append(emitted, e.msg.ID)
-		used += e.bytes
+		used += size
 	}
 
 	page.Returned = len(page.Messages)
@@ -346,12 +417,23 @@ func collectNextPage(mgr *session.Manager, cfg config.Config, sid, inboxDir stri
 	// The output declares its own next action, so the agent never looks for a
 	// --page flag that does not exist (§2.7).
 	if page.HasMore {
-		page.Hint = "hasMore: true — the rest arrives with the next run of next"
+		page.Hint = "hasMore: true — run next again for the rest"
 	} else {
 		page.Hint = "run next again to stay reachable"
 	}
 
 	return pageResult{page: page, emittedIDs: emitted, present: present}, true, nil
+}
+
+// serializedSize is how many bytes this message will occupy in the emitted
+// payload. Marshal failure falls back to the content length, which only ever
+// under-counts a message we could not have emitted anyway.
+func serializedSize(m nextMessage) int {
+	data, err := json.Marshal(m)
+	if err != nil {
+		return len(m.Content)
+	}
+	return len(data)
 }
 
 func newNextMessage(e mailboxEntry, oversize bool) nextMessage {
@@ -366,7 +448,7 @@ func newNextMessage(e mailboxEntry, oversize bool) nextMessage {
 	}
 	if oversize {
 		m.Oversize = true
-		m.Body = e.path
+		m.BodyFile = e.path
 		return m
 	}
 	m.Content = e.msg.Content
@@ -406,6 +488,15 @@ func readMailbox(inboxDir string, maxContentBytes int) ([]mailboxEntry, []string
 		m, err := message.DecodeLenient(data, maxContentBytes)
 		if err != nil {
 			corrupt = append(corrupt, name)
+			continue
+		}
+		// Legacy delivery receipts must never wake anyone. The ack type is on
+		// its way out (§2.4) but auto-ack still runs while `listen` exists, so
+		// without this filter the command built to kill S2 would be woken by
+		// exactly the noise S2 is about (CRI diff-gate, integration blocker).
+		// Kept as a read-side filter, not a write-side assumption: acks already
+		// on disk stay readable.
+		if m.Type == message.TypeAck {
 			continue
 		}
 		entries = append(entries, mailboxEntry{

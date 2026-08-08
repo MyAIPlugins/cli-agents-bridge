@@ -32,18 +32,33 @@ func nextTestConfig(dataDir string) config.Config {
 }
 
 // runNextOnce drives nextRun with a short parent deadline so an idle wait ends
-// in milliseconds instead of the configured 24h window.
+// in milliseconds instead of the configured 24h window, and decodes the JSONL
+// stream: a page record, then (when something was emitted) a commit record.
 func runNextOnce(t *testing.T, mgr *session.Manager, cfg config.Config, sid string, wait time.Duration) nextPayload {
+	t.Helper()
+	page, _ := runNextRecords(t, mgr, cfg, sid, wait, true)
+	return page
+}
+
+func runNextRecords(t *testing.T, mgr *session.Manager, cfg config.Config, sid string, wait time.Duration, wantOK bool) (nextPayload, nextCommitRecord) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, nextRun(ctx, mgr, cfg, sid, &stdout, &stderr))
+	err := nextRun(ctx, mgr, cfg, sid, &stdout, &stderr)
+	if wantOK {
+		require.NoError(t, err)
+	}
 
-	var p nextPayload
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &p), "stdout must be one JSON payload: %s", stdout.String())
-	return p
+	dec := json.NewDecoder(bytes.NewReader(stdout.Bytes()))
+	var page nextPayload
+	var commit nextCommitRecord
+	require.NoError(t, dec.Decode(&page), "first record must be the page: %s", stdout.String())
+	if dec.More() {
+		require.NoError(t, dec.Decode(&commit), "second record must be the commit: %s", stdout.String())
+	}
+	return page, commit
 }
 
 func inboxFiles(t *testing.T, dataDir, sid string) []string {
@@ -94,7 +109,7 @@ func TestNext_Invariant_MarksOnlyWhatItEmits(t *testing.T) {
 		}
 
 		p := runNextOnce(t, mgr, cfg, sid, 2*time.Second)
-		require.Equal(t, nextStatusDelivered, p.Status)
+		require.Equal(t, nextStatusEmitted, p.Status)
 		assert.Equal(t, 3, p.Total)
 		assert.Equal(t, 3, p.Returned)
 		assert.False(t, p.HasMore)
@@ -240,8 +255,15 @@ func TestNext_ConcurrentRuns_DoNotOverlap(t *testing.T) {
 				if err := nextRun(ctx, mgr, cfg, sid, &out, &errBuf); err != nil {
 					return
 				}
+				dec := json.NewDecoder(bytes.NewReader(out.Bytes()))
 				var p nextPayload
-				if json.Unmarshal(out.Bytes(), &p) != nil || p.Status != nextStatusDelivered {
+				if dec.Decode(&p) != nil || p.Status != nextStatusEmitted {
+					return
+				}
+				// Only a COMMITTED run may claim its messages: an emitted page
+				// whose commit was refused belongs to nobody.
+				var c nextCommitRecord
+				if dec.Decode(&c) != nil || c.Status != nextStatusCommitted {
 					return
 				}
 				mu.Lock()
@@ -307,8 +329,8 @@ func TestNext_PagingRespectsBothLimits(t *testing.T) {
 		got := p.Messages[0]
 		assert.True(t, got.Oversize)
 		assert.Empty(t, got.Content, "the body is not inlined")
-		assert.NotEmpty(t, got.Body, "the on-disk path is emitted instead")
-		assert.FileExists(t, got.Body)
+		assert.NotEmpty(t, got.BodyFile, "the on-disk path is emitted instead")
+		assert.FileExists(t, got.BodyFile)
 		assert.True(t, p.HasMore)
 	})
 }
@@ -403,9 +425,10 @@ func TestNext_ReturnsImmediatelyAfterDelivery(t *testing.T) {
 	require.NoError(t, nextRun(ctx, mgr, cfg, sid, &stdout, &stderr))
 	elapsed := time.Since(start)
 
+	dec := json.NewDecoder(bytes.NewReader(stdout.Bytes()))
 	var p nextPayload
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &p))
-	require.Equal(t, nextStatusDelivered, p.Status)
+	require.NoError(t, dec.Decode(&p))
+	require.Equal(t, nextStatusEmitted, p.Status)
 	assert.Less(t, elapsed, 2*time.Second,
 		"next must return as soon as it has mail, not hold it until the window expires (F-94)")
 }
@@ -460,4 +483,150 @@ func TestParseMessageTime(t *testing.T) {
 			assert.Equal(t, tc.zero, got.IsZero())
 		})
 	}
+}
+
+// --- CRI diff-gate fixes ----------------------------------------------------
+
+// TestNext_LegacyAcksNeverWake is the integration blocker: auto-ack still runs
+// while `listen` exists, so without a read-side filter the command built to
+// kill S2 would be woken by exactly the receipts S2 is about.
+func TestNext_LegacyAcksNeverWake(t *testing.T) {
+	mgr, cfg, sid, dataDir := newNextSession(t)
+	base := time.Now().UTC()
+	plantInboxAt(t, dataDir, sid, "msg-aaaaaaaaaaaa", "valxxx01", message.TypeAck, "ACK msg-x: received", base)
+	plantInboxAt(t, dataDir, sid, "msg-bbbbbbbbbbbb", "valxxx01", message.TypeAck, "ACK msg-y: received", base)
+
+	// An inbox of nothing but acks must look idle, not busy.
+	p := runNextOnce(t, mgr, cfg, sid, 300*time.Millisecond)
+	assert.Equal(t, nextStatusTimeout, p.Status, "acks must not wake next")
+	assert.Empty(t, p.Messages)
+
+	cursor, _, err := mgr.ReadWakeCursor(sid)
+	require.NoError(t, err)
+	assert.Empty(t, cursor.Notified, "an ack is never marked NOTIFIED")
+
+	// A real message still gets through, and the acks stay out of the page.
+	plantInboxAt(t, dataDir, sid, "msg-cccccccccccc", "valxxx01", message.TypeQuery, "the real brief", base.Add(time.Second))
+	p2 := runNextOnce(t, mgr, cfg, sid, 2*time.Second)
+	assert.Equal(t, []string{"msg-cccccccccccc"}, messageIDs(p2), "only the real message is delivered")
+	assert.Equal(t, 1, p2.Total)
+}
+
+// TestNext_InboxOfOnlyCorruptFilesIsReported: a broken mailbox must not hide
+// behind a 24h idle timeout (CRI P1-3).
+func TestNext_InboxOfOnlyCorruptFilesIsReported(t *testing.T) {
+	mgr, cfg, sid, dataDir := newNextSession(t)
+	inboxDir := filepath.Join(dataDir, "sessions", sid, "inbox")
+	require.NoError(t, os.MkdirAll(inboxDir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(inboxDir, "msg-broken0000.json"), []byte("{nope"), 0o600))
+
+	p := runNextOnce(t, mgr, cfg, sid, 5*time.Second)
+	assert.Equal(t, nextStatusEmitted, p.Status, "must report rather than sleep out the window")
+	assert.Equal(t, 1, p.CorruptCount)
+	assert.Empty(t, p.Messages)
+	assert.NotEmpty(t, p.Warnings)
+
+	cursor, _, err := mgr.ReadWakeCursor(sid)
+	require.NoError(t, err)
+	assert.Empty(t, cursor.Notified, "nothing was emitted, so nothing may be marked")
+}
+
+// TestNext_PageRecordNeverClaimsAnOutcome: with emit-before-commit no single
+// record can know its own future, so the page states a fact ("emitted") and the
+// outcome arrives in its own record (CRI P0-2).
+func TestNext_PageRecordNeverClaimsAnOutcome(t *testing.T) {
+	mgr, cfg, sid, dataDir := newNextSession(t)
+	plantInboxAt(t, dataDir, sid, "msg-aaaaaaaaaaaa", "valxxx01", message.TypeQuery, "brief", time.Now().UTC())
+
+	page, commit := runNextRecords(t, mgr, cfg, sid, 2*time.Second, true)
+	assert.Equal(t, nextStatusEmitted, page.Status)
+	assert.NotEqual(t, "delivered", page.Status, "a page must never certify delivery")
+	assert.Equal(t, nextStatusCommitted, commit.Status, "the outcome comes in the commit record")
+	assert.Equal(t, []string{"msg-aaaaaaaaaaaa"}, commit.Confirmed)
+}
+
+// TestNext_NotCommittedRecordIsActionable checks the wording the agent acts on
+// (CRI2 P1-a/P1-b): the record must contradict the page above it, forbid the
+// re-run whose instinct would steal the wait from the instance that replaced
+// this one, and avoid internal jargon.
+//
+// The end-to-end race (eviction landing between emit and commit) is NOT covered
+// deterministically: nextRun claims ownership at startup, so an external claim
+// either precedes it (and is superseded) or trips the reclaim watcher, which
+// cancels the context and ends the run as a normal timeout. The fencing itself
+// is covered by TestNext_ConcurrentRuns_DoNotOverlap; what is asserted here is
+// the contract of the record and that such a run cannot exit 0.
+func TestNext_NotCommittedRecordIsActionable(t *testing.T) {
+	mgr, cfg, sid, dataDir := newNextSession(t)
+	plantInboxAt(t, dataDir, sid, "msg-aaaaaaaaaaaa", "valxxx01", message.TypeQuery, "brief", time.Now().UTC())
+
+	// Emit a page, then have "another instance" take over before the commit.
+	inboxDir := filepath.Join(dataDir, "sessions", sid, "inbox")
+	mine, err := mgr.StartWait(sid)
+	require.NoError(t, err)
+	res, ready, err := collectNextPage(mgr, cfg, sid, inboxDir, mine.Generation)
+	require.NoError(t, err)
+	require.True(t, ready)
+
+	_, err = mgr.ClaimListener(sid) // the takeover
+	require.NoError(t, err)
+
+	evicted, err := mgr.CommitWakeCursor(sid, res.emittedIDs, time.Now().UTC(),
+		func() bool { return mgr.IsListenerCurrent(sid, mine.Token) }, res.present)
+	require.NoError(t, err)
+	require.True(t, evicted, "the superseded run must be refused")
+
+	cursor, _, err := mgr.ReadWakeCursor(sid)
+	require.NoError(t, err)
+	assert.Empty(t, cursor.Notified, "an evicted run marks nothing")
+
+	// The wording an agent acts on — the constants the code actually emits.
+	//
+	// The two takeover hints must FORBID the re-run, because another instance is
+	// waiting and retrying would steal the wait from it. The commit-failure hint
+	// must NOT forbid it: there is no other instance, the messages simply stayed
+	// unread, and running next again is exactly the right move. Same "not
+	// committed" status, opposite instructions — collapsing them would teach the
+	// agent the wrong reflex in one of the two.
+	for name, hint := range map[string]string{
+		"takeover_before_emit": hintTakeoverBeforeEmit,
+		"takeover_after_emit":  hintTakeoverAfterEmit,
+	} {
+		lower := strings.ToLower(hint)
+		assert.Contains(t, lower, "this session", "%s: name the situation in the agent's terms", name)
+		assert.NotContains(t, lower, "ownership", "%s: no internal jargon — the agent has never been shown wait ownership", name)
+		assert.Contains(t, lower, "do not run next again", "%s: retrying is the instinct, and it steals the wait", name)
+	}
+	assert.NotContains(t, strings.ToLower(hintCommitFailed), "do not run next again",
+		"an I/O failure has no rival instance: re-running is the correct recovery")
+
+	// Both post-emission hints must contradict the page the agent just read.
+	assert.Contains(t, hintTakeoverAfterEmit, "IGNORE the emitted page")
+	assert.Contains(t, hintCommitFailed, "IGNORE the emitted page")
+}
+
+// TestStartWait_ResumeCannotBeDefeatedByTheWaiterItEvicted is the P0-1
+// regression: adopt and claim must be one locked operation, or the waiter a
+// resume just evicted can re-authorise itself on its way in.
+func TestStartWait_ResumeCannotBeDefeatedByTheWaiterItEvicted(t *testing.T) {
+	mgr, _, sid, _ := newNextSession(t)
+
+	// An old waiter starts up.
+	old, err := mgr.StartWait(sid)
+	require.NoError(t, err)
+
+	// A resume elsewhere revokes it.
+	info, err := mgr.ReclaimListener(sid)
+	require.NoError(t, err)
+	assert.Greater(t, info.NewGeneration, old.Generation)
+
+	// The evicted waiter must NOT be able to consider itself current again.
+	assert.False(t, mgr.IsListenerCurrent(sid, old.Token), "revocation must be monotonic")
+
+	// And a fresh startup supersedes the reclaim rather than resurrecting the old token.
+	fresh, err := mgr.StartWait(sid)
+	require.NoError(t, err)
+	assert.Greater(t, fresh.Generation, info.NewGeneration)
+	assert.False(t, mgr.IsListenerCurrent(sid, old.Token))
+	assert.True(t, mgr.IsListenerCurrent(sid, fresh.Token))
 }

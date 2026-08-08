@@ -118,6 +118,22 @@ func knownAgentNames(peers []peerSummary, selfSID string) []string {
 	return out
 }
 
+// whoIThoughtIWas labels an error with the session the command resolved itself
+// to, e.g. "in session b3e07991 (ESC-bridge)".
+//
+// F-97: an id-free command that resolves from the cwd can silently become
+// SOMEBODY ELSE when the caller is in the wrong directory — the match is exact,
+// so no guardrail fires. The failure that follows ("no message received from
+// b3e07991") is then unreadable, because it never says from whose point of view
+// it was looking. Stating the assumed identity makes the absurd case
+// self-evident: asking for ESC's messages from inside ESC's own session.
+func whoIThoughtIWas(mgr *session.Manager, sid string) string {
+	if mf, err := mgr.LoadManifest(sid); err == nil && mf.AgentName != "" {
+		return fmt.Sprintf("in session %s (%s)", sid, mf.AgentName)
+	}
+	return fmt.Sprintf("in session %s", sid)
+}
+
 // openAsk is one query still awaiting a reply.
 type openAsk struct {
 	id       string
@@ -199,16 +215,16 @@ func runSendVerb(verb, msgType string, args []string, stdin io.Reader, stdout io
 
 	content, err := resolveMessagePayload(argAt(args, 1), len(args) > 1, stdin)
 	if err != nil {
-		return fmt.Errorf("%s: %w", verb, err)
+		return fmt.Errorf("%s (%s): %w", verb, whoIThoughtIWas(mgr, sid), err)
 	}
 	to, err := resolveRecipientByName(cfg, mgr, args[0], sid)
 	if err != nil {
-		return fmt.Errorf("%s: %w", verb, err)
+		return fmt.Errorf("%s (%s): %w", verb, whoIThoughtIWas(mgr, sid), err)
 	}
 
 	msgID, err := sendMessage(cfg, mgr, sid, to, msgType, content, nil, false)
 	if err != nil {
-		return fmt.Errorf("%s: %w", verb, err)
+		return fmt.Errorf("%s (%s): %w", verb, whoIThoughtIWas(mgr, sid), err)
 	}
 	fmt.Fprintf(stdout, "→ %s (%s)\n", args[0], msgID)
 	return nil
@@ -257,12 +273,12 @@ func replyRun(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return fmt.Errorf("reply: %w", err)
 	}
 	if len(asks) == 0 {
-		return errors.New("reply: nothing to reply to — no ask of yours is open (a tell is fire-and-forget: answer it with tell or ask)")
+		return fmt.Errorf("reply (%s): nothing to reply to — no ask of yours is open (a tell is fire-and-forget: answer it with tell or ask)", whoIThoughtIWas(mgr, sid))
 	}
 
 	target, content, err := resolveReplyTarget(args, asks, stdin)
 	if err != nil {
-		return fmt.Errorf("reply: %w", err)
+		return fmt.Errorf("reply (%s): %w", whoIThoughtIWas(mgr, sid), err)
 	}
 
 	var closeIDs []string

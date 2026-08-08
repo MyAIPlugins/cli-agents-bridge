@@ -27,7 +27,10 @@ ROOT="${2:-$(mktemp -d)}"
 export CAB_DATA_DIR="$ROOT/data"
 export CAB_AUTO_GC_HOURS=0
 
-VALDIR="$ROOT/val"; ESCDIR="$ROOT/esc"
+# One scope (git marker at the base), one working dir per agent: the shape of
+# real worktrees, and what the v0.8 verbs need to resolve a recipient by name.
+BASE="$ROOT/repo"; mkdir -p "$BASE/.git"
+VALDIR="$BASE/val"; ESCDIR="$BASE/esc"
 mkdir -p "$VALDIR" "$ESCDIR"
 
 pass=0; fail=0
@@ -36,10 +39,8 @@ check() { # check <description> <exit-status>
 }
 
 echo "== setup: two sessions, disjoint cwd =="
-VALID=$(cd "$VALDIR" && "$BIN" register --role=val --agent-name=VAL-smoke 2>/dev/null | grep -oE '^[a-z0-9]{8}$' | head -1)
-ESCID=$(cd "$ESCDIR" && "$BIN" register --role=esc --agent-name=ESC-smoke 2>/dev/null | grep -oE '^[a-z0-9]{8}$' | head -1)
-[ -z "$VALID" ] && VALID=$(cd "$VALDIR" && "$BIN" whoami 2>/dev/null | grep -oE '[a-z0-9]{8}' | head -1)
-[ -z "$ESCID" ] && ESCID=$(cd "$ESCDIR" && "$BIN" whoami 2>/dev/null | grep -oE '[a-z0-9]{8}' | head -1)
+VALID=$(cd "$VALDIR" && "$BIN" register --role=val --agent-name=VAL-smoke 2>/dev/null | grep -oE '"sessionId": "[a-z0-9]+"' | grep -oE '[a-z0-9]{8}' | tail -1)
+ESCID=$(cd "$ESCDIR" && "$BIN" register --role=esc --agent-name=ESC-smoke 2>/dev/null | grep -oE '"sessionId": "[a-z0-9]+"' | grep -oE '[a-z0-9]{8}' | tail -1)
 echo "  VAL=$VALID  ESC=$ESCID"
 [ -n "$VALID" ] && [ -n "$ESCID" ]; check "both sessions registered" $?
 
@@ -56,12 +57,13 @@ MPID=$(grep -oE '"pid": *[0-9]+' "$MANIFEST" | grep -oE '[0-9]+')
 
 echo "== 2. a message from another process wakes it and it EXITS immediately =="
 BEFORE=$(date +%s)
-( cd "$VALDIR" && "$BIN" ask --session-id="$VALID" --to="$ESCID" --content="smoke brief" >/dev/null 2>&1 )
+( cd "$VALDIR" && "$BIN" ask ESC-smoke "smoke brief" >/dev/null 2>&1 )
 wait "$NEXTPID" 2>/dev/null
 ELAPSED=$(( $(date +%s) - BEFORE ))
 [ "$ELAPSED" -lt 15 ]; check "next returned promptly after delivery (${ELAPSED}s, F-94)" $?
 
-grep -q '"status": "delivered"' "$ROOT/next1.out"; check "payload status=delivered" $?
+grep -q '"status": "emitted"' "$ROOT/next1.out"; check "page record says emitted (never certifies delivery)" $?
+grep -q '"status": "committed"' "$ROOT/next1.out"; check "a second record reports the commit outcome" $?
 grep -q "smoke brief" "$ROOT/next1.out"; check "message content delivered" $?
 MSGID=$(grep -oE 'msg-[a-f0-9]{12}' "$ROOT/next1.out" | head -1)
 echo "  delivered: $MSGID"
@@ -83,7 +85,10 @@ echo "== 5. a second next does NOT re-deliver what is already NOTIFIED =="
 NEXT2=$!
 sleep 4
 kill -0 "$NEXT2" 2>/dev/null; check "second next is waiting, not re-delivering" $?
-[ ! -s "$ROOT/next2.out" ]; check "second next emitted nothing" $?
+# Not "output is empty": in a shared scope the B-1 guardrail prints a warning
+# on stderr before every id-free command (F-91, still open). What must be absent
+# is a PAGE — no message may be re-delivered.
+! grep -q '"status": "emitted"' "$ROOT/next2.out"; check "second next re-delivered nothing" $?
 
 echo "== 6. a second next elsewhere RECLAIMS wait ownership (single waiter) =="
 ( cd "$ESCDIR" && "$BIN" next > "$ROOT/next3.out" 2> "$ROOT/next3.err" ) &

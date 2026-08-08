@@ -655,3 +655,18 @@ func defaultCapabilities(caps []string) []string {
 	}
 	return caps
 }
+
+// adoptPIDLocked is AdoptPID for callers that already hold the session lock.
+// The lock is what makes adopt+claim one indivisible startup (see StartWait);
+// manifestMu alone only serialises writers inside this process.
+func (m *Manager) adoptPIDLocked(sessionID string) error {
+	m.manifestMu.Lock()
+	defer m.manifestMu.Unlock()
+	manifest, err := m.LoadManifest(sessionID)
+	if err != nil {
+		return err
+	}
+	manifest.PID = os.Getpid()
+	manifest.LastHeartbeat = m.now()
+	return m.SaveManifest(manifest)
+}

@@ -68,12 +68,12 @@ func (m *Manager) ReadWakeCursor(sessionID string) (*WakeCursor, string, error) 
 		if os.IsNotExist(err) {
 			return empty, "", nil
 		}
-		return empty, fmt.Sprintf("wake cursor unreadable (%v) — replaying: messages may be delivered twice", err), nil
+		return empty, fmt.Sprintf("wake cursor unreadable (%v) — replaying: some messages may be delivered twice; treat them normally", err), nil
 	}
 
 	var c WakeCursor
 	if err := json.Unmarshal(data, &c); err != nil {
-		return empty, fmt.Sprintf("wake cursor corrupt (%v) — replaying: messages may be delivered twice", err), nil
+		return empty, fmt.Sprintf("wake cursor corrupt (%v) — replaying: some messages may be delivered twice; treat them normally", err), nil
 	}
 	if c.Notified == nil {
 		c.Notified = map[string]time.Time{}

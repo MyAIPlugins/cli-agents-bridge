@@ -328,3 +328,19 @@ func TestVerbs_RejectFlags(t *testing.T) {
 		})
 	}
 }
+
+// TestErrorsDeclareTheAssumedIdentity is F-97: a command that resolves itself
+// from the cwd must say WHO it thought it was when it fails, or a caller in the
+// wrong directory silently becomes somebody else and reads an error that makes
+// no sense from the identity they assumed.
+func TestErrorsDeclareTheAssumedIdentity(t *testing.T) {
+	mgr, _, dataDir := newReplyPair(t)
+	_ = dataDir
+
+	label := whoIThoughtIWas(mgr, replySelf)
+	assert.Contains(t, label, replySelf, "the session id must be stated")
+	assert.Contains(t, label, "ESC-reply", "and the agent name, which is what makes it readable")
+
+	// Unknown session: still says the id rather than losing the context.
+	assert.Contains(t, whoIThoughtIWas(mgr, "nosuch01"), "nosuch01")
+}
