@@ -1,6 +1,6 @@
 # DESIGN v0.8 — KISS per AI
 
-> Stato: **rev.6 — post terzo giro di design-gate (CRI + CRI2)**
+> Stato: **rev.7 — post QUARTO giro. Entrambi i critici: chiusi questi punti, il brief può partire.**
 > Autore: VAL · Data: 2026-08-08
 > Ratificato da Alan: rottura netta · ACK eliminati · **"il non far pensare vince"** · opzione A (`reply` è la boundary) · una regola sola per payload brevi e lunghi
 
@@ -61,8 +61,8 @@ Oggi tutto è allo stesso livello: `migrate-from-patil` e `listen` sono due voci
 |---|---|
 | `read <id>` | rileggere un messaggio, anche già archiviato (scansiona `inbox/` poi `processed/`) |
 | `sent` | cosa ho mandato e in che stato è |
-| `who` | chi c'è adesso — oppure si dichiara che `join` è anche il chi-c'è, rilanciabile a volontà |
-| `state` | F-23, da confermare o assorbire nel modello nuovo |
+| `who` | chi c'è adesso — **esiste come comando**, non è "`join` rilanciabile": un agente a metà sessione che vuole solo guardare non deve invocare qualcosa che ha effetti di registrazione |
+| `state` | **resta** (F-23, `working`/`done`/`orchestrating`): dice cosa sta *facendo* un agente, informazione ortogonale alla mailbox e che il modello nuovo non assorbe |
 | `cleanup`, `inspect`, `migrate-*`, `notify-watch` | amministrazione, mai nel ciclo di lavoro |
 
 ### 2.2 La superficie LOOP
@@ -89,6 +89,12 @@ Tre nodi sciolti da una scelta sola: la riga outbound conta solo ciò che aspett
 
 **`reply` archivia tutti gli `ask` aperti di quel mittente** (CRI2 P1-1b), elencandoli nell'echo: `→ VAL-bridge (chiusi: msg-A, msg-A2)`. Il caso quotidiano è brief + correzione coperti da una sola risposta; archiviarne uno solo lascerebbe l'altro `NOTIFIED` per sempre, falso-pendente. I `tell` non sono mai "aperti", quindi non entrano.
 
+**Chiusura multipla — una risposta, una transazione, un set congelato** (CRI, quarto giro). Al **primo** tentativo `reply` fotografa **sotto lock** il set ordinato degli `ask` `NOTIFIED` aperti di quel mittente e persiste **un solo journal** con `closeIDs: [A, A2]` e **un solo response-id**. Ogni retry riusa quel set, anche se nel frattempo è arrivato A3 — che resta aperto e verrà chiuso dalla risposta successiva. Dopo `SENT` si archiviano **tutti e soli** i `closeIDs`; un recovery parziale riprende dall'indice senza rispedire.
+
+Sul filo: lo schema ha un solo `inReplyTo`, quindi la response porta `inReplyTo` = il primo del set (l'`ask` più vecchio ancora aperto, cioè quello che ha originato il thread) più un campo **`closes: [...]`** con l'elenco completo. Senza questo, `(responder, inbound-id)` implicherebbe due identità mentre l'interfaccia ne promette una sola.
+
+**Disambiguazione multi-mittente: `reply <chi>`.** L'ambiguità si valuta sui **mittenti con almeno un `ask` aperto**, non sui mittenti del batch: un batch con un `ask` di VAL e un `tell` di CRI **non è ambiguo** — c'è un solo `ask` da chiudere, e rifiutarlo sarebbe rumore. Quando invece due o più mittenti hanno `ask` aperti, `reply` nudo fallisce elencando i candidati e la forma esatta — `reply VAL-bridge "…"`. La rev.5 suggeriva `tell VAL-bridge` come ripiego, ma con i verbi tipizzati **`tell` è un notify e non chiude niente**: sarebbe stato un suggerimento che non fa ciò che promette. E `reply` nudo si ancora al mittente dell'ultimo **`ask` aperto** emesso, non all'ultimo messaggio qualsiasi — che potrebbe essere un `tell` di un terzo.
+
 **`join`** — registra, deriva ruolo e nome dal contesto, e **stampa chi c'è** (tutti i peer vivi nello scope, non "il peer"). Sostituisce `register`/`bootstrap`/`whoami`/`overview` iniziali. Idempotente: rilanciarlo dopo un compact riaggancia la stessa sessione. Su mismatch di nome con una sessione esistente stesso `(ruolo, scope, projectPath)` **si ferma e chiede**, mai crea in silenzio la seconda sessione che blocca tutto (chiude F-90).
 
 **`next`** — l'unico comando del ciclo, **funziona uguale in ogni stato** e non rifiuta mai di partire:
@@ -103,7 +109,7 @@ Nessun flag: né durata, né formato, né filtro, né session-id (risolto da cwd
 
 **`tell` accetta il NOME dell'agente, non l'id** — `tell ESC-bridge "..."`, risolto in-scope, **fail-closed**: zero match → errore; più di un match vivo → errore con i candidati, mai una scelta silenziosa. Senza questo LL-14 resterebbe incompiuto proprio nel caso più frequente: `link` copre il cross-repo, ma l'id che si ricopia *ogni giorno* è quello del proprio ESC. (CRI2 P1-4, CRI F6.)
 
-**`reply` è ancorato all'ultimo messaggio EMESSO da un `next`** — mai a un `UNREAD` non ancora visto: lo stato del tool e quello nella testa dell'agente devono coincidere per definizione. E su un batch con **più mittenti** `reply` nudo è ambiguo → **fail-closed con i candidati** (`l'ultimo batch ha 2 mittenti — usa tell VAL-bridge / tell CRI-bridge`), mai una scelta silenziosa. `reply` stampa sempre a chi ha risposto: `→ VAL-bridge (in reply a msg-X)`.
+**`reply` è ancorato all'ultimo `ask` APERTO emesso da un `next`** — non all'ultimo messaggio qualsiasi (che potrebbe essere un `tell` di un terzo: il reply finirebbe alla persona sbagliata), e mai a un `UNREAD` non ancora visto, perché lo stato del tool e quello nella testa dell'agente devono coincidere per definizione. **A un `tell` non si risponde con `reply`**: non c'è nulla da chiudere, si usa `tell` o `ask` di ritorno. E su un batch con **più mittenti** `reply` nudo è ambiguo → **fail-closed con i candidati** (`l'ultimo batch ha 2 mittenti — usa tell VAL-bridge / tell CRI-bridge`), mai una scelta silenziosa. `reply` stampa sempre a chi ha risposto: `→ VAL-bridge (in reply a msg-X)`.
 
 Senza questo, nel gruppo `reply` è una roulette (CRI2 P1-2): il VAL manda il brief, CRI manda una nota mentre lavoro, e il report finisce a CRI. **Errore silenzioso** — il messaggio parte, nessuno segnala niente, il VAL non riceve mai nulla. Peggio di un id trascritto, perché non c'è nemmeno l'occasione di accorgersene.
 
@@ -118,7 +124,7 @@ tell ESC-bridge < brief.md               lungo, zero quoting
 
 Nessun flag, nessuna modalità, nessuna scelta: l'agente scrive come gli viene naturale. Identica per `reply`.
 
-**NON usare la tty detection** (`stdin non è un terminale → leggilo`), che sarebbe l'idioma Unix classico: **verificato empiricamente che nell'harness stdin NON è un tty** (`test -t 0` → false). Ogni `tell X "breve"` proverebbe a leggere una pipe vuota. La regola presenza/assenza dell'argomento è deterministica e immune all'ambiente. Passare entrambi è un errore esplicito, mai un fallback silenzioso.
+**NON usare la tty detection** (`stdin non è un terminale → leggilo`), che sarebbe l'idioma Unix classico: **verificato empiricamente che nell'harness stdin NON è un tty** (`test -t 0` → false). Ogni `tell X "breve"` proverebbe a leggere una pipe vuota. La regola presenza/assenza dell'argomento è deterministica e immune all'ambiente. **Con l'argomento presente, stdin non viene letto affatto** — non si tenta di rilevare "entrambi presenti", perché per farlo bisognerebbe leggere stdin, cioè proprio la dipendenza ambientale che questa regola elimina. Senza argomento si legge fino a EOF; se anche stdin è vuoto, **rifiuto esplicito** ("messaggio vuoto"), mai un invio muto.
 
 **Dove i messaggi vengono tagliati davvero** — misurato, non supposto: `ARG_MAX` è 1 MB (macOS), quindi i 14 KiB del verdetto di CRI negli argomenti ci stavano comodamente. Le cause reali sono il **quoting** (un backtick, un `$`, un apice dentro il testo rompono il comando e l'agente "aggiusta" perdendo pezzi) e il **costo di ri-emissione** (un agente che ha appena scritto un file con Write e deve ri-digitarlo in un argomento tende ad accorciarlo). Lo stdin le elimina entrambe.
 
@@ -133,7 +139,11 @@ msg-a1b2 da VAL-bridge — 47 KB
 
 L'agente lo legge con `Read` — lo strumento che usa meglio di ogni altro, e che gli permette anche di leggerne una parte per volta. Zero duplicazione, troncamento impossibile, e nessuna scelta: è il comando a decidere quando il corpo sta inline e quando diventa un puntatore.
 
-**Riga outbound nel sommario di `next`**: `outbound: 2 non ancora consegnati ai destinatari da >30m`. ("Consegnati", non "letti": *letto* è la parola che la rev.3 ha bandito, e comparirebbe proprio nel testo che l'agente vede più spesso.) Ricuce a costo zero l'unica cosa che si perde eliminando gli ACK — prima la ricevuta ti *raggiungeva*, ora "ESC ha preso il brief?" richiederebbe di ricordarsi di lanciare `sent`, cioè disciplina, cioè la risorsa scarsa. (CRI2 P2-7.)
+**Riga outbound nel sommario di `next`**: `outbound: 2 ask aperti da >30m (1 mai consegnato, 1 in attesa di risposta)`.
+
+E il sommario porta la **riga simmetrica per il destinatario**: `aperti: 1 ask da VAL-bridge (3h)`. Senza, un `ask` visto ma non ancora risposto non ricompare mai dentro una vita dell'agente — il replay scatta solo al `join` — quindi il mittente lo vede e il destinatario no. Fuori dall'output è fuori dalla mente, che è la stessa ragione per cui esiste la riga outbound.
+
+Conta **solo gli `ask`** — i `tell` sono fire-and-forget e non entrano, altrimenti il contatore crescerebbe all'infinito finché l'agente non impara a ignorarlo (assuefazione = morte del segnale, CRI2 P1-2). E distingue i due stati invece di collassarli: un `ask` già `NOTIFIED` ma senza risposta **non è "non consegnato"**, e descriverlo così sarebbe falso proprio nel testo che l'agente vede più spesso (CRI, quarto giro). Ricuce a costo zero l'unica cosa che si perde eliminando gli ACK — prima la ricevuta ti *raggiungeva*, ora "ESC ha preso il brief?" richiederebbe di ricordarsi di lanciare `sent`, cioè disciplina, cioè la risorsa scarsa. (CRI2 P2-7.)
 
 ### 2.3 La state machine — il cuore del design
 
@@ -156,8 +166,24 @@ Lo scenario che lo dimostra: arriva A, l'agente lo legge, ci lavora 40 minuti. N
 | Comando | Transizione | Tocca i file? |
 |---|---|---|
 | `next` | `UNREAD` → `NOTIFIED` | **no, mai** — pure-read, scrive solo il cursore |
-| `reply` | `NOTIFIED` → `ARCHIVED` (del messaggio a cui risponde) | sì, ed è l'unico |
-| retention | `NOTIFIED` → `expired/unconfirmed` allo scadere del TTL | sì |
+| `reply` | `NOTIFIED` → `ARCHIVED` **per tutti gli `ask` aperti del mittente a cui risponde** (il set `closeIDs`, §sotto) | sì, ed è l'unico |
+| retention | `NOTIFIED` → `expired/unconfirmed` allo scadere del TTL — **solo `tell` e `response`, mai gli `ask`** | sì |
+
+**Ordine obbligato in `next`: prima la stampa, poi il cursore.** Un crash tra le due produce una consegna doppia — innocua, il modello è at-least-once. L'ordine inverso produrrebbe una **perdita silenziosa**, e per un `tell` (one-shot per cursore) sarebbe definitiva e senza segnale.
+
+### La matrice completa per tipo
+
+Le quattro proprietà vanno lette insieme, non sezione per sezione — è la composizione che nessuno aveva verificato:
+
+| Tipo | Outbound (mittente) | Replay al `join` | TTL in inbox viva | Chi lo chiude |
+|---|---|---|---|---|
+| `ask` (query) | **sì**, finché aperto | **sì** (`NOTIFIED`→`UNREAD`) | **nessuno** — resta azionabile | il `reply` del destinatario |
+| `tell` (notify) | no | no | corto → `expired/unconfirmed` | il TTL |
+| `response` | no | no | corto → `expired/unconfirmed` | il TTL |
+
+**Nessun TTL sugli `ask`**: un `ask` di tre giorni senza risposta è la cosa **più importante da mostrare**, non da potare. L'accumulo è già osservabile dalla riga outbound del mittente, che è il posto giusto — chi ha chiesto è chi deve saperlo.
+
+**`response` è one-shot come i `tell`**: nessun comando chiude una response (sarebbe una catena infinita). Senza questa riga un'implementazione conforme poteva trattarla come query, e il VAL si sarebbe visto **ri-consegnare i vecchi report a ogni `join`**.
 
 **`next` non archivia nulla, in nessuna circostanza.** Questa riga è il contratto: due implementazioni non possono essere entrambe conformi.
 
@@ -178,11 +204,13 @@ Con `reply` come boundary entrambe cadono: `next(N+1)` non tocca niente, quindi 
 
 Resta il crash gap: risposta consegnata, originale ancora `NOTIFIED`, e un retry oggi **genera un msg-id nuovo** (`send.go:44-47`) → risposta duplicata. Il contratto deve quindi garantire **exactly-once logico**:
 
-1. sotto il lock della sessione locale, scrivere un journal `reply-txn` ancorato all'id inbound;
-2. **idempotency key deterministica** per `(sessione responder, inbound-id)` — non un id casuale a ogni tentativo;
+1. sotto il lock della sessione locale, **fotografare il set** degli `ask` `NOTIFIED` aperti di quel mittente e scrivere **un solo** journal `reply-txn` con `closeIDs: [A, A2, …]` ordinati e **un solo** response-id. Un `ask` che arriva dopo lo scatto resta aperto: lo chiuderà la risposta successiva;
+2. **idempotency key deterministica** ancorata a `(sessione responder, anchor-id)` dove *anchor* è il primo dei `closeIDs` — non un id casuale a ogni tentativo (`send.go:44-47`);
 3. consegna **create-if-absent**, oppure accettare un file esistente solo se byte-identico (il rename sovrascrivente non basta);
-4. persistere `SENT` → spostare **esattamente quell'inbound** in `processed/` → `ARCHIVED` → rimuovere il journal;
-5. al retry, riprendere dal journal: se `SENT`, **completare l'archiviazione senza rispedire**.
+4. persistere `SENT` → spostare in `processed/` **tutti e soli i `closeIDs`**, uno alla volta, aggiornando l'indice di avanzamento → `ARCHIVED` → rimuovere il journal;
+5. al retry, riprendere dal journal: se `SENT`, **completare le archiviazioni mancanti senza rispedire**, riprendendo dall'indice. Un crash tra l'archiviazione di A e quella di A2 ha così una semantica definita — prima non ce l'aveva.
+
+Sul filo dello schema: `inReplyTo` è singolo, quindi porta l'*anchor*, e l'elenco completo va in un campo **`closes: [...]`**. Senza, la chiave implicherebbe un'identità per inbound mentre l'interfaccia ne promette una sola per risposta.
 
 `--skip-duplicate` non è la soluzione (`ask.go:83-102`): è opzionale, dipende da contenuto e finestra temporale, e si appoggia a un outbox best-effort — non identifica la transazione inbound.
 
@@ -192,8 +220,9 @@ Non tenere due session-lock insieme: serve un ordine globale dei lock oppure con
 
 Un reset indiscriminato al `join` risveglierebbe una notifica di tre giorni prima, non più azionabile. La policy è per tipo:
 
-- **query / task** (richiedono risposta): redelivery **at-least-once fino a `reply`**, anche attraverso una nuova incarnation. Se restano azionabili per sempre è una scelta onesta, ma va dichiarata con backpressure e osservabilità.
-- **notify / event / ping** (non richiedono risposta): **one-shot per cursore**, nessun reset su un `join` normale. Restano osservabili come `NOTIFIED`, non risvegliano più.
+- **query** (`ask` — richiede risposta): redelivery **at-least-once fino a `reply`**, anche attraverso una nuova incarnation. Se resta azionabile per sempre è una scelta onesta, ma va dichiarata con backpressure e osservabilità.
+- **notify / event / ping** (`tell` — non richiede risposta): **one-shot per cursore**, nessun reset su un `join` normale. Restano osservabili come `NOTIFIED`, non risvegliano più.
+- **response** (`reply`): **one-shot come i notify**. Nessun comando chiude una response — sarebbe una catena infinita — quindi segue la stessa policy: nessun replay, e il TTL la porta a `expired/unconfirmed`. Andava assegnata esplicitamente: senza, restava l'unico tipo senza lifecycle dichiarato (CRI, quarto giro).
 - **TTL esplicito anche per la inbox viva**, basato su un `notifiedAt` **locale** — mai sul timestamp del mittente, che non è fidato. Allo scadere il messaggio va in archivio come `expired/unconfirmed`, **mai** come `confirmed`. La retention attuale non copre questo caso: pota solo directory datate sotto `archive/` (`scope.go:204-233`), quindi una sessione viva accumulerebbe `NOTIFIED` all'infinito.
 
 L'incarnation resta utile per audit e fencing, ma **non è da sola una policy di redelivery**.
@@ -203,7 +232,7 @@ L'incarnation resta utile per audit e fencing, ma **non è da sola una policy di
 ### Invariante da enunciare nel package doc ed esercitare con un test dedicato
 
 > Si segna `NOTIFIED` solo ciò che si è emesso, e si emette sempre tutto ciò che è `UNREAD` (entro i limiti di §2.7, dichiarati nell'output).
-> Il solo comando che sposta un file è `reply`, e sposta **esattamente** l'inbound a cui risponde — **mai** per scansione della directory.
+> Il solo comando che sposta file è `reply`, e sposta **esattamente e solamente** i `closeIDs` congelati nel proprio journal — **mai** per scansione della directory, **mai** un id sopraggiunto dopo lo scatto.
 
 La seconda riga chiude anche il P0 del primo giro su `handled --all`: `tidyInbox` prende un nuovo snapshot con `os.ReadDir` e muove tutto ciò che trova (`inbox.go:158-198`), quindi un messaggio arrivato tra la consegna e l'archiviazione sparirebbe **senza essere mai stato mostrato**. Con lo spostamento per id esatto, la race non esiste.
 
@@ -253,6 +282,9 @@ Oggi: `peers --all-scopes` → leggere l'id → **trascriverlo** → ricordarlo 
 `MaxMessageBytes` limita il singolo messaggio, non il **numero** (`internal/message/validate.go:43-46,100-102`). Un `next` che consegna tutto può produrre centinaia di MB e saturare stdout, tool capture e context (CRI F4).
 
 - **Paging bounded**: ogni output dichiara `total`, `returned`, `hasMore`. Il modello esiste già — `notify-watch` limita gli id inline a 100 e segnala il troncamento (`notify_watch.go:375-406`).
+- **Il paging si consuma con lo stesso richiamo, e va scritto nel payload**: `hasMore: true — i prossimi arrivano col prossimo next`. Il `next` successivo ritorna **subito** con la pagina rimanente senza entrare nella finestra di 24h, e marca `NOTIFIED` **solo gli id effettivamente emessi**. Nessun ramo da decidere: il loop è sempre lo stesso. Senza quella frase un agente cercherebbe un `--page` che non esiste — thinking sprecato, difetto §0. Principio generale: **l'output dichiara la propria azione successiva**, come già fa il timeout con "niente, rilanciami".
+- **Due limiti, non uno**: `maxPageMessages` **e** `maxSerializedBytes` — il solo conteggio non basta con messaggi fino a 64 KB. Il valore in byte va tarato sul limite reale di capture dei vendor, non su un numero magico. Un singolo messaggio oltre il budget produce una pagina da un elemento con `oversize: true`, mai starvation.
+- **Ordinamento deterministico**: per timestamp decodificato, con l'id come tie-break. `os.ReadDir` restituisce ordine lessicale sui nomi `msg-<random>`, che **non è ordine di arrivo**. Timestamp invalido → policy dichiarata (corrotto, non starvation).
 - **Mai archiviare su una vista parziale.** Discende direttamente dall'invariante §2.3 (si archivia solo per id dal cursore).
 - **File corrotti dichiarati, non saltati.** `collectInbox` oggi li salta in silenzio (`inbox.go:113-155`), mentre `notify-watch` li logga (`notify_watch.go:321-372`). Un JSON illeggibile non può né bloccare `next` per sempre né sparire: serve un `corruptCount` esplicito nell'output, nomi sicuri, e un percorso di quarantena.
 
@@ -315,15 +347,11 @@ Nessuna migrazione dati: zero sessioni attive da oltre due giorni (confermato da
 
 ---
 
-## 6. Domande per il secondo giro di gate
+## 6. Stato delle domande di gate
 
-1. **La state machine di §2.3 chiude davvero il Finding 1 di CRI?** In particolare: l'archiviazione a un giro di ritardo con conferma implicita regge, o c'è una sequenza in cui il cursore diverge dai file su disco?
-2. **Il cursore di wake va nel manifest o in un file separato?** B-2 insegna che `manifestMu` serializza solo in-process (`manager.go:39`), quindi un file separato sotto session lock è probabilmente obbligatorio — ma è una conclusione mia, non verificata.
-3. **`WaitOwner` e generation nell'output**: qual è il minimo che chiude il doppio-wake senza reintrodurre la complessità che stiamo togliendo?
-4. **Paging (§2.7)**: qual è il limite giusto, e cosa succede quando `hasMore` è vero — l'agente deve *decidere* qualcosa? (Se sì, viola §0.)
-5. **Cosa manca ancora** nella superficie LOOP a quattro comandi, che un agente scoprirà di volere al primo uso reale?
+Le domande dei giri 1-3 sono chiuse: le risposte sono confluite nel contratto §2 e il percorso è tracciato nelle sezioni storiche §8-§9. Quelle del secondo giro — che chiedevano se reggesse l'archiviazione a un giro di ritardo con conferma implicita — riguardano un meccanismo **eliminato dalla rev.6**, e sono state rimosse per non lasciarle leggere come requisiti.
 
----
+Nessuna domanda aperta al quarto giro: entrambi i critici hanno dichiarato che, chiusi i punti di specifica recepiti qui, il brief di implementazione può partire.
 
 ## 7. Verifiche empiriche
 
@@ -347,7 +375,9 @@ La finestra lunga è calibrata su Claude Code, dove la fine di un job in backgro
 
 ---
 
-## 8. Esito design-gate — primo giro
+## 8. STORIA — esito design-gate, primo giro
+
+> ⚠️ **Sezione narrativa, NON normativa.** Il contratto è §2.
 
 Due critici, due assi, **quasi nessuna sovrapposizione**: CRI2 ha smontato l'ergonomia, CRI il protocollo. LL-15 confermata ancora una volta — e stavolta con un dato in più: il critico cross-vendor ha trovato il difetto strutturale (mailbox ≠ wake) che il critico della stessa famiglia non aveva visto, pur avendo letto lo stesso documento.
 
@@ -377,7 +407,9 @@ E ha trovato **F-93**, un difetto nel codice di oggi che nessun gate precedente 
 
 ---
 
-## 8-bis. DECISIONE APERTA — il trilemma dell'archiviazione
+## 8-bis. STORIA — il trilemma dell'archiviazione
+
+> ⚠️ **Sezione narrativa, NON normativa.** Racconta come si è arrivati alla decisione. Il contratto è §2.3 e **solo** §2.3: dove questa sezione dice "atomicamente", "nessun quinto verbo" o descrive il `join`-reset e la conferma implicita, sta riportando stati superati del ragionamento. In caso di conflitto vince §2.3.
 
 CRI ha trovato lo stesso P0 di CRI2, indipendentemente, **più una seconda traccia che il fix `join`-reset non copre**:
 
@@ -402,7 +434,9 @@ CRI smonta anche l'argomento con cui avevo giustificato il design: `notify-watch
 
 > **RATIFICATA da Alan: opzione A.** `reply` è la boundary di conferma. `next` non archivia mai. I messaggi senza risposta restano `notified` — onesti — finché la retention non li pota. Nessun quinto verbo.
 
-## 9. Esito design-gate — secondo giro
+## 9. STORIA — esito design-gate, secondo giro
+
+> ⚠️ **Sezione narrativa, NON normativa.** Le conclusioni qui riportate sono quelle del secondo giro, molte superate dai giri successivi. Il contratto è §2.
 
 ### CRI2 sulla rev.3 — un P0 nella sintesi VAL
 
