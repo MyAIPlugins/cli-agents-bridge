@@ -247,6 +247,16 @@ Nessuno cercato: tutti emersi **usando** il bridge per coordinare il lavoro su s
   È S3 aggravato: S3 nasconde *gli altri* messaggi, questo nasconde **il** messaggio, al comando dell'orientamento. E su un runtime senza push si somma il fatto che il percorso di default di `listen` **non esce** dopo la consegna (`listen.go:232-263`): su Claude Code il processo termina e notifica, su Codex resta vivo col messaggio nel buffer e nessuno avvisa. CRI l'ha trovato solo perché Alan gli ha detto di andare a guardare il terminale.
 
   **Chiuso dalla rev.3 su entrambe le facce**: `next` è pure-read, quindi il messaggio resta in `inbox/` fino alla conferma e `overview` dice il vero; e `next` ritorna appena ha qualcosa, quindi non esiste un buffer parcheggiato in un processo vivo. Validazione empirica del modello, arrivata per caso mentre era in gate.
+- **F-95** (osservato sul VAL stesso) — **Non esiste un modo di essere vivi E non svegliati dagli ACK: le due capability sono disgiunte.** La sessione VAL risultava `STALE` (heartbeat 30 min) mentre era viva e in ascolto da 7 minuti, perché `receive --any` **non fa AdoptPID né heartbeat** — documentato come "one-shot wake, not a long-running listener" (`receive.go:182-183`), ma con `--max-deadline=10800` è di fatto un listener long-running.
+
+  | | heartbeat | ACK |
+  |---|---|---|
+  | `listen` | lo mantiene | **ti sveglia** (li consuma ed emette come contenuto) |
+  | `receive --any` | **non lo mantiene** | li ignora |
+
+  Chi vuole entrambe le cose deve scegliere quale difetto subire. Non è che sia stato scelto lo strumento sbagliato: **non c'è uno strumento giusto.** In v0.8 `next` deve fare entrambe — e non è un requisito aggiuntivo, è la ragione per cui i due comandi vanno fusi in uno.
+
+  Mitigazione col tool attuale: `state orchestrating`, esente dal controllo di staleness (F-23a). Funziona, ma è un workaround che un agente deve *sapere* — cioè pensiero, cioè §0 violato.
 - **F-89** (noto, esteso) — `read <id> --session-id=X` fallisce: i flag devono precedere il positional. Vale anche per `state`.
 
 ---
