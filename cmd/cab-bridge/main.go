@@ -49,6 +49,8 @@ func main() {
 		exitFromErr(runRegister(os.Args[2:]))
 	case "listen":
 		exitFromErr(runListen(os.Args[2:]))
+	case "next":
+		exitFromErr(runNext(os.Args[2:]))
 	case "ask":
 		exitFromErr(runAsk(os.Args[2:]))
 	case "connect":
