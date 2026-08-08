@@ -337,6 +337,15 @@ Nessuno cercato: tutti emersi **usando** il bridge per coordinare il lavoro su s
 - **F-96** — **Falso-negativo di consegna: un `ask` riuscito sembra fallito.** L'esito di un invio andato a buon fine è visivamente sommerso — il warning shared-scope B-1 multi-riga (F-91) più `replying_to` (A-4, su stderr per design), mentre lo stdout col msg-id è una riga sola in mezzo. Il VAL ha **dichiarato rotto F-39** su questa base, e CRI2 ha dimostrato con la ground-truth su disco che risoluzione e consegna erano entrambe corrette. È il **duale di F-24**: là un timeout sembrava un fallimento, qui un successo sembra un errore. Requisito v0.8: **l'esito di un send riuscito dev'essere inequivocabile a colpo d'occhio**, e la conferma non può vivere sommersa da avvisi su stderr.
 
   Corollario di metodo: **F-16 vale anche per il VAL.** Nello stesso resoconto avevo scritto "12 response" (erano 15) e "9 ACK" (erano 11) — il disco vince sul resoconto anche quando il resoconto è di chi tiene il gate.
+- **F-97** — **Gli errori dei comandi id-free non dichiarano chi credevano di essere.** Il VAL ha eseguito `ask --in-reply-to=last` con la cwd rimasta dentro `.worktrees/esc-v08` (il `cd` del gate persiste tra le chiamate). Il lookup-by-cwd ha risolto — con **match esatto**, senza alcun warning — **la sessione di ESC**, e `lastReceivedFrom(sessions/b3e07991, peer=b3e07991)` ha cercato messaggi di ESC nella inbox di ESC: zero per costruzione, nessuno scrive a se stesso. Errore: *"no message received from b3e07991"*.
+
+  L'errore (`ask.go:142`) **non dice da quale sessione stava risolvendo**. Se avesse detto *"in session b3e07991 (ESC-bridge)"*, l'assurdo sarebbe stato autoevidente — chiedo i messaggi di ESC dalla sessione di ESC — e la causa sarebbe emersa in un secondo. Invece ha mandato a sospettare del resolver, con un falso allarme propagato a ESC.
+
+  **Regola v0.8: ogni errore di un comando id-free dichiara chi credeva di essere** (`in session <sid> (<agent-name>)`). Il payload di `next` lo fa già col campo `session`; va esteso agli **errori**. È la rete per l'intera classe *"un agente nella cwd sbagliata diventa qualcun altro in silenzio"*.
+
+  **Interazione col fix di F-91**: qui la cwd produceva un match **esatto**, cioè proprio il caso che il fix renderà silenzioso. È giusto così — il warning non ha salvato nessuno, era già rumore assuefatto — ma significa che la difesa per questo scenario **non è il guardrail**: è l'errore che dichiara il punto di vista, più il `session` sempre presente nei payload.
+
+  Nota: è esattamente il rischio che il VAL aveva *previsto* discutendo l'ipotesi di far girare i CRI da cartelle diverse dello stesso repo — e in cui è caduto lui stesso, al contrario, mezz'ora dopo.
 - **F-89** (noto, esteso) — `read <id> --session-id=X` fallisce: i flag devono precedere il positional. Vale anche per `state`.
 
 ---
