@@ -146,60 +146,6 @@ func TestRunOverview_ExplicitSessionID_NoWarning(t *testing.T) {
 	assert.NotContains(t, stderr, "warning", "an explicit --session-id suppresses the guardrail warning")
 }
 
-// TestRunReceiveAny_SharedScope_WarnsStderrStdoutValidJSON: vincolo #5 for the
-// other JSON-emitting chokepoint. `receive --any --emit=json` warns on stderr
-// during resolution, then (with a short deadline and an empty inbox) exits 0 with
-// a {"status":"timeout"} JSON payload on stdout — still valid JSON.
-func TestRunReceiveAny_SharedScope_WarnsStderrStdoutValidJSON(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
-	t.Setenv("CAB_AUTO_GC_HOURS", "0")
-	_, valID := sharedScopePrefixPair(t, dataDir)
-
-	var runErr error
-	var stderr string
-	stdout := captureStdout(t, func() {
-		stderr = captureStderr(t, func() {
-			runErr = runReceive([]string{"--any", "--max-deadline=1", "--emit=json"})
-		})
-	})
-	require.NoError(t, runErr, "an empty --any window exits 0 (F-24/F-36)")
-
-	var payload map[string]any
-	require.NoError(t, json.Unmarshal([]byte(stdout), &payload), "stdout must stay valid JSON despite the warning")
-	assert.Equal(t, "timeout", payload["status"])
-
-	assert.Contains(t, stderr, "warning", "the shared-scope hazard warns on stderr")
-	assert.Contains(t, stderr, valID, "the warning names the sibling")
-}
-
-// TestRunListen_SharedScope_NDJSONCleanWarnsStderr is the P3-2 listen leg of
-// vincolo #5: `listen --wait-one --emit=json` resolves through the guardrail
-// (warning on stderr), then on an empty short window exits 0 with a JSON timeout
-// payload on stdout — the warning must not pollute the NDJSON stream.
-func TestRunListen_SharedScope_NDJSONCleanWarnsStderr(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
-	t.Setenv("CAB_AUTO_GC_HOURS", "0")
-	_, valID := sharedScopePrefixPair(t, dataDir)
-
-	var runErr error
-	var stderr string
-	stdout := captureStdout(t, func() {
-		stderr = captureStderr(t, func() {
-			runErr = runListen([]string{"--wait-one", "--emit=json", "--until-deadline=1s", "--no-auto-ack"})
-		})
-	})
-	require.NoError(t, runErr, "an empty --wait-one window exits 0 with a timeout payload (F-24)")
-
-	var payload map[string]any
-	require.NoError(t, json.Unmarshal([]byte(stdout), &payload), "stdout must be a valid JSON timeout payload, not polluted by the warning")
-	assert.Equal(t, "timeout", payload["status"])
-
-	assert.Contains(t, stderr, "warning", "the shared-scope hazard warns on stderr")
-	assert.Contains(t, stderr, valID, "the warning names the sibling")
-}
-
 // TestRunWhoami_StrictSharedScope_RejectsEndToEnd is the P3-2 strict leg: with
 // CAB_BRIDGE_STRICT_SESSION_LOOKUP=1, an id-free command in a shared scope is
 // REJECTED end-to-end (the warning is promoted to an error) — no silent pick.

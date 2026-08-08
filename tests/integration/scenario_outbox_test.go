@@ -33,25 +33,6 @@ func TestScenarioOutbox_AskPopulatesSenderOutbox(t *testing.T) {
 	assert.Contains(t, out, "query", "cab sent must show the type")
 }
 
-// TestScenarioOutbox_AutoAckPopulatesListenerOutbox: the F-9 copy also applies
-// to auto-acks (which go through sendMessage). After ESC consumes a query with
-// --wait-one, the auto-ack it sent to VAL appears in ESC's OWN outbox.
-func TestScenarioOutbox_AutoAckPopulatesListenerOutbox(t *testing.T) {
-	t.Parallel()
-	dataDir := t.TempDir()
-	valID, escID := registerPair(t, dataDir, "ob2")
-
-	plantQuery(t, dataDir, escID, valID, "val", "VAL-ob2", "brief")
-
-	_, errOut, exit := run(t, []string{"listen", "--wait-one", "--session-id=" + escID}, dataDirEnv(dataDir, "CAB_POLL_INTERVAL_MS=50"))
-	require.Equal(t, 0, exit, "listen --wait-one: %s", errOut)
-
-	out, errOut, exit := run(t, []string{"sent", "--session-id=" + escID, "--json"}, dataDirEnv(dataDir))
-	require.Equal(t, 0, exit, "sent: %s", errOut)
-	assert.Contains(t, out, valID, "listener outbox must record the ack sent to the query sender")
-	assert.Contains(t, out, "ack", "listener outbox must contain a type=ack message")
-}
-
 // TestScenarioOutbox_SentEmptyJSONIsArray: `cab sent --json` for a session that
 // has sent nothing must emit [] (BUG-B hygiene), not null.
 func TestScenarioOutbox_SentEmptyJSONIsArray(t *testing.T) {

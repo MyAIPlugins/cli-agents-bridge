@@ -12,8 +12,6 @@ import (
 	"fmt"
 	"os"
 	"syscall"
-
-	transportfs "github.com/myAIPlugins/cli-agents-bridge/internal/transport/fs"
 )
 
 // version is injected at build time via -ldflags "-X main.version=<tag>"
@@ -43,14 +41,10 @@ func main() {
 		fmt.Println(version)
 	case "--help", "-h", "help":
 		printUsage()
-	case "bootstrap":
-		exitFromErr(runBootstrap(os.Args[2:]))
 	case "join":
 		exitFromErr(runJoin(os.Args[2:]))
 	case "register":
 		exitFromErr(runRegister(os.Args[2:]))
-	case "listen":
-		exitFromErr(runListen(os.Args[2:]))
 	case "next":
 		exitFromErr(runNext(os.Args[2:]))
 	case "ask":
@@ -61,8 +55,6 @@ func main() {
 		exitFromErr(runReply(os.Args[2:]))
 	case "connect":
 		exitFromErr(runConnect(os.Args[2:]))
-	case "receive":
-		exitFromErr(runReceive(os.Args[2:]))
 	case "notify-watch":
 		exitFromErr(runNotifyWatch(os.Args[2:]))
 	case "peers":
@@ -100,7 +92,10 @@ func main() {
 //	  1  general failure
 //	  2  validation / routing forbidden
 //	  3  cleanup global requires confirm (non-tty)
-//	124  receive / listen timeout (coreutils timeout(1) convention)
+//	(124 is retired: it meant a receive/listen timeout, and both commands are
+//	gone. `next` reports an idle window as exit 0 with a timeout payload — an
+//	empty wait is not a failure, and a "command failed" every cycle teaches the
+//	agent to ignore real ones.)
 //
 // Errors are always written to stderr (BUG-7 fix carried across all
 // subcommands, not just receive).
@@ -110,8 +105,6 @@ func exitFromErr(err error) {
 	}
 	fmt.Fprintln(os.Stderr, err.Error())
 	switch {
-	case errors.Is(err, transportfs.ErrTimeout):
-		os.Exit(124)
 	case errors.Is(err, ErrConfirmRequired):
 		os.Exit(3)
 	default:
