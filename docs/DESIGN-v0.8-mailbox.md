@@ -84,7 +84,31 @@ Nessun flag: né durata, né formato, né filtro, né session-id (risolto da cwd
 
 Senza questo, nel gruppo `reply` è una roulette (CRI2 P1-2): il VAL manda il brief, CRI manda una nota mentre lavoro, e il report finisce a CRI. **Errore silenzioso** — il messaggio parte, nessuno segnala niente, il VAL non riceve mai nulla. Peggio di un id trascritto, perché non c'è nemmeno l'occasione di accorgersene.
 
-**Payload lungo** (CRI2 P1-3): `tell <chi> "..."` inline non copre il brief da 200 righe — ed è percorso **caldo**, non caso raro: il VAL manda brief lunghi ogni giorno, e FRIC-2 (quoting hell) era esattamente la ragione di `ask --file`. La superficie zero-flag deve dichiarare come viaggia un file, altrimenti ogni agente inventa la sua convenzione: `cab-bridge tell ESC-bridge < brief.md` (stdin) oppure `tell ESC-bridge @/tmp/brief.md`. **Da decidere nel design, non lasciare implicito.**
+**Payload di qualsiasi lunghezza — una regola sola** (CRI2 P1-3, CRI Q5, ratificata da Alan: *"una soluzione unica che gestisce messaggi brevi e lunghi senza far pensare all'agent che modalità deve scegliere"*).
+
+> **Argomento presente → è il messaggio. Argomento assente → il messaggio è stdin.**
+
+```
+tell ESC-bridge "fatto, gate verde"      breve, naturale
+tell ESC-bridge < brief.md               lungo, zero quoting
+```
+
+Nessun flag, nessuna modalità, nessuna scelta: l'agente scrive come gli viene naturale. Identica per `reply`.
+
+**NON usare la tty detection** (`stdin non è un terminale → leggilo`), che sarebbe l'idioma Unix classico: **verificato empiricamente che nell'harness stdin NON è un tty** (`test -t 0` → false). Ogni `tell X "breve"` proverebbe a leggere una pipe vuota. La regola presenza/assenza dell'argomento è deterministica e immune all'ambiente. Passare entrambi è un errore esplicito, mai un fallback silenzioso.
+
+**Dove i messaggi vengono tagliati davvero** — misurato, non supposto: `ARG_MAX` è 1 MB (macOS), quindi i 14 KiB del verdetto di CRI negli argomenti ci stavano comodamente. Le cause reali sono il **quoting** (un backtick, un `$`, un apice dentro il testo rompono il comando e l'agente "aggiusta" perdendo pezzi) e il **costo di ri-emissione** (un agente che ha appena scritto un file con Write e deve ri-digitarlo in un argomento tende ad accorciarlo). Lo stdin le elimina entrambe.
+
+**Oltre `MaxMessageBytes` (64 KB) si rifiuta esplicitamente**, dichiarando dimensione e tetto. Mai troncare in silenzio: un messaggio tagliato a metà è peggio di un messaggio non partito, perché sembra arrivato.
+
+**Lato consegna — la metà che si dimentica**: un messaggio grande può essere troncato dal capture dell'harness, e lì il bridge non può intervenire… se non evitando di trovarsi in quella posizione. Il corpo **è già un file su disco** in `inbox/`. Quindi sopra una soglia `next` non emette il corpo, emette il **riferimento**:
+
+```
+msg-a1b2 da VAL-bridge — 47 KB
+  corpo: <dataDir>/sessions/<id>/inbox/msg-a1b2.json
+```
+
+L'agente lo legge con `Read` — lo strumento che usa meglio di ogni altro, e che gli permette anche di leggerne una parte per volta. Zero duplicazione, troncamento impossibile, e nessuna scelta: è il comando a decidere quando il corpo sta inline e quando diventa un puntatore.
 
 **Riga outbound nel sommario di `next`**: `outbound: 2 non ancora consegnati ai destinatari da >30m`. ("Consegnati", non "letti": *letto* è la parola che la rev.3 ha bandito, e comparirebbe proprio nel testo che l'agente vede più spesso.) Ricuce a costo zero l'unica cosa che si perde eliminando gli ACK — prima la ricevuta ti *raggiungeva*, ora "ESC ha preso il brief?" richiederebbe di ricordarsi di lanciare `sent`, cioè disciplina, cioè la risorsa scarsa. (CRI2 P2-7.)
 
@@ -325,7 +349,7 @@ CRI smonta anche l'argomento con cui avevo giustificato il design: `notify-watch
 
 **Opzione B — at-most-once dichiarato.** Si mantiene l'archiviazione al `next` successivo, **si rimuove il claim crash-safe** e si accetta esplicitamente che un crash dopo il commit del cursore perde la riscoperta del task. È però il rischio che il primo giro chiedeva di chiudere.
 
-> **Stato: in attesa di decisione di Alan. Nessun brief di implementazione parte prima.**
+> **RATIFICATA da Alan: opzione A.** `reply` è la boundary di conferma. `next` non archivia mai. I messaggi senza risposta restano `notified` — onesti — finché la retention non li pota. Nessun quinto verbo.
 
 ## 9. Esito design-gate — secondo giro
 
