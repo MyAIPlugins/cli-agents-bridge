@@ -236,46 +236,42 @@ func nextRun(parent context.Context, mgr *session.Manager, cfg config.Config, si
 			return err
 		}
 		if ready {
-			// Best-effort pre-check: if ownership is ALREADY lost we must not
-			// print a page labelled "delivered", because the cursor commit
-			// below will refuse it and the messages belong to the new owner.
-			// This does not close the window (ownership can still be revoked
-			// between here and the commit) — that residual case is reported on
-			// stderr, and `generation` in the payload lets a reader tell a late
-			// orphan's output from a live one (§3, CRI's GO condition).
-			if !ownerOK() {
-				_ = enc.Encode(nextCommitRecord{
-					Status:     nextStatusNotCommitted,
-					Session:    sid,
-					Generation: payload.page.Generation,
-					Hint:       hintTakeoverBeforeEmit,
-				})
-				// Exit non-zero: a run that delivered nothing must not look like
-				// a good one to whatever wraps it.
-				return errors.New("next: another instance of this session took over while waiting")
-			}
+			// owner-check -> emit -> commit is ONE critical section against
+			// claim/reclaim (CRI diff-gate 1c P1-2). With the check outside it, a
+			// waiter evicted right after the check still printed its page and woke
+			// its agent: two instances woken by the same brief, which §3 rules out
+			// because it means two replies and two external effects. The output is
+			// bounded by the page limits, so the section stays short.
+			//
+			// The session lock is re-entrant within a process, so the commit below
+			// re-acquires it harmlessly.
+			var evicted bool
+			emitErr := mgr.WithSessionLock(sid, func() error {
+				if !ownerOK() {
+					evicted = true
+					return nil
+				}
+				if err := enc.Encode(payload.page); err != nil {
+					return fmt.Errorf("emit: %w", err)
+				}
+				var cerr error
+				evicted, cerr = mgr.CommitWakeCursor(sid, payload.emittedIDs, time.Now().UTC(), ownerOK, payload.present)
+				return cerr
+			})
 
-			// PRINT FIRST — the emission is what the agent actually receives.
-			if err := enc.Encode(payload.page); err != nil {
-				return fmt.Errorf("next: emit: %w", err)
-			}
-			// THEN commit, re-checking ownership inside the lock, and report the
-			// OUTCOME in its own record. Exit is non-zero unless the commit
-			// succeeded, so a wrapper cannot mistake a failed run for a good one.
-			evicted, cerr := mgr.CommitWakeCursor(sid, payload.emittedIDs, time.Now().UTC(), ownerOK, payload.present)
 			switch {
-			case cerr != nil:
+			case emitErr != nil:
 				_ = enc.Encode(nextCommitRecord{
 					Status: nextStatusNotCommitted, Session: sid, Generation: payload.page.Generation,
 					Hint: hintCommitFailed,
 				})
-				return fmt.Errorf("next: commit wake cursor: %w", cerr)
+				return fmt.Errorf("next: %w", emitErr)
 			case evicted:
 				_ = enc.Encode(nextCommitRecord{
 					Status: nextStatusNotCommitted, Session: sid, Generation: payload.page.Generation,
-					Hint: hintTakeoverAfterEmit,
+					Hint: hintTakeoverBeforeEmit,
 				})
-				return errors.New("next: another instance of this session took over before the delivery was confirmed")
+				return errors.New("next: another instance of this session took over")
 			default:
 				return enc.Encode(nextCommitRecord{
 					Status: nextStatusCommitted, Session: sid, Generation: payload.page.Generation,

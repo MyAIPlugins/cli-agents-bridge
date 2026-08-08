@@ -70,13 +70,25 @@ func sendMessage(cfg config.Config, mgr *session.Manager, fromSID, to, msgType, 
 		return "", err
 	}
 
+	// The delivery runs inside the TARGET's session lock, and re-validates the
+	// target manifest in there (CRI diff-gate 1c P0).
+	//
+	// deliverResponse already did this, but the ORDINARY path did not: a lock
+	// protects only against whoever respects it. cleanup could take the lock and
+	// snapshot inbox/ while this send — holding nothing — wrote its file, and the
+	// following RemoveAll deleted a message the sender had just been told was
+	// delivered. Exit 0 on one side, nothing ever received on the other.
 	targetInbox := filepath.Join(cfg.DataDir, "sessions", to, "inbox")
-	if err := os.MkdirAll(targetInbox, 0o700); err != nil {
-		return "", fmt.Errorf("send: mkdir target inbox: %w", err)
-	}
-	dst := filepath.Join(targetInbox, msgID+".json")
-	if err := transportfs.AtomicWriteBytes(dst, data, 0o600); err != nil {
-		return "", fmt.Errorf("send: write message: %w", err)
+	if err := mgr.WithSessionLock(to, func() error {
+		if _, rerr := mgr.LoadManifest(to); rerr != nil {
+			return fmt.Errorf("recipient %s disappeared before delivery: %w", to, rerr)
+		}
+		if merr := os.MkdirAll(targetInbox, 0o700); merr != nil {
+			return fmt.Errorf("mkdir target inbox: %w", merr)
+		}
+		return transportfs.AtomicWriteBytes(filepath.Join(targetInbox, msgID+".json"), data, 0o600)
+	}); err != nil {
+		return "", fmt.Errorf("send: %w", err)
 	}
 
 	// F-9: best-effort copy into the SENDER's outbox so the agent can verify its

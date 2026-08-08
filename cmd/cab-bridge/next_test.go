@@ -259,12 +259,10 @@ func TestNext_ConcurrentRuns_DoNotOverlap(t *testing.T) {
 				if dec.Decode(&p) != nil || p.Status != nextStatusEmitted {
 					return
 				}
-				// Only a COMMITTED run may claim its messages: an emitted page
-				// whose commit was refused belongs to nobody.
-				var c nextCommitRecord
-				if dec.Decode(&c) != nil || c.Status != nextStatusCommitted {
-					return
-				}
+				// Count EVERY emitted page, committed or not (CRI diff-gate
+				// P1-2). Counting only the committed ones discarded precisely the
+				// orphan wake this is meant to detect: a page that reached an
+				// agent's screen woke that agent, whatever the cursor then said.
 				mu.Lock()
 				emitted = append(emitted, messageIDs(p)...)
 				mu.Unlock()
@@ -272,12 +270,22 @@ func TestNext_ConcurrentRuns_DoNotOverlap(t *testing.T) {
 		}
 		wg.Wait()
 
-		// At-least-once permits a duplicate after eviction, but the cursor must
-		// never end up claiming a message nobody emitted.
+		// The cursor may never claim a message nobody emitted...
 		cursor, _, err := mgr.ReadWakeCursor(sid)
 		require.NoError(t, err)
 		for id := range cursor.Notified {
 			assert.Contains(t, emitted, id, "%s is NOTIFIED but was never emitted", id)
+		}
+
+		// ...and no message may be emitted TWICE across the two runs: a page on
+		// screen has woken an agent, so a second emission is a second agent woken
+		// by the same brief — two replies, two external effects (§3).
+		seen := map[string]int{}
+		for _, id := range emitted {
+			seen[id]++
+		}
+		for id, n := range seen {
+			assert.Equal(t, 1, n, "%s was emitted %d times: only one instance may be woken by a message", id, n)
 		}
 	})
 }
@@ -676,4 +684,45 @@ func runNextUntilCancel(t *testing.T, mgr *session.Manager, cfg config.Config, s
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, nextRun(ctx, mgr, cfg, sid, &stdout, &stderr))
 	return stdout.String()
+}
+
+// TestNext_DeliversAMessageArrivingMidWait restores a guarantee that evaporated
+// with the files (CRI 1c matrix): the removed TestPollInbox_EmitsMessagesArriving
+// MidLoop, TestReceiveAny_BatchArrivingMidWait and TestBUG2_LateReplyNotLost all
+// covered "a message that arrives AFTER the wait started", and nothing in
+// next_test exercised it.
+//
+// With the window now infinite that case is not an edge — it is THE normal one:
+// a waiter that only ever saw pre-existing mail would be useless.
+func TestNext_DeliversAMessageArrivingMidWait(t *testing.T) {
+	mgr, cfg, sid, dataDir := newNextSession(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	var stdout, stderr bytes.Buffer
+	go func() { done <- nextRun(ctx, mgr, cfg, sid, &stdout, &stderr) }()
+
+	// Let the wait settle on an EMPTY mailbox first, so the message genuinely
+	// arrives mid-wait rather than being there from the start.
+	time.Sleep(150 * time.Millisecond)
+	require.Empty(t, stdout.String(), "nothing to deliver yet")
+
+	plantInboxAt(t, dataDir, sid, "msg-aaaaaaaaaaaa", "valxxx01", message.TypeQuery, "arrived mid-wait", time.Now().UTC())
+
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(8 * time.Second):
+		t.Fatal("a message arriving mid-wait was never delivered")
+	}
+
+	dec := json.NewDecoder(bytes.NewReader(stdout.Bytes()))
+	var page nextPayload
+	require.NoError(t, dec.Decode(&page))
+	assert.Equal(t, []string{"msg-aaaaaaaaaaaa"}, messageIDs(page))
+
+	var commit nextCommitRecord
+	require.NoError(t, dec.Decode(&commit))
+	assert.Equal(t, nextStatusCommitted, commit.Status)
 }

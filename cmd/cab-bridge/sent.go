@@ -41,6 +41,9 @@ const (
 	sentStateArchived = "archived" // closed by their reply
 	sentStateUnknown  = "unknown"  // that session no longer exists
 	sentStateExpired  = "expired"  // session is there, the message is not — retention took it
+	// sentStateUnreadable: the file IS in their mailbox and cannot be decoded.
+	// Not "expired" — nothing pruned it — and not an I/O error of ours either.
+	sentStateUnreadable = "unreadable"
 )
 
 func runSent(args []string) error {
@@ -177,7 +180,15 @@ func annotateSentStates(cfg config.Config, mgr *session.Manager, rows []sentSumm
 // session itself is gone.
 func buildMailboxIndex(cfg config.Config, mgr *session.Manager, to string) (map[string]string, error) {
 	if _, err := mgr.LoadManifest(to); err != nil {
-		return nil, nil // session gone — the caller reports unknown
+		// ONLY a missing session is "unknown" (CRI diff-gate 1c P1-6). Any other
+		// failure — permissions, a corrupt manifest, a disk giving up — is an
+		// error and propagates: reporting it as a fact about the message is the
+		// same confusion the old single word "gone" produced, and a disk that
+		// fails is not a session that does not exist.
+		if !errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("sent: load %s manifest: %w", to, err)
+		}
+		return nil, nil
 	}
 	sessionDir := filepath.Join(cfg.DataDir, "sessions", to)
 
@@ -187,9 +198,18 @@ func buildMailboxIndex(cfg config.Config, mgr *session.Manager, to string) (map[
 	}
 
 	index := map[string]string{}
-	inbox, _, err := readMailbox(filepath.Join(sessionDir, "inbox"), cfg.MaxMessageBytes)
+	inbox, corrupt, err := readMailbox(filepath.Join(sessionDir, "inbox"), cfg.MaxMessageBytes)
 	if err != nil {
 		return nil, fmt.Errorf("sent: read %s inbox: %w", to, err)
+	}
+	// An unreadable file is PRESENT. Dropping it from the index made the message
+	// fall through to "expired" — declaring a retention event that never
+	// happened (LL-18 family). It is in the mailbox and it cannot be read: say
+	// exactly that.
+	for _, name := range corrupt {
+		if id := archivedID(name); id != "" {
+			index[id] = sentStateUnreadable
+		}
 	}
 	for _, e := range inbox {
 		if cursor.IsNotified(e.msg.ID) {
