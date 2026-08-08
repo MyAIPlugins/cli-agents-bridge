@@ -1,0 +1,20 @@
+tests/smoke/next-phase1a.sh
+  s_13b14428c16427::t_644a610a20add7 2-14,17-26,34,53,105
+  s_13b14428c16427::t_8a78a98c9ac0c9 1,15-16,27-33,35-52,54-104,106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "9474a94d09dbecc3d51125403255fbb7a5dfa786",
+  "prompts": {},
+  "sessions": {
+    "s_13b14428c16427": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5bb10dbc-fcae-44e8-acd6-603d11cfd57f",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
