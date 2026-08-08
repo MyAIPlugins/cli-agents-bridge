@@ -1,0 +1,19 @@
+CLAUDE.md
+  s_c3a7b4ab630317::t_15d6befa1c01b9 132-133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "e2ab1b8734e59e42a9f7328f2a428c225a78e004",
+  "prompts": {},
+  "sessions": {
+    "s_c3a7b4ab630317": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54f2afc1-7dea-42b7-a40d-0d4c6f0e3eea",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
