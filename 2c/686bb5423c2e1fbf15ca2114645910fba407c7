@@ -1,0 +1,25 @@
+docs/DESIGN-v0.8-mailbox.md
+  s_c3a7b4ab630317::t_a0639420ecc14f 149
+  s_c3a7b4ab630317::t_78fdbfe70ee5ab 57-66
+  s_c3a7b4ab630317::t_0822c3c09fe42b 71-75,78-90
+  s_c3a7b4ab630317::t_e5d56506be8cc1 102
+  s_c3a7b4ab630317::t_9bee7304597ea2 3,5
+  s_c3a7b4ab630317::t_a1219303a5562e 154-175,177,179,181-185,187,189,191,193,195-197,199,201,203,205-206,208
+  s_c3a7b4ab630317::t_ae44b2b07d5f9a 91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "2c686bb5423c2e1fbf15ca2114645910fba407c7",
+  "prompts": {},
+  "sessions": {
+    "s_c3a7b4ab630317": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54f2afc1-7dea-42b7-a40d-0d4c6f0e3eea",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
