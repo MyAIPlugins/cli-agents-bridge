@@ -302,6 +302,31 @@ E ha trovato **F-93**, un difetto nel codice di oggi che nessun gate precedente 
 
 ---
 
+## 8-bis. DECISIONE APERTA — il trilemma dell'archiviazione
+
+CRI ha trovato lo stesso P0 di CRI2, indipendentemente, **più una seconda traccia che il fix `join`-reset non copre**:
+
+1. `next(N)` consegna A, l'agente inizia un lavoro lungo;
+2. per restare svegliabile su B, arma subito `next(N+1)` in background — **il flusso anti-F-14 che CRI2 aveva lodato come "il regalo"**;
+3. `next(N+1)` archivia A **all'avvio**, mentre A è ancora in lavorazione;
+4. crash durante A → A è in `processed/`, fuori dalla coda azionabile.
+
+Nessun riavvio: il sistema sta funzionando esattamente come progettato. **Il regalo e il difetto sono la stessa cosa vista da due lati.**
+
+CRI smonta anche l'argomento con cui avevo giustificato il design: `notify-watch`, citato come precedente, marca solo che **l'hook di wake è riuscito** (`notify_watch.go:296-318`) — non usa quel marker per archiviare il messaggio. Il salto l'ho aggiunto io, e il precedente non lo autorizzava.
+
+**Il trilemma** — non si possono avere insieme:
+
+1. `next` si riarma mentre il task precedente è in corso;
+2. nessuna azione segnala che il task è durabilmente chiuso;
+3. il messaggio è archiviato in modo crash-safe.
+
+**Opzione A (raccomandata dal VAL) — `reply` è la boundary.** `reply` archivia atomicamente il messaggio a cui risponde: un agente che risponde *ha lavorato*, quindi la conferma è l'effetto collaterale di un'azione che compie comunque — zero pensiero aggiuntivo, cioè §0 rispettato. `next` non archivia mai, quindi la traccia B è chiusa; e un crash durante A lascia A in `inbox/`, quindi il primo `next` lo ri-consegna — chiusa anche la traccia A. I messaggi che non generano risposta (notify, event) **restano `notified` e non mentono**: `sent` dice "consegnato, non confermato", che è vero, e la retention li pota dopo N giorni senza fingere che siano stati gestiti. Nessun quinto verbo.
+
+**Opzione B — at-most-once dichiarato.** Si mantiene l'archiviazione al `next` successivo, **si rimuove il claim crash-safe** e si accetta esplicitamente che un crash dopo il commit del cursore perde la riscoperta del task. È però il rischio che il primo giro chiedeva di chiudere.
+
+> **Stato: in attesa di decisione di Alan. Nessun brief di implementazione parte prima.**
+
 ## 9. Esito design-gate — secondo giro
 
 ### CRI2 sulla rev.3 — un P0 nella sintesi VAL
