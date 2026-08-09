@@ -1,0 +1,19 @@
+SECURITY.md
+  s_16df8a1a13bcbd::t_e2a4c81d6a89f2 50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "1cb5398f8a45011203097425854c53bc46f8714d",
+  "prompts": {},
+  "sessions": {
+    "s_16df8a1a13bcbd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe300-8ed9-7c50-b3b1-b432dd3488c6",
+        "model": "unknown"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
