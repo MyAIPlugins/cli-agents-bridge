@@ -1,0 +1,24 @@
+cmd/cab-bridge/cleanup.go
+  s_9815573d52f42d::t_cbfa2030b59e92 10
+  s_9815573d52f42d::t_86af22bd19264d 14,34-36,59-94,169-177
+  s_9815573d52f42d::t_0bd08fd2449863 178-179
+cmd/cab-bridge/cleanup_test.go
+  s_9815573d52f42d::t_99be0d080a6aef 9-53
+  s_9815573d52f42d::t_c453d15ce074fa 1-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "d545f7aebc233dbf8804ae0b38ed40b0236994ff",
+  "prompts": {},
+  "sessions": {
+    "s_9815573d52f42d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8df03128-82d8-47b9-bcaa-30b62ac013ea",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
