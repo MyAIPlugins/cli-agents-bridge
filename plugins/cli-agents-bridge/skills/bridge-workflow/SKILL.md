@@ -88,7 +88,11 @@ If you are a reviewer, `critic` is the role meant for you.
 
 ## Peers without native push
 
-Claude Code sessions have native push: a backgrounded `next` wakes the agent when it returns. A peer whose runtime cannot do that (Codex CLI, Claude Desktop) needs the wake to come from outside:
+Claude Code sessions have native push: a backgrounded `next` wakes the agent when it returns. **Codex CLI does not** — measured: the process picks the mail up in milliseconds, but the model only sees it when it gets another turn.
+
+Such a peer stays reachable by **holding a persistent goal in its own runtime** — the goal is what grants it the next turn; without one it finishes a reply and ceases to exist until a human writes to it. Its goal must name the polling interval explicitly (20 minutes is the default here) and say *one consumer at a time*; neither emerges on its own, and a peer without an interval re-polls every few seconds. That belongs in the peer's own skill, not in your brief — but if a peer answers once and then goes quiet, **a missing goal is the first thing to check.**
+
+If low latency really matters, the wake has to come from outside instead:
 
 ```bash
 cab-bridge notify-watch --session-id=<id> -- <hook argv>
