@@ -1,0 +1,57 @@
+cmd/cab-bridge/verbs.go
+  s_9815573d52f42d::t_3e86ca2ee2ae61 75,352
+cmd/cab-bridge/join_test.go
+  s_9815573d52f42d::t_1c545e3859f6cf 33,77,251
+  s_9815573d52f42d::t_1b99b15741ebbe 97-135
+cmd/cab-bridge/peers.go
+  s_9815573d52f42d::t_7ae8d70962c41c 88,155,199
+  s_9815573d52f42d::t_237c5d0d75e774 111-114
+  s_9815573d52f42d::t_628522e693807a 25-35
+cmd/cab-bridge/peers_test.go
+  s_9815573d52f42d::t_2d970fbf95eb71 61,75
+  s_9815573d52f42d::t_1c545e3859f6cf 92,97
+cmd/cab-bridge/state_test.go
+  s_9815573d52f42d::t_f8f0e987e3fe71 84
+cmd/cab-bridge/status.go
+  s_9815573d52f42d::t_7ae8d70962c41c 79
+  s_9815573d52f42d::t_1c545e3859f6cf 17-23,29-32
+  s_9815573d52f42d::t_d2e5ab4589af13 24-28,38-40
+  s_9815573d52f42d::t_44368477c23c4e 95-125
+cmd/cab-bridge/read.go
+  s_9815573d52f42d::t_d2e5ab4589af13 22,79
+cmd/cab-bridge/unread.go
+  s_9815573d52f42d::t_d2e5ab4589af13 21,120
+cmd/cab-bridge/overview_test.go
+  s_9815573d52f42d::t_189b12ce832f84 87-133
+  s_9815573d52f42d::t_2869ee8776d51f 189,332
+  s_9815573d52f42d::t_de3792390aec4b 50-52,77
+cmd/cab-bridge/overview.go
+  s_9815573d52f42d::t_2767692a83f932 196-208,214-217
+  s_9815573d52f42d::t_b893433f37023c 14,51-55,275-279,282
+  s_9815573d52f42d::t_d2e5ab4589af13 19
+  s_9815573d52f42d::t_7ae8d70962c41c 182
+cmd/cab-bridge/inbox.go
+  s_9815573d52f42d::t_d2e5ab4589af13 23,29,42-43,113,162
+cmd/cab-bridge/join.go
+  s_9815573d52f42d::t_e98542dde0b528 249
+  s_9815573d52f42d::t_0064cb527e0313 215-233,235-248,250-255,257-259,274-275
+  s_9815573d52f42d::t_7ae8d70962c41c 99
+  s_9815573d52f42d::t_37a9555db2c6ca 256,260-273
+  s_9815573d52f42d::t_7832d591a854cf 133,234
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "1251c46ce699afe47c55b05da0b952200a8f92c6",
+  "prompts": {},
+  "sessions": {
+    "s_9815573d52f42d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8df03128-82d8-47b9-bcaa-30b62ac013ea",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
