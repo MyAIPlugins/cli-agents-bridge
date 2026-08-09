@@ -66,13 +66,21 @@ var SelectableRoles = []RoleChoice{
 func RoleNames() string {
 	names := make([]string, 0, len(SelectableRoles))
 	for _, r := range SelectableRoles {
-		if r.Name == RoleArchitect {
-			names = append(names, r.Name+"(reserved)")
-			continue
-		}
 		names = append(names, r.Name)
 	}
 	return strings.Join(names, "|")
+}
+
+// RoleNamesWithNote is RoleNames plus the reservation, said BESIDE the list and
+// never inside it.
+//
+// The first attempt put the mark in the list itself — `architect(reserved)` —
+// and that token is a value like any other on a surface built to be copied, in a
+// parser that accepts any string: pasting it produced a session whose role was
+// literally "architect(reserved)", outside every role invariant, silently and
+// with exit 0. A list of values must contain only values.
+func RoleNamesWithNote() string {
+	return RoleNames() + "  (architect is reserved for Claude Desktop over MCP)"
 }
 
 // RoleLines renders the selectable roles as an indented block, one per line,

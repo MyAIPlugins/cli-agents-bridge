@@ -5,6 +5,7 @@ import (
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -472,4 +473,28 @@ func TestJoin_NameRuleAcrossTheFourSituations(t *testing.T) {
 			"the name it just yielded is the most recent former one, on disk")
 		assert.DirExists(t, filepath.Join(dataDir, "sessions", holder), "the session itself is not destroyed")
 	})
+}
+
+// A list of values must contain only values. The first attempt at marking the
+// reserved role put the mark INSIDE the list — `architect(reserved)` — and that
+// token is a value like any other on a surface built to be copied, in a parser
+// that accepts any string: pasting it produced a session whose role was
+// literally "architect(reserved)", outside every role invariant, silently.
+func TestRoleNames_EveryTokenIsAUsableValue(t *testing.T) {
+	t.Parallel()
+	valid := map[string]bool{}
+	for _, r := range session.SelectableRoles {
+		valid[r.Name] = true
+	}
+	for _, tok := range strings.Split(session.RoleNames(), "|") {
+		assert.True(t, valid[tok], "%q appears in the list but is not a role you can pass", tok)
+		assert.NotContains(t, tok, "(", "no annotation may travel inside a value")
+		assert.NotContains(t, tok, " ")
+	}
+
+	// The reservation is still said — beside the list, where it cannot be pasted
+	// as a value.
+	withNote := session.RoleNamesWithNote()
+	assert.Contains(t, withNote, session.RoleNames())
+	assert.Contains(t, withNote, "reserved for Claude Desktop")
 }

@@ -60,7 +60,7 @@ type joinPeer struct {
 func runJoin(args []string) error {
 	fs := flag.NewFlagSet("join", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	role := fs.String("role", "", "this agent's role (required): "+session.RoleNames())
+	role := fs.String("role", "", "this agent's role (required): "+session.RoleNamesWithNote())
 	agentName := fs.String("agent-name", "", "this agent's name; empty = derived from the scope")
 	projectPath := fs.String("project-path", "", "project root (default: cwd) — test injection point")
 	team := fs.String("team", "", "team label isolating this group in a shared data dir; usually unneeded")
