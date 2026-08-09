@@ -87,6 +87,30 @@ func bootstrapDataDir(dataDir string) error {
 			return fmt.Errorf("tighten data dir %q perms to 0700: %w", dataDir, err)
 		}
 	}
+
+	// THE PATH, not just the base. Checking this directory and then trusting
+	// everything under it is what the CRI diff-gate broke in thirty seconds: an
+	// empty data dir with `sessions` pointing at the real one passed every check
+	// we had — SC-7 because the base genuinely was ours and 0700, SC-3 because
+	// every file behind the link is a perfectly regular file of ours. A leaf check
+	// cannot see a redirected tree: the lie is in the path.
+	//
+	// Worse than reading: with `archive` redirected, the retention purge does
+	// RemoveAll on <target>/<date>, i.e. deletes OUTSIDE the data dir entirely.
+	//
+	// Once per command, on the two fixed components, and only AFTER the chmod
+	// above: from that moment nobody else can alter the tree, so proving it once
+	// is enough — no per-read path walk. They are checked only if they exist; a
+	// first run has neither, and creating them is our own job.
+	for _, sub := range []string{"sessions", "archive"} {
+		p := filepath.Join(dataDir, sub)
+		if _, statErr := os.Lstat(p); statErr != nil {
+			continue // not created yet — nothing to prove
+		}
+		if err := security.CheckOwnedDir(p); err != nil {
+			return fmt.Errorf("data dir %q: refusing to operate: %w", dataDir, err)
+		}
+	}
 	return nil
 }
 
