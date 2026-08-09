@@ -12,7 +12,7 @@ A common shape is **one orchestrator + one executor** (roles `val` and `esc`), b
 ## Getting in: two commands, then stop
 
 ```bash
-cab-bridge join --role=<val|esc|architect> --agent-name=<the name you were given>
+cab-bridge join --role=<val|esc|critic> --agent-name=<the name you were given>
 CAB_SESSION_ID=<the id printed above> cab-bridge next
 ```
 
@@ -70,7 +70,7 @@ Prefer stdin (or a file) for anything longer than a line. **The shell interprets
 - **If you were given a name, that is your name — pass it.** A name assigned by whoever started you ("you are CRI2-payload") is an instruction, not a suggestion: the other agents will address you by it, and their briefs will use it.
 
   ```bash
-  cab-bridge join --role=architect --agent-name=CRI2-payload
+  cab-bridge join --role=critic --agent-name=CRI2-payload
   ```
 
   **Only when nobody gave you one** let `join` derive it from your working directory (`ESC-escdir`), which keeps it distinct without a decision. Derivation is the fallback, not the default — obeying an explicit instruction is not "thinking", and skipping it costs the humans a round of corrections.
@@ -78,12 +78,12 @@ Prefer stdin (or a file) for anything longer than a line. **The shell interprets
 
 ## Roles
 
-`val` (orchestrates), `esc` (executes), `architect` (reviews and criticises — can talk to a `val`, and is not blocked like `esc→esc`), `observer` (reads only), `neutral`. Custom roles are accepted by routing. Two structural rules:
+`val` (orchestrates), `esc` (executes), **`critic`** (reviews and criticises — talks to everyone, and is not blocked like `esc→esc`), `observer` (reads only), `neutral`. `architect` is **reserved** for Claude Desktop arriving over the MCP connector; do not assign it to reviewers. Custom roles are accepted by routing. Two structural rules:
 
 - **`observer` cannot send.** No flag overrides it — it is read-only by design.
 - **`esc → esc` is rejected** by default; route through the orchestrator, or pass `--allow-mesh` for a deliberate mesh. Two equal agents with no hierarchy should use a custom role (`--role=peer`), which is allowed out of the box.
 
-If you are a reviewer, `architect` is the role meant for you.
+If you are a reviewer, `critic` is the role meant for you.
 
 ## Peers without native push
 
