@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
@@ -99,6 +100,11 @@ func GCOrphans(dataDir, scope string, gcHours int, now func() time.Time) ([]Orph
 		}
 		mf, err := mgr.LoadManifest(e.Name())
 		if err != nil {
+			// A manifest that is not ours is skipped like an unreadable one, but
+			// NOT in silence: suppressing it here turns the anomaly into a plain
+			// "no session found", i.e. invisible in the very command someone
+			// would use to look for it.
+			_ = security.WarnNotOurs(e.Name(), err)
 			continue // corrupt manifest — skip (cleanup --scope=global will surface it)
 		}
 		if !gcOwns(scope, mf.Scope) {

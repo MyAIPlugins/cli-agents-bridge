@@ -176,7 +176,7 @@ func EnforceDirPerms(path string, mode fs.FileMode) error {
 //
 // Skipped for root, like every other ownership check here: root can read
 // anything regardless, so refusing would cost without protecting.
-func ReadOwnedFile(path string) ([]byte, error) {
+func openOwned(path string) (*os.File, error) {
 	// O_NOFOLLOW, and it is not decoration. `os.Open` FOLLOWS symlinks, so the
 	// fstat that follows would report the owner of the TARGET: another uid who
 	// planted a symlink of their own — during the same loose-perms window this
@@ -198,31 +198,82 @@ func ReadOwnedFile(path string) ([]byte, error) {
 		}
 		return nil, err
 	}
-	defer func() { _ = f.Close() }()
-
 	info, serr := f.Stat()
 	if serr != nil {
+		_ = f.Close()
 		return nil, fmt.Errorf("stat %q: %w", path, serr)
 	}
 	// Regular files only: a link to a FIFO or a device would otherwise sail
 	// through whenever the target belongs to us — and reading one blocks or
 	// yields something that is not a message.
 	if !info.Mode().IsRegular() {
+		_ = f.Close()
 		return nil, fmt.Errorf("%w: path=%q is not a regular file (mode %s)", ErrOwnershipMismatch, path, info.Mode())
 	}
 
 	if os.Getuid() != 0 {
 		sys, ok := info.Sys().(*syscall.Stat_t)
 		if !ok {
+			_ = f.Close()
 			return nil, fmt.Errorf("ownership check unsupported on this platform (path %q)", path)
 		}
 		if int(sys.Uid) != os.Getuid() {
+			_ = f.Close()
 			return nil, fmt.Errorf("%w: path=%q file_uid=%d current_uid=%d",
 				ErrOwnershipMismatch, path, sys.Uid, os.Getuid())
 		}
 	}
 
+	return f, nil
+}
+
+// ReadOwnedFile opens path with the ownership and shape checks above, and reads
+// it. See openOwned for what is verified and why.
+func ReadOwnedFile(path string) ([]byte, error) {
+	f, err := openOwned(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
 	return io.ReadAll(f)
+}
+
+// CheckOwnedFile runs the same verification WITHOUT reading the contents, for
+// callers that derive meaning from a directory entry alone.
+//
+// One exists because one was needed: `sent` builds its index from archived
+// FILENAMES — deliberately, to avoid decoding every archived file — so a planted
+// entry named <timestamp>-msg-<id>.json used to forge the "archived" state of a
+// message, telling the sender their peer had replied when nobody had. No file
+// was ever read there, so no amount of auditing READS would have found it: the
+// consumed datum was the name.
+func CheckOwnedFile(path string) error {
+	f, err := openOwned(path)
+	if err != nil {
+		return err
+	}
+	return f.Close()
+}
+
+// WarnNotOurs reports whether err is an ownership violation, announcing it on
+// stderr when it is.
+//
+// The policy lives HERE, in one place, because the CRI gate's closing line is
+// the risk: "centralise the policy or the next caller will lose it again". It
+// had already been lost once — every scan in the codebase has the shape "read
+// it, skip on error", so the typed error was landing in the same bucket as a
+// truncated JSON and being skipped in silence, or reported as "unreadable file,
+// no action needed from you".
+//
+// Enumerations SKIP rather than abort — a command that dies on the anomaly it
+// should be displaying is useless exactly when it is needed. What they must not
+// do is stay quiet.
+func WarnNotOurs(subject string, err error) bool {
+	if !errors.Is(err, ErrOwnershipMismatch) {
+		return false
+	}
+	fmt.Fprintf(os.Stderr, "cab-bridge: ignoring %s — it does not belong to this user: %v\n", subject, err)
+	return true
 }
 
 // isSymlinkRefusal reports whether err is the kernel refusing O_NOFOLLOW on a
