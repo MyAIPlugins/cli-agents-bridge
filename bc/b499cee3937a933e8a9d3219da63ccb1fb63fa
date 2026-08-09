@@ -1,0 +1,48 @@
+internal/session/listener.go
+  s_9815573d52f42d::t_7e1298b662f2f0 36-62
+internal/session/manifest.go
+  s_9815573d52f42d::t_be03e39b8f10b7 97-105,107-108
+cmd/cab-bridge/next.go
+  s_9815573d52f42d::t_6b70d8f6364e0d 224-231
+cmd/cab-bridge/overview_test.go
+  s_9815573d52f42d::t_ff442047a12d28 146-163,167,169-170,174,176-178,181-192,195,198-205,207-208
+  s_9815573d52f42d::t_9c91d9e0f8c56e 211-213,216,221-223,226-230,233-234,236,239-240
+  s_9815573d52f42d::t_de5f1d318aa709 250-251
+  s_9815573d52f42d::t_85da33055e7fdb 353-354
+  s_9815573d52f42d::t_ba8025fb2383b0 364
+cmd/cab-bridge/overview.go
+  s_9815573d52f42d::t_fb60c4498d2b62 150-162,166-171
+  s_9815573d52f42d::t_3849dedf66ce54 29-38,41
+cmd/cab-bridge/notify_watch_test.go
+  s_9815573d52f42d::t_fb91f916f32e33 415-423,428,430-431,433,435-453
+cmd/cab-bridge/notify_watch.go
+  s_9815573d52f42d::t_9ddd7a1a948889 207-208,210-211,214-215
+  s_9815573d52f42d::t_9d2cfec013f2e7 144-157
+cmd/cab-bridge/next_test.go
+  s_9815573d52f42d::t_2ec9fbd2fa21a2 233-249
+  s_9815573d52f42d::t_764aca8d100be4 649-677
+tests/integration/scenario_two_waiters_test.go
+  s_9815573d52f42d::t_fa588b0471320f 1-4,6-7,9-29,32,54-60,63-86,88-104,106-130,132-137,139-149
+  s_9815573d52f42d::t_69b27553df7ee0 5,105,131,138
+  s_9815573d52f42d::t_a03ce42300efff 30-31,33-53
+  s_9815573d52f42d::t_edb7da119d543f 8
+  s_9815573d52f42d::t_17a7c6453f9058 62
+  s_9815573d52f42d::t_779722927fbad7 61
+  s_9815573d52f42d::t_7e9d4f53849024 87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "bcb499cee3937a933e8a9d3219da63ccb1fb63fa",
+  "prompts": {},
+  "sessions": {
+    "s_9815573d52f42d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8df03128-82d8-47b9-bcaa-30b62ac013ea",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
