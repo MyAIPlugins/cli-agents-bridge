@@ -25,6 +25,8 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+
+	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 )
 
 // AtomicWriteJSON marshals v as indented JSON and writes to path atomically
@@ -93,11 +95,15 @@ func AtomicWriteBytes(path string, data []byte, mode os.FileMode) error {
 	return nil
 }
 
-// ReadJSON reads path and unmarshals into v. Caller is responsible for
-// ownership validation via security.CheckOwnership(path) before invoking
-// ReadJSON (SC-3 layered defense — this helper does not enforce it).
+// ReadJSON reads path and unmarshals into v, refusing files owned by another
+// uid (SC-3, security.ReadOwnedFile).
+//
+// The check lives HERE, not in each caller, because "the caller is responsible"
+// was the arrangement that left CheckOwnership with zero production call-sites
+// for seven releases: a duty spread across every read site is a duty nobody
+// performs. One reader, one rule.
 func ReadJSON(path string, v interface{}) error {
-	data, err := os.ReadFile(path)
+	data, err := security.ReadOwnedFile(path)
 	if err != nil {
 		return fmt.Errorf("read %q: %w", path, err)
 	}
@@ -150,7 +156,7 @@ func WriteIfAbsentBytes(path string, data []byte, mode os.FileMode) (created boo
 		return false, fmt.Errorf("link temp to %q: %w", path, lerr)
 	}
 
-	existing, rerr := os.ReadFile(path)
+	existing, rerr := security.ReadOwnedFile(path)
 	if rerr != nil {
 		return false, fmt.Errorf("read existing %q: %w", path, rerr)
 	}

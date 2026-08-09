@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -196,7 +197,7 @@ func Load() (Config, []string, error) {
 // values in the file are ignored (cannot reset a field to "0" via the user
 // file — use env var if needed).
 func applyUserFile(cfg *Config, path string) error {
-	data, err := os.ReadFile(path)
+	data, err := security.ReadOwnedFile(path)
 	if err != nil {
 		return err
 	}

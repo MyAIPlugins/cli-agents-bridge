@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	transportfs "github.com/myAIPlugins/cli-agents-bridge/internal/transport/fs"
 )
 
@@ -74,7 +75,7 @@ func (m *Manager) wakeCursorPath(sessionID string) string {
 func (m *Manager) ReadWakeCursor(sessionID string) (*WakeCursor, string, error) {
 	empty := &WakeCursor{SchemaVersion: WakeCursorSchemaVersion, Notified: map[string]time.Time{}}
 
-	data, err := os.ReadFile(m.wakeCursorPath(sessionID))
+	data, err := security.ReadOwnedFile(m.wakeCursorPath(sessionID))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return empty, "", nil

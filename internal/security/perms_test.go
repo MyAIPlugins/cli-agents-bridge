@@ -209,3 +209,51 @@ func TestUmaskPropagation(t *testing.T) {
 	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm(),
 		"with umask 0o077, requested 0o666 must be masked down to 0o600")
 }
+
+// ReadOwnedFile on a file we DO own: read normally.
+func TestReadOwnedFile_ReadsOurOwnFile(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "mine.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"ok":true}`), 0o600))
+
+	data, err := ReadOwnedFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, `{"ok":true}`, string(data))
+}
+
+// And on a file owned by somebody else: refused.
+//
+// /etc/hosts is root-owned on both macOS and Linux and readable by everyone,
+// which makes it the one file that can exercise the rejection path WITHOUT the
+// test needing privileges it should never have. A mock would have proved that
+// the mock returns what it was told to.
+func TestReadOwnedFile_RefusesAnotherUsersFile(t *testing.T) {
+	t.Parallel()
+	if os.Getuid() == 0 {
+		t.Skip("running as root: the check is deliberately skipped for root")
+	}
+	info, err := os.Stat("/etc/hosts")
+	if err != nil {
+		t.Skip("/etc/hosts not available on this platform")
+	}
+	sys, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || int(sys.Uid) == os.Getuid() {
+		t.Skip("/etc/hosts is not owned by another uid here")
+	}
+
+	_, err = ReadOwnedFile("/etc/hosts")
+	require.Error(t, err, "a file owned by another uid must not be read")
+	assert.ErrorIs(t, err, ErrOwnershipMismatch)
+	assert.Contains(t, err.Error(), "/etc/hosts", "and the error names the path")
+}
+
+// A missing file reports the underlying os error, not an ownership verdict: the
+// caller distinguishes "not there" from "not yours", and several of them treat
+// ErrNotExist as an ordinary race (a message archived between listing and read).
+func TestReadOwnedFile_MissingFileIsNotAnOwnershipError(t *testing.T) {
+	t.Parallel()
+	_, err := ReadOwnedFile(filepath.Join(t.TempDir(), "ghost.json"))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, os.ErrNotExist)
+	assert.NotErrorIs(t, err, ErrOwnershipMismatch)
+}

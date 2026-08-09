@@ -12,6 +12,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	transportfs "github.com/myAIPlugins/cli-agents-bridge/internal/transport/fs"
 )
 
@@ -133,7 +134,7 @@ func collectInbox(sessionDir string, maxContentBytes int) ([]inboxEntry, error) 
 			if e.IsDir() || strings.HasPrefix(name, ".tmp.") || !strings.HasSuffix(name, ".json") {
 				continue
 			}
-			data, rerr := os.ReadFile(filepath.Join(dir, name))
+			data, rerr := security.ReadOwnedFile(filepath.Join(dir, name))
 			if rerr != nil {
 				continue
 			}
@@ -184,7 +185,7 @@ func tidyInbox(sessionDir string, maxContentBytes int) (int, error) {
 			continue
 		}
 		full := filepath.Join(inboxDir, name)
-		data, rerr := os.ReadFile(full)
+		data, rerr := security.ReadOwnedFile(full)
 		if rerr != nil {
 			continue // unreadable — leave in inbox for forensics
 		}

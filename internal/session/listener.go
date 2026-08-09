@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	transportfs "github.com/myAIPlugins/cli-agents-bridge/internal/transport/fs"
 )
 
@@ -86,7 +87,7 @@ func generateListenerToken() (string, error) {
 // readListenerFile reads listener.json: (owner, true, nil) when present,
 // (zero, false, nil) when absent, error on a genuine read/parse failure.
 func (m *Manager) readListenerFile(sessionID string) (ListenerOwner, bool, error) {
-	data, err := os.ReadFile(m.listenerPath(sessionID))
+	data, err := security.ReadOwnedFile(m.listenerPath(sessionID))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return ListenerOwner{}, false, nil

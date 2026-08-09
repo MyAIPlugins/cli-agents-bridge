@@ -16,6 +16,7 @@ import (
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
@@ -604,7 +605,7 @@ func readMailbox(inboxDir string, maxContentBytes int) ([]mailboxEntry, []string
 			continue
 		}
 		full := filepath.Join(inboxDir, name)
-		data, err := os.ReadFile(full)
+		data, err := security.ReadOwnedFile(full)
 		if err != nil {
 			corrupt = append(corrupt, name)
 			continue

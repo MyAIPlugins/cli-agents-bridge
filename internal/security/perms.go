@@ -20,6 +20,7 @@ package security
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"regexp"
@@ -144,4 +145,58 @@ func EnforceDirPerms(path string, mode fs.FileMode) error {
 		return fmt.Errorf("chmod %q to %o: %w", path, mode, err)
 	}
 	return nil
+}
+
+// ReadOwnedFile opens path, verifies that the OPEN DESCRIPTOR belongs to the
+// current uid, and reads the contents from that same descriptor. It returns
+// ErrOwnershipMismatch (wrapped) when the file belongs to somebody else.
+//
+// The fstat is on the descriptor, not on the path, and that is the whole point:
+// checking a path and then opening it checks one file and reads another. One
+// open, one fstat of that fd, one read of that fd — nothing can be swapped
+// underneath in between.
+//
+// WHAT THIS IS FOR, precisely — because the generic threat it was filed under
+// (TM-6, spoofing) is already impossible: with the data dir at 0700 owned by us
+// (SC-7) and its subdirectories at 0700 (SC-1 umask + SC-2), another user cannot
+// create a file in there at all, since writing into a directory needs permission
+// on the directory.
+//
+// What remains is a window this code prints a message about:
+//
+//	cab-bridge: data dir "..." has loose perms 0755, tightening to 0700
+//
+// The base dir CAN have been created world-writable — by a script, a different
+// umask, a copy — and in that window another local user could drop a file in.
+// SC-7 shuts the door and carries on; it does not walk out whoever already came
+// in. This is that cleanup. The payload is worth naming: a planted manifest
+// carries an agentName (which intercepts everything addressed to that name,
+// since recipients resolve by name within a scope) and a projectPath (which
+// takes part in LongestPrefixLookup, i.e. in deciding who YOU are).
+//
+// Skipped for root, like every other ownership check here: root can read
+// anything regardless, so refusing would cost without protecting.
+func ReadOwnedFile(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+
+	if os.Getuid() != 0 {
+		info, serr := f.Stat()
+		if serr != nil {
+			return nil, fmt.Errorf("stat %q: %w", path, serr)
+		}
+		sys, ok := info.Sys().(*syscall.Stat_t)
+		if !ok {
+			return nil, fmt.Errorf("ownership check unsupported on this platform (path %q)", path)
+		}
+		if int(sys.Uid) != os.Getuid() {
+			return nil, fmt.Errorf("%w: path=%q file_uid=%d current_uid=%d",
+				ErrOwnershipMismatch, path, sys.Uid, os.Getuid())
+		}
+	}
+
+	return io.ReadAll(f)
 }

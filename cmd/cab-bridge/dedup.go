@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 )
 
 // findRecentDuplicate scans the sender's outbox for a message with the same
@@ -53,7 +54,7 @@ func findRecentDuplicateAt(outboxDir, to, msgType, content string, windowSeconds
 		if e.IsDir() || strings.HasPrefix(name, ".tmp.") || !strings.HasSuffix(name, ".json") {
 			continue
 		}
-		data, rerr := os.ReadFile(filepath.Join(outboxDir, name))
+		data, rerr := security.ReadOwnedFile(filepath.Join(outboxDir, name))
 		if rerr != nil {
 			continue
 		}
