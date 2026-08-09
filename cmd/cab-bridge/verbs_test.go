@@ -598,3 +598,44 @@ func TestResolveReplyTarget_KnownNameWithoutAnOpenAskSaysSo(t *testing.T) {
 	assert.Contains(t, err.Error(), "no open ask")
 	assert.NotContains(t, err.Error(), "looks like", "it is not a resemblance: it is the name, exactly")
 }
+
+// F-105: the guardrail did not cover the case it was written for. Executed, the
+// exact line from its own comment sent the typo as the answer, closed the ask
+// and exited 0 — the report on stdin never read.
+func TestNameLookalike_CatchesTyposNotJustCapitals(t *testing.T) {
+	t.Parallel()
+	known := []string{"VAL-bridge", "CRI-payload", "OK"}
+
+	for _, tc := range []struct{ in, want, why string }{
+		{"VAL-brige", "VAL-bridge", "transposition — the example in the comment"},
+		{"VAL-bridg", "VAL-bridge", "a missing letter"},
+		{"VAL-bridgee", "VAL-bridge", "one letter too many"},
+		{"val-bridge", "VAL-bridge", "capitals, which is all it used to catch"},
+	} {
+		got, ok := nameLookalike(known, tc.in)
+		require.True(t, ok, "%s: %q should be caught", tc.why, tc.in)
+		assert.Equal(t, tc.want, got, tc.why)
+	}
+
+	// And it must NOT fire on ordinary messages, or people learn to route around
+	// it — which is how a guardrail stops being used.
+	for _, msg := range []string{"done", "ok thanks", "the report is ready", "no"} {
+		_, ok := nameLookalike(known, msg)
+		assert.False(t, ok, "%q is a message, not a near-miss", msg)
+	}
+
+	// Short names take a tighter threshold: at two edits almost anything matches
+	// a two-letter name.
+	_, ok := nameLookalike([]string{"OK"}, "no")
+	assert.False(t, ok, "on a short name, two edits away is a different word")
+}
+
+// End to end on the real path: the typo must NOT become the payload.
+func TestResolveReplyTarget_TypoDoesNotBecomeTheAnswer(t *testing.T) {
+	t.Parallel()
+	asks := []openAsk{{id: "msg-aaaaaaaaaaaa", from: "valaaaaa", fromName: "VAL-bridge", when: "2026-08-09T10:00:00Z"}}
+	_, _, err := resolveReplyTarget([]string{"VAL-brige"}, asks, []string{"VAL-bridge"}, strings.NewReader("the report"))
+	require.Error(t, err, "nine bytes of typo must not close an ask in place of a report")
+	assert.Contains(t, err.Error(), "looks like")
+	assert.Contains(t, err.Error(), "VAL-bridge")
+}
