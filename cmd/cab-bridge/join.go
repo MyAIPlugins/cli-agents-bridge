@@ -94,7 +94,6 @@ func runJoin(args []string) error {
 		return err
 	}
 	mgr := newSessionManager(cfg)
-	runAutoGC(cfg, os.Stderr)
 
 	pp := *projectPath
 	if pp == "" {
@@ -103,6 +102,11 @@ func runJoin(args []string) error {
 		}
 	}
 	scope := resolveScope(pp)
+
+	// AFTER the scope is known, never before: the sweep is confined to this
+	// caller's project root, and running it earlier would have had nothing to
+	// confine it with.
+	runAutoGC(cfg, scope, os.Stderr)
 
 	peers, _, err := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, cfg.MaxMessageBytes, true, *team, scope)
 	if err != nil {

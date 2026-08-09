@@ -106,20 +106,31 @@ func newSessionManager(cfg config.Config) *session.Manager {
 // register/listen the user actually asked for, so the error is logged and the
 // caller proceeds. Returns the removed orphans (nil when disabled) so callers
 // and tests can inspect what was swept.
-func runAutoGC(cfg config.Config, logw io.Writer) []cleanup.Orphan {
+func runAutoGC(cfg config.Config, scope string, logw io.Writer) []cleanup.Orphan {
 	if cfg.AutoGCHours <= 0 {
 		return nil
 	}
-	removed, err := cleanup.GCOrphans(cfg.DataDir, cfg.AutoGCHours, nil)
+	removed, err := cleanup.GCOrphans(cfg.DataDir, scope, cfg.AutoGCHours, nil)
 	if err != nil {
 		fmt.Fprintf(logw, "cab-bridge: auto-gc failed (non-fatal): %v\n", err)
 		return nil
 	}
 	for _, o := range removed {
-		fmt.Fprintf(logw, "cab-bridge: auto-gc removed orphan session %s (pid %d dead, idle %s)\n",
-			o.SessionID, o.PID, o.IdleAge.Round(time.Hour))
+		// The scope is in the line because an id alone never said whose session
+		// it was — and this sweep is the one nobody asked for.
+		fmt.Fprintf(logw, "cab-bridge: auto-gc removed orphan session %s in %s (pid %d dead, idle %s)\n",
+			o.SessionID, scopeLabel(scope), o.PID, o.IdleAge.Round(time.Hour))
 	}
 	return removed
+}
+
+// scopeLabel renders a scope for a log line, naming the unowned case rather
+// than printing an empty string where a path is expected.
+func scopeLabel(scope string) string {
+	if scope == "" {
+		return "(no scope)"
+	}
+	return scope
 }
 
 // validateExplicitSessionID validates an EXPLICIT --session-id and returns it.

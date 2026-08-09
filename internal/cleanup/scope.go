@@ -72,7 +72,28 @@ type Options struct {
 // human-readable summary and for tests to assert behavior precisely.
 type Result struct {
 	SessionsRemoved []string `json:"sessionsRemoved"`
-	ArchivesPurged  []string `json:"archivesPurged"`
+	// RemovedByScope counts removals per project root. A bare list of ids says
+	// WHAT was deleted and never WHOSE it was: with one data dir shared by
+	// several teams, that is the difference between "I tidied up" and "I deleted
+	// another team's work", and the id alone cannot tell them apart — not even
+	// afterwards. Sessions with no scope are counted under "(no scope)".
+	//
+	// Additive, omitempty: `sessionsRemoved` keeps its exact shape, so scripts
+	// parsing it are untouched.
+	RemovedByScope map[string]int `json:"removedByScope,omitempty"`
+	ArchivesPurged []string       `json:"archivesPurged"`
+}
+
+// scopeOfSession reads a session's scope BEFORE it is removed. "(no scope)" for
+// legacy sessions and for anything unreadable — an unknown origin is still worth
+// reporting, and a failure here must never abort a cleanup.
+func scopeOfSession(dataDir, sessionID string) string {
+	mgr := session.NewManager(dataDir, time.Second)
+	mf, err := mgr.LoadManifest(sessionID)
+	if err != nil || mf.Scope == "" {
+		return "(no scope)"
+	}
+	return mf.Scope
 }
 
 // Run executes the cleanup pipeline. Returns a Result describing what was
@@ -85,24 +106,27 @@ func Run(_ context.Context, opts Options) (*Result, error) {
 	}
 	// BUG-B: initialise slices to empty (not nil) so JSON output emits [] rather
 	// than null, keeping `jq '... | length'` consumers from breaking.
-	res := &Result{SessionsRemoved: []string{}, ArchivesPurged: []string{}}
+	res := &Result{SessionsRemoved: []string{}, ArchivesPurged: []string{}, RemovedByScope: map[string]int{}}
 
 	switch opts.Scope {
 	case ScopeMySession:
 		if opts.OwnSessionID == "" {
 			return nil, ErrOwnSessionRequired
 		}
+		sc := scopeOfSession(opts.DataDir, opts.OwnSessionID)
 		if err := archiveAndRemoveSession(opts.DataDir, opts.OwnSessionID, opts.Now); err != nil {
 			return nil, fmt.Errorf("cleanup my-session: %w", err)
 		}
 		res.SessionsRemoved = append(res.SessionsRemoved, opts.OwnSessionID)
+		res.RemovedByScope[sc]++
 
 	case ScopeGlobal:
-		removed, err := globalSweep(opts)
+		removed, byScope, err := globalSweep(opts)
 		if err != nil {
 			return nil, err
 		}
 		res.SessionsRemoved = removed
+		res.RemovedByScope = byScope
 
 	default:
 		return nil, fmt.Errorf("%w: %q (allowed: my-session, global)", ErrUnknownScope, opts.Scope)
@@ -123,14 +147,15 @@ func Run(_ context.Context, opts Options) (*Result, error) {
 // through session.IsStale (same as peers/status), so a session in state
 // "orchestrating" is heartbeat-exempt and is NOT swept here — the displayed
 // "not stale" and the swept set can never diverge.
-func globalSweep(opts Options) ([]string, error) {
+func globalSweep(opts Options) ([]string, map[string]int, error) {
 	sessionsRoot := filepath.Join(opts.DataDir, "sessions")
+	byScope := map[string]int{}
 	entries, err := os.ReadDir(sessionsRoot)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return []string{}, nil // BUG-B: empty, not nil, for JSON []
+			return []string{}, byScope, nil // BUG-B: empty, not nil, for JSON []
 		}
-		return nil, fmt.Errorf("cleanup global: read sessions root: %w", err)
+		return nil, nil, fmt.Errorf("cleanup global: read sessions root: %w", err)
 	}
 
 	now := opts.Now()
@@ -149,12 +174,17 @@ func globalSweep(opts Options) ([]string, error) {
 		if !session.IsStale(mf, opts.StaleSeconds, now) {
 			continue // still fresh, or orchestrating (heartbeat-exempt, F-23a)
 		}
+		sc := mf.Scope
+		if sc == "" {
+			sc = "(no scope)"
+		}
 		if err := archiveAndRemoveSession(opts.DataDir, e.Name(), opts.Now); err != nil {
 			continue // best-effort
 		}
 		removed = append(removed, e.Name())
+		byScope[sc]++
 	}
-	return removed, nil
+	return removed, byScope, nil
 }
 
 // messageSubdirs are the per-session subdirectories that hold message files

@@ -54,7 +54,7 @@ func TestGCOrphans_RemovesOnlyCertainOrphans(t *testing.T) {
 	plantSession(t, dataDir, "fresh001", deadPID, base.Add(-1*time.Hour))
 	plantSession(t, dataDir, "alive001", os.Getpid(), base.Add(-48*time.Hour))
 
-	removed, err := GCOrphans(dataDir, 24, func() time.Time { return base })
+	removed, err := GCOrphans(dataDir, "", 24, func() time.Time { return base })
 	require.NoError(t, err)
 
 	require.Len(t, removed, 1, "only the certain orphan must be swept")
@@ -76,7 +76,7 @@ func TestGCOrphans_DisabledIsNoOp(t *testing.T) {
 	base := time.Date(2026, 5, 29, 12, 0, 0, 0, time.UTC)
 	plantSession(t, dataDir, "orphan01", deadPID, base.Add(-48*time.Hour))
 
-	removed, err := GCOrphans(dataDir, 0, func() time.Time { return base })
+	removed, err := GCOrphans(dataDir, "", 0, func() time.Time { return base })
 	require.NoError(t, err)
 	assert.Empty(t, removed)
 	assertPresent(t, dataDir, "orphan01")
@@ -87,7 +87,7 @@ func TestGCOrphans_DisabledIsNoOp(t *testing.T) {
 func TestGCOrphans_MissingSessionsRootIsClean(t *testing.T) {
 	t.Parallel()
 
-	removed, err := GCOrphans(t.TempDir(), 24, nil)
+	removed, err := GCOrphans(t.TempDir(), "", 24, nil)
 	require.NoError(t, err)
 	assert.NotNil(t, removed)
 	assert.Empty(t, removed)
@@ -114,7 +114,7 @@ func TestGCOrphans_ArchivesInboxAndProcessedBeforeDelete(t *testing.T) {
 		filepath.Join(processedDir, "20260527T100000.000Z-msg-bbbbbbbbbbbb.json"),
 		[]byte(`{"ok":true}`), 0o600))
 
-	removed, err := GCOrphans(dataDir, 24, func() time.Time { return base })
+	removed, err := GCOrphans(dataDir, "", 24, func() time.Time { return base })
 	require.NoError(t, err)
 	require.Len(t, removed, 1)
 
@@ -144,4 +144,70 @@ func assertPresent(t *testing.T, dataDir, id string) {
 	t.Helper()
 	_, err := os.Stat(filepath.Join(dataDir, "sessions", id))
 	assert.NoError(t, err, "session %q must survive", id)
+}
+
+// plantScoped is plantSession with an explicit scope, so a test can describe
+// sessions belonging to different teams in one data dir — the shape a shared
+// ~/.claude/cli-agents-bridge actually has.
+func plantScoped(t *testing.T, dataDir, id string, pid int, heartbeat time.Time, scope string) {
+	t.Helper()
+	plantSession(t, dataDir, id, pid, heartbeat)
+	mgr := session.NewManager(dataDir, time.Second)
+	mf, err := mgr.LoadManifest(id)
+	require.NoError(t, err)
+	mf.Scope = scope
+	require.NoError(t, mgr.SaveManifest(mf))
+}
+
+// The sweep runs on every join, asked for by nobody. It must therefore collect
+// only what belongs to the caller: an agent entering one repository used to
+// silently delete the abandoned sessions of every other team sharing the data
+// dir — across the boundary that isolates peers, name resolution and worktree
+// pairing everywhere else.
+func TestGCOrphans_SweepsOnlyTheCallersScope(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	base := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
+	old := base.Add(-48 * time.Hour)
+
+	plantScoped(t, dataDir, "mine0001", deadPID, old, "/repo/mine")
+	plantScoped(t, dataDir, "theirs01", deadPID, old, "/repo/theirs")
+
+	removed, err := GCOrphans(dataDir, "/repo/mine", 24, func() time.Time { return base })
+	require.NoError(t, err)
+
+	require.Len(t, removed, 1, "exactly the caller's own orphan")
+	assert.Equal(t, "mine0001", removed[0].SessionID)
+	assert.DirExists(t, filepath.Join(dataDir, "sessions", "theirs01"),
+		"another team's session must survive an arrival that never asked to clean")
+}
+
+// The two empty-string cases, which pull in OPPOSITE directions and are the
+// reason this is not a one-line equality check.
+func TestGCOrphans_ScopelessSessionsAndScopelessCallers(t *testing.T) {
+	t.Parallel()
+	base := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
+	old := base.Add(-48 * time.Hour)
+
+	t.Run("a_session_with_no_scope_is_collected_by_whoever_passes", func(t *testing.T) {
+		dataDir := t.TempDir()
+		plantScoped(t, dataDir, "legacy01", deadPID, old, "") // pre-F-17
+
+		removed, err := GCOrphans(dataDir, "/repo/mine", 24, func() time.Time { return base })
+		require.NoError(t, err)
+		require.Len(t, removed, 1, "it belongs to no team, so no team would ever collect it")
+		assert.Equal(t, "legacy01", removed[0].SessionID)
+	})
+
+	t.Run("a_caller_with_no_scope_touches_only_those", func(t *testing.T) {
+		dataDir := t.TempDir()
+		plantScoped(t, dataDir, "legacy02", deadPID, old, "")
+		plantScoped(t, dataDir, "owned001", deadPID, old, "/repo/someone")
+
+		removed, err := GCOrphans(dataDir, "", 24, func() time.Time { return base })
+		require.NoError(t, err)
+		require.Len(t, removed, 1, "not knowing where you are is not a licence to tidy elsewhere")
+		assert.Equal(t, "legacy02", removed[0].SessionID)
+		assert.DirExists(t, filepath.Join(dataDir, "sessions", "owned001"))
+	})
 }

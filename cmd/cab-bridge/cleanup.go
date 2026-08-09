@@ -70,6 +70,14 @@ func runCleanup(args []string) error {
 		return err
 	}
 
+	// WHOSE, on stderr, next to the what. stdout stays exactly the JSON a script
+	// already parses; this line is for the person who has just deleted sessions
+	// and cannot tell from a list of ids whether any of them belonged to another
+	// team sharing this data dir.
+	for sc, n := range res.RemovedByScope {
+		fmt.Fprintf(os.Stderr, "cab-bridge: removed %d session(s) from scope %s\n", n, sc)
+	}
+
 	out, err := json.MarshalIndent(res, "", "  ")
 	if err != nil {
 		return fmt.Errorf("cleanup: marshal result: %w", err)
