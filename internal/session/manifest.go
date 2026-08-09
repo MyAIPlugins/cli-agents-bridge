@@ -55,15 +55,19 @@ var SelectableRoles = []RoleChoice{
 	{RoleObserver, "reads only, never sends"},
 }
 
-// RoleNames renders the selectable roles for flag help, marking the ones that
-// are not for the reader to take.
+// roleNames renders the selectable roles as "val|esc|critic|..." — values only,
+// no annotation, because a token on a copyable surface must be a usable value.
 //
-// The mark travels WITH the name because the flag line is the first surface a
-// fresh agent reads — and it is exactly where one of them picked up `architect`,
-// which is reserved for Claude Desktop over MCP. Correcting the long-form help
-// and leaving the short list bare would repeat the mistake this whole single
-// source was introduced to end: one place fixed, the others quietly disagreeing.
-func RoleNames() string {
+// UNEXPORTED on purpose, and that is the point rather than an accident: the bare
+// list cannot be printed from outside this package, so no surface can offer the
+// roles without also carrying the reservation. Exporting it was how the same
+// list came to be fixed in one place and left behind in another three times in
+// one day — the last time losing the mark entirely on the error that teaches,
+// which is the worst of the four because it is the recovery path from a mistake.
+//
+// The property is now structural: there is one way to render the list, and it
+// includes the note.
+func roleNames() string {
 	names := make([]string, 0, len(SelectableRoles))
 	for _, r := range SelectableRoles {
 		names = append(names, r.Name)
@@ -71,8 +75,9 @@ func RoleNames() string {
 	return strings.Join(names, "|")
 }
 
-// RoleNamesWithNote is RoleNames plus the reservation, said BESIDE the list and
-// never inside it.
+// RoleNamesWithNote is the ONLY way to render the role list outside this
+// package: the values, plus the reservation said BESIDE the list and never
+// inside it.
 //
 // The first attempt put the mark in the list itself — `architect(reserved)` —
 // and that token is a value like any other on a surface built to be copied, in a
@@ -80,7 +85,7 @@ func RoleNames() string {
 // literally "architect(reserved)", outside every role invariant, silently and
 // with exit 0. A list of values must contain only values.
 func RoleNamesWithNote() string {
-	return RoleNames() + "  (architect is reserved for Claude Desktop over MCP)"
+	return roleNames() + "  (architect is reserved for Claude Desktop over MCP)"
 }
 
 // RoleLines renders the selectable roles as an indented block, one per line,

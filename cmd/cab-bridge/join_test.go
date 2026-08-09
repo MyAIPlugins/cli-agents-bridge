@@ -327,7 +327,7 @@ func TestJoin_NameTakenElsewhereNamesAReachablePlace(t *testing.T) {
 // both because it is the role the CRI agents actually take.
 func TestRoles_OneSourceOffersCriticAndReservesArchitect(t *testing.T) {
 	t.Parallel()
-	names := session.RoleNames()
+	names := session.RoleNamesWithNote()
 	assert.Contains(t, names, "critic", "the role a critic must be able to find")
 	assert.Contains(t, names, "architect", "kept: sessions already run under it")
 	assert.NotContains(t, names, "neutral", "the v1-read fallback is not a choice")
@@ -486,7 +486,10 @@ func TestRoleNames_EveryTokenIsAUsableValue(t *testing.T) {
 	for _, r := range session.SelectableRoles {
 		valid[r.Name] = true
 	}
-	for _, tok := range strings.Split(session.RoleNames(), "|") {
+	// Through the only exported door — which is itself the point: the bare list
+	// cannot be reached from here, so no surface can print it without the note.
+	list := strings.SplitN(session.RoleNamesWithNote(), "  (", 2)[0]
+	for _, tok := range strings.Split(list, "|") {
 		assert.True(t, valid[tok], "%q appears in the list but is not a role you can pass", tok)
 		assert.NotContains(t, tok, "(", "no annotation may travel inside a value")
 		assert.NotContains(t, tok, " ")
@@ -494,7 +497,5 @@ func TestRoleNames_EveryTokenIsAUsableValue(t *testing.T) {
 
 	// The reservation is still said — beside the list, where it cannot be pasted
 	// as a value.
-	withNote := session.RoleNamesWithNote()
-	assert.Contains(t, withNote, session.RoleNames())
-	assert.Contains(t, withNote, "reserved for Claude Desktop")
+	assert.Contains(t, session.RoleNamesWithNote(), "reserved for Claude Desktop")
 }

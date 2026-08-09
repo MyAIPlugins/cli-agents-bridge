@@ -378,7 +378,7 @@ func resolveCurrentSession(mgr *session.Manager, cmdName, sessionIDFlag string) 
 			// would route it into impersonation (CRI2 P0).
 			// From the one source, like every other place roles are offered: a
 			// hand-kept list on a recovery path is a list nobody updates.
-			return "", fmt.Errorf("%s: no session for this directory (%s) — run `cab-bridge join --role=%s` here first", cmdName, cwd, session.RoleNames())
+			return "", fmt.Errorf("%s: no session for this directory (%s) — run `cab-bridge join --role=%s` here first", cmdName, cwd, session.RoleNamesWithNote())
 		}
 		return "", fmt.Errorf("%s: session lookup from cwd %q: %w", cmdName, cwd, err)
 	}
