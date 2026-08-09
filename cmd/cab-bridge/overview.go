@@ -232,6 +232,12 @@ func printOverviewHuman(w io.Writer, r overviewReport) {
 			since = fmt.Sprintf(", waiting since %s", r.ListenerSince.Format("15:04:05"))
 		}
 		fmt.Fprintf(w, "listener: listening (PID %d%s%s)\n", r.ListenerPid, since, gen)
+		// The surgical command, written next to the number it needs. The PID was
+		// already here and neither of us thought to use it when it mattered:
+		// one `pkill -f "cab-bridge next"` killed four waiters at once, because
+		// the hammer is easier to remember than the scalpel. This does not add
+		// information — it makes the information unavoidable.
+		fmt.Fprintf(w, "          to stop just this one: kill %d\n", r.ListenerPid)
 	case r.ListenerReclaimPending:
 		fmt.Fprintf(w, "listener: reclaim-pending (generation %d — revoked, no listener has re-claimed yet)\n", r.ListenerGeneration)
 	default:
