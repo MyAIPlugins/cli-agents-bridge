@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -231,63 +230,23 @@ func TestNext_ConcurrentRuns_DoNotOverlap(t *testing.T) {
 		assert.True(t, cursor.IsNotified("msg-aaaaaaaaaaaa"), "the current owner commits normally")
 	})
 
-	t.Run("two_runs_deliver_each_message_at_most_once_between_them", func(t *testing.T) {
-		mgr, cfg, sid, dataDir := newNextSession(t)
-		base := time.Now().UTC()
-		ids := []string{"msg-aaaaaaaaaaaa", "msg-bbbbbbbbbbbb", "msg-cccccccccccc"}
-		for i, id := range ids {
-			plantInboxAt(t, dataDir, sid, id, "valxxx01", message.TypeQuery, "body", base.Add(time.Duration(i)*time.Second))
-		}
-
-		var (
-			wg      sync.WaitGroup
-			mu      sync.Mutex
-			emitted []string
-		)
-		for i := 0; i < 2; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
-				defer cancel()
-				var out, errBuf bytes.Buffer
-				if err := nextRun(ctx, mgr, cfg, sid, &out, &errBuf); err != nil {
-					return
-				}
-				dec := json.NewDecoder(bytes.NewReader(out.Bytes()))
-				var p nextPayload
-				if dec.Decode(&p) != nil || p.Status != nextStatusEmitted {
-					return
-				}
-				// Count EVERY emitted page, committed or not (CRI diff-gate
-				// P1-2). Counting only the committed ones discarded precisely the
-				// orphan wake this is meant to detect: a page that reached an
-				// agent's screen woke that agent, whatever the cursor then said.
-				mu.Lock()
-				emitted = append(emitted, messageIDs(p)...)
-				mu.Unlock()
-			}()
-		}
-		wg.Wait()
-
-		// The cursor may never claim a message nobody emitted...
-		cursor, _, err := mgr.ReadWakeCursor(sid)
-		require.NoError(t, err)
-		for id := range cursor.Notified {
-			assert.Contains(t, emitted, id, "%s is NOTIFIED but was never emitted", id)
-		}
-
-		// ...and no message may be emitted TWICE across the two runs: a page on
-		// screen has woken an agent, so a second emission is a second agent woken
-		// by the same brief — two replies, two external effects (§3).
-		seen := map[string]int{}
-		for _, id := range emitted {
-			seen[id]++
-		}
-		for id, n := range seen {
-			assert.Equal(t, 1, n, "%s was emitted %d times: only one instance may be woken by a message", id, n)
-		}
-	})
+	// The end-to-end half of this guarantee — "a message wakes exactly one
+	// instance" — used to live here as two goroutines running nextRun. It cannot
+	// be established that way, and it moved to
+	// tests/integration/scenario_two_waiters_test.go, where two real PROCESSES run
+	// the real binary.
+	//
+	// The reason is not tidiness. AcquireLock is deliberately RE-ENTRANT for the
+	// same PID (internal/session/lock.go:57-62), so two goroutines of one test
+	// binary both enter the critical section that is supposed to keep them apart.
+	// The in-process version therefore asserted an exclusion its own setup
+	// dissolved, and passed on timing alone: removing two manifest writes from the
+	// wait path — writes that had nothing to do with delivery — turned it red 8
+	// times out of 8, while the same scenario with real processes stayed green,
+	// because there the second `next` is genuinely locked out.
+	//
+	// A green test resting on a premise its setup contradicts is worse than no
+	// test: it reports a guarantee nobody checked.
 }
 
 // --- paging, ordering, oversize --------------------------------------------
@@ -685,6 +644,35 @@ func runNextUntilCancel(t *testing.T, mgr *session.Manager, cfg config.Config, s
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, nextRun(ctx, mgr, cfg, sid, &stdout, &stderr))
 	return stdout.String()
+}
+
+// TestNext_LeavesNoWaitMarkerBehind pins the invariant that repaired the
+// self-inflicted eviction cycle: a `next` on its way out writes NOTHING about
+// waiting.
+//
+// It used to clear a manifest marker from a defer, through a setter that held
+// only an in-process mutex and never checked ownership — so an EVICTED instance
+// erased the marker of the live one that had replaced it, and overview reported
+// a listening session as idle. Asserting on the raw manifest bytes rather than
+// on a struct field is deliberate: the field is gone, and a future one added
+// back on this path would be caught here rather than at midnight.
+//
+// The ownership record is the other half: it must still name the owner after the
+// waiter returns. Nothing revoked it, so nothing may erase it.
+func TestNext_LeavesNoWaitMarkerBehind(t *testing.T) {
+	mgr, cfg, sid, dataDir := newNextSession(t)
+
+	runNextUntilCancel(t, mgr, cfg, sid, 200*time.Millisecond)
+
+	raw, err := os.ReadFile(filepath.Join(dataDir, "sessions", sid, "manifest.json"))
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "waitingSince", "a departing waiter publishes no marker to clear")
+	assert.NotContains(t, string(raw), "listenUntil", "and no deadline: a wait has none")
+
+	owner, ok, err := mgr.ReadListener(sid)
+	require.NoError(t, err)
+	require.True(t, ok, "the claim survives the waiter that made it")
+	assert.Equal(t, os.Getpid(), owner.PID, "exiting is not revoking — only a reclaim revokes")
 }
 
 // TestNext_DeliversAMessageArrivingMidWait restores a guarantee that evaporated

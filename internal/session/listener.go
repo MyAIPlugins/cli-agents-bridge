@@ -33,6 +33,33 @@ type ListenerOwner struct {
 	ClaimedAt  time.Time `json:"listenerClaimedAt"`
 }
 
+// Listening reports whether this record describes a wait that is STILL RUNNING:
+// a listener that holds the current token and whose process is alive. PID 0 is
+// the revocation marker, so a reclaim-pending record is never listening.
+//
+// This is the whole "am I waiting?" signal, and it lives HERE rather than in a
+// manifest field because of what the manifest field could not survive: a `next`
+// published waitingSince on entry and cleared it on exit through SetWaitingSince,
+// which took only the in-process manifestMu and never looked at ownership — so an
+// EVICTED instance's deferred clear ran after the instance that had just replaced
+// it published its own marker, and the live waiter was reported as not listening.
+// The agent then read "not listening", re-armed, and evicted its own healthy
+// waiter: a self-inflicted eviction cycle entered through the one command that
+// answers "am I still listening?".
+//
+// The repair is not to fence that write but to delete it. Ownership is already
+// the cross-process truth about who is waiting — mutated only under the session
+// lock, with a monotone generation and a fresh token per claim — and an instance
+// that exits writes nothing at all, so it can no longer speak for the live one.
+// ClaimedAt is when this wait started, which is exactly what the marker carried.
+//
+// Costs it inherits, stated rather than hidden: a recycled PID can read as alive
+// (the same exposure overview already had on manifest.PID), and liveness is
+// same-machine only — both true of every IsProcessAlive call in this package.
+func (o ListenerOwner) Listening() bool {
+	return o.PID != 0 && IsProcessAlive(o.PID)
+}
+
 // ReclaimInfo reports what a reclaim superseded, surfaced by register --resume.
 type ReclaimInfo struct {
 	PrevGeneration int

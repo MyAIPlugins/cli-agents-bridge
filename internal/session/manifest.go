@@ -94,28 +94,18 @@ type Manifest struct {
 	// against the canonical set.
 	State string `json:"state,omitempty"`
 
-	// ListenUntil is the wall-clock deadline of the CURRENT listen window (F-81),
-	// written by `listen` at startup as now + the resolved MaxBlocking window. It
-	// powers the overview "listener" line: combined with a live PID it tells
-	// whether a session is ACTIVELY in listen and when its window expires —
-	// observability a peer/orchestrator otherwise lacks (PID/heartbeat alone do
-	// not distinguish a real listen from the register-then-die window, BUG-A).
-	// A POINTER, not a value: encoding/json omitempty does NOT drop a zero
-	// time.Time (it is a struct, never "empty"), only a nil pointer — so *time.Time
-	// is what genuinely keeps it out of non-listen/legacy manifests (same reason
-	// message.InReplyTo is *string). Optional and additive:
-	// Validate/ApplyV1Defaults ignore it, like TeamID/State.
-	ListenUntil *time.Time `json:"listenUntil,omitempty"`
-
-	// WaitingSince is when the current `next` started waiting. It replaces
-	// ListenUntil as the "I am listening" signal now that the wait has NO
-	// deadline (§2.2 rev. cdb21dc): there is no expiry to publish, and a live
-	// PID alone is not the same claim — a val is a live process that is not
-	// waiting for anything.
+	// No listenUntil, no waitingSince. Both described a wait from the manifest,
+	// and both stopped being true there: a wait has no deadline (§2.2 rev.
+	// cdb21dc) so nothing wrote listenUntil after `listen` went away, and
+	// waitingSince was cleared by whichever `next` exited last — including one
+	// that had just been evicted by the instance whose wait it then erased.
 	//
-	// Read together with a live PID it is exact: the marker persists if the
-	// waiter dies, but the dead PID then makes the pair read "not listening".
-	WaitingSince *time.Time `json:"waitingSince,omitempty"`
+	// Who is waiting, and since when, is answered by listener.json instead: it is
+	// mutated only under the session lock, carries the owner's PID and ClaimedAt,
+	// and an instance that exits writes nothing to it. See ListenerOwner.Listening.
+	//
+	// Both fields may still exist in manifests on disk; ReadJSON ignores unknown
+	// fields, and the first save drops them.
 
 	// LastReclaim, when non-nil, reports what a `register --resume` RECLAIM just
 	// superseded (B-2). It is set IN-MEMORY by tryReuse on the returned manifest

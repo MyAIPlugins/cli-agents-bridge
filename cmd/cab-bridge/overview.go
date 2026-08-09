@@ -26,17 +26,19 @@ import (
 type overviewReport struct {
 	Me overviewSelf `json:"me"`
 
-	// F-81: listener observability — whether THIS session is actively in a listen
-	// window and when it expires. ListenerActive is IsProcessAlive(PID) AND a
-	// future ListenUntil; pid/until are only meaningful (and only emitted) when
-	// active. Answers the CRI ask "am I really listening? PID X, expires in Y?"
-	// that PID/heartbeat/state alone could not.
+	// F-81: listener observability — whether THIS session has a live waiter, which
+	// PID holds it, and since when. Answers the CRI ask "am I really listening?"
+	// that PID/heartbeat/state alone could not. All three come from the ownership
+	// record (ListenerOwner.Listening); pid/since are only meaningful, and only
+	// emitted, when active.
+	//
+	// There is no listenerUntil any more: a wait has no deadline (§2.2 rev.
+	// cdb21dc), so the field's writer went away with `listen` and it kept being
+	// published from whatever the manifest still held — an expiry from a world
+	// that no longer exists, presented as current.
 	ListenerActive bool       `json:"listenerActive"`
 	ListenerPid    int        `json:"listenerPid,omitempty"`
-	ListenerUntil  *time.Time `json:"listenerUntil,omitempty"`
-	// ListenerSince is when the current wait started. It replaces ListenerUntil
-	// as the observable fact now that the wait has no end (§2.2 rev. cdb21dc).
-	ListenerSince *time.Time `json:"listenerSince,omitempty"`
+	ListenerSince  *time.Time `json:"listenerSince,omitempty"`
 
 	// B-2 listener ownership, from listener.json — distinct from the F-81 active
 	// signal above (which is manifest PID + window). Generation is the monotone
@@ -145,28 +147,28 @@ func buildOverview(mgr *session.Manager, cfg config.Config, sid string) (overvie
 		Inbox: []overviewMsg{},
 	}
 
-	// F-81: am I actively listening? A live PID AND a future listen window. AND'd
-	// so a dead listen (PID gone after the process exits) or an expired window
-	// both read as "not listening" — no false positive from a stale ListenUntil
-	// left in the manifest. listen writes ListenUntil at startup (SetListenUntil).
-	// `next` has no window (§2.2 rev. cdb21dc), so there is no deadline left to
-	// check: the marker is WaitingSince, and it only counts alongside a live PID
-	// — the marker survives a crash, the PID does not, so the pair cannot report
-	// a dead waiter as listening. A live PID on its own would NOT do: a val is a
-	// live process that waits for nothing.
-	if session.IsProcessAlive(me.PID) && me.WaitingSince != nil {
-		report.ListenerActive = true
-		report.ListenerPid = me.PID
-		report.ListenerUntil = me.ListenUntil
-		report.ListenerSince = me.WaitingSince
-	}
-
-	// B-2: the listener ownership record (generation + reclaim-pending), separate
-	// from the F-81 active signal above. Best-effort: a missing/unreadable record
-	// just leaves the fields zero (a session that never listened).
+	// Am I actively listening — and who owns that wait? ONE read of the ownership
+	// record answers both, because both are the same fact (ListenerOwner.Listening).
+	//
+	// It used to be two: the manifest's waitingSince marker for "active", this
+	// record for generation/reclaim. That split is what let an evicted `next`
+	// clear the marker of the live one that had replaced it, so overview told a
+	// listening session it was not listening — on the exact command an agent uses
+	// to decide whether to re-arm, which made the answer destroy the thing it was
+	// asked about. The PID reported here is now the OWNER's, so the `kill` line
+	// below points at the process that actually holds the wait.
+	//
+	// Best-effort: a missing/unreadable record leaves the fields zero (a session
+	// that never listened), never an error on a pure observability path.
 	if owner, ok, oerr := mgr.ReadListener(sid); oerr == nil && ok {
 		report.ListenerGeneration = owner.Generation
 		report.ListenerReclaimPending = owner.PID == 0
+		if owner.Listening() {
+			report.ListenerActive = true
+			report.ListenerPid = owner.PID
+			claimedAt := owner.ClaimedAt
+			report.ListenerSince = &claimedAt
+		}
 	}
 
 	// Peer: the complementary role within my own scope+team. collectPeers

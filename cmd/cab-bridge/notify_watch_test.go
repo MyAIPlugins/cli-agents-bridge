@@ -412,18 +412,43 @@ func TestRunNotifyWatch_DryRun(t *testing.T) {
 	assert.FileExists(t, filepath.Join(dataDir, "sessions", sid, "inbox", "msg-aaaaaaaaaaaa.json"), "dry-run consumes nothing")
 }
 
-// Non-negotiable #5: a session actively in listen is a double-consumer; refuse
-// without --allow-concurrent-consumer.
-func TestRunNotifyWatch_GuardrailRefusesActiveListener(t *testing.T) {
+// Non-negotiable #5: a session that already has a live waiter would be woken
+// twice; refuse without --allow-concurrent-consumer.
+//
+// Driven from the ownership record, which is what the guardrail now reads. The
+// previous version of this test drove it through SetListenUntil — a writer that
+// had already left the codebase with `listen`, so the test kept passing while the
+// guardrail it covered could no longer fire in production: nothing else wrote the
+// field the condition required.
+func TestRunNotifyWatch_GuardrailRefusesLiveWaiter(t *testing.T) {
 	dataDir := t.TempDir()
 	t.Setenv("CAB_DATA_DIR", dataDir)
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 	sid := "nwrun004"
-	plantOverviewSession(t, dataDir, sid, session.RoleEsc, "ESC-x", "/repo/x", "", "") // PID = os.Getpid() (live)
+	plantOverviewSession(t, dataDir, sid, session.RoleEsc, "ESC-x", "/repo/x", "", "")
 	mgr := session.NewManager(dataDir, time.Second)
-	require.NoError(t, mgr.SetListenUntil(sid, time.Now().UTC().Add(time.Hour)))
+	_, err := mgr.ClaimListener(sid) // PID = os.Getpid() (live)
+	require.NoError(t, err)
 
-	err := runNotifyWatch([]string{"--session-id=" + sid, "--", "echo", "x"})
+	err = runNotifyWatch([]string{"--session-id=" + sid, "--", "echo", "x"})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "consumer", "a live listener triggers the double-consumer guardrail")
+	assert.Contains(t, err.Error(), "live waiter", "a live waiter triggers the guardrail")
+}
+
+// The other half of the same guardrail: a session whose waiter is GONE must not
+// be refused. Without this, "the guardrail fires" and "the guardrail always
+// fires" look identical from the test suite.
+func TestRunNotifyWatch_GuardrailAllowsDepartedWaiter(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	sid := "nwrun005"
+	plantOverviewSession(t, dataDir, sid, session.RoleEsc, "ESC-x", "/repo/x", "", "")
+	plantListener(t, dataDir, sid, deadPID, 3) // claimed once, process gone
+
+	_, stderr := captureStdoutStderr(t, func() {
+		err := runNotifyWatch([]string{"--session-id=" + sid, "--dry-run", "--", "echo", "x"})
+		require.NoError(t, err, "a departed waiter is no consumer")
+	})
+	assert.NotContains(t, stderr, "live waiter")
 }
