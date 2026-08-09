@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/cleanup"
 )
@@ -96,6 +97,15 @@ func runCleanup(args []string) error {
 	// The change announces itself. Before v0.8 this command swept every project
 	// sharing the data dir; whoever had a script expecting that gets a narrower
 	// sweep, and without this line they would get it with no error and no clue.
+	// The retention sweep is not scoped and never was: it is a data-minimisation
+	// policy (GDPR-1), not a tidy-up, and it runs on EVERY cleanup whatever its
+	// scope. Saying so is the whole point — its reach was invisible, which is how
+	// a `--scope=my-session` came to delete other teams' archived mail.
+	if len(res.ArchivesPurged) > 0 {
+		fmt.Fprintf(os.Stderr,
+			"cab-bridge: retention purge removed %d archive day(s) holding %d archived session(s), across ALL projects in this data dir: %s\n",
+			len(res.ArchivesPurged), res.PurgedSessionCount, strings.Join(res.ArchivesPurged, ", "))
+	}
 	if res.SkippedOtherScopes > 0 {
 		fmt.Fprintf(os.Stderr,
 			"cab-bridge: %d stale session(s) in other scopes were NOT touched — pass --all-scopes if you want them\n",

@@ -97,6 +97,14 @@ type Result struct {
 	// team's. Zero unless scope=global without --all-scopes.
 	SkippedOtherScopes int      `json:"skippedOtherScopes,omitempty"`
 	ArchivesPurged     []string `json:"archivesPurged"`
+	// PurgedSessionCount is how many archived SESSIONS went with those dates. A
+	// date says when something was archived and nothing about how much of whose
+	// work was inside it — and the retention sweep spans every project in the
+	// data dir, so that number is the only thing standing between "removed 2
+	// dates" and "removed two weeks of four teams' mailboxes".
+	//
+	// Additive, omitempty: archivesPurged keeps its shape.
+	PurgedSessionCount int `json:"purgedSessionCount,omitempty"`
 }
 
 // scopeOfSession reads a session's scope BEFORE it is removed. "(no scope)" for
@@ -150,9 +158,10 @@ func Run(_ context.Context, opts Options) (*Result, error) {
 
 	// Retention sweep on archive/ (independent of scope — we always honor
 	// the retention window for previously archived data).
-	purged, err := purgeOldArchives(opts.DataDir, opts.RetentionDays, opts.Now)
+	purged, sessionCount, err := purgeOldArchives(opts.DataDir, opts.RetentionDays, opts.Now)
 	if err == nil {
 		res.ArchivesPurged = purged
+		res.PurgedSessionCount = sessionCount
 	}
 	return res, nil
 }
@@ -284,14 +293,15 @@ func archiveAndRemoveSession(dataDir, sid string, now func() time.Time) error {
 // purgeOldArchives walks archive/ and removes any date-named subdir whose
 // date is older than now - retentionDays. Returns the date strings purged
 // for the Result summary. Non-date entries and parse failures are skipped.
-func purgeOldArchives(dataDir string, retentionDays int, now func() time.Time) ([]string, error) {
+func purgeOldArchives(dataDir string, retentionDays int, now func() time.Time) ([]string, int, error) {
 	archRoot := filepath.Join(dataDir, "archive")
+	sessionCount := 0
 	entries, err := os.ReadDir(archRoot)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return []string{}, nil // BUG-B: empty, not nil, for JSON []
+			return []string{}, 0, nil // BUG-B: empty, not nil, for JSON []
 		}
-		return nil, err
+		return nil, 0, err
 	}
 
 	cutoff := now().Add(-time.Duration(retentionDays) * 24 * time.Hour)
@@ -308,9 +318,19 @@ func purgeOldArchives(dataDir string, retentionDays int, now func() time.Time) (
 			continue
 		}
 		dirPath := filepath.Join(archRoot, e.Name())
+		// Counted BEFORE the removal, for the obvious reason.
+		inside := 0
+		if sub, serr := os.ReadDir(dirPath); serr == nil {
+			for _, d := range sub {
+				if d.IsDir() {
+					inside++
+				}
+			}
+		}
 		if err := os.RemoveAll(dirPath); err == nil {
 			purged = append(purged, e.Name())
+			sessionCount += inside
 		}
 	}
-	return purged, nil
+	return purged, sessionCount, nil
 }
