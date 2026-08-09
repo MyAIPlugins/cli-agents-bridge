@@ -49,7 +49,7 @@ func TestScenario2_RoleRoutingEnforcement(t *testing.T) {
 	// on "takes no flags": a bounce between two contradicting instructions.
 	assert.NotContains(t, errOut, "--allow-mesh", "never advise a flag the loop verbs reject")
 	assert.Contains(t, errOut, "val", "it must name the route that works")
-	assert.Contains(t, errOut, "architect", "and the role a reviewer should register as")
+	assert.Contains(t, errOut, "critic", "and the role a reviewer should JOIN as — architect is reserved for Claude Desktop")
 
 	// Case 3: observer → VAL structurally blocked (no flag relaxes it)
 	_, errOut, exit = runInDir(t, obsDir, []string{"ask", "VAL-routing", "should-not-send"}, dataDirEnv(dataDir))

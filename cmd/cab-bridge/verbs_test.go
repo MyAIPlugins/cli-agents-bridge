@@ -264,10 +264,24 @@ func TestResolveReplyTarget(t *testing.T) {
 		assert.Equal(t, "the answer", content)
 	})
 
-	t.Run("one_arg_matching_a_sender_name_is_the_recipient_stdin_the_message", func(t *testing.T) {
+	// The payload rule has no exceptions when there is nothing to disambiguate.
+	// This test used to assert the opposite — that an argument matching the only
+	// asker's name is a RECIPIENT — which made `reply OK` to a val called `OK`
+	// exit 1 with "empty message" while the message sat in argv. A test that
+	// pins the behaviour instead of the contract does not notice.
+	t.Run("one_arg_is_the_message_even_when_it_matches_the_only_askers_name", func(t *testing.T) {
 		to, content, err := resolveReplyTarget([]string{"VAL-one"}, asks, nil, strings.NewReader("from stdin"))
 		require.NoError(t, err)
 		assert.Equal(t, "valaaaaa", to)
+		assert.Equal(t, "VAL-one", content, "one asker, so the argument can only be the message")
+	})
+
+	// With SEVERAL open askers the name earns its meaning back: there the
+	// argument really is choosing between them, and the message comes on stdin.
+	t.Run("one_arg_naming_an_asker_disambiguates_only_when_there_are_several", func(t *testing.T) {
+		to, content, err := resolveReplyTarget([]string{"CRI-two"}, twoSenders, nil, strings.NewReader("from stdin"))
+		require.NoError(t, err)
+		assert.Equal(t, "cribbbbb", to)
 		assert.Equal(t, "from stdin", content)
 	})
 
