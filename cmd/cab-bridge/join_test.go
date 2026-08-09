@@ -141,8 +141,8 @@ func TestJoin_WillNotRenameIntoANameLiveElsewhere(t *testing.T) {
 	require.NoError(t, runJoin([]string{"--role=esc", "--agent-name=ESC-mine", "--project-path=" + mine}))
 
 	err := runJoin([]string{"--role=esc", "--agent-name=ESC-taken", "--project-path=" + mine})
-	require.Error(t, err, "that name is in use by a live session elsewhere")
-	assert.Contains(t, err.Error(), "already taken")
+	require.Error(t, err, "that name is in use by a LIVE session in this project")
+	assert.Contains(t, err.Error(), "already has a LIVE")
 	assert.Contains(t, err.Error(), theirs, "and it names the directory the reader can go to")
 
 	mgr := newSessionManager(config.Config{DataDir: dataDir})
@@ -392,4 +392,84 @@ func TestJoin_CriticIsAFirstClassRole(t *testing.T) {
 	peer, ok := selectPeer(session.RoleCritic, peers)
 	require.True(t, ok)
 	assert.Equal(t, session.RoleVal, peer.Role)
+}
+
+// Alan's rule on names, all four situations in one place — and the fifth line is
+// the one that matters most: the SAME-DIRECTORY case must keep renaming rather
+// than becoming a takeover. If a test stops telling those two apart, the next
+// change merges them, and that merge is only noticed when somebody loses a
+// session.
+func TestJoin_NameRuleAcrossTheFourSituations(t *testing.T) {
+	dataDir := t.TempDir()
+	repoA := t.TempDir()
+	repoB := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repoA, ".git"), 0o700))
+	require.NoError(t, os.MkdirAll(filepath.Join(repoB, ".git"), 0o700))
+	a1 := filepath.Join(repoA, "a")
+	a2 := filepath.Join(repoA, "b")
+	b1 := filepath.Join(repoB, "c")
+	for _, d := range []string{a1, a2, b1} {
+		require.NoError(t, os.MkdirAll(d, 0o700))
+	}
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	require.NoError(t, runJoin([]string{"--role=critic", "--agent-name=CRI-x", "--project-path=" + a1}))
+
+	t.Run("same_directory_different_name_still_RENAMES", func(t *testing.T) {
+		before, err := os.ReadDir(filepath.Join(dataDir, "sessions"))
+		require.NoError(t, err)
+		require.NoError(t, runJoin([]string{"--role=critic", "--agent-name=CRI-renamed", "--project-path=" + a1}))
+		after, err := os.ReadDir(filepath.Join(dataDir, "sessions"))
+		require.NoError(t, err)
+		assert.Len(t, after, len(before), "a rename creates nothing and retires nobody")
+		// put the name back for the cases below
+		require.NoError(t, runJoin([]string{"--role=critic", "--agent-name=CRI-x", "--project-path=" + a1}))
+	})
+
+	t.Run("same_scope_other_directory_LIVE_is_refused", func(t *testing.T) {
+		err := runJoin([]string{"--role=critic", "--agent-name=CRI-x", "--project-path=" + a2})
+		require.Error(t, err, "an agent at work does not lose its identity to a newcomer")
+		assert.Contains(t, err.Error(), "already has a LIVE")
+		assert.Contains(t, err.Error(), a1, "and the error names the place, absolute")
+	})
+
+	t.Run("another_scope_is_refused_even_though_scopes_isolate", func(t *testing.T) {
+		err := runJoin([]string{"--role=critic", "--agent-name=CRI-x", "--project-path=" + b1})
+		require.Error(t, err, "the guard is against the human error, not against ambiguity")
+		assert.Contains(t, err.Error(), "ANOTHER project")
+		assert.Contains(t, err.Error(), a1)
+	})
+
+	t.Run("same_scope_other_directory_STALE_is_taken_over", func(t *testing.T) {
+		// Age the holder out: no heartbeat, no PID.
+		mgr := newSessionManager(config.Config{DataDir: dataDir})
+		peers, _, err := collectPeers(mgr, dataDir, 300, 65536, true, "", resolveScope(a1))
+		require.NoError(t, err)
+		var holder string
+		for _, p := range peers {
+			if p.AgentName == "CRI-x" {
+				holder = p.SessionID
+			}
+		}
+		require.NotEmpty(t, holder)
+		mf, err := mgr.LoadManifest(holder)
+		require.NoError(t, err)
+		mf.PID = deadPID
+		mf.LastHeartbeat = time.Now().UTC().Add(-2 * time.Hour)
+		require.NoError(t, mgr.SaveManifest(mf))
+
+		require.NoError(t, runJoin([]string{"--role=critic", "--agent-name=CRI-x", "--project-path=" + a2}),
+			"a restarted agent reclaims its place; nobody is on the other side")
+
+		// The stale one yielded the NAME and kept its session and mailbox.
+		retired, err := mgr.LoadManifest(holder)
+		require.NoError(t, err)
+		assert.NotEqual(t, "CRI-x", retired.AgentName, "it no longer holds the name")
+		assert.Contains(t, retired.AgentName, "superseded")
+		require.NotEmpty(t, retired.FormerAgentNames)
+		assert.Equal(t, "CRI-x", retired.FormerAgentNames[len(retired.FormerAgentNames)-1],
+			"the name it just yielded is the most recent former one, on disk")
+		assert.DirExists(t, filepath.Join(dataDir, "sessions", holder), "the session itself is not destroyed")
+	})
 }
