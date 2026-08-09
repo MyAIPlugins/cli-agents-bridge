@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	transportfs "github.com/myAIPlugins/cli-agents-bridge/internal/transport/fs"
 )
 
@@ -258,6 +259,12 @@ func (m *Manager) LongestPrefixLookup(cwd string) (string, error) {
 		if err != nil {
 			// Corrupt manifest — skip silently. A noisy log is reserved for
 			// the cleanup subcommand which has a clearer mandate.
+			//
+			// A manifest that is not OURS is a different matter and is announced:
+			// swallowed here it becomes a plain "no session for this directory",
+			// which is invisible in exactly the command someone would run to
+			// find out why.
+			_ = security.WarnNotOurs(e.Name(), err)
 			continue
 		}
 		if !isPathDescendantOrEqual(absCwd, mf.ProjectPath) {
@@ -372,7 +379,9 @@ func (m *Manager) LookupByCWDDetails(cwd string) (Resolution, error) {
 		}
 		mf, lerr := m.LoadManifest(e.Name())
 		if lerr != nil {
-			// Corrupt manifest — skip silently, same policy as LongestPrefixLookup.
+			// Corrupt manifest — skip silently, same policy as LongestPrefixLookup;
+			// a foreign one is announced, for the same reason as there.
+			_ = security.WarnNotOurs(e.Name(), lerr)
 			continue
 		}
 		matchLen := -1

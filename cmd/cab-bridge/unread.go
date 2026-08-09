@@ -49,7 +49,7 @@ func lastReceivedFrom(sessionDir, peer string, maxContentBytes int) (string, err
 			}
 			data, rerr := security.ReadOwnedFile(filepath.Join(dir, name))
 			if rerr != nil {
-				_ = notOursSkip(filepath.Join(dir, name), rerr)
+				_ = security.WarnNotOurs(filepath.Join(dir, name), rerr)
 				continue
 			}
 			m, derr := message.DecodeLenient(data, maxContentBytes)
@@ -97,7 +97,7 @@ func lastSentTimeTo(outboxDir, to string, maxContentBytes int) (time.Time, error
 		}
 		data, rerr := security.ReadOwnedFile(filepath.Join(outboxDir, name))
 		if rerr != nil {
-			_ = notOursSkip(filepath.Join(outboxDir, name), rerr)
+			_ = security.WarnNotOurs(filepath.Join(outboxDir, name), rerr)
 			continue
 		}
 		m, derr := message.DecodeLenient(data, maxContentBytes)
@@ -142,7 +142,7 @@ func unreadFromPeer(inboxDir, peer string, after time.Time, maxContentBytes int)
 		}
 		data, rerr := security.ReadOwnedFile(filepath.Join(inboxDir, name))
 		if rerr != nil {
-			_ = notOursSkip(filepath.Join(inboxDir, name), rerr)
+			_ = security.WarnNotOurs(filepath.Join(inboxDir, name), rerr)
 			continue
 		}
 		m, derr := message.DecodeLenient(data, maxContentBytes)

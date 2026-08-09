@@ -132,7 +132,7 @@ func collectSent(outboxDir string, maxContentBytes int) ([]sentSummary, error) {
 		}
 		data, rerr := security.ReadOwnedFile(filepath.Join(outboxDir, name))
 		if rerr != nil {
-			_ = notOursSkip(filepath.Join(outboxDir, name), rerr)
+			_ = security.WarnNotOurs(filepath.Join(outboxDir, name), rerr)
 			continue
 		}
 		m, derr := message.DecodeLenient(data, maxContentBytes)
@@ -245,8 +245,18 @@ func buildMailboxIndex(cfg config.Config, mgr *session.Manager, to string) (map[
 		if e.IsDir() || strings.HasPrefix(name, ".tmp.") || !strings.HasSuffix(name, ".json") {
 			continue
 		}
-		// The id is embedded in the archived filename (<timestamp>-<id>.json),
-		// so the index is built without decoding a single archived file.
+		// The id is embedded in the archived filename (<timestamp>-<id>.json), so
+		// the index is still built without DECODING a single archived file — but
+		// the entry is verified before its name is believed. Trusting the name
+		// alone let a planted file forge the "archived" state of a message, i.e.
+		// tell a sender their peer had replied when nobody had. The check costs an
+		// open+fstat and no read, keeping the optimisation that made this loop
+		// worth writing.
+		full := filepath.Join(sessionDir, "processed", name)
+		if cerr := security.CheckOwnedFile(full); cerr != nil {
+			_ = security.WarnNotOurs(full, cerr)
+			continue
+		}
 		if id := archivedID(name); id != "" {
 			index[id] = sentStateArchived
 		}

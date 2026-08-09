@@ -3,6 +3,7 @@ package session
 import (
 	"errors"
 	"fmt"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"os"
 	"path/filepath"
 	"sort"
@@ -123,6 +124,11 @@ func (m *Manager) findIdentityMatches(absProj string, opts RegisterOpts) ([]iden
 		}
 		mf, lerr := m.LoadManifest(e.Name())
 		if lerr != nil {
+			// A manifest that is not ours is skipped like an unreadable one, but
+			// NOT in silence: suppressing it here turns the anomaly into a plain
+			// "no session found", i.e. invisible in the very command someone
+			// would use to look for it.
+			_ = security.WarnNotOurs(e.Name(), lerr)
 			continue
 		}
 		if mf.AgentName != wantAgent || mf.Role != wantRole {

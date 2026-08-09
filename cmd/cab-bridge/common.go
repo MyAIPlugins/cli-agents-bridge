@@ -364,24 +364,3 @@ func resolveCurrentSession(mgr *session.Manager, cmdName, sessionIDFlag string) 
 func strictSessionLookup() bool {
 	return os.Getenv("CAB_BRIDGE_STRICT_SESSION_LOOKUP") == "1"
 }
-
-// notOursSkip reports whether err is an ownership violation, announcing it on
-// stderr when it is.
-//
-// It exists because the typed error was being flattened. Every directory scan in
-// this package has the shape "read it, skip on error", so ErrOwnershipMismatch
-// was landing in the same bucket as a truncated JSON: silently skipped, or —
-// worse — reported to the agent as "unreadable file, no action needed from you",
-// which is the exact opposite of what the one security event this check exists
-// to surface deserves.
-//
-// A scan still SKIPS rather than aborting (see collectPeers: a command that dies
-// on the anomaly it should be displaying is useless when it matters). What it
-// must not do is stay quiet about it.
-func notOursSkip(path string, err error) bool {
-	if !errors.Is(err, security.ErrOwnershipMismatch) {
-		return false
-	}
-	fmt.Fprintf(os.Stderr, "cab-bridge: ignoring %s — it does not belong to this user: %v\n", path, err)
-	return true
-}

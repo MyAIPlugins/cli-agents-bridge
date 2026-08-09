@@ -36,6 +36,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
@@ -195,6 +196,9 @@ func globalSweep(opts Options) ([]string, map[string]int, int, error) {
 		mf, err := mgr.LoadManifest(e.Name())
 		if err != nil {
 			// Corrupt manifest — skip (Sprint 4 forensics will surface these).
+			// A foreign one is announced: this command DELETES, so "I ignored
+			// something I could not vouch for" is the minimum it owes the caller.
+			_ = security.WarnNotOurs(e.Name(), err)
 			continue
 		}
 		if !session.IsStale(mf, opts.StaleSeconds, now) {

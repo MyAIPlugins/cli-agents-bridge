@@ -687,7 +687,7 @@ func describeClosed(cfg config.Config, sid string, ids []string) []string {
 			}
 			data, rerr := security.ReadOwnedFile(filepath.Join(processedDir, e.Name()))
 			if rerr != nil {
-				_ = notOursSkip(filepath.Join(processedDir, e.Name()), rerr)
+				_ = security.WarnNotOurs(filepath.Join(processedDir, e.Name()), rerr)
 				continue
 			}
 			if m, derr := message.DecodeLenient(data, cfg.MaxMessageBytes); derr == nil {
