@@ -378,7 +378,18 @@ func resolveCurrentSession(mgr *session.Manager, cmdName, sessionIDFlag string) 
 			// would route it into impersonation (CRI2 P0).
 			// From the one source, like every other place roles are offered: a
 			// hand-kept list on a recovery path is a list nobody updates.
-			return "", fmt.Errorf("%s: no session for this directory (%s) — run `cab-bridge join --role=%s` here first", cmdName, cwd, session.RoleNamesWithNote())
+			// A PLACEHOLDER inside the backticks, the list outside them. What sits
+			// between backticks is presented as a command to copy, and the note
+			// followed the list straight in there — producing a line that does not
+			// run. The predicate was never "inside the list": it is "inside
+			// something that gets copied", and the list was just the instance in
+			// front of us.
+			//
+			// And `--role=val|esc|...` was never runnable either: the reader has to
+			// choose. A placeholder says that; a pipe-separated list pretends the
+			// line is ready.
+			return "", fmt.Errorf("%s: no session for this directory (%s) — run `cab-bridge join --role=<role>` here first.\n"+
+				"  Roles: %s", cmdName, cwd, session.RoleNamesWithNote())
 		}
 		return "", fmt.Errorf("%s: session lookup from cwd %q: %w", cmdName, cwd, err)
 	}
