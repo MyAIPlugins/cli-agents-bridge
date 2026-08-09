@@ -1,0 +1,40 @@
+internal/cleanup/gc.go
+  s_9815573d52f42d::t_1a7e9da3281ac9 75
+  s_9815573d52f42d::t_0e95121b1b201a 104-106
+  s_9815573d52f42d::t_40ba3be357d56b 25-52
+  s_9815573d52f42d::t_732b3f70985bde 121-130
+cmd/cab-bridge/common.go
+  s_9815573d52f42d::t_e474002a5c420b 119-122,127-133
+  s_9815573d52f42d::t_732b3f70985bde 109,113
+  s_9815573d52f42d::t_86f73fe375e735 134-135
+cmd/cab-bridge/register_test.go
+  s_9815573d52f42d::t_8659dbc16b4c83 58,78
+internal/cleanup/scope.go
+  s_9815573d52f42d::t_bd39d3bc60c24d 75-96,109,116,121,124,129,150,152,156,158,177-180,185,187
+internal/cleanup/gc_test.go
+  s_9815573d52f42d::t_9d7b8db3b4c3d4 148-213
+  s_9815573d52f42d::t_89081796ea6e95 57,79,90,117
+cmd/cab-bridge/register.go
+  s_9815573d52f42d::t_d2eee47c61527d 62-71,78-79
+cmd/cab-bridge/cleanup.go
+  s_9815573d52f42d::t_e474002a5c420b 73-80
+cmd/cab-bridge/join.go
+  s_9815573d52f42d::t_f0d3b56a4a7efb 106-109
+  s_9815573d52f42d::t_ab1eb70cb81ae9 110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "0bdb7921222e0b84a3009c61e9853c179d18317a",
+  "prompts": {},
+  "sessions": {
+    "s_9815573d52f42d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8df03128-82d8-47b9-bcaa-30b62ac013ea",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
