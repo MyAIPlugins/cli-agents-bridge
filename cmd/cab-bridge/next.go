@@ -106,8 +106,14 @@ type outboundAsk struct {
 }
 
 type nextPayload struct {
-	Status       string        `json:"status"`
-	Session      string        `json:"session"`
+	Status  string `json:"status"`
+	Session string `json:"session"`
+	// AgentName is here because an eight-hex id is something you RECOGNISE and a
+	// name is something you READ. A val re-armed three times in a row onto the
+	// wrong session without noticing: `679b7060` said nothing, `ESC-bridge`
+	// would have stopped it at the first. It is not a flag and not a choice —
+	// one more word on an output the agent reads anyway.
+	AgentName    string        `json:"agentName,omitempty"`
 	Generation   int           `json:"generation"`
 	Total        int           `json:"total"`
 	Returned     int           `json:"returned"`
@@ -135,6 +141,7 @@ type nextPayload struct {
 type nextCommitRecord struct {
 	Status     string `json:"status"`
 	Session    string `json:"session"`
+	AgentName  string `json:"agentName,omitempty"`
 	Generation int    `json:"generation"`
 	// Confirmed is always an array, never null: a consumer that iterates it
 	// should not have to special-case the paths that confirm nothing.
@@ -154,6 +161,13 @@ func newCommitRecord(status, sid string, generation int, confirmed []string, hin
 		confirmed = []string{}
 	}
 	return nextCommitRecord{Status: status, Session: sid, Generation: generation, Confirmed: confirmed, Hint: hint}
+}
+
+// withName stamps the agent name on a record. Kept separate so every exit path
+// gets it without threading a manager through the constructor.
+func withName(rec nextCommitRecord, name string) nextCommitRecord {
+	rec.AgentName = name
+	return rec
 }
 
 // mailboxEntry is one decoded message file still sitting in inbox/.
@@ -194,6 +208,8 @@ func nextRun(parent context.Context, mgr *session.Manager, cfg config.Config, si
 	// Adopt + claim as ONE locked operation: doing them separately lets a
 	// concurrent `register --resume` be defeated by the waiter it just evicted
 	// (CRI diff-gate P0-1).
+	me := myName(mgr, sid)
+
 	owner, err := mgr.StartWait(sid)
 	if err != nil {
 		return fmt.Errorf("next (%s): %w", whoIThoughtIWas(mgr, sid), err)
@@ -292,6 +308,7 @@ func nextRun(parent context.Context, mgr *session.Manager, cfg config.Config, si
 			// The session lock is re-entrant within a process, so the commit below
 			// re-acquires it harmlessly.
 			var evicted bool
+			payload.page.AgentName = me
 			emitErr := mgr.WithSessionLock(sid, func() error {
 				if !ownerOK() {
 					evicted = true
@@ -307,13 +324,13 @@ func nextRun(parent context.Context, mgr *session.Manager, cfg config.Config, si
 
 			switch {
 			case emitErr != nil:
-				_ = enc.Encode(newCommitRecord(nextStatusNotCommitted, sid, payload.page.Generation, nil, hintCommitFailed))
+				_ = enc.Encode(withName(newCommitRecord(nextStatusNotCommitted, sid, payload.page.Generation, nil, hintCommitFailed), me))
 				return fmt.Errorf("next: %w", emitErr)
 			case evicted:
-				_ = enc.Encode(newCommitRecord(nextStatusNotCommitted, sid, payload.page.Generation, nil, hintTakeoverBeforeEmit))
+				_ = enc.Encode(withName(newCommitRecord(nextStatusNotCommitted, sid, payload.page.Generation, nil, hintTakeoverBeforeEmit), me))
 				return errors.New("next: another instance of this session took over")
 			default:
-				return enc.Encode(newCommitRecord(nextStatusCommitted, sid, payload.page.Generation, payload.emittedIDs, "these messages are yours; run next again to stay reachable"))
+				return enc.Encode(withName(newCommitRecord(nextStatusCommitted, sid, payload.page.Generation, payload.emittedIDs, "these messages are yours; run next again to stay reachable"), me))
 			}
 		}
 
@@ -324,8 +341,8 @@ func nextRun(parent context.Context, mgr *session.Manager, cfg config.Config, si
 			// zero bytes leaves a wrapper unable to tell "interrupted while
 			// waiting" from "nothing happened at all", and every other exit path
 			// here says what it did.
-			rec := newCommitRecord(nextStatusInterrupted, sid, owner.Generation, nil,
-				"the wait was interrupted before anything arrived — nothing was delivered; run next again when you are ready")
+			rec := withName(newCommitRecord(nextStatusInterrupted, sid, owner.Generation, nil,
+				"the wait was interrupted before anything arrived — nothing was delivered; run next again when you are ready"), me)
 			rec.Outbound = collectOutboundAsks(mgr, cfg, sid)
 			return enc.Encode(rec)
 		case <-time.After(pollInterval):

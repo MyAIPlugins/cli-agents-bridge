@@ -345,3 +345,20 @@ func TestPrintOverviewHuman_ListenerGenerationAndReclaim(t *testing.T) {
 	assert.Contains(t, b2.String(), "reclaim-pending")
 	assert.Contains(t, b2.String(), "generation 3")
 }
+
+// TestPrintOverviewHuman_ShowsHowToStopJustThisWaiter: the PID was always
+// printed and neither operator thought to use it when it mattered — one
+// `pkill -f "cab-bridge next"` killed four waiters at once. The scalpel has to
+// be written next to the number, or the hammer wins.
+func TestPrintOverviewHuman_ShowsHowToStopJustThisWaiter(t *testing.T) {
+	t.Parallel()
+	since := time.Now().UTC()
+	var b bytes.Buffer
+	printOverviewHuman(&b, overviewReport{
+		Me:             overviewSelf{SessionID: "esc12345", AgentName: "ESC-x", Role: "esc"},
+		ListenerActive: true, ListenerPid: 4321, ListenerSince: &since,
+	})
+	out := b.String()
+	assert.Contains(t, out, "kill 4321", "the exact surgical command, next to the pid it needs")
+	assert.Contains(t, out, "just this one", "and it must be obvious it targets ONE waiter")
+}

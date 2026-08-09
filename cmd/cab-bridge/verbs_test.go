@@ -408,6 +408,10 @@ func TestReply_DoesNotCloseWhatWasNeverShown(t *testing.T) {
 // refused it forever and the ask stayed open with no way back.
 func TestReply_SecondInitializerResumesTheFirstJournal(t *testing.T) {
 	mgr, _, dataDir := newReplyPair(t)
+	// replyRun re-loads the config and resolves the session from the REAL cwd,
+	// so without this the call below sends a real message from whatever session
+	// owns this directory — and closes that peer's open asks. It did.
+	t.Setenv("CAB_DATA_DIR", dataDir)
 	deliverAndNotify(t, mgr, dataDir, "msg-aaaaaaaaaaaa", "brief", time.Now().UTC())
 
 	first := newTxn(replySelf, []string{"msg-aaaaaaaaaaaa"}, "the first answer")
@@ -417,8 +421,11 @@ func TestReply_SecondInitializerResumesTheFirstJournal(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := replyRun([]string{"a completely different answer"}, strings.NewReader(""), &stdout, &stderr)
 	if err != nil {
-		// Resolution may fail in the test environment; the invariant below is
-		// what matters and is asserted either way.
+		// Resolution can legitimately fail here (no session owns the temp dir);
+		// the invariant below is what matters and holds either way. What must
+		// NEVER happen is that it SUCCEEDS against a real session — the earlier
+		// version of this comment tolerated the failure and never considered the
+		// success, which is the case that did the damage.
 		t.Logf("replyRun returned: %v", err)
 	}
 

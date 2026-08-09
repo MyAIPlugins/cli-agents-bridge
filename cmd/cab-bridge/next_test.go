@@ -839,3 +839,33 @@ func TestNext_InterruptedRecordCarriesOutbound(t *testing.T) {
 	assert.NotEmpty(t, rec.Outbound[0].Age)
 	assert.NotNil(t, rec.Confirmed, "confirmed stays an array on every path")
 }
+
+// TestNext_EveryRecordCarriesTheAgentName closes the failure a val had three
+// times in a row: re-arming onto the WRONG session without noticing, because
+// the payload carried `session: 679b7060` and nothing else.
+//
+// An eight-hex id is something you RECOGNISE; a name is something you READ.
+// The distinction is not cosmetic — it is the difference between a check the
+// agent has to perform and one that performs itself.
+func TestNext_EveryRecordCarriesTheAgentName(t *testing.T) {
+	mgr, cfg, sid, dataDir := newNextSession(t)
+
+	t.Run("on_the_page_and_on_the_commit", func(t *testing.T) {
+		plantInboxAt(t, dataDir, sid, "msg-aaaaaaaaaaaa", "valxxx01", message.TypeQuery, "brief", time.Now().UTC())
+		page, commit := runNextRecords(t, mgr, cfg, sid, 2*time.Second, true)
+		assert.Equal(t, "ESC-next", page.AgentName, "the page says who you are, not just which id")
+		assert.Equal(t, "ESC-next", commit.AgentName, "and so does the outcome record")
+	})
+
+	t.Run("on_the_interrupted_record_too", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		var stdout, stderr bytes.Buffer
+		require.NoError(t, nextRun(ctx, mgr, cfg, sid, &stdout, &stderr))
+
+		var rec nextCommitRecord
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &rec))
+		require.Equal(t, nextStatusInterrupted, rec.Status)
+		assert.Equal(t, "ESC-next", rec.AgentName, "the silent path is where identity matters most")
+	})
+}
