@@ -276,8 +276,12 @@ func runSendVerb(verb, msgType string, args []string, stdin io.Reader, stdout, s
 		// contradicting instructions — the same dead end as F-91 (CRI2 P1-2).
 		// Say the route that actually exists instead.
 		if errors.Is(err, routing.ErrEscToEscForbidden) {
-			return fmt.Errorf("%s (%s): two executors cannot message each other on the loop — route it through the val, or register as role=architect if you are a reviewer (the loop verbs take no flags, so there is no override here)",
-				verb, whoIThoughtIWas(mgr, sid))
+			// NOT "architect": that one is reserved for Claude Desktop over MCP.
+			// This line sits on the recovery path from a mistake — the moment
+			// somebody is already confused — and it used to send a reviewer
+			// straight into the reserved role.
+			return fmt.Errorf("%s (%s): two executors cannot message each other on the loop — route it through the val, or join as role=%s if you are a reviewer (the loop verbs take no flags, so there is no override here)",
+				verb, whoIThoughtIWas(mgr, sid), session.RoleCritic)
 		}
 		return fmt.Errorf("%s (%s): %w", verb, whoIThoughtIWas(mgr, sid), err)
 	}
@@ -444,7 +448,16 @@ func resolveReplyTarget(args []string, asks []openAsk, known []string, stdin io.
 		return sid, content, err
 
 	case 1:
-		if _, named := byName[args[0]]; named {
+		// A single argument IS the message — that is the payload rule, without
+		// exceptions — UNLESS the recipient is genuinely ambiguous. With one open
+		// asker there is nothing to disambiguate, so reading the argument as a
+		// name breaks the rule for nothing: a val called `OK`, answered with the
+		// word `OK`, produced "empty message" and exit 1 while the message sat
+		// right there in argv.
+		//
+		// The disambiguation earns its exception only when several agents have
+		// open asks and the argument names one of them.
+		if _, named := byName[args[0]]; named && len(senders) > 1 {
 			sid, rerr := soleSessionNamed(byName, args[0], senders)
 			if rerr != nil {
 				return "", "", rerr

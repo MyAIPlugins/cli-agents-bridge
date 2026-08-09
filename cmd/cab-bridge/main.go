@@ -10,6 +10,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 	"os"
 	"syscall"
 )
@@ -119,7 +120,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  cab-bridge <subcommand> [args...]")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "The working loop — five commands, no flags:")
-	fmt.Fprintln(os.Stderr, "  join --role=val|esc  Once, at the start: register (idempotent) and see who is here")
+	fmt.Fprintf(os.Stderr, "  join --role=%s  Once, at the start: register (idempotent) and see who is here\n", session.RoleNames())
 	fmt.Fprintln(os.Stderr, "  next                 Then forever: deliver whatever arrived, waiting until it does")
 	fmt.Fprintln(os.Stderr, "  ask <agent> [\"msg\"]  Ask something — stays open until they reply")
 	fmt.Fprintln(os.Stderr, "  tell <agent> [\"msg\"] Inform — no reply expected")
