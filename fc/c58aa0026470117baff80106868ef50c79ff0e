@@ -1,0 +1,44 @@
+cmd/cab-bridge/dedup.go
+  s_9815573d52f42d::t_cd01d21b41a5cd 59
+cmd/cab-bridge/notify_watch.go
+  s_9815573d52f42d::t_26385f7092060d 352
+internal/security/perms.go
+  s_9815573d52f42d::t_563f6bad49d38d 180-189,196-198,203-213,227-245
+  s_9815573d52f42d::t_8602b52657dbe7 190-194
+internal/security/perms_test.go
+  s_9815573d52f42d::t_d7e47c825eec95 9,261-310
+cmd/cab-bridge/inbox.go
+  s_9815573d52f42d::t_26385f7092060d 191
+  s_9815573d52f42d::t_cd01d21b41a5cd 139
+cmd/cab-bridge/common.go
+  s_9815573d52f42d::t_10a4a457bc295c 367-387
+cmd/cab-bridge/sent.go
+  s_9815573d52f42d::t_cd01d21b41a5cd 135
+cmd/cab-bridge/unread.go
+  s_9815573d52f42d::t_cd01d21b41a5cd 52,100,145
+cmd/cab-bridge/next.go
+  s_9815573d52f42d::t_26385f7092060d 610-616
+cmd/cab-bridge/read.go
+  s_9815573d52f42d::t_26385f7092060d 101-106
+cmd/cab-bridge/verbs.go
+  s_9815573d52f42d::t_630cd54e5e705b 690
+cmd/cab-bridge/next_test.go
+  s_9815573d52f42d::t_6b40f5783fcee1 19,861-893
+  s_9815573d52f42d::t_7bed4d068c4558 894
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "fcc58aa0026470117baff80106868ef50c79ff0e",
+  "prompts": {},
+  "sessions": {
+    "s_9815573d52f42d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8df03128-82d8-47b9-bcaa-30b62ac013ea",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
