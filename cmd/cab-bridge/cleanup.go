@@ -18,7 +18,8 @@ var ErrConfirmRequired = errors.New("global cleanup requires explicit confirmati
 func runCleanup(args []string) error {
 	fs := flag.NewFlagSet("cleanup", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	scope := fs.String("scope", cleanup.ScopeMySession, "cleanup scope (my-session|global)")
+	scope := fs.String("scope", cleanup.ScopeMySession, "cleanup scope (my-session|global); global sweeps the stale sessions of THIS project root")
+	allScopes := fs.Bool("all-scopes", false, "with --scope=global: sweep every project sharing this data dir, other teams included (pre-v0.8 behaviour)")
 	force := fs.Bool("force", false, "skip TTY confirmation for --scope=global")
 	retention := fs.Int("retention", 0, "override RetentionDays from config (0 = use config default)")
 	sessionIDFlag := fs.String("session-id", "", "for scope=my-session: target session ID (default: longest-prefix lookup from cwd)")
@@ -35,9 +36,20 @@ func runCleanup(args []string) error {
 	}
 	mgr := newSessionManager(cfg)
 
+	// The caller's project root confines scope=global, unless --all-scopes says
+	// otherwise. Resolved from the cwd like everywhere else; a failure leaves it
+	// empty, which sweeps only unowned sessions — the conservative direction for
+	// a destructive command that no longer knows where it is standing.
+	callerScope := ""
+	if cwd, werr := os.Getwd(); werr == nil {
+		callerScope = resolveScope(cwd)
+	}
+
 	opts := cleanup.Options{
 		DataDir:       cfg.DataDir,
 		Scope:         *scope,
+		CallerScope:   callerScope,
+		AllScopes:     *allScopes,
 		StaleSeconds:  cfg.StaleSeconds,
 		RetentionDays: cfg.RetentionDays,
 	}
@@ -57,7 +69,11 @@ func runCleanup(args []string) error {
 		return ErrConfirmRequired
 	}
 	if *scope == cleanup.ScopeGlobal && !*force && isTTY(os.Stdin) {
-		fmt.Fprint(os.Stderr, "Confirm global cleanup of all stale sessions across all projects? [y/N]: ")
+		where := "this project"
+		if *allScopes {
+			where = "ALL projects sharing this data dir"
+		}
+		fmt.Fprintf(os.Stderr, "Confirm cleanup of stale sessions in %s? [y/N]: ", where)
 		var answer string
 		_, _ = fmt.Scanln(&answer)
 		if answer != "y" && answer != "Y" {
@@ -76,6 +92,14 @@ func runCleanup(args []string) error {
 	// team sharing this data dir.
 	for sc, n := range res.RemovedByScope {
 		fmt.Fprintf(os.Stderr, "cab-bridge: removed %d session(s) from scope %s\n", n, sc)
+	}
+	// The change announces itself. Before v0.8 this command swept every project
+	// sharing the data dir; whoever had a script expecting that gets a narrower
+	// sweep, and without this line they would get it with no error and no clue.
+	if res.SkippedOtherScopes > 0 {
+		fmt.Fprintf(os.Stderr,
+			"cab-bridge: %d stale session(s) in other scopes were NOT touched — pass --all-scopes if you want them\n",
+			res.SkippedOtherScopes)
 	}
 
 	out, err := json.MarshalIndent(res, "", "  ")

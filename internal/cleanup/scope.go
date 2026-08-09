@@ -60,13 +60,25 @@ var ErrOwnSessionRequired = errors.New("cleanup my-session: OwnSessionID require
 
 // Options bundle inputs for Run.
 type Options struct {
-	DataDir       string
-	Scope         string
-	OwnSessionID  string
+	DataDir      string
+	Scope        string
+	OwnSessionID string
+	// CallerScope is the project root the caller is standing in. scope=global
+	// sweeps only sessions belonging to it — see globalSweep.
+	CallerScope string
+	// AllScopes restores the pre-v0.8 reach of scope=global: every session in the
+	// data dir, other teams included. Explicit and deliberate, never a default.
+	AllScopes     bool
 	StaleSeconds  int
 	RetentionDays int
 	Now           func() time.Time // injection for tests
 }
+
+// SkippedOtherScopes counts stale sessions that scope=global would have removed
+// before v0.8 and now leaves alone, because they belong to another project root.
+// The caller MUST surface it: a semantic change that does not announce itself is
+// the same defect as the behaviour being removed, pointed the other way — and
+// whoever had a script expecting a full sweep gets a partial one with no error.
 
 // Result summarizes what Run did. Useful for the cmd wrapper to print a
 // human-readable summary and for tests to assert behavior precisely.
@@ -81,7 +93,10 @@ type Result struct {
 	// Additive, omitempty: `sessionsRemoved` keeps its exact shape, so scripts
 	// parsing it are untouched.
 	RemovedByScope map[string]int `json:"removedByScope,omitempty"`
-	ArchivesPurged []string       `json:"archivesPurged"`
+	// SkippedOtherScopes: stale sessions left alone because they are another
+	// team's. Zero unless scope=global without --all-scopes.
+	SkippedOtherScopes int      `json:"skippedOtherScopes,omitempty"`
+	ArchivesPurged     []string `json:"archivesPurged"`
 }
 
 // scopeOfSession reads a session's scope BEFORE it is removed. "(no scope)" for
@@ -121,12 +136,13 @@ func Run(_ context.Context, opts Options) (*Result, error) {
 		res.RemovedByScope[sc]++
 
 	case ScopeGlobal:
-		removed, byScope, err := globalSweep(opts)
+		removed, byScope, skipped, err := globalSweep(opts)
 		if err != nil {
 			return nil, err
 		}
 		res.SessionsRemoved = removed
 		res.RemovedByScope = byScope
+		res.SkippedOtherScopes = skipped
 
 	default:
 		return nil, fmt.Errorf("%w: %q (allowed: my-session, global)", ErrUnknownScope, opts.Scope)
@@ -147,15 +163,16 @@ func Run(_ context.Context, opts Options) (*Result, error) {
 // through session.IsStale (same as peers/status), so a session in state
 // "orchestrating" is heartbeat-exempt and is NOT swept here — the displayed
 // "not stale" and the swept set can never diverge.
-func globalSweep(opts Options) ([]string, map[string]int, error) {
+func globalSweep(opts Options) ([]string, map[string]int, int, error) {
 	sessionsRoot := filepath.Join(opts.DataDir, "sessions")
 	byScope := map[string]int{}
+	skipped := 0
 	entries, err := os.ReadDir(sessionsRoot)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return []string{}, byScope, nil // BUG-B: empty, not nil, for JSON []
+			return []string{}, byScope, 0, nil // BUG-B: empty, not nil, for JSON []
 		}
-		return nil, nil, fmt.Errorf("cleanup global: read sessions root: %w", err)
+		return nil, nil, 0, fmt.Errorf("cleanup global: read sessions root: %w", err)
 	}
 
 	now := opts.Now()
@@ -174,6 +191,13 @@ func globalSweep(opts Options) ([]string, map[string]int, error) {
 		if !session.IsStale(mf, opts.StaleSeconds, now) {
 			continue // still fresh, or orchestrating (heartbeat-exempt, F-23a)
 		}
+		// The same ownership rule the auto-gc uses, from the same function: two
+		// copies of one rule drift, and this codebase has already watched three
+		// hand-kept copies of the role list disagree with each other.
+		if !opts.AllScopes && !gcOwns(opts.CallerScope, mf.Scope) {
+			skipped++
+			continue
+		}
 		sc := mf.Scope
 		if sc == "" {
 			sc = "(no scope)"
@@ -184,7 +208,7 @@ func globalSweep(opts Options) ([]string, map[string]int, error) {
 		removed = append(removed, e.Name())
 		byScope[sc]++
 	}
-	return removed, byScope, nil
+	return removed, byScope, skipped, nil
 }
 
 // messageSubdirs are the per-session subdirectories that hold message files
