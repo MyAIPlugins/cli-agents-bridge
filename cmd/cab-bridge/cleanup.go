@@ -7,9 +7,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/cleanup"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 )
 
 // ErrConfirmRequired is returned by runCleanup when scope=global is invoked
@@ -29,6 +31,9 @@ func runCleanup(args []string) error {
 	// deletes everything.
 	retention := fs.Int("retention", -1, "override RetentionDays from config (0 disables the retention purge; -1 = use config)")
 	sessionIDFlag := fs.String("session-id", "", "for scope=my-session: target session ID (default: longest-prefix lookup from cwd)")
+	// The TARGET, stated by the caller. --force says "do it without asking"; it
+	// never said WHERE, and where is the thing that was got wrong.
+	dataDirFlag := fs.String("data-dir", "", "the data dir you intend to act on; required with --scope=global --force (paste the path the command prints)")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -49,6 +54,42 @@ func runCleanup(args []string) error {
 	callerScope := ""
 	if cwd, werr := os.Getwd(); werr == nil {
 		callerScope = resolveScope(cwd)
+	}
+
+	// ANNOUNCE THE TARGET BEFORE ACTING, and never suppressibly. A critic ran
+	// `CAB_RETENTION_DAYS=1 cleanup --scope=global --force` from inside its own
+	// sandbox, after a `cd`, and deleted thirteen archived sessions from the
+	// PRODUCTION data dir. The binary did exactly what the command said; what the
+	// command let it believe is the defect.
+	//
+	// The data dir comes from $HOME, never from the cwd — so a `cd` into a test
+	// directory protects nothing, and nothing said so. The retention notice added
+	// earlier today prints AFTER the deletion: it reads the damage, it does not
+	// prevent it.
+	fmt.Fprintf(os.Stderr, "cab-bridge: cleanup will act on %s\n", cfg.DataDir)
+	if *scope == cleanup.ScopeGlobal || opts0RetentionActive(cfg, *retention) {
+		fmt.Fprintf(os.Stderr, "cab-bridge: the retention purge spans EVERY project in that data dir, whatever --scope says\n")
+	}
+
+	// And with --scope=global --force, the caller must NAME that dir. --force
+	// removes the question, not the aim: an unattended run cannot read a warning,
+	// so the only thing that stops the wrong target is having had to type it.
+	// Requiring it only here keeps the ordinary my-session cleanup one word long.
+	if *scope == cleanup.ScopeGlobal && *force {
+		if *dataDirFlag == "" {
+			return fmt.Errorf("cleanup: --scope=global --force also needs --data-dir, naming the data dir you mean.\n"+
+				"  This command acts on %s — which comes from $HOME, NOT from the directory you are in.\n"+
+				"  A `cd` into a sandbox does not change it, and that is how thirteen archived sessions\n"+
+				"  were deleted from a live data dir.\n"+
+				"  If that is really the one you mean:\n"+
+				"    cab-bridge cleanup --scope=global --force --data-dir=%s",
+				cfg.DataDir, cfg.DataDir)
+		}
+		if filepath.Clean(*dataDirFlag) != filepath.Clean(cfg.DataDir) {
+			return fmt.Errorf("cleanup: --data-dir=%s does not match the data dir in effect (%s).\n"+
+				"  Refusing rather than guessing which of the two you meant.",
+				*dataDirFlag, cfg.DataDir)
+		}
 	}
 
 	opts := cleanup.Options{
@@ -123,6 +164,17 @@ func runCleanup(args []string) error {
 	}
 	fmt.Println(string(out))
 	return nil
+}
+
+// opts0RetentionActive reports whether this run will purge archives at all — the
+// retention sweep is data-dir-wide by design, so its reach deserves saying even
+// when --scope=my-session suggests something narrow.
+func opts0RetentionActive(cfg config.Config, retentionFlag int) bool {
+	days := cfg.RetentionDays
+	if retentionFlag >= 0 {
+		days = retentionFlag
+	}
+	return days > 0
 }
 
 // isTTY returns true if f is a terminal. Uses os.Stat mode bits — sufficient
