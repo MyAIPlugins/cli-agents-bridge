@@ -465,15 +465,35 @@ func resolveReplyTarget(args []string, asks []openAsk, known []string, stdin io.
 			content, err = resolveMessagePayload("", false, stdin)
 			return sid, content, err
 		}
-		// A near-miss on a name must NOT quietly become the message (CRI2 P1-1).
-		// `reply VAL-brige < report.md` used to send the string "VAL-brige" as the
-		// answer, never read the report, close the ask and exit 0 — after which
-		// the retry said "nothing to reply to", which from the agent's side is
-		// incomprehensible. Case-insensitive, because that is how the near-miss
-		// actually arrives.
-		if match, ok := nameLookalike(known, args[0]); ok {
-			return "", "", fmt.Errorf("%q is not one of the agents with an open ask, but it looks like %q — if you meant to answer them use `reply %s \"...\"`; if %q really is your message, pipe it on stdin instead",
-				args[0], match, match, args[0])
+		// The guardrail below is for a TYPO — an argument that is not a name and
+		// resembles one. An EXACT match with the only open asker is not a typo:
+		// there is nothing to protect from, and the payload rule applies (the same
+		// rule stated three lines above). Without this the fix moved the defect
+		// instead of removing it — `reply OK` to the only asker named `OK` fell
+		// out of the recipient branch and straight into the lookalike branch,
+		// which fired on the very case the fix had just freed.
+		//
+		// "e il ramo accanto?": the finding named one branch and the complement
+		// went unexamined, by me writing it and by the val ratifying it.
+		if _, isOpenAsker := byName[args[0]]; !isOpenAsker {
+			// A near-miss on a name must NOT quietly become the message (CRI2 P1-1).
+			// `reply VAL-brige < report.md` used to send the string "VAL-brige" as the
+			// answer, never read the report, close the ask and exit 0 — after which
+			// the retry said "nothing to reply to", which from the agent's side is
+			// incomprehensible. Case-insensitive, because that is how the near-miss
+			// actually arrives.
+			if match, ok := nameLookalike(known, args[0]); ok {
+				// EXACT vs merely similar are two different mistakes and deserve
+				// two different sentences. Saying "X ... looks like X" about an
+				// exact match reads as a contradiction, and the reader then
+				// distrusts the part that was right.
+				if match == args[0] {
+					return "", "", fmt.Errorf("%q is an agent here, but it has no open ask — so there is nothing to reply to it. "+
+						"If %q is your message to whoever DID ask, pipe it on stdin instead", args[0], args[0])
+				}
+				return "", "", fmt.Errorf("%q is not one of the agents with an open ask, but it looks like %q — if you meant to answer them use `reply %s \"...\"`; if %q really is your message, pipe it on stdin instead",
+					args[0], match, match, args[0])
+			}
 		}
 		target, err = soleSender(senders)
 		if err != nil {
