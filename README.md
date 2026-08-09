@@ -97,8 +97,13 @@ cab-bridge receive --msg-id=msg-abc123def456 --max-deadline=1800
 ### Cleanup
 
 ```
-cab-bridge cleanup                # own session only (default)
-cab-bridge cleanup --scope=global # cross-project (interactive confirm)
+cab-bridge cleanup                     # own session only (default)
+cab-bridge cleanup --scope=global      # every stale session in THIS project root
+cab-bridge cleanup --scope=global --all-scopes   # every project sharing the data dir
+
+# NOTE: any cleanup also applies the retention policy, which spans the WHOLE
+# data dir by design — see "Retention" below. Session removal is scoped;
+# retention is not.
 ```
 
 ---
@@ -123,7 +128,7 @@ Since v0.4, a pair in the same repo isolates itself **automatically** — `regis
 | Heartbeat in listen loop | structural (goroutine + Ticker) | bug, never updated |
 | Receive timeout semantics | long-poll, late reply recoverable | strict-< loop, late reply lost |
 | Multi-peer role routing | hub-and-spoke val↔esc + --allow-mesh | no role field |
-| Cross-project cleanup safety | scope=my-session default | global wipe by default |
+| Cross-project cleanup safety | scope=my-session default; `--scope=global` stays inside this project root and `--all-scopes` is opt-in. Retention purge is deliberately data-dir-wide and says so on stderr | global wipe by default |
 | Session ID lookup | longest-prefix-match | first-found, non-deterministic |
 | Lock on register | O_EXCL + stale recovery + --force-new; unique random IDs that never merge; collision detection vs a live `listen` owner (best-effort, see troubleshooting) | silent reuse, dup IDs sharing one inbox |
 | Stderr discipline | errors→stderr, exit 124 on timeout | errors→stdout |

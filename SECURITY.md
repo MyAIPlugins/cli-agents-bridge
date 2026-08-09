@@ -1,6 +1,6 @@
 # Security — cli-agents-bridge
 
-Threat model, implemented controls, reporting policy, and known limitations for cli-agents-bridge (current through v0.2.2).
+Threat model, implemented controls, reporting policy, and known limitations for cli-agents-bridge (current through **v0.8.0**).
 
 ---
 
@@ -13,13 +13,13 @@ Single-user macOS / Linux workstation. Local-only IPC. The threats we defend aga
 - **TM-1 — Malware on the same machine, different UID** reads `inbox/outbox` content (briefings, code, decisions). Vector: world-readable file modes.
 - **TM-2 — Path traversal** via session-ID values used as path components. Vector: a corrupted or hand-crafted manifest with `sessionId = "../../etc/passwd"`.
 - **TM-3 — TOCTOU on lock/manifest** in multi-process scenarios where N ESCs share the data dir. Vector: rename/check race.
-- **TM-4 — Cross-session destructive cleanup** where one session wipes another (the original Patil BUG-4). Vector: shared sessions root + global glob.
+- **TM-4 — Cross-session destructive cleanup** where one session wipes another (the original Patil BUG-4). Vector: shared sessions root + global glob. **Scope of the defence, stated precisely:** it covers *sessions* — removal is confined to the caller's project root, `--all-scopes` is opt-in, and live sessions are never touched. It does **not** cover the **retention purge**, which spans the entire data dir on purpose: `RetentionDays` is a data-minimisation policy (GDPR-1), and a retention window that only applied to whoever happened to run `cleanup` would leave another team's archived data past its declared lifetime forever. That reach is intended, it is announced on stderr with the day count and how many archived sessions were in it, and it is disabled by `retention_days = 0`.
 - **TM-5 — Symlink attack on data dir creation** where an attacker plants `~/.claude/cli-agents-bridge` as a symlink to `/etc/`. Vector: weak initial dir creation.
 - **TM-6 — Cross-session impersonation** where a session writes a manifest claiming to be another peer. Vector: missing ownership check on read.
 
 ### Out-of-scope
 
-Explicitly NOT defended against in v0.2.0, with rationale:
+Explicitly NOT defended against, with rationale:
 
 - **Remote attacker**: zero network surface — no sockets opened. If the binary ever gets network features (v0.4+ Tailscale), threat model expands.
 - **Malware running as the same UID**: Unix single-user model limit. The only mitigation would be OS-level sandboxing (macOS `sandbox-exec`, Linux seccomp), out of scope for a developer tool.
@@ -32,25 +32,25 @@ Explicitly NOT defended against in v0.2.0, with rationale:
 
 ## Implemented security controls
 
-### P0 — required in v0.2.0
+### P0 — required since v0.2.0, active
 
 - **SC-1 umask 077**: `syscall.Umask(0o077)` set in `cmd/cab-bridge/main.go init()` before any file/dir creation. Every file created by the binary is 0o600, every directory 0o700.
 - **SC-2 dir perms 700**: `internal/session/manager.go::Register` enforces `os.MkdirAll(sessionDir, 0o700)` plus explicit `os.Chmod` for pre-existing dirs. Same enforcement in `internal/transport/fs/process.go::MoveToProcessed` for `processed/` and in cleanup archive paths.
 - **SC-4 session-ID regex**: `internal/security/perms.go::ValidateSessionID` enforces `^[a-z0-9]{6,32}$`. Applied on every field that becomes a path component (`sessionId`, `from`, `to`, `inReplyTo`) at the message validation gateway and on every session-resolution path (`resolveSessionID`, `receive.go`, `migrate-from-patil`).
 - **SC-5 atomic write**: `internal/transport/fs/atomic.go::AtomicWriteBytes` uses `os.CreateTemp(filepath.Dir(target), ...)` (same-filesystem guarantee) + `f.Sync()` + `os.Rename`. EXDEV surfaces as explicit error (no silent copy-fallback).
 
-### P1 — included in v0.2.0
+### P1 — active
 
 - **SC-6 PID lock O_EXCL**: `internal/session/lock.go::AcquireLock` uses `os.OpenFile(lockPath, O_CREATE|O_EXCL|O_WRONLY, 0o600)`. Stale recovery via `syscall.Kill(pid, 0)`: `ESRCH` → remove + retry once; `EPERM`/`nil` → treat as live (ErrLockHeld). Re-entrant acquire from same PID returns a no-op release.
   - **Ownership model & BUG-6 guarantee scope** (Sprint 6 BUG-A): session liveness is tied to a long-running `cab-bridge listen`, which adopts the manifest PID at startup (`Manager.AdoptPID`). Collision detection (`ErrSessionExistsForProject`) is therefore **best-effort**: it reliably blocks a duplicate `register` for a project *whose session is owned by an active listener*, but a session with no live listener is treated as abandoned and re-`register` is permitted (it gets a fresh unique ID — sessions never merge, unlike Patil). This is intentional, not a security boundary: the lock prevents accidental concurrent ownership, not a determined same-UID actor (out of scope). See `docs/troubleshooting.md`.
 - **SC-7 base dir integrity check at boot**: `cmd/cab-bridge/common.go::bootstrapDataDir` runs on every subcommand (via `loadConfigOrFail`, plus an explicit call in `receive.go`) before any session file is touched. It `os.Lstat`-s the base dir and: creates it 0o700 on first run; FATAL on symlink (TM-5, never auto-repaired); FATAL on non-directory; FATAL on owner mismatch; WARN + chmod 0o700 on loose perms. Operates on the absolute `DataDir` resolved by `config.Load` (`filepath.Abs`), so the check and every `filepath.Join` target the intended directory.
 
-### P2 — deferred to v0.2.1+
+### P2 — still deferred at v0.8.0
 
-- **SC-3 ownership check (primitive present, wiring still deferred)**: `internal/security/perms.go::CheckOwnership` exists and returns `ErrOwnershipMismatch` on UID mismatch, but it is **still not invoked at the manifest/message read call-sites** as of v0.2.2 — it is defined, tested, and ready, but the wiring into `LoadManifest`/inbox reads **remains deferred through v0.2.1 and v0.2.2** (target v0.2.3, via an `fstat`-on-fd helper to also close the `Stat`-vs-`Lstat` TOCTOU). Neither v0.2.1 (auto-gc + data-loss fix) nor v0.2.2 (observability + wake + team isolation) introduced it; we list it as deferred rather than claim a control not on the live path. The **primary defense** against TM-1 (other-UID read) and TM-6 (manifest spoofing) is SC-1 (umask 077) + SC-2 (dir perms 700) + SC-7 (base-dir integrity), all of which are active and prevent another UID from reading the inbox or planting a spoofed manifest under a correctly-permissioned home. SC-3 adds defense-in-depth only when those perms are weakened or the data dir sits on a shared mount.
+- **SC-3 ownership check (primitive present, wiring still deferred)**: `internal/security/perms.go::CheckOwnership` exists and returns `ErrOwnershipMismatch` on UID mismatch, but it is **still not invoked at the manifest/message read call-sites** — it is defined, tested, and ready, but the wiring into `LoadManifest`/inbox reads remains undone (the intended shape is an `fstat`-on-fd helper, which would also close the `Stat`-vs-`Lstat` TOCTOU). **Re-verified at v0.8.0: `CheckOwnership` still has zero production call-sites** — it appears only in its own definition and in comments. The deferral has now been carried through v0.2.3, v0.3, v0.4, v0.5, v0.6, v0.7 and v0.8 without being revisited, and saying so is more useful than repeating a target date that has slipped seven times. We list it as deferred rather than claim a control not on the live path. The **primary defense** against TM-1 (other-UID read) and TM-6 (manifest spoofing) is SC-1 (umask 077) + SC-2 (dir perms 700) + SC-7 (base-dir integrity), all of which are active and prevent another UID from reading the inbox or planting a spoofed manifest under a correctly-permissioned home. SC-3 adds defense-in-depth only when those perms are weakened or the data dir sits on a shared mount.
 - **SC-8 PII detection**: explicitly NOT implemented. Regex on content for "looks like credit card / email" is false-positive prone and adds runtime cost without addressing the actual threat (same-UID malware reading plaintext). PRIVACY.md warns users not to send secrets.
 
-> **Honesty note (through v0.2.2)**: this document describes controls as actually wired in the shipped binary. SC-3 stays under "deferred" (not "implemented") through v0.2.2 because, although the primitive exists, it is still not called at runtime. We would rather under-claim than assert a control that is not on the live code path.
+> **Honesty note (through v0.8.0)**: this document describes controls as actually wired in the shipped binary. SC-3 stays under "deferred" (not "implemented") because, although the primitive exists, it is still not called at runtime — verified by grep at each release, not assumed. We would rather under-claim than assert a control that is not on the live code path.
 
 ---
 
