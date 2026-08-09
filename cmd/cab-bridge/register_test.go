@@ -55,7 +55,7 @@ func TestRunAutoGC_RemovesOrphanAndLogs(t *testing.T) {
 	plantSession(t, dataDir, "alive001", os.Getpid(), old)
 
 	var buf bytes.Buffer
-	removed := runAutoGC(config.Config{DataDir: dataDir, AutoGCHours: 24}, &buf)
+	removed := runAutoGC(config.Config{DataDir: dataDir, AutoGCHours: 24}, "", &buf)
 
 	require.Len(t, removed, 1)
 	assert.Equal(t, "orphan01", removed[0].SessionID)
@@ -75,7 +75,7 @@ func TestRunAutoGC_DisabledIsNoOp(t *testing.T) {
 	plantSession(t, dataDir, "orphan01", deadPID, time.Now().UTC().Add(-48*time.Hour))
 
 	var buf bytes.Buffer
-	removed := runAutoGC(config.Config{DataDir: dataDir, AutoGCHours: 0}, &buf)
+	removed := runAutoGC(config.Config{DataDir: dataDir, AutoGCHours: 0}, "", &buf)
 
 	assert.Nil(t, removed)
 	assert.True(t, sessionExists(dataDir, "orphan01"), "disabled gc must not remove anything")

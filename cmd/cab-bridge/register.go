@@ -50,12 +50,6 @@ func runRegister(args []string) error {
 	}
 	mgr := newSessionManager(cfg)
 
-	// Auto-gc orphan sessions before creating a new one (v0.2.1, F10). Sweeps
-	// sessions whose owning PID is dead AND heartbeat is older than AutoGCHours
-	// (no daemon — the sweep piggybacks on a command the user already runs).
-	// Logged on stderr so the manifest JSON on stdout stays clean.
-	runAutoGC(cfg, os.Stderr)
-
 	pp := *projectPath
 	if pp == "" {
 		var werr error
@@ -65,14 +59,24 @@ func runRegister(args []string) error {
 		}
 	}
 
+	scope := resolveScope(pp)
+
+	// Auto-gc orphan sessions before creating a new one (v0.2.1, F10). Sweeps
+	// sessions whose owning PID is dead AND heartbeat is older than AutoGCHours
+	// (no daemon — the sweep piggybacks on a command the user already runs), and
+	// only within THIS caller's scope: an arrival is not a mandate to collect
+	// another team's abandoned work. Logged on stderr so the manifest JSON on
+	// stdout stays clean.
+	runAutoGC(cfg, scope, os.Stderr)
+
 	mf, release, err := mgr.Register(context.Background(), session.RegisterOpts{
 		ProjectPath: pp,
 		AgentName:   *agentName,
 		Role:        *role,
 		ForceNew:    *forceNew,
 		TeamID:      *team,
-		Scope:       resolveScope(pp), // F-17: auto project-root; "" on non-fatal failure
-		Resume:      *resume,          // F-27: reconnect-or-register
+		Scope:       scope,   // F-17: auto project-root; "" on non-fatal failure
+		Resume:      *resume, // F-27: reconnect-or-register
 	})
 	if err != nil {
 		return err

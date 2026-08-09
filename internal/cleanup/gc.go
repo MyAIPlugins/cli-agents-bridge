@@ -22,9 +22,34 @@ type Orphan struct {
 	IdleAge   time.Duration
 }
 
-// GCOrphans sweeps DataDir/sessions/ and removes sessions that are orphaned
-// with certainty, archiving each one (processed/* into archive/<date>/<id>/)
-// before deletion exactly like cleanup.Run — no silent data loss.
+// GCOrphans sweeps the CALLER'S SCOPE under DataDir/sessions/ and removes
+// sessions that are orphaned with certainty, archiving each one (processed/*
+// into archive/<date>/<id>/) before deletion exactly like cleanup.Run — no
+// silent data loss.
+//
+// SCOPE, and why it is not optional. This runs on every `join` and every
+// `register`: nobody asks for it, it is part of saying hello. Without the filter
+// it read the whole data dir, so an agent entering one repository silently
+// collected the abandoned sessions of every other team sharing
+// ~/.claude/cli-agents-bridge — across the very boundary that isolates `peers`,
+// name resolution and worktree pairing everywhere else. An explicit
+// `cleanup --scope=global` is at least somebody's decision; this is not.
+//
+// Nothing is stranded by filtering: an orphan in another scope is collected by
+// ITS OWN team's next join, which is the caller that should be doing it. The
+// question was never whether to sweep, only who sweeps what.
+//
+// No override flag, for the reason `observer` has none: there is no case where
+// somebody wants their own arrival to delete another team's work.
+//
+// The two empty-string cases are deliberate and opposite:
+//
+//   - a session with NO scope (legacy, pre-F-17) belongs to no team, so no team
+//     can ever collect it. It is swept by whoever passes — otherwise the filter
+//     would make exactly the abandoned sessions immortal.
+//   - a CALLER with no scope (resolveScope failed) sweeps only those unowned
+//     sessions and nothing else: not knowing where you are is not a licence to
+//     tidy someone else's desk.
 //
 // "Orphaned with certainty" is the DOUBLE condition (LL-10), and both halves
 // are load-bearing:
@@ -47,7 +72,7 @@ type Orphan struct {
 // that session rather than aborting the whole sweep, mirroring globalSweep.
 // The returned slice is always non-nil (empty, not nil) for clean JSON/length
 // consumers, consistent with cleanup.Run (BUG-B).
-func GCOrphans(dataDir string, gcHours int, now func() time.Time) ([]Orphan, error) {
+func GCOrphans(dataDir, scope string, gcHours int, now func() time.Time) ([]Orphan, error) {
 	if now == nil {
 		now = func() time.Time { return time.Now().UTC() }
 	}
@@ -76,6 +101,9 @@ func GCOrphans(dataDir string, gcHours int, now func() time.Time) ([]Orphan, err
 		if err != nil {
 			continue // corrupt manifest — skip (cleanup --scope=global will surface it)
 		}
+		if !gcOwns(scope, mf.Scope) {
+			continue // another team's session — not this caller's to collect
+		}
 		if session.IsProcessAlive(mf.PID) {
 			continue // live owner (e.g. in listen via AdoptPID) — never touch
 		}
@@ -89,4 +117,14 @@ func GCOrphans(dataDir string, gcHours int, now func() time.Time) ([]Orphan, err
 		removed = append(removed, Orphan{SessionID: e.Name(), PID: mf.PID, IdleAge: idle})
 	}
 	return removed, nil
+}
+
+// gcOwns reports whether a caller in callerScope may collect a session whose
+// manifest carries sessionScope. See the scope paragraph on GCOrphans for the
+// two empty-string cases.
+func gcOwns(callerScope, sessionScope string) bool {
+	if sessionScope == "" {
+		return true // unowned: nobody else will ever collect it
+	}
+	return sessionScope == callerScope
 }
