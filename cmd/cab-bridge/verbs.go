@@ -99,6 +99,16 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, name, selfS
 	case 1:
 		return candidates[0].SessionID, nil
 	case 0:
+		// A rename is invisible to whoever was not watching, and a peer that was
+		// OFFLINE while it happened could not have been notified at all. So the
+		// answer is not an event — it is the old name, remembered on disk, which
+		// reaches both. Without this the sender reads "no such agent" about someone
+		// who is right there under a new label, and the obvious next move (delete
+		// and re-register) is the one that costs a mailbox.
+		if renamed, ok := findRenamed(mgr, peers, name); ok {
+			return "", fmt.Errorf("no agent named %q in this scope — %s answered to that name and is now %q",
+				name, renamed.SessionID, renamed.AgentName)
+		}
 		known := knownAgentNames(peers, selfSID)
 		if len(known) == 0 {
 			return "", fmt.Errorf("no agent named %q in this scope, and no other agent is registered here", name)

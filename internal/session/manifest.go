@@ -94,6 +94,16 @@ type Manifest struct {
 	// against the canonical set.
 	State string `json:"state,omitempty"`
 
+	// FormerAgentNames are the names this session answered to before being
+	// renamed, oldest first. They route nothing: the only reader is the
+	// "no agent named X" error, which uses them to say where that name went
+	// instead of listing everyone and leaving the caller to guess.
+	//
+	// It exists because a rename is invisible to a peer that was not watching —
+	// and a peer that was OFFLINE during the rename could not have been told by
+	// any notification either. A fact on disk reaches both.
+	FormerAgentNames []string `json:"formerAgentNames,omitempty"`
+
 	// No listenUntil, no waitingSince. Both described a wait from the manifest,
 	// and both stopped being true there: a wait has no deadline (§2.2 rev.
 	// cdb21dc) so nothing wrote listenUntil after `listen` went away, and

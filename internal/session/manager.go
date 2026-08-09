@@ -604,6 +604,40 @@ func (m *Manager) Touch(sessionID string) error {
 	return m.touchHeartbeat(sessionID)
 }
 
+// RenameAgent changes a session's agent name in place, keeping its id, mailbox
+// and wake cursor — because none of those depend on the name. A name is a lookup
+// label: recipients are resolved to a session id ONCE, at send time, and every
+// message on disk carries that id. Renaming therefore cannot lose a message in
+// flight or break an open ask.
+//
+// The old name is remembered rather than discarded, so a peer still writing to
+// it gets told where it went instead of "no such agent".
+//
+// Under the SESSION LOCK, not manifestMu alone: the session being renamed may
+// have a live waiter beating its heartbeat from another process, and an
+// in-process mutex does not serialise against that (see the manifestMu doc, and
+// touchHeartbeatOwned for the same reasoning). Renaming to the current name is a
+// no-op, not an error — the caller should not have to check first.
+func (m *Manager) RenameAgent(sessionID, newName string) error {
+	return m.WithSessionLock(sessionID, func() error {
+		m.manifestMu.Lock()
+		defer m.manifestMu.Unlock()
+		manifest, err := m.LoadManifest(sessionID)
+		if err != nil {
+			return err
+		}
+		if manifest.AgentName == newName {
+			return nil
+		}
+		if manifest.AgentName != "" {
+			manifest.FormerAgentNames = append(manifest.FormerAgentNames, manifest.AgentName)
+		}
+		manifest.AgentName = newName
+		manifest.LastHeartbeat = m.now()
+		return m.SaveManifest(manifest)
+	})
+}
+
 // AdoptPID claims sessionID for the current process by writing its PID into the
 // manifest (and refreshing the heartbeat). The long-running listen command
 // calls this at startup so collision detection (BUG-6) and stale detection

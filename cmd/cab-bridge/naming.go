@@ -3,6 +3,8 @@ package main
 import (
 	"path/filepath"
 	"strings"
+
+	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
 // Naming and peer-selection helpers, kept when bootstrap was removed in v0.8:
@@ -94,4 +96,29 @@ func deriveAgentName(myRole, dirBase string, peers []peerSummary) (name, basis s
 
 func roleUpper(role string) string {
 	return strings.ToUpper(role)
+}
+
+// findRenamed reports the session that used to answer to `name`, so an error
+// about an unknown recipient can say where that name went instead of listing
+// everyone and leaving the caller to guess.
+//
+// Most-recent heartbeat first: a name can be handed down (an agent renames away
+// from it, a later one adopts and leaves it too), and the useful answer is the
+// last session that carried it, not the first one found on disk.
+func findRenamed(mgr *session.Manager, peers []peerSummary, name string) (peerSummary, bool) {
+	var best peerSummary
+	found := false
+	for _, p := range peers {
+		mf, err := mgr.LoadManifest(p.SessionID)
+		if err != nil {
+			continue
+		}
+		if !contains(mf.FormerAgentNames, name) {
+			continue
+		}
+		if !found || p.LastHeartbeat.After(best.LastHeartbeat) {
+			best, found = p, true
+		}
+	}
+	return best, found
 }
