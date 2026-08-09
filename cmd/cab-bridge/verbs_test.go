@@ -553,3 +553,48 @@ func TestReply_CrashWithMultipleAsksAndOneArrivingMidTransaction(t *testing.T) {
 	assert.NoFileExists(t, filepath.Join(inbox, "msg-cccccccccccc.json"), "the late ask is closed by the NEXT reply")
 	assert.Len(t, peerInbox(t, dataDir), 2, "two replies, two responses — never one, never three")
 }
+
+// The branch next door. The previous fix freed the argument from the RECIPIENT
+// branch and it landed in the lookalike guardrail instead — which fires on an
+// exact match too, since an exact match is trivially also a resemblance. The
+// defect moved rather than closing, and neither the author nor the ratifier saw
+// it, because both were looking at the branch the finding named.
+//
+// Neither of the two tests written with that fix passes through the guardrail,
+// which is why they stayed green while the command still failed. This one does.
+func TestResolveReplyTarget_ExactNameOfTheOnlyAskerIsTheMessage(t *testing.T) {
+	t.Parallel()
+	// The asker is literally called "OK", and "OK" is the whole answer.
+	asks := []openAsk{{id: "msg-aaaaaaaaaaaa", from: "valaaaaa", fromName: "OK", when: "2026-08-09T10:00:00Z"}}
+	known := []string{"OK", "ESC-x"}
+
+	to, content, err := resolveReplyTarget([]string{"OK"}, asks, known, strings.NewReader(""))
+	require.NoError(t, err, "an exact match with the only open asker is not a typo")
+	assert.Equal(t, "valaaaaa", to)
+	assert.Equal(t, "OK", content, "the payload rule holds: the argument IS the message")
+}
+
+// And the guardrail still does its job for the case it was written for.
+func TestResolveReplyTarget_TypoIsStillCaught(t *testing.T) {
+	t.Parallel()
+	asks := []openAsk{{id: "msg-aaaaaaaaaaaa", from: "valaaaaa", fromName: "VAL-bridge", when: "2026-08-09T10:00:00Z"}}
+	// Case only: nameLookalike is EqualFold, so what it actually catches is a
+	// difference in capitals — NOT the `VAL-brige` transposition its own comment
+	// cites as the motivating example. Same family as the other three today: the
+	// comment describes a behaviour the code does not have.
+	_, _, err := resolveReplyTarget([]string{"val-bridge"}, asks, []string{"VAL-bridge"}, strings.NewReader("report"))
+	require.Error(t, err, "a near-miss must not silently become the message")
+	assert.Contains(t, err.Error(), "looks like")
+}
+
+// An exact name that has NO open ask is a third situation, and it used to be
+// told "X ... looks like X" — a sentence that contradicts itself, after which
+// the reader distrusts the half that was right.
+func TestResolveReplyTarget_KnownNameWithoutAnOpenAskSaysSo(t *testing.T) {
+	t.Parallel()
+	asks := []openAsk{{id: "msg-aaaaaaaaaaaa", from: "valaaaaa", fromName: "VAL-one", when: "2026-08-09T10:00:00Z"}}
+	_, _, err := resolveReplyTarget([]string{"CRI-two"}, asks, []string{"VAL-one", "CRI-two"}, strings.NewReader(""))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no open ask")
+	assert.NotContains(t, err.Error(), "looks like", "it is not a resemblance: it is the name, exactly")
+}
