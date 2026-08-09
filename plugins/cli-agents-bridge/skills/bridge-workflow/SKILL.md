@@ -82,6 +82,7 @@ Prefer stdin (or a file) for anything longer than a line. **The shell interprets
 
 - **`observer` cannot send.** No flag overrides it — it is read-only by design.
 - **`esc → esc` is rejected** by default; route through the orchestrator, or pass `--allow-mesh` for a deliberate mesh. Two equal agents with no hierarchy should use a custom role (`--role=peer`), which is allowed out of the box.
+- **A `critic` speaks only to its own `val`** — never to the executor, never to another critic, never to an architect. This is the role, not etiquette: independence is what a critic is for, and two critics comparing notes converge into one voice; writing straight to the executor would bypass the orchestrator's verification, which is where a finding gets checked before it becomes work. A critic with something for someone else tells the `val`, and the `val` relays it.
 
 If you are a reviewer, `critic` is the role meant for you.
 
