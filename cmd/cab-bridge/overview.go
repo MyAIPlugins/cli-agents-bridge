@@ -11,11 +11,12 @@ import (
 	"time"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
 // overviewReport is the F-42 at-a-glance view of a session's world in ONE call:
-// who I am, my paired peer (the complementary role in my scope), and my pending
+// who I am, my paired peer (the complementary role in my scope), and my unread
 // inbox — resolved id-free from the cwd by default, or from an explicit
 // --session-id (A-3/F-86, for a worktree or shared scope where the cwd lookup
 // would resolve the wrong session). Worktree-aware by construction: "me" is
@@ -47,8 +48,11 @@ type overviewReport struct {
 	ListenerGeneration     int  `json:"listenerGeneration,omitempty"`
 	ListenerReclaimPending bool `json:"listenerReclaimPending,omitempty"`
 
-	Peer  *overviewPeer `json:"peer"`  // null when no complementary peer is registered yet
-	Inbox []overviewMsg `json:"inbox"` // pending messages only (inbox/, not processed/)
+	Peer *overviewPeer `json:"peer"` // null when no complementary peer is registered yet
+	// Inbox holds the UNREAD messages only: what `next` would still deliver. Not
+	// the contents of inbox/, which under the mailbox model also holds everything
+	// already read and not yet archived.
+	Inbox []overviewMsg `json:"inbox"`
 }
 
 type overviewSelf struct {
@@ -175,7 +179,7 @@ func buildOverview(mgr *session.Manager, cfg config.Config, sid string) (overvie
 	// includes me, but selectPeer never picks my own role, so I am not selected.
 	// Filtering on MY stored scope (not resolveScope(cwd)) keeps this correct even
 	// for an inherited/legacy scope, though F-41 makes them equal for a worktree.
-	peers, _, err := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, true, me.TeamID, me.Scope)
+	peers, _, err := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, cfg.MaxMessageBytes, true, me.TeamID, me.Scope)
 	if err != nil {
 		return overviewReport{}, fmt.Errorf("overview: discover peers: %w", err)
 	}
@@ -189,14 +193,28 @@ func buildOverview(mgr *session.Manager, cfg config.Config, sid string) (overvie
 		}
 	}
 
-	// Pending inbox: collectInbox is the same pure read `inbox --list` uses; keep
-	// only the inbox/ box (processed/ is already handled).
+	// The UNREAD inbox — what `next` would still hand over — not every file in
+	// inbox/. Under the mailbox model a message stays put after being delivered
+	// (only `reply` archives), so listing the directory listed mail this agent had
+	// already read and answered, and called it "pending". Being told you have two
+	// messages waiting when you have none is not a rounding error on the command
+	// you run to orient yourself.
+	//
+	// `inbox --list` remains the full view, processed/ included: this is the
+	// glance, that is the inspection.
+	cursor, _, err := mgr.ReadWakeCursor(sid)
+	if err != nil {
+		return overviewReport{}, fmt.Errorf("overview: read wake cursor: %w", err)
+	}
 	entries, err := collectInbox(filepath.Join(cfg.DataDir, "sessions", sid), cfg.MaxMessageBytes)
 	if err != nil {
 		return overviewReport{}, fmt.Errorf("overview: read inbox: %w", err)
 	}
 	for _, e := range entries {
-		if e.Box != "inbox" {
+		// type=ack is excluded for the same reason `next` excludes it: a delivery
+		// receipt is not work waiting, and counting it promises a message that
+		// will never be handed over.
+		if e.Box != "inbox" || e.Type == message.TypeAck || cursor.IsNotified(e.MsgID) {
 			continue
 		}
 		report.Inbox = append(report.Inbox, overviewMsg{
@@ -254,10 +272,14 @@ func printOverviewHuman(w io.Writer, r overviewReport) {
 	}
 
 	if len(r.Inbox) == 0 {
-		fmt.Fprintln(w, "inbox: empty")
+		// "nothing unread", not "empty": inbox/ may well hold read messages that
+		// nobody has archived yet, and this line has no business calling that
+		// empty. It answers one question — is there anything for me to read? — and
+		// says exactly that.
+		fmt.Fprintln(w, "inbox: nothing unread")
 		return
 	}
-	fmt.Fprintf(w, "inbox: %d pending\n", len(r.Inbox))
+	fmt.Fprintf(w, "inbox: %d unread\n", len(r.Inbox))
 	for _, m := range r.Inbox {
 		from := m.FromAgentName
 		if from == "" {

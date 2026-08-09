@@ -30,7 +30,7 @@ func TestJoin_PrintsEveryoneNotAPickedPeer(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.DataDir = dataDir
 	mgr := newSessionManager(cfg)
-	peers, _, err := collectPeers(mgr, dataDir, cfg.StaleSeconds, true, "", scope)
+	peers, _, err := collectPeers(mgr, dataDir, cfg.StaleSeconds, 65536, true, "", scope)
 	require.NoError(t, err)
 
 	here := othersHere(peers, "valgrp01")
@@ -74,7 +74,7 @@ func TestJoin_NameClashStopsAndAsks(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.DataDir = dataDir
 	mgr := newSessionManager(cfg)
-	peers, _, err := collectPeers(mgr, dataDir, cfg.StaleSeconds, true, "", scope)
+	peers, _, err := collectPeers(mgr, dataDir, cfg.StaleSeconds, 65536, true, "", scope)
 	require.NoError(t, err)
 
 	occupant, clash := findNameClash(mgr, peers, session.RoleEsc, proj, "ESC-new")
@@ -92,6 +92,45 @@ func TestJoin_NameClashStopsAndAsks(t *testing.T) {
 	// Nor is the same name in a DIFFERENT directory.
 	_, clash = findNameClash(mgr, peers, session.RoleEsc, filepath.Join(proj, "sub"), "ESC-new")
 	assert.False(t, clash)
+}
+
+// The message is the feature here, so it is asserted like one. A fresh agent
+// meeting this error on its FIRST command has to be able to pick the right road
+// from the text alone: the previous wording offered resuming and --force-new as
+// equals, and the wrong one is not recoverable in the same breath.
+func TestJoin_NameClashRecommendsResumingAndSaysWhatItKnows(t *testing.T) {
+	t.Parallel()
+	old := time.Now().UTC().Add(-2 * time.Hour)
+	dead := peerSummary{SessionID: "escold01", AgentName: "ESC-bridge", Role: session.RoleEsc, LastHeartbeat: old, Stale: true}
+	live := peerSummary{SessionID: "escold01", AgentName: "ESC-bridge", Role: session.RoleEsc, LastHeartbeat: time.Now().UTC(), Stale: false}
+
+	t.Run("a_derived_name_says_the_rule_changed_and_recommends_resuming", func(t *testing.T) {
+		msg := nameClashError(dead, session.RoleEsc, "ESC-esc-v08", true).Error()
+		assert.Contains(t, msg, "Continue as it:  cab-bridge join --role=esc --agent-name=ESC-bridge",
+			"the road that works must be spelled out, ready to run")
+		assert.Contains(t, msg, "SAME agent, not a second one", "the likely cause, stated as likely")
+		assert.Contains(t, msg, "no sign of life", "liveness is a fact, and here it points at 'you, from before'")
+		assert.Contains(t, msg, "Only if you are a genuinely different agent",
+			"--force-new is the exception, and reads like one")
+		assert.Contains(t, msg, "ambiguous", "with its cost attached")
+		assert.Less(t, strings.Index(msg, "Continue as it"), strings.Index(msg, "--force-new"),
+			"the recommended road comes FIRST — the order is half the message")
+		assert.Contains(t, msg, "an esc session", "English article, since an agent reads this sentence")
+	})
+
+	t.Run("a_live_occupant_does_not_claim_to_know_whose_it_is", func(t *testing.T) {
+		msg := nameClashError(live, session.RoleEsc, "ESC-esc-v08", true).Error()
+		assert.Contains(t, msg, "ALIVE", "a live session is a different situation and says so")
+		assert.Contains(t, msg, "another agent is working in this directory right now",
+			"with a live occupant the message must NOT assert that it is you")
+		assert.NotContains(t, msg, "almost certainly yours")
+	})
+
+	t.Run("an_explicit_name_is_not_explained_as_a_schema_change", func(t *testing.T) {
+		msg := nameClashError(dead, session.RoleEsc, "ESC-mine", false).Error()
+		assert.Contains(t, msg, `You asked to join as "ESC-mine"`)
+		assert.NotContains(t, msg, "Today's rule", "nothing was derived, so there is no rule to blame")
+	})
 }
 
 func TestRunJoin_RequiresRole(t *testing.T) {
@@ -209,7 +248,7 @@ func TestJoin_NameTakenElsewhereNamesAReachablePlace(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.DataDir = dataDir
 	mgr := newSessionManager(cfg)
-	peers, _, err := collectPeers(mgr, dataDir, cfg.StaleSeconds, true, "", scope)
+	peers, _, err := collectPeers(mgr, dataDir, cfg.StaleSeconds, 65536, true, "", scope)
 	require.NoError(t, err)
 
 	occupant, path, clash := findNameElsewhere(mgr, peers, session.RoleVal, mineDir, "VAL-x")

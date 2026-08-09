@@ -14,26 +14,30 @@ import (
 )
 
 type statusReport struct {
-	SessionID      string    `json:"sessionId"`
-	Role           string    `json:"role"`
-	AgentName      string    `json:"agentName"`
-	ProjectName    string    `json:"projectName"`
-	StartedAt      time.Time `json:"startedAt"`
-	LastHeartbeat  time.Time `json:"lastHeartbeat"`
-	HeartbeatAge   string    `json:"heartbeatAge"`
-	InboxCount     int       `json:"inboxCount"`
-	OutboxCount    int       `json:"outboxCount"`
-	ProcessedCount int       `json:"processedCount"`
-	Stale          bool      `json:"stale"`
+	SessionID     string    `json:"sessionId"`
+	Role          string    `json:"role"`
+	AgentName     string    `json:"agentName"`
+	ProjectName   string    `json:"projectName"`
+	StartedAt     time.Time `json:"startedAt"`
+	LastHeartbeat time.Time `json:"lastHeartbeat"`
+	HeartbeatAge  string    `json:"heartbeatAge"`
+	// InboxCount is the UNREAD count, not the number of files in inbox/: under the
+	// mailbox model a delivered message stays there until `reply` archives it, so
+	// the file count answers "how much mail is lying around" rather than "is there
+	// anything to read". processedCount and outboxCount are still plain file
+	// counts, which is what those two mean.
+	InboxCount     int  `json:"inboxCount"`
+	OutboxCount    int  `json:"outboxCount"`
+	ProcessedCount int  `json:"processedCount"`
+	Stale          bool `json:"stale"`
 	// State is the F-23a agent task-state (idle/working/done/orchestrating);
 	// empty (omitted) for legacy/never-set. orchestrating forces Stale=false
 	// (session.IsStale).
 	State string `json:"state,omitempty"`
 	// LastConsumedMsgID is the id of the most recently consumed inbox message
-	// (F-12). Combined with inboxCount (== pending, since consumed messages are
-	// moved to processed/) it distinguishes an idle session from one actively
-	// draining its inbox. Empty (omitted) until the session consumes its first
-	// message - see the manifest field doc for the VAL-orchestrator case.
+	// (F-12). Read with inboxCount above it distinguishes an idle session from one
+	// actively draining its inbox. Empty (omitted) until the session consumes its
+	// first message - see the manifest field doc for the VAL-orchestrator case.
 	LastConsumedMsgID string `json:"lastConsumedMsgId,omitempty"`
 }
 
@@ -72,7 +76,7 @@ func runStatus(args []string) error {
 		StartedAt:         mf.StartedAt,
 		LastHeartbeat:     mf.LastHeartbeat,
 		HeartbeatAge:      time.Since(mf.LastHeartbeat).Truncate(time.Second).String(),
-		InboxCount:        countJSON(filepath.Join(sessionDir, "inbox")),
+		InboxCount:        countUnread(mgr, sid, sessionDir, cfg.MaxMessageBytes),
 		OutboxCount:       countJSON(filepath.Join(sessionDir, "outbox")),
 		ProcessedCount:    countJSON(filepath.Join(sessionDir, "processed")),
 		Stale:             session.IsStale(mf, cfg.StaleSeconds, time.Now().UTC()),
@@ -86,6 +90,37 @@ func runStatus(args []string) error {
 	}
 	fmt.Println(string(out))
 	return nil
+}
+
+// countUnread reports how many messages in a session's inbox a `next` would
+// still deliver: those not yet NOTIFIED in the wake cursor, ack files excluded —
+// the same two filters the delivery path applies (readMailbox + the cursor).
+//
+// It replaces the plain file count wherever the question is "does this agent
+// have work waiting?". Under the mailbox model a delivered message STAYS in
+// inbox/ — only `reply` archives — so from the day `next` became pure-read the
+// file count answered a different question than the one being asked, and
+// answered it in the direction that invents work: two messages both already
+// read, both already acted on, reported as two waiting.
+//
+// An unreadable cursor counts everything as unread. The model is at-least-once,
+// and overstating waiting work costs a look while understating it hides mail.
+func countUnread(mgr *session.Manager, sid, sessionDir string, maxContentBytes int) int {
+	entries, _, err := readMailbox(filepath.Join(sessionDir, "inbox"), maxContentBytes)
+	if err != nil {
+		return 0
+	}
+	cursor, _, err := mgr.ReadWakeCursor(sid)
+	if err != nil {
+		return len(entries)
+	}
+	n := 0
+	for _, e := range entries {
+		if !cursor.IsNotified(e.msg.ID) {
+			n++
+		}
+	}
+	return n
 }
 
 // countJSON returns the number of .json files in dir (non-recursive). Missing

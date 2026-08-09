@@ -81,7 +81,7 @@ func TestCollectPeers_OrchestratingNotStale_LegacyStale(t *testing.T) {
 	plantStateSession(t, dataDir, "orchsess", session.StateOrchestrating, old)
 	plantStateSession(t, dataDir, "legacyss", "", old)
 
-	peers, _, err := collectPeers(session.NewManager(dataDir, time.Second), dataDir, 300, true, "", "")
+	peers, _, err := collectPeers(session.NewManager(dataDir, time.Second), dataDir, 300, 65536, true, "", "")
 	require.NoError(t, err)
 	byID := map[string]peerSummary{}
 	for _, p := range peers {

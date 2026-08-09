@@ -47,9 +47,9 @@ func overviewTestCfg(dataDir string) config.Config {
 	return config.Config{DataDir: dataDir, StaleSeconds: 300, MaxMessageBytes: 65536}
 }
 
-// TestBuildOverview_MePeerAndPendingInbox is the F-42 core: me + the
-// complementary peer in my scope + only the PENDING inbox (processed/ excluded).
-func TestBuildOverview_MePeerAndPendingInbox(t *testing.T) {
+// TestBuildOverview_MePeerAndUnreadInbox is the F-42 core: me + the
+// complementary peer in my scope + the UNREAD inbox (processed/ excluded).
+func TestBuildOverview_MePeerAndUnreadInbox(t *testing.T) {
 	t.Parallel()
 	dataDir := t.TempDir()
 	scope := "/repo/x"
@@ -74,7 +74,7 @@ func TestBuildOverview_MePeerAndPendingInbox(t *testing.T) {
 	assert.Equal(t, session.RoleVal, rep.Peer.Role)
 	assert.Equal(t, session.StateOrchestrating, rep.Peer.State)
 
-	require.Len(t, rep.Inbox, 2, "only inbox/ (pending) messages, never processed/")
+	require.Len(t, rep.Inbox, 2, "only inbox/ messages, never processed/")
 	gotIDs := map[string]bool{}
 	for _, m := range rep.Inbox {
 		gotIDs[m.MsgID] = true
@@ -82,6 +82,53 @@ func TestBuildOverview_MePeerAndPendingInbox(t *testing.T) {
 	assert.True(t, gotIDs["msg-aaaaaaaaaaaa"])
 	assert.True(t, gotIDs["msg-bbbbbbbbbbbb"])
 	assert.False(t, gotIDs["msg-cccccccccccc"], "processed message must not appear")
+}
+
+// The Riga-2 regression: under the mailbox model a delivered message stays in
+// inbox/, so "everything in inbox/" and "everything still waiting for you" are
+// different sets — and overview was reporting the first while answering the
+// second. A message already handed over by `next` is not work waiting, and an
+// ack was never work at all.
+func TestBuildOverview_InboxIsUnreadNotEveryFile(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	plantOverviewSession(t, dataDir, "unrdov1", session.RoleEsc, "ESC-u", "/repo/u", "", "working")
+	plantMsg(t, dataDir, "unrdov1", "inbox", "msg-aaaaaaaaaaaa", "valu0001", "VAL-u", message.TypeQuery, "already read")
+	plantMsg(t, dataDir, "unrdov1", "inbox", "msg-bbbbbbbbbbbb", "valu0001", "VAL-u", message.TypeQuery, "still waiting")
+	plantMsg(t, dataDir, "unrdov1", "inbox", "msg-cccccccccccc", "valu0001", "VAL-u", message.TypeAck, "receipt")
+
+	mgr := session.NewManager(dataDir, time.Second)
+	_, err := mgr.CommitWakeCursor("unrdov1", []string{"msg-aaaaaaaaaaaa"}, time.Now().UTC(), nil, nil)
+	require.NoError(t, err)
+
+	rep, err := buildOverview(mgr, overviewTestCfg(dataDir), "unrdov1")
+	require.NoError(t, err)
+	require.Len(t, rep.Inbox, 1, "three files in inbox/, one of them actually waiting")
+	assert.Equal(t, "msg-bbbbbbbbbbbb", rep.Inbox[0].MsgID)
+
+	// The files are all still there: this is a change of question, not a sweep.
+	entries, err := os.ReadDir(filepath.Join(dataDir, "sessions", "unrdov1", "inbox"))
+	require.NoError(t, err)
+	assert.Len(t, entries, 3, "overview reads, it never archives")
+
+	// And the same three files answer the same way through the peers column.
+	assert.Equal(t, 1, countUnread(mgr, "unrdov1", filepath.Join(dataDir, "sessions", "unrdov1"), 65536),
+		"one number, one meaning, wherever it is shown")
+}
+
+// The zero case says "nothing unread", never "empty": inbox/ may hold read
+// messages nobody has archived, and calling that empty is the same kind of
+// false statement in the other direction.
+func TestPrintOverviewHuman_ZeroUnreadDoesNotClaimAnEmptyInbox(t *testing.T) {
+	t.Parallel()
+	var b bytes.Buffer
+	printOverviewHuman(&b, overviewReport{
+		Me:    overviewSelf{SessionID: "esc12345", AgentName: "ESC-x", Role: "esc"},
+		Inbox: []overviewMsg{},
+	})
+	assert.Contains(t, b.String(), "inbox: nothing unread")
+	assert.NotContains(t, b.String(), "empty")
+	assert.NotContains(t, b.String(), "pending")
 }
 
 func TestBuildOverview_NoPeerInScope(t *testing.T) {
@@ -139,7 +186,7 @@ func TestPrintOverviewHuman_WithPeerAndInbox(t *testing.T) {
 	assert.Contains(t, out, "[live]")
 	assert.Contains(t, out, "peer:  VAL-x  (val12345)")
 	assert.Contains(t, out, "channel ok")
-	assert.Contains(t, out, "inbox: 1 pending")
+	assert.Contains(t, out, "inbox: 1 unread")
 	assert.Contains(t, out, "msg-aaaaaaaaaaaa from VAL-x  type query")
 }
 
@@ -282,7 +329,7 @@ func TestPrintOverviewHuman_NoPeerEmptyInbox(t *testing.T) {
 	assert.Contains(t, out, "state idle", "empty state renders as idle")
 	assert.Contains(t, out, "[stale]")
 	assert.Contains(t, out, "peer:  (none paired in this scope yet)")
-	assert.Contains(t, out, "inbox: empty")
+	assert.Contains(t, out, "inbox: nothing unread")
 }
 
 // TestRunOverview_SessionIDFlag_ResolvesExplicitSession is the A-3 (F-86) check:
