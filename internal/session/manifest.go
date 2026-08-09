@@ -55,10 +55,21 @@ var SelectableRoles = []RoleChoice{
 	{RoleObserver, "reads only, never sends"},
 }
 
-// RoleNames renders the selectable roles as "val|esc|critic|..." for flag help.
+// RoleNames renders the selectable roles for flag help, marking the ones that
+// are not for the reader to take.
+//
+// The mark travels WITH the name because the flag line is the first surface a
+// fresh agent reads — and it is exactly where one of them picked up `architect`,
+// which is reserved for Claude Desktop over MCP. Correcting the long-form help
+// and leaving the short list bare would repeat the mistake this whole single
+// source was introduced to end: one place fixed, the others quietly disagreeing.
 func RoleNames() string {
 	names := make([]string, 0, len(SelectableRoles))
 	for _, r := range SelectableRoles {
+		if r.Name == RoleArchitect {
+			names = append(names, r.Name+"(reserved)")
+			continue
+		}
 		names = append(names, r.Name)
 	}
 	return strings.Join(names, "|")
