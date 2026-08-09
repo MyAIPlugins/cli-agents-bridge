@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestValidateSendPair(t *testing.T) {
@@ -68,4 +69,35 @@ func TestValidateSendPair_ErrorMessageIncludesOverrideHint(t *testing.T) {
 	assert.ErrorContains(t, err, "esc")
 	assert.ErrorContains(t, err, "--allow-mesh",
 		"BUG-3 fix UX: error must include the override hint for caller discoverability")
+}
+
+// A critic sends to its val and to nobody else. Structural, like observer: the
+// point is not that it is refused, but that NO FLAG opens it — the rule protects
+// the critic's independence, and an operator cannot consent that away on behalf
+// of the thing that makes a second opinion worth having.
+func TestValidateSendPair_CriticSendsOnlyToVal(t *testing.T) {
+	t.Parallel()
+	assert.NoError(t, ValidateSendPair("critic", "val", false), "the one road a critic has")
+
+	for _, to := range []string{"esc", "critic", "architect", "observer", "neutral"} {
+		err := ValidateSendPair("critic", to, false)
+		require.Error(t, err, "critic → %s must be refused", to)
+		assert.ErrorIs(t, err, ErrCriticMustGoThroughVal)
+		assert.Contains(t, err.Error(), "tell the val instead",
+			"the error must show the road that exists, not only the one that does not")
+
+		// The branch nobody names: --allow-mesh relaxes esc↔esc and must not
+		// touch this one. A flag that quietly widened would undo the rule for
+		// exactly the operator who did not know it was there.
+		assert.ErrorIs(t, ValidateSendPair("critic", to, true), ErrCriticMustGoThroughVal,
+			"--allow-mesh must not open critic → %s", to)
+	}
+}
+
+// The other direction stays open: a val briefs its critic. The rule is on who
+// SENDS, and reading it as a symmetric ban would mute the role entirely.
+func TestValidateSendPair_ValStillReachesItsCritic(t *testing.T) {
+	t.Parallel()
+	assert.NoError(t, ValidateSendPair("val", "critic", false))
+	assert.NoError(t, ValidateSendPair("val", "architect", false), "architect is untouched: it is Claude Desktop's")
 }

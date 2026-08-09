@@ -15,7 +15,7 @@ import (
 func runRegister(args []string) error {
 	fs := flag.NewFlagSet("register", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	role := fs.String("role", session.RoleNeutral, "session role (val|esc|architect|observer|neutral)")
+	role := fs.String("role", session.RoleNeutral, "session role: "+session.RoleNames()+" (default neutral, the v1-read fallback)")
 	agentName := fs.String("agent-name", "", "human-readable name (default: project basename)")
 	projectPath := fs.String("project-path", "", "project root path (default: cwd)")
 	forceNew := fs.Bool("force-new", false, "override existing live session for the same project (BUG-6)")

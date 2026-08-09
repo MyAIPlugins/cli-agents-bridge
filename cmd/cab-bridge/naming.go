@@ -19,7 +19,14 @@ import (
 // determinism. peers is already scope-filtered by the caller. Returns ok=false
 // when no usable peer exists (a lone first bootstrap).
 func selectPeer(myRole string, peers []peerSummary) (*peerSummary, bool) {
-	complement := map[string]string{"esc": "val", "val": "esc"}[myRole]
+	// A critic's counterpart is the val it reports to — same shape as esc→val.
+	// Without this a critic's overview paired it with whoever came first among
+	// the other roles, which is not wrong so much as arbitrary.
+	complement := map[string]string{
+		session.RoleEsc:    session.RoleVal,
+		session.RoleVal:    session.RoleEsc,
+		session.RoleCritic: session.RoleVal,
+	}[myRole]
 
 	var best *peerSummary
 	bestRank := func(p peerSummary) int {

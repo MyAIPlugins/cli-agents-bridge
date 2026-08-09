@@ -319,3 +319,77 @@ func TestJoin_NameTakenElsewhereNamesAReachablePlace(t *testing.T) {
 	_, _, clash = findNameElsewhere(mgr, peers, session.RoleVal, occupantDir, "VAL-x")
 	assert.False(t, clash)
 }
+
+// Two days, two hand-kept role lists, two fresh reviewers sent to the wrong
+// role. The lists now come from one place, and this is what that has to mean:
+// whatever `--role` advertises is what the error teaches, and `critic` is in
+// both because it is the role the CRI agents actually take.
+func TestRoles_OneSourceOffersCriticAndReservesArchitect(t *testing.T) {
+	t.Parallel()
+	names := session.RoleNames()
+	assert.Contains(t, names, "critic", "the role a critic must be able to find")
+	assert.Contains(t, names, "architect", "kept: sessions already run under it")
+	assert.NotContains(t, names, "neutral", "the v1-read fallback is not a choice")
+
+	lines := session.RoleLines()
+	for _, r := range session.SelectableRoles {
+		assert.Contains(t, lines, r.Name, "every offered role is explained")
+		assert.Contains(t, lines, r.Description)
+	}
+	assert.Contains(t, lines, "Claude Desktop", "architect says what it is reserved for")
+
+	// The two renderings cannot disagree: that was the whole failure.
+	for _, r := range session.SelectableRoles {
+		assert.Contains(t, names, r.Name)
+	}
+}
+
+// A critic must be able to register and to be addressed by name — the routing
+// was always permissive, but nothing exercised the role end to end.
+func TestJoin_CriticIsAFirstClassRole(t *testing.T) {
+	dataDir := t.TempDir()
+	base := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700))
+	valDir := filepath.Join(base, "val")
+	criDir := filepath.Join(base, "cri")
+	require.NoError(t, os.MkdirAll(valDir, 0o700))
+	require.NoError(t, os.MkdirAll(criDir, 0o700))
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	require.NoError(t, runJoin([]string{"--role=val", "--agent-name=VAL-p", "--project-path=" + valDir}))
+	out := captureStdout(t, func() {
+		require.NoError(t, runJoin([]string{"--role=critic", "--agent-name=CRI-p", "--project-path=" + criDir}))
+	})
+	assert.Contains(t, out, "role critic")
+
+	cfg := config.Config{DataDir: dataDir, StaleSeconds: 300, MaxMessageBytes: 65536}
+	mgr := newSessionManager(cfg)
+	peers, _, err := collectPeers(mgr, dataDir, 300, 65536, true, "", resolveScope(criDir))
+	require.NoError(t, err)
+
+	var criSID string
+	for _, p := range peers {
+		if p.AgentName == "CRI-p" {
+			criSID = p.SessionID
+		}
+	}
+	require.NotEmpty(t, criSID)
+
+	// Addressable by name from the val...
+	var valSID string
+	for _, p := range peers {
+		if p.AgentName == "VAL-p" {
+			valSID = p.SessionID
+		}
+	}
+	got, rerr := resolveRecipientByName(cfg, mgr, "CRI-p", valSID)
+	require.NoError(t, rerr)
+	assert.Equal(t, criSID, got)
+
+	// ...and its overview pairs it with the val it reports to, not with whoever
+	// happened to be first.
+	peer, ok := selectPeer(session.RoleCritic, peers)
+	require.True(t, ok)
+	assert.Equal(t, session.RoleVal, peer.Role)
+}
