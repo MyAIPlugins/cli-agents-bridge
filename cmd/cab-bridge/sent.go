@@ -212,7 +212,7 @@ func buildMailboxIndex(cfg config.Config, mgr *session.Manager, to string) (map[
 	}
 
 	index := map[string]string{}
-	inbox, corrupt, err := readMailbox(filepath.Join(sessionDir, "inbox"), cfg.MaxMessageBytes)
+	inbox, corrupt, _, err := readMailbox(filepath.Join(sessionDir, "inbox"), cfg.MaxMessageBytes)
 	if err != nil {
 		return nil, fmt.Errorf("sent: read %s inbox: %w", to, err)
 	}

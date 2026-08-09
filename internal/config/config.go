@@ -154,6 +154,21 @@ func DefaultConfig() Config {
 // on top of DefaultConfig. Returns the resolved Config plus any non-fatal
 // warnings (e.g. malformed env var ignored). A nil error means resolution
 // succeeded; the user file is optional and absence is not an error.
+// InitialDataDir is the data dir BEFORE config.json has been consulted: the
+// compiled-in default, overridden by CAB_DATA_DIR.
+//
+// It is exported because that directory is TRAVERSED to read config.json, which
+// means it is read before any integrity check could have run on it. The caller
+// verifies this one first, then loads, then verifies the final dir if the file
+// moved it — a redirect that happens before every check is a redirect nobody
+// checks (CRI diff-gate).
+func InitialDataDir() string {
+	if v := os.Getenv("CAB_DATA_DIR"); v != "" {
+		return v
+	}
+	return DefaultConfig().DataDir
+}
+
 func Load() (Config, []string, error) {
 	cfg := DefaultConfig()
 	var warnings []string
@@ -162,9 +177,7 @@ func Load() (Config, []string, error) {
 	// CAB_DATA_DIR=/custom reads config.json from /custom rather than from the
 	// compiled-in default dir. applyEnv re-applies it idempotently below, so
 	// env still wins over the file for data_dir (and every other field).
-	if v := os.Getenv("CAB_DATA_DIR"); v != "" {
-		cfg.DataDir = v
-	}
+	cfg.DataDir = InitialDataDir()
 
 	userFile := filepath.Join(cfg.DataDir, "config.json")
 	if err := applyUserFile(&cfg, userFile); err != nil {

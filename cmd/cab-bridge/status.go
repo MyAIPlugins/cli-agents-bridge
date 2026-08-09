@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
@@ -106,7 +107,13 @@ func runStatus(args []string) error {
 // An unreadable cursor counts everything as unread. The model is at-least-once,
 // and overstating waiting work costs a look while understating it hides mail.
 func countUnread(mgr *session.Manager, sid, sessionDir string, maxContentBytes int) int {
-	entries, _, err := readMailbox(filepath.Join(sessionDir, "inbox"), maxContentBytes)
+	entries, _, foreign, err := readMailbox(filepath.Join(sessionDir, "inbox"), maxContentBytes)
+	// NEVER a silent zero: returning 0 here turned "there is a file I cannot
+	// vouch for" into "your inbox is empty", which is the shape of the defect
+	// this whole control exists to remove.
+	for _, name := range foreign {
+		fmt.Fprintf(os.Stderr, "cab-bridge: %s in this inbox does not belong to this user and was not counted\n", name)
+	}
 	if err != nil {
 		return 0
 	}
@@ -139,6 +146,16 @@ func countJSON(dir string) int {
 			continue
 		}
 		if len(e.Name()) >= 5 && e.Name()[len(e.Name())-5:] == ".json" {
+			// Same family as `sent`: a count derived from directory entries is
+			// still a claim about content, so the entry is verified before it is
+			// counted. It drives no mutation — hence a warning and a skip, not a
+			// refusal — but leaving it out would make the SC-3 claim broader than
+			// the code.
+			full := filepath.Join(dir, e.Name())
+			if cerr := security.CheckOwnedFile(full); cerr != nil {
+				_ = security.WarnNotOurs(full, cerr)
+				continue
+			}
 			n++
 		}
 	}

@@ -22,6 +22,16 @@ import (
 // Returns the resolved config; on load or integrity failure returns a wrapped
 // error the caller surfaces with exit 1.
 func loadConfigOrFail() (config.Config, error) {
+	// TWO PHASES, because there is a redirect BEFORE the one SC-7 used to guard.
+	// config.json lives inside the data dir, so reading it means traversing that
+	// directory — and the file itself can then MOVE the data dir somewhere else.
+	// Checking only the final destination left the first one, the one actually
+	// walked to obtain the config, verified by nobody (CRI diff-gate).
+	initial := config.InitialDataDir()
+	if err := bootstrapDataDir(initial); err != nil {
+		return config.Config{}, err
+	}
+
 	cfg, warnings, err := config.Load()
 	if err != nil {
 		return cfg, fmt.Errorf("load config: %w", err)
@@ -29,8 +39,12 @@ func loadConfigOrFail() (config.Config, error) {
 	for _, w := range warnings {
 		fmt.Fprintln(os.Stderr, "config warning:", w)
 	}
-	if err := bootstrapDataDir(cfg.DataDir); err != nil {
-		return cfg, err
+
+	// Phase two only when the config moved us: same check, new destination.
+	if filepath.Clean(cfg.DataDir) != filepath.Clean(initial) {
+		if err := bootstrapDataDir(cfg.DataDir); err != nil {
+			return cfg, err
+		}
 	}
 	return cfg, nil
 }

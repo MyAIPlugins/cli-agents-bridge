@@ -241,7 +241,7 @@ func replayOpenAsks(mgr *session.Manager, cfg config.Config, sid string) (int, e
 	if err != nil {
 		return 0, err
 	}
-	entries, _, err := readMailbox(filepath.Join(cfg.DataDir, "sessions", sid, "inbox"), cfg.MaxMessageBytes)
+	entries, _, _, err := readMailbox(filepath.Join(cfg.DataDir, "sessions", sid, "inbox"), cfg.MaxMessageBytes)
 	if err != nil {
 		return 0, err
 	}
