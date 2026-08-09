@@ -56,7 +56,14 @@ Prefer stdin (or a file) for anything longer than a line. **The shell interprets
 - **Distinct working directories.** Sessions are resolved by cwd, so each agent starts from its own directory. In a shared scope, `CAB_SESSION_ID=<id>` (read as input, precedence `--session-id` > `CAB_SESSION_ID` > cwd) pins the identity — never a silent fallback. The dangerous case is not the command that fails, it is the one that **succeeds as somebody else**.
 - **Scope is the git repository.** Derived from the git common root, so a linked `git worktree` resolves to its main repo: an orchestrator at the repo root and an executor in a worktree of the same repo pair automatically, with no flags. Different repos stay isolated.
 - **Manual isolation, special cases only**: peers in *different* repos that must share a channel need the same `CAB_DATA_DIR` (a literal value, never a shell `$$`). `--team=<name>` is a logical filter *within* one data dir — do not mix the two axes.
-- **Names derive from your own working directory** (`ESC-escdir`), which makes them unique without your having to choose. If a name is already taken by a live session elsewhere, `join` stops and asks rather than creating a second session with one name — an ambiguity that would break every recipient lookup downstream.
+- **If you were given a name, that is your name — pass it.** A name assigned by whoever started you ("you are CRI2-payload") is an instruction, not a suggestion: the other agents will address you by it, and their briefs will use it.
+
+  ```bash
+  cab-bridge join --role=architect --agent-name=CRI2-payload
+  ```
+
+  **Only when nobody gave you one** let `join` derive it from your working directory (`ESC-escdir`), which keeps it distinct without a decision. Derivation is the fallback, not the default — obeying an explicit instruction is not "thinking", and skipping it costs the humans a round of corrections.
+- If a name is already taken by a live session elsewhere, `join` stops and asks rather than creating a second session with one name — an ambiguity that would break every recipient lookup downstream.
 
 ## Roles
 
