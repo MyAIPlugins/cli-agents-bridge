@@ -525,13 +525,73 @@ func resolveReplyTarget(args []string, asks []openAsk, known []string, stdin io.
 // nameLookalike reports whether s is a case-insensitive match of a known agent
 // name. Deliberately NOT a fuzzy distance: a rule an agent cannot predict is
 // worse than none, and case is the near-miss that actually happens.
+// nameLookalike reports the known agent name that `s` was probably meant to be.
+//
+// It used to be strings.EqualFold, which catches a difference in CAPITALS and
+// nothing else — while the comment above its call site cited `VAL-brige` as the
+// motivating example. Executed, that exact line sent the typo itself as the
+// answer, closed the ask and exited 0, with the report on stdin never read: word
+// for word the damage the guardrail claims to prevent, still entirely there.
+//
+// A control that exists, is tested, is documented, and does not cover the case
+// it was written for is worse than an absent one: the reader concludes they are
+// protected and the user gets no error.
+//
+// Edit distance <= threshold, because that is how typos actually arrive —
+// transposition, a missing letter, one letter too many. The threshold scales
+// with length: on a short name almost everything is within two edits, and a
+// guardrail that fires on unrelated words would push people to pipe everything
+// through stdin, which is how a guardrail gets worked around instead of used.
 func nameLookalike(known []string, s string) (string, bool) {
+	threshold := 2
+	if len(s) <= 4 {
+		threshold = 1
+	}
+	best, bestDist := "", threshold+1
 	for _, k := range known {
 		if strings.EqualFold(k, s) {
 			return k, true
 		}
+		if d := editDistance(strings.ToLower(k), strings.ToLower(s)); d <= threshold && d < bestDist {
+			best, bestDist = k, d
+		}
 	}
-	return "", false
+	return best, best != ""
+}
+
+// editDistance is Levenshtein, iterative with a single row. Agent names are
+// short and the candidate set is one scope, so the simple version is the right
+// one — no dependency for twenty lines.
+func editDistance(a, b string) int {
+	ra, rb := []rune(a), []rune(b)
+	prev := make([]int, len(rb)+1)
+	cur := make([]int, len(rb)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(ra); i++ {
+		cur[0] = i
+		for j := 1; j <= len(rb); j++ {
+			cost := 1
+			if ra[i-1] == rb[j-1] {
+				cost = 0
+			}
+			cur[j] = min3(cur[j-1]+1, prev[j]+1, prev[j-1]+cost)
+		}
+		prev, cur = cur, prev
+	}
+	return prev[len(rb)]
+}
+
+func min3(a, b, c int) int {
+	m := a
+	if b < m {
+		m = b
+	}
+	if c < m {
+		m = c
+	}
+	return m
 }
 
 func soleSessionNamed(byName map[string][]string, name string, senders map[string]string) (string, error) {
