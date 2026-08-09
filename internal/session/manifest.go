@@ -5,6 +5,7 @@ package session
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -20,10 +21,64 @@ const SchemaVersionV2 = 2
 const (
 	RoleVal       = "val"
 	RoleEsc       = "esc"
+	RoleCritic    = "critic"
 	RoleArchitect = "architect"
 	RoleObserver  = "observer"
 	RoleNeutral   = "neutral"
 )
+
+// RoleChoice is a role together with the one line shown wherever roles are
+// offered. Description travels WITH the name because the two drifted apart the
+// moment they lived in different files: `join --role` advertised four roles,
+// `register --role` five, and the help text a fourth list of its own.
+type RoleChoice struct {
+	Name        string
+	Description string
+}
+
+// SelectableRoles is the single source for every list of roles a human or an
+// agent is shown, in display order.
+//
+// NOT a whitelist. Routing is permissive by construction (see
+// routing.ValidateSendPair): an unknown role sends and receives normally, which
+// is what let `critic` work before it was ever declared here. This list decides
+// what gets OFFERED, and being offered is what makes a role findable — a fresh
+// critic reading `--role` help that omits `critic` picks something else and
+// walks into a wall the routing never built.
+//
+// `neutral` is deliberately absent: it is the v1-read fallback, not a choice.
+var SelectableRoles = []RoleChoice{
+	{RoleVal, "orchestrates and hands out work"},
+	{RoleEsc, "executes it"},
+	{RoleCritic, "reviews and criticises — the CRI role; reports to its val and sends to nobody else"},
+	{RoleArchitect, "reserved for Claude Desktop, which joins through the MCP connector"},
+	{RoleObserver, "reads only, never sends"},
+}
+
+// RoleNames renders the selectable roles as "val|esc|critic|..." for flag help.
+func RoleNames() string {
+	names := make([]string, 0, len(SelectableRoles))
+	for _, r := range SelectableRoles {
+		names = append(names, r.Name)
+	}
+	return strings.Join(names, "|")
+}
+
+// RoleLines renders the selectable roles as an indented block, one per line,
+// for an error that has to teach rather than list.
+func RoleLines() string {
+	var b strings.Builder
+	width := 0
+	for _, r := range SelectableRoles {
+		if len(r.Name) > width {
+			width = len(r.Name)
+		}
+	}
+	for _, r := range SelectableRoles {
+		fmt.Fprintf(&b, "  %-*s  %s\n", width, r.Name, r.Description)
+	}
+	return b.String()
+}
 
 // Valid statuses in the manifest lifecycle. MVP uses only "active";
 // additional states (idle, paused, terminating) land in v0.3+.

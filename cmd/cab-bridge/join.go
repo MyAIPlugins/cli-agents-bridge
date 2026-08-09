@@ -60,7 +60,7 @@ type joinPeer struct {
 func runJoin(args []string) error {
 	fs := flag.NewFlagSet("join", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	role := fs.String("role", "", "this agent's role (required): val|esc|architect|observer")
+	role := fs.String("role", "", "this agent's role (required): "+session.RoleNames())
 	agentName := fs.String("agent-name", "", "this agent's name; empty = derived from the scope")
 	projectPath := fs.String("project-path", "", "project root (default: cwd) — test injection point")
 	team := fs.String("team", "", "team label isolating this group in a shared data dir; usually unneeded")
@@ -75,11 +75,13 @@ func runJoin(args []string) error {
 		// architect belongs here: it is a real routing role (val <-> architect is
 		// allowed), and leaving it out made a fresh reviewer pick `esc` and walk
 		// into the esc->esc wall before discovering the role meant for them.
+		// One source for the list (session.SelectableRoles). Written out by hand
+		// here, this block advertised `architect` — reserved for Claude Desktop —
+		// and omitted `critic`, so a fresh reviewer was told to take a role that
+		// was not its own. Twice in two days a hand-kept list sent someone to the
+		// wrong place; a list that cannot disagree with itself cannot do that.
 		return errors.New("join: --role is required — it is the one thing an agent must know about itself:\n" +
-			"  val        orchestrates and hands out work\n" +
-			"  esc        executes it\n" +
-			"  architect  reviews and criticises (can talk to a val; not blocked like esc->esc)\n" +
-			"  observer   reads only, never sends")
+			session.RoleLines())
 	}
 	if *team != "" {
 		if err := security.ValidateTeamID(*team); err != nil {
