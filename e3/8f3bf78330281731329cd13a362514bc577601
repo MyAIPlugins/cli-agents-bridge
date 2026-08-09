@@ -1,0 +1,30 @@
+cmd/cab-bridge/next_test.go
+  s_13b14428c16427::t_d2c8e4b6e59b63 842-871
+cmd/cab-bridge/next.go
+  s_13b14428c16427::t_5c53ca42c46493 109-116,144,166-170
+  s_13b14428c16427::t_976ed9e3853542 344-345
+  s_13b14428c16427::t_8665a99fb79ba9 211-212,311
+  s_13b14428c16427::t_85409066509426 327,330,333
+  s_13b14428c16427::t_cd32813cdacb31 171-172
+cmd/cab-bridge/overview_test.go
+  s_13b14428c16427::t_b798bcd95024ee 356-359,361
+  s_13b14428c16427::t_d2c8e4b6e59b63 348-355,360,362-364
+cmd/cab-bridge/overview.go
+  s_13b14428c16427::t_5c53ca42c46493 235-240
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "e38f3bf78330281731329cd13a362514bc577601",
+  "prompts": {},
+  "sessions": {
+    "s_13b14428c16427": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5bb10dbc-fcae-44e8-acd6-603d11cfd57f",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
