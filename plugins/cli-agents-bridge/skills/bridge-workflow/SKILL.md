@@ -9,6 +9,17 @@ description: How to coordinate two (or more) CLI agent sessions with the cab-bri
 
 A common shape is **one orchestrator + one executor** (roles `val` and `esc`), but nothing here depends on those names.
 
+## Getting in: two commands, then stop
+
+```bash
+cab-bridge join --role=<val|esc|architect> --agent-name=<the name you were given>
+CAB_SESSION_ID=<the id printed above> cab-bridge next
+```
+
+`join` prints **who you are and who is here**. Do not re-derive that with `overview`, `peers` or `inbox --list`: it is the same answer twice, and a fresh agent that double-checks it burns turns before receiving any work. If `join` succeeded, it does not need confirming.
+
+An orchestrator adds `cab-bridge state orchestrating` once, since it does not sit in `next` between messages.
+
 ## The working loop — five commands, no flags
 
 ```bash
