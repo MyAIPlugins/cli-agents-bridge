@@ -221,15 +221,14 @@ func nextRun(parent context.Context, mgr *session.Manager, cfg config.Config, si
 	// that stops listening on its own has delegated that decision to a timer.
 	//
 	// So the context is cancellable but never scheduled: the run ends on a
-	// delivery, a signal, or a reclaim — never on time. There is also no
-	// deadline left to publish, so `listening` in overview rests on the live PID,
-	// which is the fact that was actually load-bearing all along.
-	waitStart := time.Now().UTC()
-	if err := mgr.SetWaitingSince(sid, &waitStart); err != nil {
-		fmt.Fprintf(stderr, "warning: could not publish the waiting marker: %v\n", err)
-	}
-	defer func() { _ = mgr.SetWaitingSince(sid, nil) }()
-
+	// delivery, a signal, or a reclaim — never on time.
+	//
+	// Nothing is published here to say "I am waiting", and nothing is cleared on
+	// the way out. StartWait above already wrote the only record that can answer
+	// it — the ownership claim, under the session lock — and overview reads it
+	// through ListenerOwner.Listening. The marker this replaces was cleared by a
+	// deferred write that ran AFTER an eviction, on behalf of the instance that
+	// had replaced us: the exit path speaking for the live one.
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 

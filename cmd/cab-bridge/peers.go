@@ -22,12 +22,17 @@ type peerSummary struct {
 	PID           int       `json:"pid"`
 	LastHeartbeat time.Time `json:"lastHeartbeat"`
 	Stale         bool      `json:"stale"`
-	// InboxCount is the number of un-consumed messages in the peer's inbox
-	// (consumed ones are already moved to processed/), so it doubles as the
-	// pending count. LastConsumedMsgID is the id of the most recently consumed
-	// message. Together they let an orchestrator tell an idle peer from one
-	// actively draining its inbox (F-12), without relying on heartbeat - which
-	// only proves the listen process is alive, not that work is happening.
+	// InboxCount is how many messages this peer has NOT been shown yet — the
+	// UNREAD count, not the file count.
+	//
+	// The two used to be the same number, back when being shown a message also
+	// moved it out of inbox/. Under the mailbox model `next` leaves the file
+	// where it is, so counting files answers "how much mail is sitting there",
+	// while the question this column exists for is "does this peer have work
+	// waiting?". Two already-read, already-answered messages read as two waiting,
+	// which is the one direction an orchestrator must not be wrong in.
+	//
+	// The full file count stays available in `inbox --list`, which is inspection.
 	InboxCount        int    `json:"inboxCount"`
 	LastConsumedMsgID string `json:"lastConsumedMsgId,omitempty"`
 	// TeamID is the F-5 isolation label. Empty (omitted) for sessions
@@ -80,7 +85,7 @@ func runPeers(args []string) error {
 		}
 	}
 
-	peers, hiddenByScope, err := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, *includeStale, *team, scopeFilter)
+	peers, hiddenByScope, err := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, cfg.MaxMessageBytes, *includeStale, *team, scopeFilter)
 	if err != nil {
 		return err
 	}
@@ -103,7 +108,10 @@ func runPeers(args []string) error {
 	}
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "SESSION_ID\tROLE\tSTATE\tAGENT_NAME\tPROJECT\tTEAM\tPID\tHEARTBEAT_AGE\tSTALE\tINBOX\tLAST_CONSUMED\tSCOPE")
+	// UNREAD, not INBOX: the header names what the number IS. "INBOX" over a
+	// count that no longer means "files in the inbox" is a second way of saying
+	// the wrong thing, and costs nothing to fix.
+	fmt.Fprintln(tw, "SESSION_ID\tROLE\tSTATE\tAGENT_NAME\tPROJECT\tTEAM\tPID\tHEARTBEAT_AGE\tSTALE\tUNREAD\tLAST_CONSUMED\tSCOPE")
 	now := time.Now().UTC()
 	for _, p := range peers {
 		age := now.Sub(p.LastHeartbeat).Truncate(time.Second)
@@ -144,7 +152,7 @@ func runPeers(args []string) error {
 // stale checks but were excluded SOLELY by scopeFilter — i.e. how many more the
 // caller would see with --all-scopes. The caller uses it for the anti-silent-cap
 // stderr hint. It is always 0 when scopeFilter is empty.
-func collectPeers(mgr *session.Manager, dataDir string, staleSeconds int, includeStale bool, teamFilter, scopeFilter string) ([]peerSummary, int, error) {
+func collectPeers(mgr *session.Manager, dataDir string, staleSeconds, maxContentBytes int, includeStale bool, teamFilter, scopeFilter string) ([]peerSummary, int, error) {
 	sessionsRoot := filepath.Join(dataDir, "sessions")
 	entries, err := os.ReadDir(sessionsRoot)
 	if err != nil {
@@ -188,7 +196,7 @@ func collectPeers(mgr *session.Manager, dataDir string, staleSeconds int, includ
 			PID:               mf.PID,
 			LastHeartbeat:     mf.LastHeartbeat,
 			Stale:             stale,
-			InboxCount:        countJSON(filepath.Join(sessionsRoot, e.Name(), "inbox")),
+			InboxCount:        countUnread(mgr, e.Name(), filepath.Join(sessionsRoot, e.Name()), maxContentBytes),
 			LastConsumedMsgID: mf.LastConsumedMsgID,
 			TeamID:            mf.TeamID,
 			Scope:             mf.Scope,

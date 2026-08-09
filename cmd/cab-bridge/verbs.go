@@ -72,7 +72,7 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, name, selfS
 	if err != nil {
 		return "", fmt.Errorf("resolve recipient: load my own manifest %s: %w", selfSID, err)
 	}
-	peers, _, err := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, true, me.TeamID, me.Scope)
+	peers, _, err := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, cfg.MaxMessageBytes, true, me.TeamID, me.Scope)
 	if err != nil {
 		return "", fmt.Errorf("resolve recipient: %w", err)
 	}
@@ -349,7 +349,7 @@ func replyRun(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		// a genuine message, never to route.
 		var known []string
 		if me, merr := mgr.LoadManifest(sid); merr == nil {
-			if peers, _, perr := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, true, me.TeamID, me.Scope); perr == nil {
+			if peers, _, perr := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, cfg.MaxMessageBytes, true, me.TeamID, me.Scope); perr == nil {
 				known = knownAgentNames(peers, sid)
 			}
 		}

@@ -58,7 +58,7 @@ func TestCollectPeers_DefaultScopeFilter_HidesOtherScopes(t *testing.T) {
 	plantScopedSession(t, dataDir, "escaaaaa", "/root/A", "")
 	plantScopedSession(t, dataDir, "escbbbbb", "/root/B", "")
 
-	peers, hidden, err := collectPeers(session.NewManager(dataDir, time.Second), dataDir, 300, true, "", "/root/A")
+	peers, hidden, err := collectPeers(session.NewManager(dataDir, time.Second), dataDir, 300, 65536, true, "", "/root/A")
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"valaaaaa", "escaaaaa"}, ids(peers), "only scope /root/A sessions returned")
 	assert.Equal(t, 1, hidden, "the /root/B session is counted as hidden-by-scope")
@@ -72,7 +72,7 @@ func TestCollectPeers_AllScopes_NoFilter(t *testing.T) {
 	plantScopedSession(t, dataDir, "valaaaaa", "/root/A", "")
 	plantScopedSession(t, dataDir, "escbbbbb", "/root/B", "")
 
-	peers, hidden, err := collectPeers(session.NewManager(dataDir, time.Second), dataDir, 300, true, "", "")
+	peers, hidden, err := collectPeers(session.NewManager(dataDir, time.Second), dataDir, 300, 65536, true, "", "")
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"valaaaaa", "escbbbbb"}, ids(peers))
 	assert.Equal(t, 0, hidden)
@@ -89,12 +89,12 @@ func TestCollectPeers_LegacyEmptyScope_HiddenByDefault_ShownWithAll(t *testing.T
 
 	mgr := session.NewManager(dataDir, time.Second)
 
-	filtered, hidden, err := collectPeers(mgr, dataDir, 300, true, "", "/root/A")
+	filtered, hidden, err := collectPeers(mgr, dataDir, 300, 65536, true, "", "/root/A")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"scopedaa"}, ids(filtered), "legacy empty-scope session hidden by default")
 	assert.Equal(t, 1, hidden)
 
-	all, hiddenAll, err := collectPeers(mgr, dataDir, 300, true, "", "")
+	all, hiddenAll, err := collectPeers(mgr, dataDir, 300, 65536, true, "", "")
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"scopedaa", "legacyaa"}, ids(all), "--all-scopes reveals the legacy session")
 	assert.Equal(t, 0, hiddenAll)

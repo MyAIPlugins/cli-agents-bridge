@@ -20,13 +20,13 @@ import (
 const inboxPreviewMax = 80
 
 // inboxEntry is one row of `inbox --list`: a message sitting in the session's
-// inbox/ (pending) or processed/ (already consumed), read WITHOUT consuming it.
+// inbox/ (not archived yet) or processed/ (archived), read WITHOUT consuming it.
 // Box distinguishes the two so an operator can tell "still to handle" from
 // "already handled" — the recovery surface that completes F-30 (a reply
 // archived to processed/ is now listable from home instead of grep-ing the
 // sender's outbox or a fragile `ls inbox/*.json`).
 type inboxEntry struct {
-	Box           string `json:"box"` // "inbox" (pending) or "processed" (consumed)
+	Box           string `json:"box"` // "inbox" (not archived yet) or "processed" (archived)
 	MsgID         string `json:"msgId"`
 	From          string `json:"from"`
 	FromAgentName string `json:"fromAgentName"`
@@ -39,8 +39,8 @@ func runInbox(args []string) error {
 	fs_ := flag.NewFlagSet("inbox", flag.ContinueOnError)
 	fs_.SetOutput(os.Stderr)
 	sessionIDFlag := fs_.String("session-id", "", "session ID (default: longest-prefix lookup from cwd)")
-	list := fs_.Bool("list", false, "list messages in inbox/ (pending) and processed/ (consumed) WITHOUT consuming them")
-	tidy := fs_.Bool("tidy", false, "archive every well-formed message currently in inbox/ to processed/ (use after --list: it sweeps the VISIBLE pending; a message arriving later stays in inbox for the next pass)")
+	list := fs_.Bool("list", false, "list messages in inbox/ (not archived yet, read or unread) and processed/ (archived) WITHOUT consuming them")
+	tidy := fs_.Bool("tidy", false, "archive every well-formed message currently in inbox/ to processed/ (use after --list: it sweeps what --list SHOWED; a message arriving later stays in inbox for the next pass)")
 	asJSON := fs_.Bool("json", false, "emit JSON on stdout (default: human-readable)")
 	if err := fs_.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -110,7 +110,7 @@ func runInbox(args []string) error {
 	return tw.Flush()
 }
 
-// collectInbox reads the session's inbox/ (pending) then processed/ (consumed)
+// collectInbox reads the session's inbox/ (not archived yet) then processed/
 // dirs as a PURE READ — it never moves or deletes a file, so `inbox --list` is
 // guaranteed non-consuming. Returns one entry per message, inbox/ first. A
 // missing dir contributes no entries (lazy-created; not an error). The returned
@@ -159,7 +159,7 @@ func collectInbox(sessionDir string, maxContentBytes int) ([]inboxEntry, error) 
 // currently in the session's inbox/ to processed/ via MoveToProcessed (lossless,
 // the same primitive the consume path uses), returning the count moved. It is
 // the explicit operator action "I have handled what --list showed, archive it" —
-// so it sweeps the VISIBLE pending; a message that arrives afterwards stays in
+// so it sweeps what was VISIBLE; a message that arrives afterwards stays in
 // inbox for the next pass (still recoverable via --list, which shows processed/
 // too). Malformed, .tmp.*, or unreadable files are LEFT in inbox for forensics
 // (same policy as consumeInboxEntry); processed/ is never touched. A missing or

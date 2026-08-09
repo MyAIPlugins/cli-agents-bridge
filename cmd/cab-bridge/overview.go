@@ -11,11 +11,12 @@ import (
 	"time"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
 // overviewReport is the F-42 at-a-glance view of a session's world in ONE call:
-// who I am, my paired peer (the complementary role in my scope), and my pending
+// who I am, my paired peer (the complementary role in my scope), and my unread
 // inbox — resolved id-free from the cwd by default, or from an explicit
 // --session-id (A-3/F-86, for a worktree or shared scope where the cwd lookup
 // would resolve the wrong session). Worktree-aware by construction: "me" is
@@ -26,17 +27,19 @@ import (
 type overviewReport struct {
 	Me overviewSelf `json:"me"`
 
-	// F-81: listener observability — whether THIS session is actively in a listen
-	// window and when it expires. ListenerActive is IsProcessAlive(PID) AND a
-	// future ListenUntil; pid/until are only meaningful (and only emitted) when
-	// active. Answers the CRI ask "am I really listening? PID X, expires in Y?"
-	// that PID/heartbeat/state alone could not.
+	// F-81: listener observability — whether THIS session has a live waiter, which
+	// PID holds it, and since when. Answers the CRI ask "am I really listening?"
+	// that PID/heartbeat/state alone could not. All three come from the ownership
+	// record (ListenerOwner.Listening); pid/since are only meaningful, and only
+	// emitted, when active.
+	//
+	// There is no listenerUntil any more: a wait has no deadline (§2.2 rev.
+	// cdb21dc), so the field's writer went away with `listen` and it kept being
+	// published from whatever the manifest still held — an expiry from a world
+	// that no longer exists, presented as current.
 	ListenerActive bool       `json:"listenerActive"`
 	ListenerPid    int        `json:"listenerPid,omitempty"`
-	ListenerUntil  *time.Time `json:"listenerUntil,omitempty"`
-	// ListenerSince is when the current wait started. It replaces ListenerUntil
-	// as the observable fact now that the wait has no end (§2.2 rev. cdb21dc).
-	ListenerSince *time.Time `json:"listenerSince,omitempty"`
+	ListenerSince  *time.Time `json:"listenerSince,omitempty"`
 
 	// B-2 listener ownership, from listener.json — distinct from the F-81 active
 	// signal above (which is manifest PID + window). Generation is the monotone
@@ -45,8 +48,11 @@ type overviewReport struct {
 	ListenerGeneration     int  `json:"listenerGeneration,omitempty"`
 	ListenerReclaimPending bool `json:"listenerReclaimPending,omitempty"`
 
-	Peer  *overviewPeer `json:"peer"`  // null when no complementary peer is registered yet
-	Inbox []overviewMsg `json:"inbox"` // pending messages only (inbox/, not processed/)
+	Peer *overviewPeer `json:"peer"` // null when no complementary peer is registered yet
+	// Inbox holds the UNREAD messages only: what `next` would still deliver. Not
+	// the contents of inbox/, which under the mailbox model also holds everything
+	// already read and not yet archived.
+	Inbox []overviewMsg `json:"inbox"`
 }
 
 type overviewSelf struct {
@@ -145,35 +151,35 @@ func buildOverview(mgr *session.Manager, cfg config.Config, sid string) (overvie
 		Inbox: []overviewMsg{},
 	}
 
-	// F-81: am I actively listening? A live PID AND a future listen window. AND'd
-	// so a dead listen (PID gone after the process exits) or an expired window
-	// both read as "not listening" — no false positive from a stale ListenUntil
-	// left in the manifest. listen writes ListenUntil at startup (SetListenUntil).
-	// `next` has no window (§2.2 rev. cdb21dc), so there is no deadline left to
-	// check: the marker is WaitingSince, and it only counts alongside a live PID
-	// — the marker survives a crash, the PID does not, so the pair cannot report
-	// a dead waiter as listening. A live PID on its own would NOT do: a val is a
-	// live process that waits for nothing.
-	if session.IsProcessAlive(me.PID) && me.WaitingSince != nil {
-		report.ListenerActive = true
-		report.ListenerPid = me.PID
-		report.ListenerUntil = me.ListenUntil
-		report.ListenerSince = me.WaitingSince
-	}
-
-	// B-2: the listener ownership record (generation + reclaim-pending), separate
-	// from the F-81 active signal above. Best-effort: a missing/unreadable record
-	// just leaves the fields zero (a session that never listened).
+	// Am I actively listening — and who owns that wait? ONE read of the ownership
+	// record answers both, because both are the same fact (ListenerOwner.Listening).
+	//
+	// It used to be two: the manifest's waitingSince marker for "active", this
+	// record for generation/reclaim. That split is what let an evicted `next`
+	// clear the marker of the live one that had replaced it, so overview told a
+	// listening session it was not listening — on the exact command an agent uses
+	// to decide whether to re-arm, which made the answer destroy the thing it was
+	// asked about. The PID reported here is now the OWNER's, so the `kill` line
+	// below points at the process that actually holds the wait.
+	//
+	// Best-effort: a missing/unreadable record leaves the fields zero (a session
+	// that never listened), never an error on a pure observability path.
 	if owner, ok, oerr := mgr.ReadListener(sid); oerr == nil && ok {
 		report.ListenerGeneration = owner.Generation
 		report.ListenerReclaimPending = owner.PID == 0
+		if owner.Listening() {
+			report.ListenerActive = true
+			report.ListenerPid = owner.PID
+			claimedAt := owner.ClaimedAt
+			report.ListenerSince = &claimedAt
+		}
 	}
 
 	// Peer: the complementary role within my own scope+team. collectPeers
 	// includes me, but selectPeer never picks my own role, so I am not selected.
 	// Filtering on MY stored scope (not resolveScope(cwd)) keeps this correct even
 	// for an inherited/legacy scope, though F-41 makes them equal for a worktree.
-	peers, _, err := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, true, me.TeamID, me.Scope)
+	peers, _, err := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, cfg.MaxMessageBytes, true, me.TeamID, me.Scope)
 	if err != nil {
 		return overviewReport{}, fmt.Errorf("overview: discover peers: %w", err)
 	}
@@ -187,14 +193,28 @@ func buildOverview(mgr *session.Manager, cfg config.Config, sid string) (overvie
 		}
 	}
 
-	// Pending inbox: collectInbox is the same pure read `inbox --list` uses; keep
-	// only the inbox/ box (processed/ is already handled).
+	// The UNREAD inbox — what `next` would still hand over — not every file in
+	// inbox/. Under the mailbox model a message stays put after being delivered
+	// (only `reply` archives), so listing the directory listed mail this agent had
+	// already read and answered, and called it "pending". Being told you have two
+	// messages waiting when you have none is not a rounding error on the command
+	// you run to orient yourself.
+	//
+	// `inbox --list` remains the full view, processed/ included: this is the
+	// glance, that is the inspection.
+	cursor, _, err := mgr.ReadWakeCursor(sid)
+	if err != nil {
+		return overviewReport{}, fmt.Errorf("overview: read wake cursor: %w", err)
+	}
 	entries, err := collectInbox(filepath.Join(cfg.DataDir, "sessions", sid), cfg.MaxMessageBytes)
 	if err != nil {
 		return overviewReport{}, fmt.Errorf("overview: read inbox: %w", err)
 	}
 	for _, e := range entries {
-		if e.Box != "inbox" {
+		// type=ack is excluded for the same reason `next` excludes it: a delivery
+		// receipt is not work waiting, and counting it promises a message that
+		// will never be handed over.
+		if e.Box != "inbox" || e.Type == message.TypeAck || cursor.IsNotified(e.MsgID) {
 			continue
 		}
 		report.Inbox = append(report.Inbox, overviewMsg{
@@ -252,10 +272,14 @@ func printOverviewHuman(w io.Writer, r overviewReport) {
 	}
 
 	if len(r.Inbox) == 0 {
-		fmt.Fprintln(w, "inbox: empty")
+		// "nothing unread", not "empty": inbox/ may well hold read messages that
+		// nobody has archived yet, and this line has no business calling that
+		// empty. It answers one question — is there anything for me to read? — and
+		// says exactly that.
+		fmt.Fprintln(w, "inbox: nothing unread")
 		return
 	}
-	fmt.Fprintf(w, "inbox: %d pending\n", len(r.Inbox))
+	fmt.Fprintf(w, "inbox: %d unread\n", len(r.Inbox))
 	for _, m := range r.Inbox {
 		from := m.FromAgentName
 		if from == "" {

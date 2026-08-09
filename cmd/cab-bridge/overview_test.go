@@ -47,9 +47,9 @@ func overviewTestCfg(dataDir string) config.Config {
 	return config.Config{DataDir: dataDir, StaleSeconds: 300, MaxMessageBytes: 65536}
 }
 
-// TestBuildOverview_MePeerAndPendingInbox is the F-42 core: me + the
-// complementary peer in my scope + only the PENDING inbox (processed/ excluded).
-func TestBuildOverview_MePeerAndPendingInbox(t *testing.T) {
+// TestBuildOverview_MePeerAndUnreadInbox is the F-42 core: me + the
+// complementary peer in my scope + the UNREAD inbox (processed/ excluded).
+func TestBuildOverview_MePeerAndUnreadInbox(t *testing.T) {
 	t.Parallel()
 	dataDir := t.TempDir()
 	scope := "/repo/x"
@@ -74,7 +74,7 @@ func TestBuildOverview_MePeerAndPendingInbox(t *testing.T) {
 	assert.Equal(t, session.RoleVal, rep.Peer.Role)
 	assert.Equal(t, session.StateOrchestrating, rep.Peer.State)
 
-	require.Len(t, rep.Inbox, 2, "only inbox/ (pending) messages, never processed/")
+	require.Len(t, rep.Inbox, 2, "only inbox/ messages, never processed/")
 	gotIDs := map[string]bool{}
 	for _, m := range rep.Inbox {
 		gotIDs[m.MsgID] = true
@@ -82,6 +82,53 @@ func TestBuildOverview_MePeerAndPendingInbox(t *testing.T) {
 	assert.True(t, gotIDs["msg-aaaaaaaaaaaa"])
 	assert.True(t, gotIDs["msg-bbbbbbbbbbbb"])
 	assert.False(t, gotIDs["msg-cccccccccccc"], "processed message must not appear")
+}
+
+// The Riga-2 regression: under the mailbox model a delivered message stays in
+// inbox/, so "everything in inbox/" and "everything still waiting for you" are
+// different sets — and overview was reporting the first while answering the
+// second. A message already handed over by `next` is not work waiting, and an
+// ack was never work at all.
+func TestBuildOverview_InboxIsUnreadNotEveryFile(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	plantOverviewSession(t, dataDir, "unrdov1", session.RoleEsc, "ESC-u", "/repo/u", "", "working")
+	plantMsg(t, dataDir, "unrdov1", "inbox", "msg-aaaaaaaaaaaa", "valu0001", "VAL-u", message.TypeQuery, "already read")
+	plantMsg(t, dataDir, "unrdov1", "inbox", "msg-bbbbbbbbbbbb", "valu0001", "VAL-u", message.TypeQuery, "still waiting")
+	plantMsg(t, dataDir, "unrdov1", "inbox", "msg-cccccccccccc", "valu0001", "VAL-u", message.TypeAck, "receipt")
+
+	mgr := session.NewManager(dataDir, time.Second)
+	_, err := mgr.CommitWakeCursor("unrdov1", []string{"msg-aaaaaaaaaaaa"}, time.Now().UTC(), nil, nil)
+	require.NoError(t, err)
+
+	rep, err := buildOverview(mgr, overviewTestCfg(dataDir), "unrdov1")
+	require.NoError(t, err)
+	require.Len(t, rep.Inbox, 1, "three files in inbox/, one of them actually waiting")
+	assert.Equal(t, "msg-bbbbbbbbbbbb", rep.Inbox[0].MsgID)
+
+	// The files are all still there: this is a change of question, not a sweep.
+	entries, err := os.ReadDir(filepath.Join(dataDir, "sessions", "unrdov1", "inbox"))
+	require.NoError(t, err)
+	assert.Len(t, entries, 3, "overview reads, it never archives")
+
+	// And the same three files answer the same way through the peers column.
+	assert.Equal(t, 1, countUnread(mgr, "unrdov1", filepath.Join(dataDir, "sessions", "unrdov1"), 65536),
+		"one number, one meaning, wherever it is shown")
+}
+
+// The zero case says "nothing unread", never "empty": inbox/ may hold read
+// messages nobody has archived, and calling that empty is the same kind of
+// false statement in the other direction.
+func TestPrintOverviewHuman_ZeroUnreadDoesNotClaimAnEmptyInbox(t *testing.T) {
+	t.Parallel()
+	var b bytes.Buffer
+	printOverviewHuman(&b, overviewReport{
+		Me:    overviewSelf{SessionID: "esc12345", AgentName: "ESC-x", Role: "esc"},
+		Inbox: []overviewMsg{},
+	})
+	assert.Contains(t, b.String(), "inbox: nothing unread")
+	assert.NotContains(t, b.String(), "empty")
+	assert.NotContains(t, b.String(), "pending")
 }
 
 func TestBuildOverview_NoPeerInScope(t *testing.T) {
@@ -139,87 +186,116 @@ func TestPrintOverviewHuman_WithPeerAndInbox(t *testing.T) {
 	assert.Contains(t, out, "[live]")
 	assert.Contains(t, out, "peer:  VAL-x  (val12345)")
 	assert.Contains(t, out, "channel ok")
-	assert.Contains(t, out, "inbox: 1 pending")
+	assert.Contains(t, out, "inbox: 1 unread")
 	assert.Contains(t, out, "msg-aaaaaaaaaaaa from VAL-x  type query")
 }
 
-// F-81: a live PID + a future listen window → the session is actively listening,
-// and overview reports the pid and the window.
+// plantListener writes an ownership record by hand, so a test can describe an
+// owner this process cannot be (a dead PID) or a generation it did not reach.
+func plantListener(t *testing.T, dataDir, id string, pid, generation int) {
+	t.Helper()
+	rec := map[string]any{
+		"listenerGeneration": generation,
+		"listenerToken":      "0123456789abcdef",
+		"listenerPID":        pid,
+		"listenerClaimedAt":  time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	data, err := json.Marshal(rec)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "sessions", id, "listener.json"), data, 0o600))
+}
+
+// A live owner in the ownership record → listening, with the OWNER's pid and the
+// moment the wait started. The pid matters: overview prints a `kill` line next to
+// it, so it has to name the process that actually holds the wait.
 func TestBuildOverview_ListenerActive(t *testing.T) {
 	t.Parallel()
 	dataDir := t.TempDir()
-	plantOverviewSession(t, dataDir, "lsnov01", session.RoleEsc, "ESC-x", "/repo/x", "", "working") // PID = os.Getpid() (live)
+	plantOverviewSession(t, dataDir, "lsnov01", session.RoleEsc, "ESC-x", "/repo/x", "", "working")
 	mgr := session.NewManager(dataDir, time.Second)
-	since := time.Now().UTC()
-	require.NoError(t, mgr.SetWaitingSince("lsnov01", &since))
+	owner, err := mgr.ClaimListener("lsnov01") // PID = os.Getpid() (live)
+	require.NoError(t, err)
 
 	rep, err := buildOverview(mgr, overviewTestCfg(dataDir), "lsnov01")
 	require.NoError(t, err)
-	assert.True(t, rep.ListenerActive, "live PID + waiting marker → listening")
+	assert.True(t, rep.ListenerActive, "a live owner → listening")
 	assert.Equal(t, os.Getpid(), rep.ListenerPid)
+	assert.Equal(t, owner.Generation, rep.ListenerGeneration)
+	require.NotNil(t, rep.ListenerSince, "the wait has a start, and it is the claim")
+	assert.WithinDuration(t, owner.ClaimedAt, *rep.ListenerSince, time.Second)
 }
 
-// F-81: a past listen window (the listen exited or its window expired) → not
-// listening, and pid/until are suppressed.
-func TestBuildOverview_ListenerExpiredWindow(t *testing.T) {
+// The regression of the self-inflicted eviction cycle: a waiter that EXITS must
+// not change what overview says about the one that replaced it.
+//
+// Sequence (the one that bit the VAL): owner A is waiting, owner B claims and
+// evicts it, A then exits and runs its teardown. Before the fix, A's deferred
+// SetWaitingSince(nil) cleared the marker B had just published, so overview told
+// a listening session it was not listening — and the agent, following its own
+// rule to re-arm when not listening, evicted its healthy waiter.
+//
+// Here A's exit is the honest in-process equivalent: everything a departing
+// `next` still does. The assertion is that it is nothing.
+func TestBuildOverview_DepartingWaiterDoesNotUnsetTheLiveOne(t *testing.T) {
 	t.Parallel()
 	dataDir := t.TempDir()
-	plantOverviewSession(t, dataDir, "lsnov02", session.RoleEsc, "ESC-x", "/repo/x", "", "")
+	plantOverviewSession(t, dataDir, "lsnov05", session.RoleEsc, "ESC-x", "/repo/x", "", "working")
 	mgr := session.NewManager(dataDir, time.Second)
-	require.NoError(t, mgr.SetListenUntil("lsnov02", time.Now().UTC().Add(-time.Minute)))
 
-	rep, err := buildOverview(mgr, overviewTestCfg(dataDir), "lsnov02")
+	ownerA, err := mgr.StartWait("lsnov05")
 	require.NoError(t, err)
-	assert.False(t, rep.ListenerActive, "an expired window → not listening")
-	assert.Zero(t, rep.ListenerPid)
-	assert.Nil(t, rep.ListenerUntil)
+	ownerB, err := mgr.StartWait("lsnov05") // B evicts A
+	require.NoError(t, err)
+	require.False(t, mgr.IsListenerCurrent("lsnov05", ownerA.Token), "A is evicted")
+	require.True(t, mgr.IsListenerCurrent("lsnov05", ownerB.Token), "B owns the wait")
+
+	rep, err := buildOverview(mgr, overviewTestCfg(dataDir), "lsnov05")
+	require.NoError(t, err)
+	assert.True(t, rep.ListenerActive, "B is waiting, and A leaving cannot say otherwise")
+	assert.Equal(t, ownerB.Generation, rep.ListenerGeneration)
 }
 
-// F-81: a legacy/non-listen manifest has no listenUntil at all → not listening,
-// no crash on the nil pointer.
-func TestBuildOverview_ListenerAbsentLegacy(t *testing.T) {
+// A session that never waited has no ownership record at all → not listening,
+// and no error on the observability path.
+func TestBuildOverview_ListenerAbsent(t *testing.T) {
 	t.Parallel()
 	dataDir := t.TempDir()
-	plantOverviewSession(t, dataDir, "lsnov03", session.RoleEsc, "ESC-x", "/repo/x", "", "") // no SetListenUntil
+	plantOverviewSession(t, dataDir, "lsnov03", session.RoleEsc, "ESC-x", "/repo/x", "", "") // never claimed
 
 	mgr := session.NewManager(dataDir, time.Second)
 	rep, err := buildOverview(mgr, overviewTestCfg(dataDir), "lsnov03")
 	require.NoError(t, err)
-	assert.False(t, rep.ListenerActive, "no listen window (legacy/non-listen) → not listening")
-	assert.Nil(t, rep.ListenerUntil)
+	assert.False(t, rep.ListenerActive, "no ownership record → not listening")
+	assert.False(t, rep.ListenerReclaimPending)
+	assert.Nil(t, rep.ListenerSince)
 }
 
-// F-81: a future window but a DEAD PID (the listen process is gone) → not
-// listening. The AND of PID-alive and future-window guards the false positive of
-// a stale ListenUntil left in the manifest.
-func TestBuildOverview_ListenerDeadPID(t *testing.T) {
+// The owner's process is gone (crash, kill) → not listening, EVEN THOUGH the
+// manifest PID is this live test process. That combination is the whole point of
+// reading the ownership record: the manifest PID belongs to whoever adopted the
+// session last, which is not the same claim as "somebody is waiting right now".
+func TestBuildOverview_ListenerOwnerProcessDead(t *testing.T) {
 	t.Parallel()
 	dataDir := t.TempDir()
-	plantOverviewSession(t, dataDir, "lsnov04", session.RoleEsc, "ESC-x", "/repo/x", "", "")
-	mgr := session.NewManager(dataDir, time.Second)
-	mf, err := mgr.LoadManifest("lsnov04")
-	require.NoError(t, err)
-	mf.PID = deadPID
-	future := time.Now().UTC().Add(time.Hour)
-	mf.ListenUntil = &future
-	require.NoError(t, mgr.SaveManifest(mf))
+	plantOverviewSession(t, dataDir, "lsnov04", session.RoleEsc, "ESC-x", "/repo/x", "", "") // manifest PID = live
+	plantListener(t, dataDir, "lsnov04", deadPID, 7)
 
+	mgr := session.NewManager(dataDir, time.Second)
 	rep, err := buildOverview(mgr, overviewTestCfg(dataDir), "lsnov04")
 	require.NoError(t, err)
-	assert.False(t, rep.ListenerActive, "future window but dead PID → not listening")
+	assert.False(t, rep.ListenerActive, "dead owner → not listening, live manifest PID notwithstanding")
+	assert.Equal(t, 7, rep.ListenerGeneration, "the generation is still observable")
 }
 
 var nowForOverviewTest = time.Now().UTC()
 
 func TestPrintOverviewHuman_ListenerActive(t *testing.T) {
 	t.Parallel()
-	until := time.Now().UTC().Add(30 * time.Minute)
 	rep := overviewReport{
 		Me:             overviewSelf{SessionID: "esc12345", AgentName: "ESC-x", Role: "esc", Stale: false},
 		ListenerActive: true, ListenerSince: &nowForOverviewTest,
-		ListenerPid:   4321,
-		ListenerUntil: &until,
-		Inbox:         []overviewMsg{},
+		ListenerPid: 4321,
+		Inbox:       []overviewMsg{},
 	}
 	var b bytes.Buffer
 	printOverviewHuman(&b, rep)
@@ -253,7 +329,7 @@ func TestPrintOverviewHuman_NoPeerEmptyInbox(t *testing.T) {
 	assert.Contains(t, out, "state idle", "empty state renders as idle")
 	assert.Contains(t, out, "[stale]")
 	assert.Contains(t, out, "peer:  (none paired in this scope yet)")
-	assert.Contains(t, out, "inbox: empty")
+	assert.Contains(t, out, "inbox: nothing unread")
 }
 
 // TestRunOverview_SessionIDFlag_ResolvesExplicitSession is the A-3 (F-86) check:
@@ -321,17 +397,18 @@ func TestBuildOverview_ListenerReclaimPending(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 2, rep.ListenerGeneration)
 	assert.True(t, rep.ListenerReclaimPending, "PID==0 after reclaim → reclaim-pending")
+	assert.False(t, rep.ListenerActive, "revoked is not listening — PID 0 is nobody's process")
+	assert.Nil(t, rep.ListenerSince)
 }
 
 // TestPrintOverviewHuman_ListenerGenerationAndReclaim: the human line carries
 // the generation when active, and the reclaim-pending hint otherwise.
 func TestPrintOverviewHuman_ListenerGenerationAndReclaim(t *testing.T) {
 	t.Parallel()
-	until := time.Now().UTC().Add(time.Hour)
 	var b bytes.Buffer
 	printOverviewHuman(&b, overviewReport{
 		Me:             overviewSelf{SessionID: "esc12345", AgentName: "ESC-x", Role: "esc"},
-		ListenerActive: true, ListenerPid: 4321, ListenerUntil: &until, ListenerGeneration: 2,
+		ListenerActive: true, ListenerPid: 4321, ListenerGeneration: 2,
 		Inbox: []overviewMsg{},
 	})
 	assert.Contains(t, b.String(), "generation 2", "active listener line carries the generation")

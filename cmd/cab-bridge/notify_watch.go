@@ -141,12 +141,20 @@ func runNotifyWatch(args []string) error {
 		return notifyWatchDryRun(sessionDir, sid, wcfg, cfg.MaxMessageBytes, logw)
 	}
 
-	// Non-negotiable #5 (guardrail): a watcher + a live listener on the same inbox
-	// double-consume — notify-watch injects "you have mail" but listen may already
-	// have moved the message to processed/. Reuse the F-81 liveness check.
-	if session.IsProcessAlive(mf.PID) && mf.ListenUntil != nil && mf.ListenUntil.After(time.Now()) {
-		warn := fmt.Sprintf("session %s looks actively in listen (PID %d, window until %s) — a watcher + a listener on one inbox is a double consumer",
-			sid, mf.PID, mf.ListenUntil.UTC().Format(time.RFC3339))
+	// Non-negotiable #5 (guardrail): a watcher and a live waiter on one inbox are
+	// two consumers of the same WAKE. Under v0.8 `next` no longer moves the file,
+	// so the original hazard (the listener archiving mail from under the watcher)
+	// is gone — and what replaced it is a double wake: the agent is handed the
+	// message by its own `next` AND poked about it by the hook.
+	//
+	// Read from the ownership record, not from the manifest. This check used to
+	// require a future mf.ListenUntil, whose only writer left with `listen`: the
+	// second term was therefore nil ALWAYS, the condition unconditionally false,
+	// and the guardrail had silently stopped firing. A reader that outlives its
+	// writer does not fail loudly — it just stops protecting anything.
+	if owner, ok, oerr := mgr.ReadListener(sid); oerr == nil && ok && owner.Listening() {
+		warn := fmt.Sprintf("session %s already has a live waiter (PID %d, waiting since %s) — a watcher on the same inbox wakes the agent a second time for mail its own `next` is already delivering",
+			sid, owner.PID, owner.ClaimedAt.UTC().Format(time.RFC3339))
 		if !*allowConcurrent {
 			return fmt.Errorf("notify-watch: %s; pass --allow-concurrent-consumer to proceed anyway", warn)
 		}
@@ -196,17 +204,15 @@ func runNotifyWatch(args []string) error {
 	runner := execHookRunner(wcfg, logw)
 
 	// P2.3: re-evaluate the consumer guardrail every tick (not just at startup),
-	// so a `listen` that starts AFTER the watcher is still caught before we fire
-	// the hook. A manifest we cannot read does not block (best-effort).
+	// so a `next` that starts AFTER the watcher is still caught before we fire the
+	// hook. A record we cannot read does not block (best-effort).
 	guard := func() (bool, string) {
-		m, lerr := mgr.LoadManifest(sid)
-		if lerr != nil {
+		owner, ok, oerr := mgr.ReadListener(sid)
+		if oerr != nil || !ok || !owner.Listening() {
 			return false, ""
 		}
-		if session.IsProcessAlive(m.PID) && m.ListenUntil != nil && m.ListenUntil.After(time.Now()) {
-			return true, fmt.Sprintf("session %s is now in listen (PID %d, window until %s)", sid, m.PID, m.ListenUntil.UTC().Format(time.RFC3339))
-		}
-		return false, ""
+		return true, fmt.Sprintf("session %s now has a live waiter (PID %d, waiting since %s)",
+			sid, owner.PID, owner.ClaimedAt.UTC().Format(time.RFC3339))
 	}
 
 	ctx, cancel := notifyWatchSignalContext()

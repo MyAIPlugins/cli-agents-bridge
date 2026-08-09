@@ -96,7 +96,7 @@ func runJoin(args []string) error {
 	}
 	scope := resolveScope(pp)
 
-	peers, _, err := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, true, *team, scope)
+	peers, _, err := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, cfg.MaxMessageBytes, true, *team, scope)
 	if err != nil {
 		return fmt.Errorf("join: discover who is here: %w", err)
 	}
@@ -130,11 +130,7 @@ func runJoin(args []string) error {
 				name, occupant.SessionID, occupantPath, *role, occupantPath)
 		}
 		if occupant, clash := findNameClash(mgr, peers, *role, pp, name); clash {
-			return fmt.Errorf("join: this working directory already has a %s session named %q (%s), and you asked to join as %q.\n"+
-				"  Registering both would leave two sessions on one project path, which blocks every command that resolves by directory.\n"+
-				"  Either join with the existing name:   cab-bridge join --role=%s --agent-name=%s\n"+
-				"  or, if you really want a second one:  cab-bridge join --role=%s --agent-name=%s --force-new",
-				*role, occupant.AgentName, occupant.SessionID, name, *role, occupant.AgentName, *role, name)
+			return nameClashError(occupant, *role, name, *agentName == "")
 		}
 	}
 
@@ -214,6 +210,67 @@ func replayOpenAsks(mgr *session.Manager, cfg config.Config, sid string) (int, e
 		return 0, err
 	}
 	return len(ids), nil
+}
+
+// nameClashError explains a directory that already holds a session of this role
+// under another name, and stops — the decision is right and stays.
+//
+// What changed is what it SAYS. It used to report the two sessions as two
+// agents, and offer resuming and --force-new as two equal roads. Neither was
+// true. A directory holds one working place: a name that differs is almost
+// always the same agent under a name coined by an older version or passed by
+// hand, and the reader has no way to tell from the message which road is theirs.
+// A fresh agent hitting this on its very first command took the right one only
+// because a human had told it its own name — a coin flip between "correct" and
+// "two sessions on one path, every by-directory command ambiguous from now on".
+//
+// So: the roads are no longer equal, and the diagnosis rests on a FACT rather
+// than on guessing why the name differs. The old naming rule inherited its
+// suffix from whichever peer was around at the time, so it cannot be inverted
+// from here — but liveness can simply be read: a session with no sign of life is
+// almost certainly the reader's own from before, while a live one means somebody
+// may be working in this directory right now. Naming stays a hypothesis, offered
+// as such; the recommendation follows the fact.
+func nameClashError(occupant peerSummary, role, wantName string, derived bool) error {
+	var why string
+	if derived {
+		why = fmt.Sprintf("Today's rule would name you %q; names were coined differently before v0.8, and --agent-name can set any name by hand", wantName)
+	} else {
+		why = fmt.Sprintf("You asked to join as %q", wantName)
+	}
+
+	life := fmt.Sprintf("That session is ALIVE (heartbeat %s ago) — so either it is you coming back, or another agent is working in this directory right now",
+		time.Since(occupant.LastHeartbeat).Truncate(time.Second))
+	if occupant.Stale {
+		life = fmt.Sprintf("That session shows no sign of life (last heartbeat %s ago), so it is almost certainly yours from before",
+			time.Since(occupant.LastHeartbeat).Truncate(time.Second))
+	}
+
+	return fmt.Errorf("join: this directory already has %s %s session named %q (%s).\n"+
+		"  %s — a name that differs usually means the SAME agent, not a second one.\n"+
+		"  %s.\n\n"+
+		"  Continue as it:  cab-bridge join --role=%s --agent-name=%s\n\n"+
+		"  Only if you are a genuinely different agent that must share this directory:\n"+
+		"    cab-bridge join --role=%s --agent-name=%s --force-new\n"+
+		"    (that leaves two sessions on one path, and every command resolving by directory becomes ambiguous)",
+		articleFor(role), role, occupant.AgentName, occupant.SessionID,
+		why, life,
+		role, occupant.AgentName,
+		role, wantName)
+}
+
+// articleFor picks "a"/"an" for a role name. Roles are a known, tiny set
+// (esc/architect/observer take "an"), and custom ones are just words: the vowel
+// test is right for them too.
+func articleFor(role string) string {
+	if role == "" {
+		return "a"
+	}
+	switch role[0] {
+	case 'a', 'e', 'i', 'o', 'u':
+		return "an"
+	}
+	return "a"
 }
 
 // findNameClash reports an existing session with the same (role, scope,

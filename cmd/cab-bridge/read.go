@@ -19,7 +19,7 @@ var ErrMessageNotFound = errors.New("message not found")
 
 // runRead implements `cab-bridge read <msg-id>`: print a single message's
 // content body (or the full message with --json) located by id in the session's
-// inbox/ (pending) or processed/ (consumed), WITHOUT consuming it. It replaces
+// inbox/ (not archived yet) or processed/ (archived), WITHOUT consuming it. It replaces
 // the `find ... | python3 -c "json.load()['content']"` dance needed to read a
 // full body that `inbox --list` only previews (80 runes) and that `inspect`
 // (manifest, not messages) cannot show (F-48). Pure read: nothing is moved or
@@ -76,7 +76,7 @@ func runRead(args []string) error {
 // in. It matches on m.ID rather than the filename because processed/ files carry
 // a MoveToProcessed timestamp prefix (<RFC3339>-msg-<id>.json) while inbox/ files
 // do not — so a filename lookup would miss archived messages. This is the same
-// decode-and-read policy as collectInbox. inbox/ has precedence: a still-pending
+// decode-and-read policy as collectInbox. inbox/ has precedence: a not-yet-archived
 // copy is the more current state. A missing box contributes nothing; .tmp.*,
 // non-.json, unreadable and malformed files are skipped. Returns
 // ErrMessageNotFound when nothing matches.

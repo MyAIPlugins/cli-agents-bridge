@@ -18,7 +18,7 @@ import (
 var ErrNoMessageFromPeer = errors.New("no message received from peer")
 
 // lastReceivedFrom resolves the id of the most recent NON-ack message we
-// RECEIVED from `peer`, scanning inbox/ (pending) AND processed/ (consumed) —
+// RECEIVED from `peer`, scanning inbox/ (not archived yet) AND processed/ (archived) —
 // the message being replied to is usually already consumed, so it lives in
 // processed/. It powers `ask --in-reply-to=last` (F-39): the symbolic reference
 // that lets an agent reply without transcribing an opaque msg-id, the LL-13
@@ -117,7 +117,7 @@ func lastSentTimeTo(outboxDir, to string, maxContentBytes int) (time.Time, error
 
 // unreadFromPeer returns the id of the most recent non-ack message in inboxDir
 // from `peer` whose Timestamp is strictly after `after`, or "" if none. It is
-// the F-34 unread signal: a still-pending (un-consumed) message the peer sent
+// the F-34 unread signal: a not-yet-archived message the peer sent
 // AFTER our last message to them — the cross we would make by replying without
 // having read it. type=ack is excluded (a delivery receipt, not content, F-12).
 // A missing inbox is not an error; unreadable, malformed, .tmp.*, non-.json
