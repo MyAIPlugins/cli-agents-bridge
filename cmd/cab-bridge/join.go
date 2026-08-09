@@ -144,23 +144,82 @@ func runJoin(args []string) error {
 		name, _ = deriveAgentName(*role, filepath.Base(pp), peers)
 	}
 
+	// CROSS-SCOPE GUARD, and it is not about ambiguity — scopes already isolate,
+	// so two `CRI-payload` in two repositories route perfectly well. It is a guard
+	// against the human error, and the error is real: a critic was started in this
+	// repository and told "you are CRI-payload" out of muscle memory, the tool
+	// allowed it, and two agents ended up with one name in two projects. Nobody
+	// noticed until a table was read.
+	//
+	// It looks at EVERY scope on purpose. The existing guard below is fed by
+	// collectPeers, which filters by scope — which is why today's behaviour is
+	// exactly inverted: it blocks inside the repo, where a second agent asking for
+	// a taken name is its replacement, and allows across repos, where it is a
+	// mistake. This half fixes the second.
+	//
+	// CONSEQUENCE, stated because the brief does not: agent names become unique
+	// per DATA DIR, not per scope. Somebody working on three projects can no
+	// longer have a `VAL-x` in each. That is the price of the guard, and it is
+	// deliberate — but it is a price.
 	if !*forceNew {
-		// The one ambiguity that is real, and the only surviving stop: this name is
-		// LIVE somewhere else. Renaming into it, or registering under it, would make
-		// every by-name recipient ambiguous — and unlike the case below, the other
-		// session is genuinely another agent, in another directory.
+		everywhere, _, aerr := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, cfg.MaxMessageBytes, true, "", "")
+		if aerr != nil {
+			return fmt.Errorf("join: check the name across projects: %w", aerr)
+		}
+		if other, otherPath, otherScope, clash := findNameInAnotherScope(mgr, everywhere, name, scope); clash {
+			wayOut := ""
+			if other.Stale {
+				wayOut = fmt.Sprintf("\n  That session shows no sign of life (last seen %s ago). If it is genuinely\n"+
+					"  finished, remove it and the name frees up:\n"+
+					"    cab-bridge cleanup --scope=my-session --session-id=%s",
+					time.Since(other.LastHeartbeat).Truncate(time.Second), other.SessionID)
+			}
+			return fmt.Errorf("join: the name %q is already used by %s in ANOTHER project (%s).\n"+
+				"  Names must be unique across every project sharing this data dir, so that a name\n"+
+				"  always identifies one agent — this is the guard against giving two agents one\n"+
+				"  name out of habit.\n"+
+				"  That session lives in %s; this one is in %s.\n"+
+				"  The tool cannot tell which of the two is the mistake: pick a different name for\n"+
+				"  whichever is wrong.\n"+
+				"    cab-bridge join --role=%s --agent-name=<name>%s",
+				name, other.SessionID, otherScope, otherPath, scope, *role, wayOut)
+		}
+	}
+
+	if !*forceNew {
+		// Inside MY OWN scope, another directory already answers to this name. The
+		// invariant is that no two sessions in one scope share a name, so one of
+		// them has to give — and which one depends on whether anybody is home.
 		//
-		// Checked BEFORE the rename, so a rename can never take a name that is in use.
+		// LIVE: refuse. Taking the name from a working agent would strip its
+		// identity and quietly reroute to me the messages its peers address by
+		// name, with neither of us noticing. Between stopping the arriver and
+		// orphaning the worker, stop the arriver.
+		//
+		// STALE: take it over. That is the real case, twice in one evening: an
+		// agent restarted and reclaiming its place. Nobody loses anything, because
+		// there is nobody on the other side.
 		if other, otherPath, clash := findNameElsewhere(mgr, peers, *role, pp, name); clash {
 			// The FULL path, not the basename: an error that names a place must
-			// name one the reader can go to. ProjectName is filepath.Base, so
-			// "run this from cridir" pointed at something that is not a
-			// directory — and a repo can hold several with that name.
-			return fmt.Errorf("join: the name %q is already taken by %s, which lives in %s — not this directory.\n"+
-				"  Two sessions with one name would make every by-name recipient ambiguous.\n"+
-				"  Either pick your own name:  cab-bridge join --role=%s --agent-name=<name>\n"+
-				"  or run this from %s if you ARE that agent coming back",
-				name, other.SessionID, otherPath, *role, otherPath)
+			// name one the reader can go to.
+			return fmt.Errorf("join: this project already has a LIVE %q (%s, in %s, last seen %s ago).\n"+
+				"  Two sessions of one name in one project would make every by-name recipient\n"+
+				"  ambiguous, so this one stops rather than take the name from an agent at work.\n"+
+				"  Pick another name:  cab-bridge join --role=%s --agent-name=<name>\n"+
+				"  — or stop that session first, if it is the one you are replacing.",
+				name, other.SessionID, otherPath, time.Since(other.LastHeartbeat).Truncate(time.Second), *role)
+		}
+		// The stale twin: it yields the name and keeps everything else. Renaming it
+		// rather than deleting it means its mailbox stays recoverable and the
+		// auto-gc collects it in its own time — and `formerAgentNames` records
+		// where the name went, so this stays inspectable afterwards.
+		if prev, prevPath, found := findStaleNamesake(mgr, peers, *role, pp, name); found {
+			retired := name + "-superseded-" + prev.SessionID[:4]
+			if err := mgr.RenameAgent(prev.SessionID, retired); err != nil {
+				return fmt.Errorf("join: hand the name %q over from %s: %w", name, prev.SessionID, err)
+			}
+			fmt.Fprintf(os.Stderr, "join: %q was held by a stale session (%s in %s); it is now %q and this session takes the name\n",
+				name, prev.SessionID, prevPath, retired)
 		}
 		// RENAME instead of stopping. Same id, same mailbox, same cursor: the name
 		// is a lookup label, and identity is the id — every message on disk already
@@ -279,6 +338,58 @@ func findSessionHere(mgr *session.Manager, peers []peerSummary, role, projectPat
 		}
 	}
 	return peerSummary{}, false
+}
+
+// findStaleNamesake reports a session in MY scope, in another directory, holding
+// this name and showing no sign of life. It is the complement of
+// findNameElsewhere, which reports only the live ones: together they cover the
+// same shape, and the pair is what makes the live/stale decision explicit rather
+// than accidental.
+func findStaleNamesake(mgr *session.Manager, peers []peerSummary, role, projectPath, wantName string) (peerSummary, string, bool) {
+	for _, p := range peers {
+		if p.AgentName != wantName || !p.Stale {
+			continue
+		}
+		mf, err := mgr.LoadManifest(p.SessionID)
+		if err != nil {
+			continue
+		}
+		if filepath.Clean(mf.ProjectPath) == filepath.Clean(projectPath) {
+			continue // my own directory: that is the rename case, not a takeover
+		}
+		return p, mf.ProjectPath, true
+	}
+	return peerSummary{}, "", false
+}
+
+// findNameInAnotherScope reports a session using this name in a DIFFERENT scope,
+// i.e. in another repository sharing the data dir. Live ones only: a dead
+// session's name is nobody's, and refusing on its behalf would strand an agent
+// whose predecessor simply died — the same rule findNameElsewhere applies.
+//
+// Returns the occupant, its project path and its scope, because an error about a
+// name collision across projects has to name BOTH places or the reader cannot
+// tell which one they are in.
+func findNameInAnotherScope(mgr *session.Manager, peers []peerSummary, wantName, myScope string) (peerSummary, string, string, bool) {
+	for _, p := range peers {
+		if p.AgentName != wantName {
+			continue
+		}
+		mf, err := mgr.LoadManifest(p.SessionID)
+		if err != nil {
+			continue
+		}
+		if mf.Scope == myScope {
+			continue // same project: that is the other guard's business
+		}
+		// Stale ones block TOO — the name belongs to another project, and taking
+		// it silently is precisely the mistake the rule prevents. But the error
+		// then has to say the session is dead and how to remove it, or a session
+		// abandoned months ago in a repository you never touch would hold a name
+		// hostage forever with no way to find out why.
+		return p, mf.ProjectPath, mf.Scope, true
+	}
+	return peerSummary{}, "", "", false
 }
 
 // findNameElsewhere reports a LIVE session already using this name from a
