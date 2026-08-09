@@ -27,12 +27,18 @@ import (
 //     and wrong for the group that is now the normal setup: with three peers
 //     alive, "peer: none" is what sent CRI into passive waiting (F-92). A list
 //     cannot be wrong in that way.
-//   - On a name mismatch it STOPS AND ASKS instead of registering a second
-//     session (F-90): `register --resume` with a different --agent-name matches
-//     identity strictly, falls through to a fresh register, and leaves two
-//     sessions on one projectPath — a hard ambiguity that blocks every id-free
-//     command afterwards. Reproduced in thirty seconds; the recovery is far more
-//     expensive than the question.
+//
+//   - It never leaves two sessions on one project path (F-90). `register
+//     --resume` matches identity on the agent name, so a different name fell
+//     through to a fresh register and produced exactly that — a hard ambiguity
+//     that blocks every id-free command afterwards.
+//
+//     The first cure was to stop and ask. It was the wrong shape: three fresh
+//     agents met the stop, read it, and destroyed their sessions with
+//     `cleanup && join` to get the name their human had given them, because
+//     neither offered road was theirs. join now RENAMES in place instead — same
+//     id, same mailbox — and only stops for the ambiguity that is real: a name
+//     already live in another directory.
 type joinReport struct {
 	SessionID string     `json:"sessionId"`
 	AgentName string     `json:"agentName"`
@@ -101,24 +107,45 @@ func runJoin(args []string) error {
 		return fmt.Errorf("join: discover who is here: %w", err)
 	}
 
+	// Who already works here? This directory holds at most one session per role
+	// (that is the invariant F-90 protects), so an existing one is not "another
+	// agent" — it is this working place, whatever name it answers to.
+	occupant, occupied := findSessionHere(mgr, peers, *role, pp)
+
 	name := *agentName
-	if name == "" {
-		// Derive from the WORKING DIRECTORY, not the scope (CRI2 P0). Deriving
-		// from the scope is not injective: every agent of the same role in one
-		// repository lands on the same name, so the collision is not an edge
-		// case, it is the DEFAULT — and in a quadriad the first fresh reviewer
-		// running `join --role=esc` used to walk straight into it.
+	switch {
+	case name != "":
+		// An explicit name is an INSTRUCTION, not a preference. Three agents were
+		// told their names by a human, the skill said the name derives itself, and
+		// all three ended up as something else — then destroyed their sessions with
+		// `cleanup && join` to fix it, inventing the one manoeuvre v0.8 exists to
+		// make unnecessary. What was missing was not a clearer error: it was the
+		// third road, the obvious one, which is to just change the name.
+	case occupied && !*forceNew:
+		// Nothing was asked for and a session is already here: this is a RETURN,
+		// not a first arrival. Take the name it already has.
+		//
+		// Deriving one here was the bug underneath the reported one: derivation
+		// invents a name for a session that does not exist yet, so applying it to
+		// a session that DOES produces a phantom, compares it with the real name,
+		// and calls the difference a collision. An agent named by a human then met
+		// that stop on every single re-arm, forever — not once at onboarding.
+		name = occupant.AgentName
+	default:
+		// Genuinely new here: invent one. From the WORKING DIRECTORY, not the scope
+		// (CRI2 P0) — deriving from the scope is not injective, so every agent of a
+		// role in one repository would land on the same name.
 		name, _ = deriveAgentName(*role, filepath.Base(pp), peers)
 	}
 
-	// F-90 stop-and-ask, BEFORE registering anything — extended to the case that
-	// actually happens (CRI2 P0): the SAME name already in use from a DIFFERENT
-	// directory. A resume means "the same agent, back in its own directory";
-	// anything else must stop, because letting both register leaves two
-	// identically-named sessions and merely moves the ambiguity downstream, to
-	// every command that resolves a recipient by name.
 	if !*forceNew {
-		if occupant, occupantPath, clash := findNameElsewhere(mgr, peers, *role, pp, name); clash {
+		// The one ambiguity that is real, and the only surviving stop: this name is
+		// LIVE somewhere else. Renaming into it, or registering under it, would make
+		// every by-name recipient ambiguous — and unlike the case below, the other
+		// session is genuinely another agent, in another directory.
+		//
+		// Checked BEFORE the rename, so a rename can never take a name that is in use.
+		if other, otherPath, clash := findNameElsewhere(mgr, peers, *role, pp, name); clash {
 			// The FULL path, not the basename: an error that names a place must
 			// name one the reader can go to. ProjectName is filepath.Base, so
 			// "run this from cridir" pointed at something that is not a
@@ -127,10 +154,22 @@ func runJoin(args []string) error {
 				"  Two sessions with one name would make every by-name recipient ambiguous.\n"+
 				"  Either pick your own name:  cab-bridge join --role=%s --agent-name=<name>\n"+
 				"  or run this from %s if you ARE that agent coming back",
-				name, occupant.SessionID, occupantPath, *role, occupantPath)
+				name, other.SessionID, otherPath, *role, otherPath)
 		}
-		if occupant, clash := findNameClash(mgr, peers, *role, pp, name); clash {
-			return nameClashError(occupant, *role, name, *agentName == "")
+		// RENAME instead of stopping. Same id, same mailbox, same cursor: the name
+		// is a lookup label, and identity is the id — every message on disk already
+		// carries it, so nothing in flight and no open ask depends on this string.
+		//
+		// It must happen BEFORE Register, because reuse matches on the agent name
+		// (reconnect.go findIdentityMatches): with the old name still on disk, a
+		// resume finds nothing and falls through to creating a SECOND session on
+		// this path — the exact accident the stop was there to prevent.
+		if occupied && occupant.AgentName != name {
+			if err := mgr.RenameAgent(occupant.SessionID, name); err != nil {
+				return fmt.Errorf("join: rename %s to %q: %w", occupant.SessionID, name, err)
+			}
+			fmt.Fprintf(os.Stderr, "join: %s is now %q (was %q) — same session, same inbox\n",
+				occupant.SessionID, name, occupant.AgentName)
 		}
 	}
 
@@ -212,73 +251,17 @@ func replayOpenAsks(mgr *session.Manager, cfg config.Config, sid string) (int, e
 	return len(ids), nil
 }
 
-// nameClashError explains a directory that already holds a session of this role
-// under another name, and stops — the decision is right and stays.
+// findSessionHere reports the session of this role already registered on this
+// exact project path — the one working place this directory holds, under
+// whatever name it currently answers to.
 //
-// What changed is what it SAYS. It used to report the two sessions as two
-// agents, and offer resuming and --force-new as two equal roads. Neither was
-// true. A directory holds one working place: a name that differs is almost
-// always the same agent under a name coined by an older version or passed by
-// hand, and the reader has no way to tell from the message which road is theirs.
-// A fresh agent hitting this on its very first command took the right one only
-// because a human had told it its own name — a coin flip between "correct" and
-// "two sessions on one path, every by-directory command ambiguous from now on".
-//
-// So: the roads are no longer equal, and the diagnosis rests on a FACT rather
-// than on guessing why the name differs. The old naming rule inherited its
-// suffix from whichever peer was around at the time, so it cannot be inverted
-// from here — but liveness can simply be read: a session with no sign of life is
-// almost certainly the reader's own from before, while a live one means somebody
-// may be working in this directory right now. Naming stays a hypothesis, offered
-// as such; the recommendation follows the fact.
-func nameClashError(occupant peerSummary, role, wantName string, derived bool) error {
-	var why string
-	if derived {
-		why = fmt.Sprintf("Today's rule would name you %q; names were coined differently before v0.8, and --agent-name can set any name by hand", wantName)
-	} else {
-		why = fmt.Sprintf("You asked to join as %q", wantName)
-	}
-
-	life := fmt.Sprintf("That session is ALIVE (heartbeat %s ago) — so either it is you coming back, or another agent is working in this directory right now",
-		time.Since(occupant.LastHeartbeat).Truncate(time.Second))
-	if occupant.Stale {
-		life = fmt.Sprintf("That session shows no sign of life (last heartbeat %s ago), so it is almost certainly yours from before",
-			time.Since(occupant.LastHeartbeat).Truncate(time.Second))
-	}
-
-	return fmt.Errorf("join: this directory already has %s %s session named %q (%s).\n"+
-		"  %s — a name that differs usually means the SAME agent, not a second one.\n"+
-		"  %s.\n\n"+
-		"  Continue as it:  cab-bridge join --role=%s --agent-name=%s\n\n"+
-		"  Only if you are a genuinely different agent that must share this directory:\n"+
-		"    cab-bridge join --role=%s --agent-name=%s --force-new\n"+
-		"    (that leaves two sessions on one path, and every command resolving by directory becomes ambiguous)",
-		articleFor(role), role, occupant.AgentName, occupant.SessionID,
-		why, life,
-		role, occupant.AgentName,
-		role, wantName)
-}
-
-// articleFor picks "a"/"an" for a role name. Roles are a known, tiny set
-// (esc/architect/observer take "an"), and custom ones are just words: the vowel
-// test is right for them too.
-func articleFor(role string) string {
-	if role == "" {
-		return "a"
-	}
-	switch role[0] {
-	case 'a', 'e', 'i', 'o', 'u':
-		return "an"
-	}
-	return "a"
-}
-
-// findNameClash reports an existing session with the same (role, scope,
-// projectPath) but a DIFFERENT agent name — the shape that would otherwise
-// become a second session on one project path.
-func findNameClash(mgr *session.Manager, peers []peerSummary, role, projectPath, wantName string) (peerSummary, bool) {
+// It used to be findNameClash, which took the wanted name and reported a
+// "clash" whenever the existing name differed. That framing was the error: two
+// sessions on one path are refused precisely so that the one living here IS the
+// caller. The name it carries is a fact about it, not a rival claim.
+func findSessionHere(mgr *session.Manager, peers []peerSummary, role, projectPath string) (peerSummary, bool) {
 	for _, p := range peers {
-		if p.Role != role || p.AgentName == wantName {
+		if p.Role != role {
 			continue
 		}
 		mf, err := mgr.LoadManifest(p.SessionID)

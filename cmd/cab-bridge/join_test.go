@@ -5,7 +5,6 @@ import (
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -61,76 +60,132 @@ func TestJoin_ReportsAnEmptyRoomHonestly(t *testing.T) {
 	assert.Contains(t, out.String(), "nobody else is here yet")
 }
 
-// TestJoin_NameClashStopsAndAsks is F-90: joining under a different name in a
-// directory that already holds a session of that role must NOT create a second
-// one — that leaves two sessions on one project path and blocks every command
-// resolving by directory afterwards.
-func TestJoin_NameClashStopsAndAsks(t *testing.T) {
+// Returning is not arriving. An agent that re-arms with a bare `join --role=x`
+// — which is what the skill tells it to do — must find its own session, whatever
+// name it answers to. Deriving a name here produced a phantom, compared it with
+// the real one, and called the difference a collision: an agent named by a human
+// met that stop on EVERY re-arm, forever.
+func TestJoin_BareJoinReturnsToTheSessionAlreadyHere(t *testing.T) {
 	dataDir := t.TempDir()
 	proj := t.TempDir()
-	const scope = "/repo/clash"
-	plantSessionFull(t, dataDir, "escold01", session.RoleEsc, "ESC-old", scope, proj, "working")
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
-	mgr := newSessionManager(cfg)
-	peers, _, err := collectPeers(mgr, dataDir, cfg.StaleSeconds, 65536, true, "", scope)
+	require.NoError(t, runJoin([]string{"--role=esc", "--agent-name=CRI-payload", "--project-path=" + proj}))
+
+	out := captureStdout(t, func() {
+		require.NoError(t, runJoin([]string{"--role=esc", "--project-path=" + proj}),
+			"a bare re-arm must not stop: it is the same agent coming back")
+	})
+	assert.Contains(t, out, "CRI-payload", "and it keeps the name it was given")
+	assert.Contains(t, out, "resumed")
+
+	entries, err := os.ReadDir(filepath.Join(dataDir, "sessions"))
 	require.NoError(t, err)
-
-	occupant, clash := findNameClash(mgr, peers, session.RoleEsc, proj, "ESC-new")
-	require.True(t, clash, "a different name on the same (role, projectPath) is the F-90 shape")
-	assert.Equal(t, "ESC-old", occupant.AgentName)
-
-	// Same name is a resume, not a clash.
-	_, clash = findNameClash(mgr, peers, session.RoleEsc, proj, "ESC-old")
-	assert.False(t, clash)
-
-	// A different ROLE in the same directory is not a clash either.
-	_, clash = findNameClash(mgr, peers, session.RoleVal, proj, "VAL-x")
-	assert.False(t, clash)
-
-	// Nor is the same name in a DIFFERENT directory.
-	_, clash = findNameClash(mgr, peers, session.RoleEsc, filepath.Join(proj, "sub"), "ESC-new")
-	assert.False(t, clash)
+	assert.Len(t, entries, 1, "still exactly one session on this path")
 }
 
-// The message is the feature here, so it is asserted like one. A fresh agent
-// meeting this error on its FIRST command has to be able to pick the right road
-// from the text alone: the previous wording offered resuming and --force-new as
-// equals, and the wrong one is not recoverable in the same breath.
-func TestJoin_NameClashRecommendsResumingAndSaysWhatItKnows(t *testing.T) {
-	t.Parallel()
-	old := time.Now().UTC().Add(-2 * time.Hour)
-	dead := peerSummary{SessionID: "escold01", AgentName: "ESC-bridge", Role: session.RoleEsc, LastHeartbeat: old, Stale: true}
-	live := peerSummary{SessionID: "escold01", AgentName: "ESC-bridge", Role: session.RoleEsc, LastHeartbeat: time.Now().UTC(), Stale: false}
+// The third road the three agents had to invent for themselves. They ran
+// `cleanup --scope=my-session && join --agent-name=X`: a new id, an empty
+// mailbox, and a message to the val to announce the change — the whole
+// choreography v0.8 exists to remove, performed because renaming was impossible.
+func TestJoin_ExplicitNameRenamesInPlaceAndKeepsTheMailbox(t *testing.T) {
+	dataDir := t.TempDir()
+	proj := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 
-	t.Run("a_derived_name_says_the_rule_changed_and_recommends_resuming", func(t *testing.T) {
-		msg := nameClashError(dead, session.RoleEsc, "ESC-esc-v08", true).Error()
-		assert.Contains(t, msg, "Continue as it:  cab-bridge join --role=esc --agent-name=ESC-bridge",
-			"the road that works must be spelled out, ready to run")
-		assert.Contains(t, msg, "SAME agent, not a second one", "the likely cause, stated as likely")
-		assert.Contains(t, msg, "no sign of life", "liveness is a fact, and here it points at 'you, from before'")
-		assert.Contains(t, msg, "Only if you are a genuinely different agent",
-			"--force-new is the exception, and reads like one")
-		assert.Contains(t, msg, "ambiguous", "with its cost attached")
-		assert.Less(t, strings.Index(msg, "Continue as it"), strings.Index(msg, "--force-new"),
-			"the recommended road comes FIRST — the order is half the message")
-		assert.Contains(t, msg, "an esc session", "English article, since an agent reads this sentence")
-	})
+	require.NoError(t, runJoin([]string{"--role=architect", "--agent-name=ARCHITECT-docs", "--project-path=" + proj}))
+	entries, err := os.ReadDir(filepath.Join(dataDir, "sessions"))
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	sid := entries[0].Name()
 
-	t.Run("a_live_occupant_does_not_claim_to_know_whose_it_is", func(t *testing.T) {
-		msg := nameClashError(live, session.RoleEsc, "ESC-esc-v08", true).Error()
-		assert.Contains(t, msg, "ALIVE", "a live session is a different situation and says so")
-		assert.Contains(t, msg, "another agent is working in this directory right now",
-			"with a live occupant the message must NOT assert that it is you")
-		assert.NotContains(t, msg, "almost certainly yours")
-	})
+	// Mail arrives BEFORE the rename: it must survive it, because it is addressed
+	// to the id and the id does not change.
+	plantMsg(t, dataDir, sid, "inbox", "msg-aaaaaaaaaaaa", "val00001", "VAL-payload", message.TypeQuery, "brief")
 
-	t.Run("an_explicit_name_is_not_explained_as_a_schema_change", func(t *testing.T) {
-		msg := nameClashError(dead, session.RoleEsc, "ESC-mine", false).Error()
-		assert.Contains(t, msg, `You asked to join as "ESC-mine"`)
-		assert.NotContains(t, msg, "Today's rule", "nothing was derived, so there is no rule to blame")
-	})
+	require.NoError(t, runJoin([]string{"--role=architect", "--agent-name=CRI-payload", "--project-path=" + proj}),
+		"a name given by a human is an instruction, not a collision")
+
+	after, err := os.ReadDir(filepath.Join(dataDir, "sessions"))
+	require.NoError(t, err)
+	require.Len(t, after, 1, "renaming must not create a second session")
+	assert.Equal(t, sid, after[0].Name(), "SAME id: identity did not change, the label did")
+
+	mgr := newSessionManager(config.Config{DataDir: dataDir})
+	mf, err := mgr.LoadManifest(sid)
+	require.NoError(t, err)
+	assert.Equal(t, "CRI-payload", mf.AgentName)
+	assert.Equal(t, []string{"ARCHITECT-docs"}, mf.FormerAgentNames, "the old name is remembered, not discarded")
+
+	assert.FileExists(t, filepath.Join(dataDir, "sessions", sid, "inbox", "msg-aaaaaaaaaaaa.json"),
+		"the mailbox is untouched — this is the whole point")
+}
+
+// The one stop that survives, and it must still stop: a name LIVE in another
+// directory belongs to another agent, and taking it would make every by-name
+// recipient ambiguous. Checked before the rename, so a rename can never steal it.
+func TestJoin_WillNotRenameIntoANameLiveElsewhere(t *testing.T) {
+	dataDir := t.TempDir()
+	base := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700)) // one scope: names only collide within one
+	mine := filepath.Join(base, "mine")
+	theirs := filepath.Join(base, "theirs")
+	require.NoError(t, os.MkdirAll(mine, 0o700))
+	require.NoError(t, os.MkdirAll(theirs, 0o700))
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	require.NoError(t, runJoin([]string{"--role=esc", "--agent-name=ESC-taken", "--project-path=" + theirs}))
+	require.NoError(t, runJoin([]string{"--role=esc", "--agent-name=ESC-mine", "--project-path=" + mine}))
+
+	err := runJoin([]string{"--role=esc", "--agent-name=ESC-taken", "--project-path=" + mine})
+	require.Error(t, err, "that name is in use by a live session elsewhere")
+	assert.Contains(t, err.Error(), "already taken")
+	assert.Contains(t, err.Error(), theirs, "and it names the directory the reader can go to")
+
+	mgr := newSessionManager(config.Config{DataDir: dataDir})
+	peers, _, perr := collectPeers(mgr, dataDir, 300, 65536, true, "", resolveScope(mine))
+	require.NoError(t, perr)
+	occupant, ok := findSessionHere(mgr, peers, session.RoleEsc, mine)
+	require.True(t, ok)
+	assert.Equal(t, "ESC-mine", occupant.AgentName, "the refused rename left my name alone")
+}
+
+// A peer still writing to the old name must be told where it went. An event
+// could not do this job: the peer may have been offline during the rename.
+func TestResolveRecipient_TellsWhereARenamedNameWent(t *testing.T) {
+	dataDir := t.TempDir()
+	base := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700)) // one scope for both
+	mine := filepath.Join(base, "mine")
+	theirs := filepath.Join(base, "theirs")
+	require.NoError(t, os.MkdirAll(mine, 0o700))
+	require.NoError(t, os.MkdirAll(theirs, 0o700))
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	require.NoError(t, runJoin([]string{"--role=val", "--agent-name=VAL-payload", "--project-path=" + mine}))
+	require.NoError(t, runJoin([]string{"--role=esc", "--agent-name=ARCHITECT-docs", "--project-path=" + theirs}))
+	require.NoError(t, runJoin([]string{"--role=esc", "--agent-name=CRI-payload", "--project-path=" + theirs}))
+
+	cfg := config.Config{DataDir: dataDir, StaleSeconds: 300, MaxMessageBytes: 65536}
+	mgr := newSessionManager(cfg)
+	peers, _, err := collectPeers(mgr, dataDir, 300, 65536, true, "", resolveScope(mine))
+	require.NoError(t, err)
+	var selfSID string
+	for _, p := range peers {
+		if p.AgentName == "VAL-payload" {
+			selfSID = p.SessionID
+		}
+	}
+	require.NotEmpty(t, selfSID)
+
+	_, rerr := resolveRecipientByName(cfg, mgr, "ARCHITECT-docs", selfSID)
+	require.Error(t, rerr)
+	assert.Contains(t, rerr.Error(), "answered to that name")
+	assert.Contains(t, rerr.Error(), "CRI-payload", "and says what to write to instead")
 }
 
 func TestRunJoin_RequiresRole(t *testing.T) {
@@ -162,12 +217,15 @@ func TestRunJoin_EndToEndIsIdempotent(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, entries, 1, "exactly one session on this project path")
 
-	// And the clash guard fires end-to-end on a different name.
-	err = runJoin([]string{"--role=esc", "--agent-name=ESC-other", "--project-path=" + proj})
-	require.Error(t, err, "a different name must stop and ask")
-	assert.Contains(t, err.Error(), "ESC-j", "the error names the existing session")
-	assert.Contains(t, err.Error(), "--force-new", "and the deliberate way out")
-	assert.True(t, strings.Contains(err.Error(), "join --role=esc"), "with a runnable command")
+	// And a different name RENAMES the session that is already here, rather than
+	// stopping: it is the same agent, correcting its label.
+	renamed := captureStdout(t, func() {
+		require.NoError(t, runJoin([]string{"--role=esc", "--agent-name=ESC-other", "--project-path=" + proj}))
+	})
+	assert.Contains(t, renamed, "ESC-other")
+	entries, err = os.ReadDir(filepath.Join(dataDir, "sessions"))
+	require.NoError(t, err)
+	assert.Len(t, entries, 1, "renaming never creates a second session")
 }
 
 // TestJoin_ReplaysOpenAsksAcrossLives is the F-34 cross-life gap (CRI2 P1-4).
