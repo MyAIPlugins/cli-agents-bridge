@@ -1,0 +1,21 @@
+CLAUDE.md
+  s_c3a7b4ab630317::t_b475f359a56463 132-134
+ROADMAP.md
+  s_c3a7b4ab630317::t_04e7fe7ca90701 39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "705d03ff4fb70488565bc6e02dc5fb581081602d",
+  "prompts": {},
+  "sessions": {
+    "s_c3a7b4ab630317": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54f2afc1-7dea-42b7-a40d-0d4c6f0e3eea",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
