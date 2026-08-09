@@ -1,0 +1,19 @@
+ROADMAP.md
+  s_2e2ff8aa4e273c::t_dc2dbb722ad0ff 39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "daf4f3fab5aee584bafa87d4e0d852aa98c2ae1b",
+  "prompts": {},
+  "sessions": {
+    "s_2e2ff8aa4e273c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe71d-371b-75e3-9acf-ad2d34bdda24",
+        "model": "unknown"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
