@@ -1,0 +1,19 @@
+CHANGELOG.md
+  s_2e2ff8aa4e273c::t_5bc27b7d955149 50-77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "b23d36a60eb7bcc52094eb069dc5a385eb248c32",
+  "prompts": {},
+  "sessions": {
+    "s_2e2ff8aa4e273c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe71d-371b-75e3-9acf-ad2d34bdda24",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
