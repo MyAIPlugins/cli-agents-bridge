@@ -13,6 +13,7 @@ import (
 	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/routing"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 	transportfs "github.com/myAIPlugins/cli-agents-bridge/internal/transport/fs"
 )
@@ -684,8 +685,9 @@ func describeClosed(cfg config.Config, sid string, ids []string) []string {
 			if id == "" || !want[id] {
 				continue
 			}
-			data, rerr := os.ReadFile(filepath.Join(processedDir, e.Name()))
+			data, rerr := security.ReadOwnedFile(filepath.Join(processedDir, e.Name()))
 			if rerr != nil {
+				_ = notOursSkip(filepath.Join(processedDir, e.Name()), rerr)
 				continue
 			}
 			if m, derr := message.DecodeLenient(data, cfg.MaxMessageBytes); derr == nil {

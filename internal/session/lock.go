@@ -3,6 +3,7 @@ package session
 import (
 	"errors"
 	"fmt"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"os"
 	"strconv"
 	"strings"
@@ -98,7 +99,7 @@ func tryCreate(lockPath string) (func() error, error) {
 // readPIDFromLock reads lockPath and parses the PID written by tryCreate.
 // Trims a single trailing newline if present (the format we write).
 func readPIDFromLock(lockPath string) (int, error) {
-	data, err := os.ReadFile(lockPath)
+	data, err := security.ReadOwnedFile(lockPath)
 	if err != nil {
 		return 0, err
 	}

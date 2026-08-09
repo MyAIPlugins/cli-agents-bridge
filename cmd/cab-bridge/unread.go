@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 )
 
 // ErrNoMessageFromPeer is returned by lastReceivedFrom when the peer has never
@@ -46,8 +47,9 @@ func lastReceivedFrom(sessionDir, peer string, maxContentBytes int) (string, err
 			if e.IsDir() || strings.HasPrefix(name, ".tmp.") || !strings.HasSuffix(name, ".json") {
 				continue
 			}
-			data, rerr := os.ReadFile(filepath.Join(dir, name))
+			data, rerr := security.ReadOwnedFile(filepath.Join(dir, name))
 			if rerr != nil {
+				_ = notOursSkip(filepath.Join(dir, name), rerr)
 				continue
 			}
 			m, derr := message.DecodeLenient(data, maxContentBytes)
@@ -93,8 +95,9 @@ func lastSentTimeTo(outboxDir, to string, maxContentBytes int) (time.Time, error
 		if e.IsDir() || strings.HasPrefix(name, ".tmp.") || !strings.HasSuffix(name, ".json") {
 			continue
 		}
-		data, rerr := os.ReadFile(filepath.Join(outboxDir, name))
+		data, rerr := security.ReadOwnedFile(filepath.Join(outboxDir, name))
 		if rerr != nil {
+			_ = notOursSkip(filepath.Join(outboxDir, name), rerr)
 			continue
 		}
 		m, derr := message.DecodeLenient(data, maxContentBytes)
@@ -137,8 +140,9 @@ func unreadFromPeer(inboxDir, peer string, after time.Time, maxContentBytes int)
 		if e.IsDir() || strings.HasPrefix(name, ".tmp.") || !strings.HasSuffix(name, ".json") {
 			continue
 		}
-		data, rerr := os.ReadFile(filepath.Join(inboxDir, name))
+		data, rerr := security.ReadOwnedFile(filepath.Join(inboxDir, name))
 		if rerr != nil {
+			_ = notOursSkip(filepath.Join(inboxDir, name), rerr)
 			continue
 		}
 		m, derr := message.DecodeLenient(data, maxContentBytes)

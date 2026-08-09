@@ -13,6 +13,7 @@ import (
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
@@ -129,8 +130,9 @@ func collectSent(outboxDir string, maxContentBytes int) ([]sentSummary, error) {
 		if e.IsDir() || strings.HasPrefix(name, ".tmp.") || !strings.HasSuffix(name, ".json") {
 			continue
 		}
-		data, rerr := os.ReadFile(filepath.Join(outboxDir, name))
+		data, rerr := security.ReadOwnedFile(filepath.Join(outboxDir, name))
 		if rerr != nil {
+			_ = notOursSkip(filepath.Join(outboxDir, name), rerr)
 			continue
 		}
 		m, derr := message.DecodeLenient(data, maxContentBytes)

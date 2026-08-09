@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	transportfs "github.com/myAIPlugins/cli-agents-bridge/internal/transport/fs"
 )
 
@@ -81,7 +82,7 @@ func (m *Manager) replyTxnPath(sessionID string) string {
 //
 // Does not validate sessionID — callers validate via security.ValidateSessionID.
 func (m *Manager) ReadReplyTxn(sessionID string) (*ReplyTxn, bool, error) {
-	data, err := os.ReadFile(m.replyTxnPath(sessionID))
+	data, err := security.ReadOwnedFile(m.replyTxnPath(sessionID))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, false, nil

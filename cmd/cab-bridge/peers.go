@@ -11,6 +11,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
@@ -171,6 +172,17 @@ func collectPeers(mgr *session.Manager, dataDir string, staleSeconds, maxContent
 		}
 		mf, err := mgr.LoadManifest(e.Name())
 		if err != nil {
+			// A manifest owned by ANOTHER uid is excluded rather than fatal, and
+			// said out loud. Enumeration is how an operator finds out what is
+			// going on: a `peers` that dies on the anomaly it should be showing is
+			// useless exactly when it is needed. Silence would be worse still —
+			// the session would simply not be there, and nobody would ask why.
+			//
+			// Corrupt manifests keep their existing silent skip: unreadable JSON
+			// is a mess, not a claim about identity.
+			if errors.Is(err, security.ErrOwnershipMismatch) {
+				fmt.Fprintf(os.Stderr, "cab-bridge: skipping session %s — its manifest belongs to another user: %v\n", e.Name(), err)
+			}
 			continue
 		}
 		if teamFilter != "" && mf.TeamID != teamFilter {

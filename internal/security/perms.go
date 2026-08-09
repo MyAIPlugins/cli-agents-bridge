@@ -20,6 +20,7 @@ package security
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"regexp"
@@ -145,3 +146,100 @@ func EnforceDirPerms(path string, mode fs.FileMode) error {
 	}
 	return nil
 }
+
+// ReadOwnedFile opens path, verifies that the OPEN DESCRIPTOR belongs to the
+// current uid, and reads the contents from that same descriptor. It returns
+// ErrOwnershipMismatch (wrapped) when the file belongs to somebody else.
+//
+// The fstat is on the descriptor, not on the path, and that is the whole point:
+// checking a path and then opening it checks one file and reads another. One
+// open, one fstat of that fd, one read of that fd — nothing can be swapped
+// underneath in between.
+//
+// WHAT THIS IS FOR, precisely — because the generic threat it was filed under
+// (TM-6, spoofing) is already impossible: with the data dir at 0700 owned by us
+// (SC-7) and its subdirectories at 0700 (SC-1 umask + SC-2), another user cannot
+// create a file in there at all, since writing into a directory needs permission
+// on the directory.
+//
+// What remains is a window this code prints a message about:
+//
+//	cab-bridge: data dir "..." has loose perms 0755, tightening to 0700
+//
+// The base dir CAN have been created world-writable — by a script, a different
+// umask, a copy — and in that window another local user could drop a file in.
+// SC-7 shuts the door and carries on; it does not walk out whoever already came
+// in. This is that cleanup. The payload is worth naming: a planted manifest
+// carries an agentName (which intercepts everything addressed to that name,
+// since recipients resolve by name within a scope) and a projectPath (which
+// takes part in LongestPrefixLookup, i.e. in deciding who YOU are).
+//
+// Skipped for root, like every other ownership check here: root can read
+// anything regardless, so refusing would cost without protecting.
+func ReadOwnedFile(path string) ([]byte, error) {
+	// O_NOFOLLOW, and it is not decoration. `os.Open` FOLLOWS symlinks, so the
+	// fstat that follows would report the owner of the TARGET: another uid who
+	// planted a symlink of their own — during the same loose-perms window this
+	// check exists to clean up after — points it at a file of ours, and the
+	// ownership test passes on the victim's own uid. The content check was sound
+	// and the identity of the path was not: we closed "is this still the same
+	// file?" and left open "is this the file it claims to be?".
+	//
+	// Refusing at OPEN rather than with an Lstat beforehand is what makes it
+	// atomic: an Lstat-then-open pair is the very TOCTOU shape being avoided.
+	// O_NONBLOCK alongside it, and this one was learned from a failing test: on a
+	// FIFO the OPEN itself blocks until a writer shows up, so the "regular file"
+	// check below never gets to run. The refusal has to be reachable, not just
+	// written.
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		if isSymlinkRefusal(err) {
+			return nil, fmt.Errorf("%w: path=%q is a symlink", ErrOwnershipMismatch, path)
+		}
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+
+	info, serr := f.Stat()
+	if serr != nil {
+		return nil, fmt.Errorf("stat %q: %w", path, serr)
+	}
+	// Regular files only: a link to a FIFO or a device would otherwise sail
+	// through whenever the target belongs to us — and reading one blocks or
+	// yields something that is not a message.
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%w: path=%q is not a regular file (mode %s)", ErrOwnershipMismatch, path, info.Mode())
+	}
+
+	if os.Getuid() != 0 {
+		sys, ok := info.Sys().(*syscall.Stat_t)
+		if !ok {
+			return nil, fmt.Errorf("ownership check unsupported on this platform (path %q)", path)
+		}
+		if int(sys.Uid) != os.Getuid() {
+			return nil, fmt.Errorf("%w: path=%q file_uid=%d current_uid=%d",
+				ErrOwnershipMismatch, path, sys.Uid, os.Getuid())
+		}
+	}
+
+	return io.ReadAll(f)
+}
+
+// isSymlinkRefusal reports whether err is the kernel refusing O_NOFOLLOW on a
+// symlink. Linux answers ELOOP, macOS/BSD answer EMLINK for this specific case;
+// both are reported rather than guessed at.
+func isSymlinkRefusal(err error) bool {
+	return errors.Is(err, syscall.ELOOP) || errors.Is(err, syscall.EMLINK)
+}
+
+// WhatItCovers, for SECURITY.md and for whoever reads this in six months:
+//
+//   - the LEAF is checked atomically — not a symlink, a regular file, ours.
+//   - the DIRECTORIES above it are not re-validated on every read. Doing that
+//     properly means walking the path with openat(O_NOFOLLOW) per component, on
+//     every single read, and the residual it buys is narrow: SC-7 keeps the base
+//     dir 0700 and owned by us, so from the first run onwards nobody else can
+//     alter the tree underneath. What stays uncovered is an intermediate
+//     directory replaced by a symlink DURING the same loose-perms window — and
+//     that is stated in SECURITY.md rather than papered over, because a control
+//     described as broader than it is teaches the reader to stop looking.

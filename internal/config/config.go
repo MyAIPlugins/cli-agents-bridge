@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -71,6 +72,8 @@ type Config struct {
 
 	// RetentionDays controls GDPR-1 data minimization. Messages older than
 	// this are archived/purged by cleanup.
+	// Zero or negative DISABLES the purge (see cleanup.purgeOldArchives) — it
+	// never means "purge everything", which is what a zero cutoff used to do.
 	// Default: 7.
 	// Env override: CAB_RETENTION_DAYS
 	RetentionDays int `json:"retention_days"`
@@ -194,7 +197,7 @@ func Load() (Config, []string, error) {
 // values in the file are ignored (cannot reset a field to "0" via the user
 // file — use env var if needed).
 func applyUserFile(cfg *Config, path string) error {
-	data, err := os.ReadFile(path)
+	data, err := security.ReadOwnedFile(path)
 	if err != nil {
 		return err
 	}

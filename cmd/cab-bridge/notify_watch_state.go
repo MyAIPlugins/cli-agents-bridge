@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"time"
 
+	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	transportfs "github.com/myAIPlugins/cli-agents-bridge/internal/transport/fs"
 )
 
@@ -42,7 +42,7 @@ type watchState struct {
 // persistent dedup exists to prevent.
 func loadWatchState(path string) (*watchState, error) {
 	st := &watchState{Entries: map[string]*watchEntry{}}
-	data, err := os.ReadFile(path)
+	data, err := security.ReadOwnedFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return st, nil

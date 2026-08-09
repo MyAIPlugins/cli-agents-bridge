@@ -347,8 +347,9 @@ func collectPendingForNotify(sessionDir string, maxBytes int, logw io.Writer, wa
 			continue
 		}
 		full := filepath.Join(dir, name)
-		data, rerr := os.ReadFile(full)
+		data, rerr := security.ReadOwnedFile(full)
 		if rerr != nil {
+			_ = notOursSkip(full, rerr)
 			if !warned[name] {
 				fmt.Fprintf(logw, "notify-watch: WARN skipping unreadable inbox file %q: %v\n", name, rerr)
 				warned[name] = true
