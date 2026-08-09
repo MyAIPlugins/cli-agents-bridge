@@ -2,6 +2,7 @@ package cleanup
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -341,4 +342,31 @@ func TestRun_RetentionPurgeReportsHowMuchItTook(t *testing.T) {
 	assert.ElementsMatch(t, []string{"2026-07-01", "2026-07-02"}, res.ArchivesPurged)
 	assert.Equal(t, 3, res.PurgedSessionCount, "counted BEFORE removal, or it could not be counted at all")
 	assert.DirExists(t, filepath.Join(dataDir, "archive", "2026-08-08"), "inside the window: kept")
+}
+
+// The trap: the number a user reaches for to say "don't purge" was the one that
+// purged everything. A zero retention made the cutoff `now`, so every archive
+// dated before this instant qualified — and CAB_RETENTION_DAYS=0 reaches this
+// code with no guard in between.
+func TestRun_ZeroOrNegativeRetentionDisablesThePurge(t *testing.T) {
+	t.Parallel()
+	base := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
+
+	for _, days := range []int{0, -1} {
+		t.Run(fmt.Sprintf("retention_%d_keeps_everything", days), func(t *testing.T) {
+			dataDir := t.TempDir()
+			// Ancient by any measure: a year old.
+			require.NoError(t, os.MkdirAll(filepath.Join(dataDir, "archive", "2025-08-09", "aaaaaaaa"), 0o700))
+
+			res, err := Run(context.Background(), Options{
+				DataDir: dataDir, Scope: ScopeGlobal, CallerScope: "/repo/mine",
+				StaleSeconds: 300, RetentionDays: days, Now: func() time.Time { return base },
+			})
+			require.NoError(t, err)
+			assert.Empty(t, res.ArchivesPurged, "disabled means nothing goes, not everything")
+			assert.Zero(t, res.PurgedSessionCount)
+			assert.DirExists(t, filepath.Join(dataDir, "archive", "2025-08-09"),
+				"a year-old archive survives a DISABLED purge")
+		})
+	}
 }

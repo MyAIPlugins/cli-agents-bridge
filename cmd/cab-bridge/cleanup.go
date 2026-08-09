@@ -22,7 +22,12 @@ func runCleanup(args []string) error {
 	scope := fs.String("scope", cleanup.ScopeMySession, "cleanup scope (my-session|global); global sweeps the stale sessions of THIS project root")
 	allScopes := fs.Bool("all-scopes", false, "with --scope=global: sweep every project sharing this data dir, other teams included (pre-v0.8 behaviour)")
 	force := fs.Bool("force", false, "skip TTY confirmation for --scope=global")
-	retention := fs.Int("retention", 0, "override RetentionDays from config (0 = use config default)")
+	// -1, not 0, for "not specified": zero has to mean the same thing here as it
+	// does in CAB_RETENTION_DAYS, which is "disable the purge". A flag where 0
+	// meant "use the default" while the env var made it purge the entire archive
+	// is two meanings for one number, in the one place where guessing wrong
+	// deletes everything.
+	retention := fs.Int("retention", -1, "override RetentionDays from config (0 disables the retention purge; -1 = use config)")
 	sessionIDFlag := fs.String("session-id", "", "for scope=my-session: target session ID (default: longest-prefix lookup from cwd)")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -54,7 +59,7 @@ func runCleanup(args []string) error {
 		StaleSeconds:  cfg.StaleSeconds,
 		RetentionDays: cfg.RetentionDays,
 	}
-	if *retention > 0 {
+	if *retention >= 0 {
 		opts.RetentionDays = *retention
 	}
 

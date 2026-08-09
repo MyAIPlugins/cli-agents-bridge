@@ -293,7 +293,22 @@ func archiveAndRemoveSession(dataDir, sid string, now func() time.Time) error {
 // purgeOldArchives walks archive/ and removes any date-named subdir whose
 // date is older than now - retentionDays. Returns the date strings purged
 // for the Result summary. Non-date entries and parse failures are skipped.
+// purgeOldArchives removes archive/<date>/ directories older than the retention
+// window, and reports both the dates and how many archived sessions went with
+// them.
+//
+// retentionDays <= 0 DISABLES the purge — it does not mean "purge everything",
+// which is what a zero used to do: the cutoff became `now`, so every archive
+// dated before this instant qualified. The value a user reaches for to say
+// "don't purge" was the one that purged the most, and it was reachable —
+// CAB_RETENTION_DAYS=0 passes envInt without a guard.
+//
+// Zero-means-disabled is not invented here: GCOrphans already treats gcHours<=0
+// exactly this way, for the same defensive reason. One convention, two sweeps.
 func purgeOldArchives(dataDir string, retentionDays int, now func() time.Time) ([]string, int, error) {
+	if retentionDays <= 0 {
+		return []string{}, 0, nil // disabled — never "purge everything"
+	}
 	archRoot := filepath.Join(dataDir, "archive")
 	sessionCount := 0
 	entries, err := os.ReadDir(archRoot)
