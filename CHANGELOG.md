@@ -47,6 +47,34 @@ A **SERVICE surface** (`read`, `sent`, `state`, `peers`, `overview`, `cleanup`, 
 - **No TTL on the live inbox** (deferred to Tier 2, stated in the design contract): already-read `tell`s and responses stay in `inbox/` as `NOTIFIED` and accumulate in a long-lived session. Slow degradation, not a correctness defect — `next` never re-emits them. A time-based pruner over a live mailbox is a new mechanism deserving its own design round, not a pre-merge patch.
 - **Quoting is not solved.** The shell interprets backticks and `$` *before* the binary exists, so no tool-side defence is possible: the command succeeds while the message leaves in pieces. Send from a file. The structural fix is the MCP server (F-72), where content travels as a structured parameter.
 
+### Security — the read surface (found by using it, and by two independent reviewers)
+
+Everything below landed *after* the mailbox rewrite, from a security pass that started as one finding and ended as six crossings of the same boundary.
+
+- **SC-3 is active** (declared since v0.2.0, called by nothing for seven releases). Every read inside the data dir verifies the file belongs to the current uid: `O_NOFOLLOW|O_NONBLOCK`, regular-file only, `fstat` on **the descriptor that is then read** — no window between the check and the use. It also covers **directory entries whose name is interpreted without reading them** (`sent` derived an "archived" state from a filename; `status` counted `.json` names): a planted name could forge either. That second category was missed by the first audit because the audit looked for *file reads*, and there is no read there to find.
+- **SC-7 now validates the path, not just the base.** A symlink on `sessions/` redirected the entire data dir while every leaf check still passed — the files behind it are regular files legitimately yours, so the ownership check had nothing to object to. The same shape on `archive/` sent the retention purge to delete **outside** the data dir. The base plus those two directories are now checked with `Lstat` on every command, and on both data dirs when a config file moves you.
+- **On a mismatch the policy now belongs to the command, not to whichever helper it called.** Commands that deliver or mutate refuse; commands that list skip the entry and **say so, naming the path** — a diagnostic that dies on the anomaly it exists to show is useless exactly when it matters. Notably `status` no longer reports a silent `0` for an inbox holding a file that is not yours.
+- **`cleanup --scope=global` no longer crosses projects** (**breaking**): it removes stale sessions of the project root it is run from, and says how many it left untouched elsewhere; `--all-scopes` restores the previous behaviour. **Scripts relying on the whole-machine sweep must add `--all-scopes`.** The same confinement now applies to the auto-gc that runs on every `join`/`register` — which previously swept other teams' idle sessions with no flag, no confirmation, and nobody having asked for it.
+- **`retention_days = 0` disables the purge.** It used to delete the *entire* archive: the value you would reach for to mean "keep everything" was the one that kept nothing. Negative values are disabled too, and the flag and the env var now mean the same thing. Retention itself still spans the whole data dir **by design** — it is a data-minimisation policy, and one that only applied to whoever happened to run `cleanup` would not be a policy — but it now announces what it removed, how many archived sessions were in it, and that it covers every project.
+
+### Roles
+
+- **`critic` is a first-class role** — the reviewer/critic seat. A critic **speaks only to a `val`**: not to the executor, not to another critic, with no override flag. Independence is what a critic is for, two critics comparing notes converge into one voice, and going straight to the executor bypasses the orchestrator's verification.
+- **`architect` is reserved** for Claude Desktop arriving over the MCP connector, and is no longer the role reviewers are told to use.
+- The role lists were **three, and already diverging** — `join` offered four, `register` five, and the error message described `architect` as the critic. They now come from one source.
+
+### Onboarding
+
+- **`join --agent-name=X` renames in place** instead of stopping: same session id, same mailbox. Correcting a name used to require deleting the session and creating another, which changed the id and left peers writing to nothing.
+- **`join` with no name no longer stops on a session that is already yours.** It used to derive a name even when it had nothing to create, compare that invention against the real name, and call the difference a collision — which meant an agent given a name by a human hit the same wall on *every* re-arm, forever.
+
+### Observability
+
+- One source for "am I waiting": the wait marker left the manifest, so an evicted instance can no longer clear the marker a live one just wrote (`overview` reported `not listening` to a session that was listening, which pushed agents into evicting their own healthy waiter).
+- `next` records carry the agent name and the sender's open asks, including on the interrupted path.
+- `peers`, `overview` and `status` count **unread**, not files — with pure-read delivery a message you have already seen stays in the inbox, so the old count answered a question nobody was asking.
+- **The `notify-watch` guardrail was dead** and nothing said so: it depended on a field that v0.8 stopped writing, so the condition was permanently false and the watcher no longer refused to start next to a live consumer. Repaired, with the reason rewritten — the hazard is no longer double *consumption* of files but a double *wake*.
+
 ### Method
 Four full design-gate rounds with two cross-vendor critics (Codex and Fable) before a line of production code, then per-phase diff-gates. **Six P0s, four of them inside the VAL's own syntheses** — a synthesis that resolves a critic's objection arrives at the next round *pre-validated*, and that patina makes it hard to question, most of all for whoever wrote it. The final acceptance pass found a P0 deeper than the one just closed, on the branch the gate had not named. See `docs/DESIGN-v0.8-mailbox.md` for the normative contract and CLAUDE.md LL-18.
 
