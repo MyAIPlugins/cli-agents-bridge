@@ -136,6 +136,7 @@ func collectInbox(sessionDir string, maxContentBytes int) ([]inboxEntry, error) 
 			}
 			data, rerr := security.ReadOwnedFile(filepath.Join(dir, name))
 			if rerr != nil {
+				_ = notOursSkip(filepath.Join(dir, name), rerr)
 				continue
 			}
 			m, derr := message.DecodeLenient(data, maxContentBytes)
@@ -187,6 +188,7 @@ func tidyInbox(sessionDir string, maxContentBytes int) (int, error) {
 		full := filepath.Join(inboxDir, name)
 		data, rerr := security.ReadOwnedFile(full)
 		if rerr != nil {
+			_ = notOursSkip(full, rerr)
 			continue // unreadable — leave in inbox for forensics
 		}
 		if _, derr := message.DecodeLenient(data, maxContentBytes); derr != nil {

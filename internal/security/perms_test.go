@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -256,4 +257,54 @@ func TestReadOwnedFile_MissingFileIsNotAnOwnershipError(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, os.ErrNotExist)
 	assert.NotErrorIs(t, err, ErrOwnershipMismatch)
+}
+
+// The CRI design-gate finding: os.Open FOLLOWS symlinks, so an fstat afterwards
+// reports the owner of the TARGET. Another uid plants a symlink of their own
+// pointing at one of OUR files — during the same loose-perms window this check
+// cleans up after — and the ownership test passes on our own uid.
+//
+// Note what the setup proves: the link is refused even though its target is a
+// perfectly legitimate file of ours that reads fine on its own.
+func TestReadOwnedFile_RefusesASymlinkEvenToOurOwnFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	target := filepath.Join(dir, "real.json")
+	link := filepath.Join(dir, "manifest.json")
+	require.NoError(t, os.WriteFile(target, []byte(`{"agentName":"planted"}`), 0o600))
+	require.NoError(t, os.Symlink(target, link))
+
+	// The target itself is fine — this is what makes the refusal meaningful.
+	data, err := ReadOwnedFile(target)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "planted")
+
+	_, err = ReadOwnedFile(link)
+	require.Error(t, err, "a symlink is not the file it claims to be")
+	assert.ErrorIs(t, err, ErrOwnershipMismatch)
+	assert.Contains(t, err.Error(), "symlink")
+}
+
+// Non-regular files are refused too: a link to a FIFO would otherwise sail
+// through whenever the target belongs to us, and reading one blocks forever.
+func TestReadOwnedFile_RefusesNonRegularFiles(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	fifo := filepath.Join(dir, "fifo.json")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Skipf("mkfifo unavailable: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, err := ReadOwnedFile(fifo)
+		assert.Error(t, err, "a FIFO is not a message file")
+		assert.ErrorIs(t, err, ErrOwnershipMismatch)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("ReadOwnedFile blocked on a FIFO instead of refusing it")
+	}
 }

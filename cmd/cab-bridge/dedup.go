@@ -56,6 +56,7 @@ func findRecentDuplicateAt(outboxDir, to, msgType, content string, windowSeconds
 		}
 		data, rerr := security.ReadOwnedFile(filepath.Join(outboxDir, name))
 		if rerr != nil {
+			_ = notOursSkip(filepath.Join(outboxDir, name), rerr)
 			continue
 		}
 		m, derr := message.DecodeLenient(data, maxContentBytes)

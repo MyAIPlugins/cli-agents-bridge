@@ -607,6 +607,13 @@ func readMailbox(inboxDir string, maxContentBytes int) ([]mailboxEntry, []string
 		full := filepath.Join(inboxDir, name)
 		data, err := security.ReadOwnedFile(full)
 		if err != nil {
+			// An ownership violation is NOT a corrupt file, and calling it one
+			// was the whole defect: the agent was told "unreadable file, no
+			// action needed from you" about the single security event this check
+			// exists to see. This is the consume path — it fails.
+			if errors.Is(err, security.ErrOwnershipMismatch) {
+				return nil, nil, fmt.Errorf("refusing to deliver from this inbox: %w", err)
+			}
 			corrupt = append(corrupt, name)
 			continue
 		}

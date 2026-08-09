@@ -16,6 +16,7 @@ import (
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
@@ -856,4 +857,38 @@ func TestNext_EveryRecordCarriesTheAgentName(t *testing.T) {
 		require.Equal(t, nextStatusInterrupted, rec.Status)
 		assert.Equal(t, "ESC-next", rec.AgentName, "the silent path is where identity matters most")
 	})
+}
+
+// The CRI design-gate's second half, end to end: a planted file that is not
+// ours must not be reported to the agent as "an unreadable file, no action
+// needed from you". That sentence is what the consume path used to print for the
+// single security event this whole check exists to surface — every error from
+// the read was flattened into "corrupt".
+//
+// A symlink stands in for the planted file because a test cannot create one
+// owned by another uid, and it exercises the same refusal: the primitive treats
+// "not a regular file of ours" as one verdict.
+func TestNext_RefusesToDeliverFromAnInboxHoldingAPlantedFile(t *testing.T) {
+	mgr, cfg, sid, dataDir := newNextSession(t)
+	plantInboxAt(t, dataDir, sid, "msg-aaaaaaaaaaaa", "valxxx01", message.TypeQuery, "genuine", time.Now().UTC())
+
+	inbox := filepath.Join(dataDir, "sessions", sid, "inbox")
+	target := filepath.Join(dataDir, "elsewhere.json")
+	require.NoError(t, os.WriteFile(target, []byte(`{"id":"msg-bbbbbbbbbbbb"}`), 0o600))
+	require.NoError(t, os.Symlink(target, filepath.Join(inbox, "msg-bbbbbbbbbbbb.json")))
+
+	_, _, err := readMailbox(inbox, cfg.MaxMessageBytes)
+	require.Error(t, err, "the consume path must refuse, not shrug")
+	assert.ErrorIs(t, err, security.ErrOwnershipMismatch)
+
+	// And it must not be dressed up as a corrupt file to the agent.
+	assert.NotContains(t, err.Error(), "no action needed")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	var stdout, stderr bytes.Buffer
+	rerr := nextRun(ctx, mgr, cfg, sid, &stdout, &stderr)
+	require.Error(t, rerr, "and next itself fails rather than delivering a page from that inbox")
+	assert.NotContains(t, stdout.String(), "msg-aaaaaaaaaaaa",
+		"no page is emitted at all: the mailbox is not trustworthy right now")
 }

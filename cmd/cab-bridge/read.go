@@ -98,6 +98,12 @@ func findMessage(sessionDir, msgID string, maxContentBytes int) (*message.Messag
 			}
 			data, rerr := security.ReadOwnedFile(filepath.Join(dir, name))
 			if rerr != nil {
+				// Reading ONE named message is an action, not a survey: refusing
+				// beats quietly reporting "not found" for a file that is there
+				// and is not ours.
+				if errors.Is(rerr, security.ErrOwnershipMismatch) {
+					return nil, "", rerr
+				}
 				continue
 			}
 			m, derr := message.DecodeLenient(data, maxContentBytes)
