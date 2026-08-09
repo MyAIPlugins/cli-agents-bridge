@@ -239,3 +239,71 @@ func TestRun_RetentionSweepPurgesOldArchives(t *testing.T) {
 	_, err = os.Stat(filepath.Join(archRoot, "2026-05-01"))
 	assert.True(t, os.IsNotExist(err), "old archive dir must be removed from disk")
 }
+
+// scope=global stops at the caller's project root. Before v0.8 it read the whole
+// data dir, so a maintenance command run in one repository deleted another
+// team's abandoned sessions — across the boundary every other part of the system
+// treats as impassable.
+func TestRun_GlobalStopsAtTheCallersScope(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	base := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
+	old := base.Add(-48 * time.Hour)
+
+	plantScoped(t, dataDir, "mine0001", deadPID, old, "/repo/mine")
+	plantScoped(t, dataDir, "theirs01", deadPID, old, "/repo/theirs")
+	plantScoped(t, dataDir, "theirs02", deadPID, old, "/repo/theirs")
+
+	res, err := Run(context.Background(), Options{
+		DataDir: dataDir, Scope: ScopeGlobal, CallerScope: "/repo/mine",
+		StaleSeconds: 300, RetentionDays: 7, Now: func() time.Time { return base },
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"mine0001"}, res.SessionsRemoved)
+	assert.Equal(t, map[string]int{"/repo/mine": 1}, res.RemovedByScope, "and it says whose it was")
+	assert.Equal(t, 2, res.SkippedOtherScopes,
+		"the narrowing must be COUNTED: a semantic change that stays silent is the defect being fixed, mirrored")
+	assert.DirExists(t, filepath.Join(dataDir, "sessions", "theirs01"))
+	assert.DirExists(t, filepath.Join(dataDir, "sessions", "theirs02"))
+}
+
+// --all-scopes restores the old reach, deliberately.
+func TestRun_AllScopesSweepsEverything(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	base := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
+	old := base.Add(-48 * time.Hour)
+
+	plantScoped(t, dataDir, "mine0001", deadPID, old, "/repo/mine")
+	plantScoped(t, dataDir, "theirs01", deadPID, old, "/repo/theirs")
+
+	res, err := Run(context.Background(), Options{
+		DataDir: dataDir, Scope: ScopeGlobal, CallerScope: "/repo/mine", AllScopes: true,
+		StaleSeconds: 300, RetentionDays: 7, Now: func() time.Time { return base },
+	})
+	require.NoError(t, err)
+	assert.Len(t, res.SessionsRemoved, 2)
+	assert.Zero(t, res.SkippedOtherScopes, "nothing was skipped, so nothing is announced")
+	assert.Equal(t, map[string]int{"/repo/mine": 1, "/repo/theirs": 1}, res.RemovedByScope)
+}
+
+// A live session in another scope is not "skipped because of scope" — it was
+// never eligible. Counting it would inflate the notice and send the reader
+// looking for sessions --all-scopes would not remove either.
+func TestRun_SkippedCountsOnlyWhatScopeExcluded(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	base := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
+
+	plantScoped(t, dataDir, "alive001", os.Getpid(), base, "/repo/theirs") // fresh + live
+	plantScoped(t, dataDir, "stale001", deadPID, base.Add(-48*time.Hour), "/repo/theirs")
+
+	res, err := Run(context.Background(), Options{
+		DataDir: dataDir, Scope: ScopeGlobal, CallerScope: "/repo/mine",
+		StaleSeconds: 300, RetentionDays: 7, Now: func() time.Time { return base },
+	})
+	require.NoError(t, err)
+	assert.Empty(t, res.SessionsRemoved)
+	assert.Equal(t, 1, res.SkippedOtherScopes, "only the one that scope alone excluded")
+}
