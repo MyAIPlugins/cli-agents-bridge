@@ -1,0 +1,25 @@
+cmd/cab-bridge/common.go
+  s_9815573d52f42d::t_10cef598b2fb34 90-113
+internal/security/perms.go
+  s_9815573d52f42d::t_4ac9a03d1b00da 286,291-337
+  s_9815573d52f42d::t_228c22287c1e06 287-289
+cmd/cab-bridge/main_test.go
+  s_9815573d52f42d::t_28177ae4927c8e 5-7,9,73-116
+  s_9815573d52f42d::t_e64c13a8474c48 117
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "768f1d912285016c6398c7a9a9d32e2b32e1c8c6",
+  "prompts": {},
+  "sessions": {
+    "s_9815573d52f42d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8df03128-82d8-47b9-bcaa-30b62ac013ea",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
