@@ -1,0 +1,35 @@
+internal/session/manifest.go
+  s_9815573d52f42d::t_bcf6774a63e4af 97-106
+cmd/cab-bridge/naming.go
+  s_9815573d52f42d::t_2764a29afbc695 6-7,100-123
+  s_9815573d52f42d::t_34e14dbf8d6ec6 124
+cmd/cab-bridge/verbs.go
+  s_9815573d52f42d::t_af39edd2ce2fdd 102-111
+cmd/cab-bridge/join_test.go
+  s_9815573d52f42d::t_400eee013b1aab 132
+  s_9815573d52f42d::t_d6a5255f8366f8 63-68,71-72,74-111,113-114,116-120,122-124,126-131,133-146,148-153,156-160,162-167,169-171,173-188
+  s_9815573d52f42d::t_7e1d4143fb4479 161,220-228
+internal/session/manager.go
+  s_9815573d52f42d::t_4d73c7fbfd186d 607-640
+cmd/cab-bridge/join.go
+  s_9815573d52f42d::t_c2424083d75aa2 30
+  s_9815573d52f42d::t_844fd846314f9e 110-114,116-137,142-148,157,159-172
+  s_9815573d52f42d::t_a94408b89deacd 31-41
+  s_9815573d52f42d::t_a1e7c92782019d 254-256,258-262,264
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "bec366923b490002746690537d089d58b81a2fdb",
+  "prompts": {},
+  "sessions": {
+    "s_9815573d52f42d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8df03128-82d8-47b9-bcaa-30b62ac013ea",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
