@@ -283,14 +283,55 @@ func isSymlinkRefusal(err error) bool {
 	return errors.Is(err, syscall.ELOOP) || errors.Is(err, syscall.EMLINK)
 }
 
-// WhatItCovers, for SECURITY.md and for whoever reads this in six months:
+// Scope of this primitive: the LEAF only. The directories above it are proved
+// separately, once per command, by CheckOwnedDir on the fixed components (see
+// bootstrapDataDir) — a leaf check cannot see a redirected tree, and walking the
+// path on every read would pay forever for something SC-7 freezes once.
 //
-//   - the LEAF is checked atomically — not a symlink, a regular file, ours.
-//   - the DIRECTORIES above it are not re-validated on every read. Doing that
-//     properly means walking the path with openat(O_NOFOLLOW) per component, on
-//     every single read, and the residual it buys is narrow: SC-7 keeps the base
-//     dir 0700 and owned by us, so from the first run onwards nobody else can
-//     alter the tree underneath. What stays uncovered is an intermediate
-//     directory replaced by a symlink DURING the same loose-perms window — and
-//     that is stated in SECURITY.md rather than papered over, because a control
-//     described as broader than it is teaches the reader to stop looking.
+// CheckOwnedDir verifies that path is a REAL directory belonging to the current
+// uid: not a symlink, not a file, not somebody else's.
+//
+// Lstat, never Stat: following the link is precisely the thing being detected.
+//
+// This exists because SC-3 on its own was answering the wrong question. It
+// verifies that a LEAF is what it claims to be — and a redirected tree needs no
+// dishonest leaf. Point `sessions/` at somebody else's directory and every file
+// behind it is a perfectly regular file owned by whoever reads it: SC-3 has
+// nothing to object to, because the lie is in the path, not in the file.
+//
+// Reproduced in thirty seconds, on the binary, by the CRI diff-gate: an empty
+// data dir plus `sessions -> <the real one>` and `peers --all-scopes` enumerated
+// every session. SC-7 passed too — the base dir really was ours and 0700.
+//
+// The claim that this residual was "narrow because SC-7 keeps the tree stable"
+// was written into a comment and into SECURITY.md, by two of us independently,
+// and never tested. SC-7 stops the tree being altered from the moment it runs;
+// it says nothing about a link planted BEFORE — which is the very window SC-3
+// was introduced to clean up after.
+//
+// Foreign-owned real directories are refused as well: redirection is only one of
+// the two ways a path can lead somewhere that is not ours.
+func CheckOwnedDir(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: path=%q is a symlink, refusing to traverse it", ErrOwnershipMismatch, path)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%w: path=%q exists but is not a directory", ErrOwnershipMismatch, path)
+	}
+	if os.Getuid() == 0 {
+		return nil
+	}
+	sys, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("ownership check unsupported on this platform (path %q)", path)
+	}
+	if int(sys.Uid) != os.Getuid() {
+		return fmt.Errorf("%w: path=%q dir_uid=%d current_uid=%d",
+			ErrOwnershipMismatch, path, sys.Uid, os.Getuid())
+	}
+	return nil
+}

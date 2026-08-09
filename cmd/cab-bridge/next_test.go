@@ -877,18 +877,20 @@ func TestNext_RefusesToDeliverFromAnInboxHoldingAPlantedFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(target, []byte(`{"id":"msg-bbbbbbbbbbbb"}`), 0o600))
 	require.NoError(t, os.Symlink(target, filepath.Join(inbox, "msg-bbbbbbbbbbbb.json")))
 
-	_, _, err := readMailbox(inbox, cfg.MaxMessageBytes)
-	require.Error(t, err, "the consume path must refuse, not shrug")
-	assert.ErrorIs(t, err, security.ErrOwnershipMismatch)
-
-	// And it must not be dressed up as a corrupt file to the agent.
-	assert.NotContains(t, err.Error(), "no action needed")
+	// The scanner REPORTS: three buckets, and the foreign file lands in its own
+	// rather than being called corrupt or deciding the policy for every caller.
+	entries, corrupt, foreign, err := readMailbox(inbox, cfg.MaxMessageBytes)
+	require.NoError(t, err, "scanning is not where the refusal belongs")
+	assert.Len(t, entries, 1, "the genuine message is still readable")
+	assert.Empty(t, corrupt, "a file that is not ours is not a corrupt file")
+	assert.Equal(t, []string{"msg-bbbbbbbbbbbb.json"}, foreign)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	var stdout, stderr bytes.Buffer
 	rerr := nextRun(ctx, mgr, cfg, sid, &stdout, &stderr)
 	require.Error(t, rerr, "and next itself fails rather than delivering a page from that inbox")
+	assert.ErrorIs(t, rerr, security.ErrOwnershipMismatch, "the COMMAND applies the policy, and says which one")
 	assert.NotContains(t, stdout.String(), "msg-aaaaaaaaaaaa",
 		"no page is emitted at all: the mailbox is not trustworthy right now")
 }

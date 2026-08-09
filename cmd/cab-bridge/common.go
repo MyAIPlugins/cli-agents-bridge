@@ -22,6 +22,16 @@ import (
 // Returns the resolved config; on load or integrity failure returns a wrapped
 // error the caller surfaces with exit 1.
 func loadConfigOrFail() (config.Config, error) {
+	// TWO PHASES, because there is a redirect BEFORE the one SC-7 used to guard.
+	// config.json lives inside the data dir, so reading it means traversing that
+	// directory — and the file itself can then MOVE the data dir somewhere else.
+	// Checking only the final destination left the first one, the one actually
+	// walked to obtain the config, verified by nobody (CRI diff-gate).
+	initial := config.InitialDataDir()
+	if err := bootstrapDataDir(initial); err != nil {
+		return config.Config{}, err
+	}
+
 	cfg, warnings, err := config.Load()
 	if err != nil {
 		return cfg, fmt.Errorf("load config: %w", err)
@@ -29,8 +39,12 @@ func loadConfigOrFail() (config.Config, error) {
 	for _, w := range warnings {
 		fmt.Fprintln(os.Stderr, "config warning:", w)
 	}
-	if err := bootstrapDataDir(cfg.DataDir); err != nil {
-		return cfg, err
+
+	// Phase two only when the config moved us: same check, new destination.
+	if filepath.Clean(cfg.DataDir) != filepath.Clean(initial) {
+		if err := bootstrapDataDir(cfg.DataDir); err != nil {
+			return cfg, err
+		}
 	}
 	return cfg, nil
 }
@@ -85,6 +99,30 @@ func bootstrapDataDir(dataDir string) error {
 		fmt.Fprintf(os.Stderr, "cab-bridge: data dir %q has loose perms %04o, tightening to 0700\n", dataDir, info.Mode().Perm())
 		if err := os.Chmod(dataDir, 0o700); err != nil {
 			return fmt.Errorf("tighten data dir %q perms to 0700: %w", dataDir, err)
+		}
+	}
+
+	// THE PATH, not just the base. Checking this directory and then trusting
+	// everything under it is what the CRI diff-gate broke in thirty seconds: an
+	// empty data dir with `sessions` pointing at the real one passed every check
+	// we had — SC-7 because the base genuinely was ours and 0700, SC-3 because
+	// every file behind the link is a perfectly regular file of ours. A leaf check
+	// cannot see a redirected tree: the lie is in the path.
+	//
+	// Worse than reading: with `archive` redirected, the retention purge does
+	// RemoveAll on <target>/<date>, i.e. deletes OUTSIDE the data dir entirely.
+	//
+	// Once per command, on the two fixed components, and only AFTER the chmod
+	// above: from that moment nobody else can alter the tree, so proving it once
+	// is enough — no per-read path walk. They are checked only if they exist; a
+	// first run has neither, and creating them is our own job.
+	for _, sub := range []string{"sessions", "archive"} {
+		p := filepath.Join(dataDir, sub)
+		if _, statErr := os.Lstat(p); statErr != nil {
+			continue // not created yet — nothing to prove
+		}
+		if err := security.CheckOwnedDir(p); err != nil {
+			return fmt.Errorf("data dir %q: refusing to operate: %w", dataDir, err)
 		}
 	}
 	return nil

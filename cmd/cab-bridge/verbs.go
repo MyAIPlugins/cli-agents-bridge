@@ -186,7 +186,7 @@ func collectOpenAsks(mgr *session.Manager, cfg config.Config, sid string) ([]ope
 		return nil, err
 	}
 	inboxDir := filepath.Join(cfg.DataDir, "sessions", sid, "inbox")
-	entries, _, err := readMailbox(inboxDir, cfg.MaxMessageBytes)
+	entries, _, _, err := readMailbox(inboxDir, cfg.MaxMessageBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -720,7 +720,7 @@ func countUnseenInbound(mgr *session.Manager, cfg config.Config, sid string) int
 	if err != nil {
 		return 0
 	}
-	entries, _, err := readMailbox(filepath.Join(cfg.DataDir, "sessions", sid, "inbox"), cfg.MaxMessageBytes)
+	entries, _, _, err := readMailbox(filepath.Join(cfg.DataDir, "sessions", sid, "inbox"), cfg.MaxMessageBytes)
 	if err != nil {
 		return 0
 	}
