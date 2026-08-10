@@ -701,3 +701,25 @@ func TestLegacyEndToEnd_ProvenanceTokenAndDisambiguation(t *testing.T) {
 		}
 	})
 }
+
+// The warning must name the value the GROUPING ran on. For one commit it named
+// the stored field, which is empty for a legacy session — so it announced
+// `share its scope ""` about a grouping performed on a derived path, in exactly
+// the case the same commit had made reachable.
+func TestSharedScopeWarning_NamesTheScopeItGroupedOn(t *testing.T) {
+	t.Parallel()
+	res := session.Resolution{
+		Candidates: []session.Candidate{
+			{ID: "legacyaa", ProjectPath: "/repo/zeta/work", Scope: "/repo/zeta", StoredScope: "", AgentName: "ESC-legacy", Role: session.RoleEsc},
+		},
+		ScopeSiblings: []session.Candidate{
+			{ID: "currentb", ProjectPath: "/repo/zeta/other", Scope: "/repo/zeta", StoredScope: "/repo/zeta", AgentName: "ESC-other", Role: session.RoleEsc},
+		},
+		SelectedID: "legacyaa",
+	}
+
+	got := formatSharedScopeWarning("next", "/repo/zeta/work", res)
+	assert.Contains(t, got, "/repo/zeta", "the number that explains the grouping has to appear")
+	assert.Contains(t, got, "(derived)", "and say that it was worked out, not read")
+	assert.NotContains(t, got, `scope ""`, "naming the empty stored field explains nothing")
+}
