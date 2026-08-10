@@ -36,8 +36,21 @@ import (
 // dependency this rule exists to remove. tty detection is also out: verified
 // empirically that stdin is not a tty inside the harness, so every short
 // `tell X "hi"` would block on an empty pipe.
+//
+// F-113: but an argument AND redirected content is not a rule to apply, it is a
+// contradiction to report. `reply VAL-x < report.md` sent the five bytes of the
+// name and threw the report away, closing the ask with exit 0 — and it is the
+// complement of the F-105 fix, which made the argument win precisely so that a
+// val called `OK` could be answered with the word `OK`. Two mutually exclusive
+// readings of one input; the defect was never which one we picked, it was
+// picking in SILENCE. So the ambiguous combination is refused and the two
+// unambiguous forms are named. Nothing else changes.
 func resolveMessagePayload(arg string, hasArg bool, stdin io.Reader) (string, error) {
 	if hasArg {
+		if stdinIsRedirected(stdin) {
+			return "", fmt.Errorf("an argument AND redirected input: %q would be sent and the redirected content thrown away, so nothing was sent. "+
+				"Use one form or the other: `<verb> [<agent>] \"the message\"`, or `<verb> [<agent>] < file.md`", previewContent(arg, 30))
+		}
 		if strings.TrimSpace(arg) == "" {
 			// An empty ARGUMENT is exactly the shell-ate-the-text case (a stray
 			// backtick, a $, an apostrophe), so this is where the guidance is
@@ -349,6 +362,43 @@ func runSendVerb(verb, msgType string, args []string, stdin io.Reader, stdout, s
 	}
 	fmt.Fprintln(stdout, formatSendEcho(myName(mgr, sid), args[0], msgID, content, verb))
 	return nil
+}
+
+// stdinIsRedirected reports whether the caller pointed real content at stdin.
+//
+// NOT tty detection, which this file already rules out for a measured reason:
+// inside the harness stdin is a SOCKET — not a tty, not a pipe, not a file — so
+// "is it a terminal" answers nothing here. The question that does have an answer
+// is "did somebody redirect content into it", and that is visible without
+// reading a byte:
+//
+//	harness, no redirection   socket        -> false
+//	< report.md               regular, 10 B -> true
+//	echo ... |                named pipe    -> true
+//	< /dev/null               char device   -> false
+//	< empty.md                regular, 0 B  -> false   (nothing to throw away)
+//
+// A pipe counts regardless of size: the byte count on a pipe is whatever
+// happens to be buffered at this instant, so a slow producer would read as
+// empty. A regular file's size is exact, so it is used.
+//
+// A non-*os.File reader — every injected stdin in the tests — is not a
+// redirection and returns false, which keeps the guard off the unit tests and
+// forces the ones that DO exercise it to use a real file, i.e. the real thing.
+func stdinIsRedirected(r io.Reader) bool {
+	f, ok := r.(*os.File)
+	if !ok {
+		return false
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	mode := fi.Mode()
+	if mode&os.ModeNamedPipe != 0 {
+		return true
+	}
+	return mode.IsRegular() && fi.Size() > 0
 }
 
 func argAt(args []string, i int) string {

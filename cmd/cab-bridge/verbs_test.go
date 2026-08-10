@@ -828,3 +828,80 @@ func TestOldestPage(t *testing.T) {
 		})
 	}
 }
+
+// --- F-113: an argument AND redirected input is a contradiction -------------
+
+// TestStdinIsRedirected covers every shape stdin actually takes, measured with a
+// probe before the guard was written. The harness case is the one that decides
+// the design: there stdin is a SOCKET, so "is it a tty" answers nothing and the
+// question has to be "did somebody point content at it".
+func TestStdinIsRedirected(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	withContent := filepath.Join(dir, "report.md")
+	require.NoError(t, os.WriteFile(withContent, []byte("the real report"), 0o600))
+	empty := filepath.Join(dir, "empty.md")
+	require.NoError(t, os.WriteFile(empty, nil, 0o600))
+
+	openFile := func(p string) *os.File {
+		f, err := os.Open(p)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = f.Close() })
+		return f
+	}
+
+	assert.True(t, stdinIsRedirected(openFile(withContent)), "a file with bytes is content somebody meant to send")
+	assert.False(t, stdinIsRedirected(openFile(empty)), "an empty file has nothing to throw away")
+
+	devNull := openFile(os.DevNull)
+	assert.False(t, stdinIsRedirected(devNull), "/dev/null is a char device, not content")
+
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close(); _ = w.Close() })
+	assert.True(t, stdinIsRedirected(r), "a pipe counts whatever its buffer says right now: a slow producer would read as empty")
+
+	assert.False(t, stdinIsRedirected(strings.NewReader("injected")), "an injected reader is not a redirection")
+}
+
+// The F-113 regression at the level where every verb passes through.
+func TestResolveMessagePayload_ArgumentPlusRedirectedInputIsRefused(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	report := filepath.Join(dir, "report.md")
+	require.NoError(t, os.WriteFile(report, []byte("IL REPORT VERO, lungo e importante"), 0o600))
+	f, err := os.Open(report)
+	require.NoError(t, err)
+	defer func() { _ = f.Close() }()
+
+	_, err = resolveMessagePayload("VAL-x", true, f)
+	require.Error(t, err, "five bytes of name must not replace the report and exit 0")
+	assert.Contains(t, err.Error(), "nothing was sent")
+	assert.Contains(t, err.Error(), "< file.md", "and it names the form that works")
+
+	// The complement, which is the whole reason the guard is narrow: with NO
+	// argument the same redirected file is exactly what the caller meant.
+	_, err = f.Seek(0, 0)
+	require.NoError(t, err)
+	got, err := resolveMessagePayload("", false, f)
+	require.NoError(t, err)
+	assert.Equal(t, "IL REPORT VERO, lungo e importante", got)
+}
+
+// F-105 must not come back: with nothing redirected, the argument IS the
+// message, even when it happens to be a peer's name. The two fixes are the two
+// readings of one input, and this pins that the second did not undo the first.
+func TestResolveMessagePayload_ArgumentStillWinsWithoutRedirection(t *testing.T) {
+	t.Parallel()
+	got, err := resolveMessagePayload("VAL-x", true, strings.NewReader(""))
+	require.NoError(t, err)
+	assert.Equal(t, "VAL-x", got, "a val called VAL-x can still be answered with the word VAL-x")
+
+	devNull, err := os.Open(os.DevNull)
+	require.NoError(t, err)
+	defer func() { _ = devNull.Close() }()
+	got, err = resolveMessagePayload("OK", true, devNull)
+	require.NoError(t, err)
+	assert.Equal(t, "OK", got, "and /dev/null is not content either")
+}
