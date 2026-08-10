@@ -232,7 +232,7 @@ func TestNextMessage_CrossScopeCarriesAPastableAddress(t *testing.T) {
 		Metadata: message.Metadata{FromScope: theirs},
 	}}
 
-	got := newNextMessage(e, false, "/Users/alan/develop/bridge", true)
+	got := newNextMessage(e, false, "/Users/alan/develop/bridge")
 	assert.Equal(t, theirs, got.FromScope)
 	assert.Equal(t, "VAL-payload@"+theirs, got.FromAddress, "the agent copies, it does not assemble")
 
@@ -242,20 +242,20 @@ func TestNextMessage_CrossScopeCarriesAPastableAddress(t *testing.T) {
 	assert.True(t, scopeMatchesHint(theirs, parsed.scope), "and resolve to the sender's scope")
 
 	// Same scope: neither field, because both would be noise on every message.
-	same := newNextMessage(e, false, theirs, true)
+	same := newNextMessage(e, false, theirs)
 	assert.Empty(t, same.FromScope)
 	assert.Empty(t, same.FromAddress)
 
 	// Legacy message with no fromScope: nothing invented, nothing looked up.
 	legacy := mailboxEntry{msg: &message.Message{ID: "msg-bbbbbbbbbbbb", From: "old", FromAgentName: "VAL-old", Type: message.TypeQuery}}
-	old := newNextMessage(legacy, false, "/Users/alan/develop/bridge", true)
+	old := newNextMessage(legacy, false, "/Users/alan/develop/bridge")
 	assert.Empty(t, old.FromScope, "absent means not stated, never 'same project as you'")
 	assert.Empty(t, old.FromAddress)
 
 	// And when MY OWN scope could not be read, nothing is labelled: not knowing
 	// and being different are two facts, and an empty string collapsed them into
 	// "everything is foreign" while the comment claimed the label was dropped.
-	unknown := newNextMessage(e, false, "", false)
+	unknown := newNextMessage(e, false, "")
 	assert.Empty(t, unknown.FromScope, "a failed manifest read must drop the label, not invent one")
 	assert.Empty(t, unknown.FromAddress)
 }
@@ -519,14 +519,14 @@ func TestEffectiveScope_LegacySessionBehavesLikeACurrentOne(t *testing.T) {
 	t.Run("3. a legacy reader is not told its own neighbour is foreign", func(t *testing.T) {
 		mf, err := mgr.LoadManifest("legacyes")
 		require.NoError(t, err)
-		myScope, known := effectiveScope(mf)
-		require.True(t, known, "derivable from ProjectPath")
+		myScope := effectiveScope(mf)
+		require.NotEmpty(t, myScope, "derivable from ProjectPath")
 
 		e := mailboxEntry{msg: &message.Message{
 			ID: "msg-aaaaaaaaaaaa", From: "valnearr", FromAgentName: "VAL-near",
 			Type: message.TypeQuery, Metadata: message.Metadata{FromScope: repoA},
 		}}
-		got := newNextMessage(e, false, myScope, known)
+		got := newNextMessage(e, false, myScope)
 		assert.Empty(t, got.FromScope, "same project: labelling it foreign would be the fourth face of the same defect")
 		assert.Empty(t, got.FromAddress)
 	})
@@ -536,9 +536,83 @@ func TestEffectiveScope_LegacySessionBehavesLikeACurrentOne(t *testing.T) {
 // form one group and reach no real repository.
 func TestSameProject_UnknownIsAGroupNotAWildcard(t *testing.T) {
 	t.Parallel()
-	assert.True(t, sameProject("", false, "", false), "two sessions that cannot say where they are belong together")
-	assert.False(t, sameProject("", false, "/repo/a", true), "and to nobody else")
-	assert.False(t, sameProject("/repo/a", true, "", false))
-	assert.True(t, sameProject("/repo/a", true, "/repo/a", true))
-	assert.False(t, sameProject("/repo/a", true, "/repo/b", true))
+	assert.True(t, sameProject("", ""), "two sessions that cannot say where they are belong together")
+	assert.False(t, sameProject("", "/repo/a"), "and to nobody else")
+	assert.False(t, sameProject("/repo/a", ""))
+	assert.True(t, sameProject("/repo/a", "/repo/a"))
+	assert.False(t, sameProject("/repo/a", "/repo/b"))
+}
+
+// R-1: moving the scope filter out of collectPeers changed what `peers` MEANS
+// inside the function — from "my world" to "the whole data dir" — and the
+// readers of the zero-match branch were written for the old meaning. The help
+// then listed ten agents of other projects, every one of which fails identically
+// when tried unqualified: a list of closed doors.
+//
+// Fourth time today with this signature, and the first on a LOCAL VARIABLE: the
+// three before were struct fields, which a grep finds. This one only the
+// question finds.
+func TestResolveRecipient_ZeroMatchListsOnlyMyProject(t *testing.T) {
+	dataDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.DataDir = dataDir
+	mgr := newSessionManager(cfg)
+
+	planted(t, dataDir, "valmine1", session.RoleVal, "VAL-mine", "/repo/mine")
+	planted(t, dataDir, "escmine1", session.RoleEsc, "ESC-mine", "/repo/mine")
+	planted(t, dataDir, "valfarrr", session.RoleVal, "VAL-far", "/repo/far")
+	planted(t, dataDir, "escfarrr", session.RoleEsc, "ESC-far", "/repo/far")
+
+	_, err := resolveRecipientByName(cfg, mgr, "NOBODY", "valmine1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ESC-mine", "my own project's agents are the useful suggestion")
+	assert.NotContains(t, err.Error(), "VAL-far", "an agent of another project is a door that is closed")
+	assert.NotContains(t, err.Error(), "ESC-far")
+}
+
+// The val's two: overview must not pick a peer from another repository for a
+// legacy session, and join's cross-scope name guard must read effective scopes
+// — it was wrong in BOTH directions.
+func TestLegacySession_OverviewAndJoinUseTheEffectiveScope(t *testing.T) {
+	dataDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.DataDir = dataDir
+	mgr := newSessionManager(cfg)
+
+	repoA, repoB := filepath.Join(dataDir, "repo-a"), filepath.Join(dataDir, "repo-b")
+	for _, r := range []string{repoA, repoB} {
+		require.NoError(t, os.MkdirAll(filepath.Join(r, ".git"), 0o700))
+	}
+	var err error
+	repoA, err = filepath.EvalSymlinks(repoA)
+	require.NoError(t, err)
+	repoB, err = filepath.EvalSymlinks(repoB)
+	require.NoError(t, err)
+
+	// A LEGACY val in repo A, and an esc in each repository.
+	plantSessionFull(t, dataDir, "legacyvl", session.RoleVal, "VAL-legacy", "", filepath.Join(repoA, "work"), "working")
+	plantSessionFull(t, dataDir, "escnearr", session.RoleEsc, "ESC-near", repoA, repoA, "working")
+	plantSessionFull(t, dataDir, "escfarrr", session.RoleEsc, "ESC-far", repoB, repoB, "working")
+
+	t.Run("overview does not adopt an executor from another repository", func(t *testing.T) {
+		rep, berr := buildOverview(mgr, cfg, "legacyvl")
+		require.NoError(t, berr)
+		if rep.Peer != nil {
+			assert.Equal(t, "ESC-near", rep.Peer.AgentName,
+				"an empty filter meant NO filter: a legacy val was shown another project's esc as its own")
+		}
+	})
+
+	t.Run("the name guard reads effective scopes, both directions", func(t *testing.T) {
+		peers, _, perr := collectPeers(mgr, dataDir, cfg.StaleSeconds, 65536, true, "", "")
+		require.NoError(t, perr)
+
+		// Same repo (derived == stored): NOT another scope, so no block.
+		_, _, _, clash := findNameInAnotherScope(mgr, peers, "ESC-near", repoA)
+		assert.False(t, clash, "a legacy and a current session in ONE repo are one project")
+
+		// Different repo: blocked, which is what the guard is for.
+		_, _, _, clash = findNameInAnotherScope(mgr, peers, "ESC-far", repoA)
+		assert.True(t, clash, "and two projects are two projects")
+	})
 }

@@ -144,7 +144,7 @@ func buildOverview(mgr *session.Manager, cfg config.Config, sid string) (overvie
 			SessionID: me.SessionID,
 			AgentName: me.AgentName,
 			Role:      me.Role,
-			Scope:     me.Scope,
+			Scope:     effectiveScope(me),
 			State:     me.State,
 			Stale:     session.IsStale(me, cfg.StaleSeconds, now),
 		},
@@ -179,7 +179,12 @@ func buildOverview(mgr *session.Manager, cfg config.Config, sid string) (overvie
 	// includes me, but selectPeer never picks my own role, so I am not selected.
 	// Filtering on MY stored scope (not resolveScope(cwd)) keeps this correct even
 	// for an inherited/legacy scope, though F-41 makes them equal for a worktree.
-	peers, _, err := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, cfg.MaxMessageBytes, true, me.TeamID, me.Scope)
+	// The EFFECTIVE scope, or a legacy session passes an empty filter — which
+	// means NO filter — and `selectPeer` then picks its "peer" from ANY
+	// repository: a legacy val would be shown an esc of another project as its
+	// own executor. The comment this replaces claimed the opposite ("keeps this
+	// correct even for an inherited/legacy scope"), which is why nobody looked.
+	peers, _, err := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, cfg.MaxMessageBytes, true, me.TeamID, effectiveScope(me))
 	if err != nil {
 		return overviewReport{}, fmt.Errorf("overview: discover peers: %w", err)
 	}

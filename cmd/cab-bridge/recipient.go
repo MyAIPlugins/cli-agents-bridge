@@ -85,15 +85,15 @@ func parseRecipient(token string) (recipient, error) {
 // UNKNOWN is a value, not a wildcard: a session whose project cannot be derived
 // matches only other sessions in the same condition. Treating it as "matches
 // everything" is precisely what produced the defect above.
-func effectiveScope(mf *session.Manifest) (string, bool) {
+func effectiveScope(mf *session.Manifest) string {
 	if mf == nil {
-		return "", false
+		return ""
 	}
 	if mf.Scope != "" {
-		return mf.Scope, true
+		return mf.Scope
 	}
 	if mf.ProjectPath == "" {
-		return "", false
+		return ""
 	}
 	// Silent on failure, unlike resolveScope: that one runs on the caller's own
 	// cwd where a warning is actionable, while this runs over other people's
@@ -101,47 +101,46 @@ func effectiveScope(mf *session.Manifest) (string, bool) {
 	home, _ := os.UserHomeDir()
 	root, err := session.FindProjectRoot(mf.ProjectPath, home)
 	if err != nil || root == "" {
-		return "", false
+		return ""
 	}
 	if resolved, rerr := filepath.EvalSymlinks(root); rerr == nil {
-		return resolved, true
+		return resolved
 	}
-	return root, true
+	return root
+}
+
+// scopeIsDerived reports whether this session's project had to be worked out
+// rather than read — the thing a human is entitled to be told, since a derived
+// scope is a fact about the filesystem now and not about the session's record.
+func scopeIsDerived(mf *session.Manifest) bool {
+	return mf != nil && mf.Scope == "" && effectiveScope(mf) != ""
 }
 
 // effectiveScopeCache derives a session's project once per session id: the
 // derivation walks the filesystem, and a peer list is read on every send.
-func effectiveScopeCache(mgr *session.Manager) func(sessionID string) (string, bool) {
-	type entry struct {
-		scope string
-		known bool
-	}
-	seen := map[string]entry{}
-	return func(sessionID string) (string, bool) {
-		if e, ok := seen[sessionID]; ok {
-			return e.scope, e.known
+func effectiveScopeCache(mgr *session.Manager) func(sessionID string) string {
+	seen := map[string]string{}
+	return func(sessionID string) string {
+		if s, ok := seen[sessionID]; ok {
+			return s
 		}
-		var e entry
+		s := ""
 		if mf, err := mgr.LoadManifest(sessionID); err == nil {
-			e.scope, e.known = effectiveScope(mf)
+			s = effectiveScope(mf)
 		}
-		seen[sessionID] = e
-		return e.scope, e.known
+		seen[sessionID] = s
+		return s
 	}
 }
 
-// sameProject compares two sessions by their EFFECTIVE scope, unknown included:
-// two sessions that cannot say where they are belong together and to nobody
-// else.
-func sameProject(aScope string, aKnown bool, bScope string, bKnown bool) bool {
-	if aKnown != bKnown {
-		return false
-	}
-	if !aKnown {
-		return true // both unknown: one group, and it reaches no real repository
-	}
-	return aScope == bScope
-}
+// sameProject compares two EFFECTIVE scopes, with "" meaning UNKNOWN.
+//
+// It is a plain equality, and that is the point: once the value carries its own
+// meaning, unknown==unknown is one group — sessions that cannot say where they
+// are reach each other and no real repository — and every other case falls out.
+// The comparisons that needed special-casing needed it because the VALUE was
+// ambiguous, not because comparing was hard.
+func sameProject(a, b string) bool { return a == b }
 
 // crossesScopes reports whether a message between these two scopes leaves its
 // project — the question the val→val restriction is asked.

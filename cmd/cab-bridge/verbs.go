@@ -102,7 +102,7 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, token, self
 	//
 	// The UNqualified path is untouched: nobody pays for a feature they are not
 	// using, and its behaviour is the one every existing test pins.
-	myScope, myScopeKnown := effectiveScope(me)
+	myScope := effectiveScope(me)
 
 	// The scope filter is applied BELOW, on effective scopes, not here: an empty
 	// one means NO FILTER to collectPeers, so a legacy session searched the whole
@@ -118,17 +118,42 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, token, self
 	}
 
 	scopeOf := effectiveScopeCache(mgr)
+
+	// `peers` now means THE WHOLE DATA DIR, because the scope filter moved down
+	// into the loop — and the readers of the zero-match branch below were written
+	// when it meant "my world". Left as it was, "registered here" listed ten
+	// agents of other projects, every one of which fails identically when tried
+	// unqualified: the circular diagnostic of F-2, rebuilt.
+	//
+	// So the local view is materialised here, once, and the zero-match branch
+	// reads THAT. The qualified path keeps the global list on purpose —
+	// knownScopes wants it.
+	//
+	// The shape is the one that has bitten four times today: changing what
+	// something MEANS is finished when its readers have been enumerated. Three of
+	// those were struct fields and a grep found them; this one is a local
+	// variable, and only the question finds it.
+	inScope := peers
+	if !rcpt.qualified() {
+		inScope = inScope[:0:0]
+		for _, p := range peers {
+			if sameProject(myScope, scopeOf(p.SessionID)) {
+				inScope = append(inScope, p)
+			}
+		}
+	}
+
 	var exact, live []peerSummary
 	for _, p := range peers {
 		if p.SessionID == selfSID || p.AgentName != name {
 			continue
 		}
-		theirScope, theirKnown := scopeOf(p.SessionID)
+		theirScope := scopeOf(p.SessionID)
 		if rcpt.qualified() {
 			if !scopeMatchesHint(theirScope, rcpt.scope) {
 				continue
 			}
-		} else if !sameProject(myScope, myScopeKnown, theirScope, theirKnown) {
+		} else if !sameProject(myScope, theirScope) {
 			continue
 		}
 		exact = append(exact, p)
@@ -150,7 +175,7 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, token, self
 		// cross-project message just because it was written the long way, and the
 		// first version refused it for that reason alone. And an UNKNOWN scope is
 		// not a different one — see crossesScopes.
-		theirScope, _ := scopeOf(candidates[0].SessionID)
+		theirScope := scopeOf(candidates[0].SessionID)
 		if crossesScopes(myScope, theirScope) {
 			if err := allowedAcrossScopes(me.Role, candidates[0].Role, name, rcpt.scope); err != nil {
 				return "", err
@@ -164,7 +189,7 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, token, self
 		// reaches both. Without this the sender reads "no such agent" about someone
 		// who is right there under a new label, and the obvious next move (delete
 		// and re-register) is the one that costs a mailbox.
-		if renamed, ok := findRenamed(mgr, peers, name); ok {
+		if renamed, ok := findRenamed(mgr, inScope, name); ok {
 			return "", fmt.Errorf("no agent named %q in this scope — %s answered to that name and is now %q",
 				name, renamed.SessionID, renamed.AgentName)
 		}
@@ -175,7 +200,7 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, token, self
 			return "", fmt.Errorf("no agent named %q in project %q — projects with agents: %s",
 				name, rcpt.scope, strings.Join(knownScopes(peers), ", "))
 		}
-		known := knownAgentNames(peers, selfSID)
+		known := knownAgentNames(inScope, selfSID)
 		if len(known) == 0 {
 			// An EMPTY scope is the likeliest place to be looking for somebody who
 			// works elsewhere, so this is the message that most needs the other
@@ -362,7 +387,7 @@ func collectOpenAsks(mgr *session.Manager, cfg config.Config, sid string) ([]ope
 		}
 		s := ""
 		if mf, lerr := mgr.LoadManifest(from); lerr == nil {
-			s = mf.Scope
+			s = effectiveScope(mf)
 		}
 		scopeOf[from] = s
 		return s
@@ -1336,7 +1361,7 @@ func deliverResponse(cfg config.Config, mgr *session.Manager, sid string, txn *s
 		Closes:        txn.CloseIDs,
 		Metadata: message.Metadata{
 			FromProject:     senderManifest.ProjectName,
-			FromScope:       senderManifest.Scope,
+			FromScope:       effectiveScope(senderManifest),
 			ProcessingState: message.StatusPending,
 		},
 	}

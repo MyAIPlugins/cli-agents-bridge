@@ -297,6 +297,13 @@ func collectPeers(mgr *session.Manager, dataDir string, staleSeconds, maxContent
 		if teamFilter != "" && mf.TeamID != teamFilter {
 			continue
 		}
+		// The EFFECTIVE scope, computed once here so that everything downstream —
+		// the filter, the column, the addressing token, the error messages — reads
+		// a value that already carries its meaning. Filling this field with the
+		// raw one is what left eight readers deciding for themselves what an empty
+		// string meant.
+		effScope := effectiveScope(mf)
+
 		// F-23a: staleness via the single shared definition (orchestrating is
 		// heartbeat-exempt). Same source of truth as status + cleanup globalSweep.
 		stale := session.IsStale(mf, staleSeconds, now)
@@ -305,7 +312,12 @@ func collectPeers(mgr *session.Manager, dataDir string, staleSeconds, maxContent
 		}
 		// Scope filter last, after team+stale, so hiddenByScope counts exactly
 		// the sessions --all-scopes would reveal under the same other flags.
-		if scopeFilter != "" && mf.Scope != scopeFilter {
+		// An empty FILTER still means "no filter" — that is this parameter's
+		// contract and the callers rely on it. What changed is the SESSION side:
+		// comparing effScope means a legacy session is matched by the project it
+		// actually belongs to, instead of falling out of every filter and being
+		// visible only to a caller who happened to pass none (CRI final gate).
+		if scopeFilter != "" && effScope != scopeFilter {
 			hiddenByScope++
 			continue
 		}
@@ -335,7 +347,7 @@ func collectPeers(mgr *session.Manager, dataDir string, staleSeconds, maxContent
 			InboxCount:        countUnread(mgr, e.Name(), filepath.Join(sessionsRoot, e.Name()), maxContentBytes),
 			LastConsumedMsgID: mf.LastConsumedMsgID,
 			TeamID:            mf.TeamID,
-			Scope:             mf.Scope,
+			Scope:             effScope,
 			State:             mf.State,
 		})
 	}

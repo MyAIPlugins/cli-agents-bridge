@@ -69,8 +69,17 @@ func runInspect(args []string) error {
 		// saying "here and in --json": somebody trusting it would have concluded
 		// that dropping the path from `overview` costs nothing. Caught by the val
 		// on the day we counted thirteen of these.
-		if mf.Scope != "" {
-			fmt.Printf("  Scope:   %s\n", mf.Scope)
+		// BOTH, because this is the forensic view: the effective scope is the
+		// answer the system acts on, the raw field is a fact about the record.
+		// Everywhere else shows only the first — two answers to "which project am
+		// I in" is what left a legacy session reading "(none)" while being routed
+		// as if it were in /repo/a.
+		if eff := effectiveScope(mf); eff != "" {
+			if scopeIsDerived(mf) {
+				fmt.Printf("  Scope:   %s (derived from the project path; not in the manifest)\n", eff)
+			} else {
+				fmt.Printf("  Scope:   %s\n", eff)
+			}
 		}
 		fmt.Printf("  PID:     %d\n", mf.PID)
 		fmt.Printf("  Started: %s\n", mf.StartedAt.Format("2006-01-02 15:04:05 MST"))

@@ -49,10 +49,10 @@ func sendMessage(cfg config.Config, mgr *session.Manager, fromSID, to, msgType, 
 	// Cross-scope is decided by comparing the scopes, never by how the address
 	// was spelled: qualifying a peer in one's OWN project is a long way of
 	// writing a local message, not a crossing.
-	senderScope, _ := effectiveScope(senderManifest)
-	targetScope, _ := effectiveScope(targetManifest)
+	senderScope := effectiveScope(senderManifest)
+	targetScope := effectiveScope(targetManifest)
 	if crossesScopes(senderScope, targetScope) {
-		if err := allowedAcrossScopes(senderManifest.Role, targetManifest.Role, targetManifest.AgentName, scopeLabelOf(targetManifest.Scope, nil)); err != nil {
+		if err := allowedAcrossScopes(senderManifest.Role, targetManifest.Role, targetManifest.AgentName, scopeLabelOf(targetScope, nil)); err != nil {
 			return "", err
 		}
 	}
@@ -77,7 +77,7 @@ func sendMessage(cfg config.Config, mgr *session.Manager, fromSID, to, msgType, 
 		InReplyTo:     inReplyTo,
 		Metadata: message.Metadata{
 			FromProject:     senderManifest.ProjectName,
-			FromScope:       senderManifest.Scope,
+			FromScope:       senderScope,
 			ProcessingState: message.StatusPending,
 		},
 	}

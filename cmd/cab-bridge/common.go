@@ -315,6 +315,10 @@ func formatCandidateChoices(cands []session.Candidate) string {
 // and the executable remediation. Multi-line, on stderr only (the cmd layer
 // keeps stdout clean for --json / --emit). The remediation names the resolved
 // id with the flag before any positional (A-1/A-5).
+// The scope printed here is the STORED field, and that is deliberate: this
+// warning is about sessions that the lookup grouped together BY that field, so
+// showing a derived value would name something the grouping did not use. It is
+// the declared forensic exception to "read the scope through effectiveScope".
 func formatSharedScopeWarning(cmdName, cwd string, res session.Resolution) string {
 	sel := res.Candidates[0] // == the SelectedID candidate
 	var b strings.Builder

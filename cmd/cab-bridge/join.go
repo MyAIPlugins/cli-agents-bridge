@@ -314,7 +314,7 @@ func runJoin(args []string) error {
 		SessionID: mf.SessionID,
 		AgentName: mf.AgentName,
 		Role:      mf.Role,
-		Scope:     mf.Scope,
+		Scope:     effectiveScope(mf),
 		Action:    action,
 		Here:      othersHere(peers, mf.SessionID),
 		Hint:      "run next to receive work",
@@ -440,7 +440,11 @@ func findNameInAnotherScope(mgr *session.Manager, peers []peerSummary, wantName,
 		if err != nil {
 			continue
 		}
-		if mf.Scope == myScope {
+		// Effective on both sides, and the same conflation bit BOTH ways: two
+		// legacy sessions read as one project (so a homonym in another repo did
+		// not block), and a legacy against a current one in the SAME repo read as
+		// two (so a legitimate name was refused).
+		if sameProject(effectiveScope(mf), myScope) {
 			continue // same project: that is the other guard's business
 		}
 		// Stale ones block TOO — the name belongs to another project, and taking
@@ -448,7 +452,7 @@ func findNameInAnotherScope(mgr *session.Manager, peers []peerSummary, wantName,
 		// then has to say the session is dead and how to remove it, or a session
 		// abandoned months ago in a repository you never touch would hold a name
 		// hostage forever with no way to find out why.
-		return p, mf.ProjectPath, mf.Scope, true
+		return p, mf.ProjectPath, effectiveScope(mf), true
 	}
 	return peerSummary{}, "", "", false
 }
