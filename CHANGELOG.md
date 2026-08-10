@@ -78,6 +78,48 @@ Everything below landed *after* the mailbox rewrite, from a security pass that s
 ### Method
 Four full design-gate rounds with two cross-vendor critics (Codex and Fable) before a line of production code, then per-phase diff-gates. **Six P0s, four of them inside the VAL's own syntheses** — a synthesis that resolves a critic's objection arrives at the next round *pre-validated*, and that patina makes it hard to question, most of all for whoever wrote it. The final acceptance pass found a P0 deeper than the one just closed, on the branch the gate had not named. See `docs/DESIGN-v0.8-mailbox.md` for the normative contract and CLAUDE.md LL-18.
 
+---
+
+## Hardening between the merge and the tag (9–10 August)
+
+v0.8 was merged on the 8th and **not tagged**: the release waited for real use. It paid — roughly fifty fixes landed in the two days that followed, and **almost every one was found by *using* the bridge, not by reading it**, after seven sprints of gates and a public pre-release audit. They are part of this release.
+
+#### Security — the read surface
+
+- **SC-3 is wired.** Declared as a mandatory MVP control since v0.2 and called by nobody, it is now on the live path: every read inside the data dir verifies the owner on the descriptor it then reads (`O_NOFOLLOW|O_NONBLOCK` + `fstat`), and rejects non-regular files. The error no longer disguises itself as "corrupt".
+- **SC-7 validates the whole path, not just the base.** A symlink on `sessions/` redirected the entire data dir while *every leaf check passed* — the files behind the link are legitimately ours. Reproduced, then verified closed on both vectors.
+- **Six read-surface crossings** closed. The two worst were invisible to a grep for file reads, because they consumed **directory-entry names** rather than file contents: a name is not a proof.
+
+#### Destructive commands must say where
+
+- **BREAKING — `cleanup --scope=global` stops at your own project.** `--all-scopes` reopens the old radius.
+- `cleanup` now **declares the absolute data dir before removing anything**, and `--force` cannot suppress that line: an unattended run cannot read a warning, so what stops it is having had to name the target. Prompted by real data loss — an agent purged 13 archived sessions from the production data dir after a `cd` into a sandbox, because the data dir comes from `$HOME` and nothing said so.
+- `CAB_RETENTION_DAYS=0` **disables** the purge instead of deleting everything: it was the value an operator would pick to mean "touch nothing".
+- The retention purge reports how much it took and from how many projects.
+
+#### Identity and names
+
+- **The naming rule**: rename in place within a directory; **take over a stale namesake** (renamed `<name>-superseded-<id>`, never deleted); **refuse when the previous one is alive**; **refuse across projects**, with an error that says how to free a name held by a dead session.
+- **BREAKING — one directory, one workstation.** Re-joining from the same directory with a different role **updates the role on the same session** (`same session, same inbox`) instead of forking a second one. Previously a restart with a changed role produced two live sessions under one name and froze addressing by name until a human ran `cleanup`. The model already assumed it and `findSessionHere` already declared it; now it is enforced.
+
+#### Roles
+
+- **`critic` is a first-class role and talks only to its `val`** — a structural invariant, no flag. `architect` is **reserved** for Claude Desktop over MCP and no longer suggested to reviewers by an error message.
+- Every surface that lists roles now comes from one source, and **the bare list is no longer exported**: outside the package there is no way to print it without the reservation. The invariant is held by the compiler, not by discipline.
+
+#### `reply` — what an answer closes
+
+- **The typo guard now catches typos.** It was `strings.EqualFold`, so it caught capitalisation and nothing else, while the comment above it cited a transposition as its motivating example: `echo report | cab-bridge reply VAL-brige` sent **nine bytes of typo** in place of the report, closed the ask and exited 0. Now edit distance, with a threshold that scales with name length.
+- A single argument is the message, without exceptions, when there is nothing to disambiguate.
+- **BREAKING in effect — an answer closes ONE delivery.** `reply` archives the asks that sender showed you in a **single `next` page**, not everything of theirs that is open. Found in the field: a *"stop, do not do A"* that arrived while the answer was being written was archived as answered by a *"did A as asked"*. The unwritten premise was `NOTIFIED` = *you read it*; it means *the `next` process printed it*, and with rearm-before-work those are different things.
+- **What stays open comes back.** Asks left open are put back in the queue and re-delivered by the next `next`, marked `redelivered` — measured at 1.06 s when a waiter is already armed. New sender-visible state **`requeued`**: *shown to them, not closed, on its way again*.
+- **Honest limit, stated rather than rounded off**: without a read-ACK — deliberately removed in this release — no rule can know what the agent read. The oldest open page can be one it never saw. What is guaranteed is *at most one delivery per answer*, and *never in silence*.
+
+#### Observability
+
+- `closes` travels in the `next` page, so the sender sees **which** of its asks an answer closed and can recognise one it did not expect.
+- `sent` stops asserting a mechanism it cannot prove: `archived` now reads *"out of their inbox: a reply closed it, or they tidied it away (neither proves they read it)"*. The old wording was false by construction for a `tell`, which cannot have a reply.
+
 ## [0.7.0] — 2026-06-05
 
 A single `v0.7.0` tag that also ships the previously-unreleased v0.6 work (the F-39/F-81/F-66 section below, never tagged standalone). Built end-to-end via the cab-bridge dogfooding triad over the bridge itself (VAL + ESC Claude Code + CRI Codex): Tier A by independent VAL-gate; **B-1 and B-2 by the full cross-vendor round** (CRI design-gate → impl → VAL gate → CRI diff-gate → fix → re-gate). The B-1 diff-gate caught 3 P3s, the B-2 diff-gate caught **2 concurrency P1s invisible to the green `-race` gate and the smoke** — without that round B-2 would have shipped a silent brief-loss. Distilled from 7 real chatterence-bi feedbacks.
