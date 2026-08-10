@@ -905,3 +905,42 @@ func TestResolveMessagePayload_ArgumentStillWinsWithoutRedirection(t *testing.T)
 	require.NoError(t, err)
 	assert.Equal(t, "OK", got, "and /dev/null is not content either")
 }
+
+// --- F-114: the one moment being out of earshot is observable ---------------
+
+// TestWarnNotListening covers the three states a session can be in when it
+// sends, and the one that must stay silent.
+//
+// Being out of earshot is invisible by construction — nothing fails, nothing
+// bounces — and it happened twice in two days to a val who found out from
+// somebody else. Sending is when it matters: you have just spoken to someone.
+func TestWarnNotListening(t *testing.T) {
+	dataDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.DataDir = dataDir
+	mgr := newSessionManager(cfg)
+
+	plantOverviewSession(t, dataDir, "wrnlive1", session.RoleEsc, "ESC-w", "/repo/w", "", "working")
+	plantOverviewSession(t, dataDir, "wrndead1", session.RoleEsc, "ESC-d", "/repo/w", "", "working")
+	plantOverviewSession(t, dataDir, "wrnnever", session.RoleVal, "VAL-n", "/repo/w", "", session.StateOrchestrating)
+	plantListener(t, dataDir, "wrnlive1", os.Getpid(), 2)
+	plantListener(t, dataDir, "wrndead1", deadPID, 2)
+	// wrnnever: no record at all.
+
+	var live, dead, never bytes.Buffer
+	warnNotListening(mgr, "wrnlive1", &live)
+	warnNotListening(mgr, "wrndead1", &dead)
+	warnNotListening(mgr, "wrnnever", &never)
+
+	assert.Empty(t, live.String(), "a live waiter has nothing to warn about")
+	assert.Contains(t, dead.String(), "no next is listening", "the waiter died and nobody said so")
+	assert.Contains(t, never.String(), "no next is listening",
+		"never having listened is the worst case, not a reason to stay quiet")
+
+	// The wording is a MECHANISM, not a prediction: it has to stay true for the
+	// no-push peers, whose notify-watch is a non-consuming poller and whose mail
+	// therefore waits in the inbox until they run next, like everybody else's.
+	// "You will not receive the reply" would have been false for them.
+	assert.Contains(t, dead.String(), "waits in your inbox until you run next")
+	assert.NotContains(t, dead.String(), "will not receive")
+}

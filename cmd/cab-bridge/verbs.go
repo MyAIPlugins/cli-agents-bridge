@@ -361,7 +361,48 @@ func runSendVerb(verb, msgType string, args []string, stdin io.Reader, stdout, s
 		return fmt.Errorf("%s (%s): %w", verb, whoIThoughtIWas(mgr, sid), err)
 	}
 	fmt.Fprintln(stdout, formatSendEcho(myName(mgr, sid), args[0], msgID, content, verb))
+	warnNotListening(mgr, sid, stderr)
 	return nil
+}
+
+// warnNotListening says, on the one occasion when it is observable without
+// asking, that nothing is waiting for mail on this session.
+//
+// F-114. Being out of earshot is invisible by construction: no command fails, no
+// message bounces, and `overview` tells you only if you already suspect it. It
+// happened twice in two days to a val, and the second time it was Alan who
+// noticed, not him. Sending is the moment the gap matters — you have just spoken
+// to someone — so it is where the fact belongs.
+//
+// A NOTE, never an error: writing to a peer who is not listening is legitimate,
+// and so is being the peer who is not listening. Nothing is blocked.
+//
+// The wording states the MECHANISM, not a prediction, and that is what makes it
+// true for the no-push peers too (Codex, Desktop): their notify-watch is a
+// non-consuming poller, so their mail waits in the inbox until they run `next`
+// exactly like everybody else's. A line saying "you will not receive the reply"
+// would have been false for them — and their watcher leaves no liveness record
+// to tell them apart, so a guess would have been a guess.
+//
+// No exemption for `orchestrating` (the state that is heartbeat-exempt): the
+// re-arm discipline applies to a val too, and the val this was reported by was
+// orchestrating when its own waiter died. Exempting the state would have
+// silenced the exact case that produced the finding.
+func warnNotListening(mgr *session.Manager, sid string, stderr io.Writer) {
+	owner, ok, err := mgr.ReadListener(sid)
+	if err != nil {
+		// Pure observability: a damaged record is not worth a line here, and a
+		// warning about a warning is noise on the path that has just succeeded.
+		return
+	}
+	// NO record means never listened once — which is the worst case of all, not
+	// a reason to stay quiet. (`peers` renders that same state as `-` rather than
+	// `no`, because there the question is "is this peer faulty"; here it is "will
+	// anything be waiting for the answer", and the answer is no either way.)
+	if ok && owner.Listening() {
+		return
+	}
+	fmt.Fprintln(stderr, "note: no next is listening on this session — anything sent back waits in your inbox until you run next")
 }
 
 // stdinIsRedirected reports whether the caller pointed real content at stdin.
