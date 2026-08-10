@@ -37,6 +37,10 @@ briefing/
 iterations/
 feedback/
 
+# Handoff di sessione: stato di lavoro con vita di ore, non contenuto del progetto.
+# Il corrente sta in .handover/, i precedenti in .handover/archive/.
+.handover/
+
 # Git worktrees for VAL/ESC pairs (separate checkouts under the repo, never tracked).
 # Dotted name: go ./... and recursive search ignore it regardless; gitignore keeps git clean.
 .worktrees/
