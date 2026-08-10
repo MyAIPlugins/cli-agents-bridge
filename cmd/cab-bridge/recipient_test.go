@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -330,4 +333,76 @@ func TestSendMessage_CrossScopeRestrictionBindsAtTheGateway(t *testing.T) {
 	require.NoError(t, err, "same scope, spelled the long way")
 	_, err = sendMessage(cfg, mgr, "valmine1", local, message.TypeQuery, "brief", nil, false)
 	require.NoError(t, err, "cross-scope is decided by comparing scopes, never by how the address was written")
+}
+
+// TestReply_CrossScopeExemptionIsADecision makes the exemption VERIFIED rather
+// than merely absent — the same question `listenUntil` posed: reading the code,
+// nobody can tell "deliberate" from "forgotten".
+//
+// The val→val restriction limits who may START a conversation, not who may
+// answer one. And the reason is narrower than it first looked: it is NOT that
+// everything already open passed today's checks — an open ask can predate them
+// in three ordinary ways (delivered by a pre-F-116 binary; sent val→val and then
+// one endpoint changed role via SetRole, which F-110 put on the normal path; or
+// a reply transaction still finishing after an upgrade). It is that replying is
+// a ONE-SHOT capability derived from a state that is already open, migration and
+// compatibility included. An ask nobody can answer stays open forever, which is
+// worse than the thing the restriction guards against.
+func TestReply_CrossScopeExemptionIsADecision(t *testing.T) {
+	dataDir := t.TempDir()
+	cfg := nextTestConfig(dataDir)
+	mgr := newSessionManager(cfg)
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_SESSION_ID", "escrpl01")
+
+	const mine, theirs = "/repo/bridge", "/repo/payload"
+	plantOverviewSession(t, dataDir, "escrpl01", session.RoleVal, "VAL-bridge", mine, "", "working")
+	plantOverviewSession(t, dataDir, "valrpl01", session.RoleVal, "VAL-payload", theirs, "", session.StateOrchestrating)
+
+	// A cross-scope ask that WAS legitimate when it arrived, plus a second one
+	// from the same sender in a later delivery — so "closes only that ask" is a
+	// claim with something to fail against.
+	base := time.Now().UTC().Add(-time.Hour)
+	deliverPage(t, mgr, dataDir, base, base, plantedAsk{"msg-aaaaaaaaaaaa", "the cross-scope brief"})
+	deliverPage(t, mgr, dataDir, base.Add(time.Minute), base.Add(time.Minute), plantedAsk{"msg-bbbbbbbbbbbb", "a later one"})
+
+	// Now the sender changes role — an ordinary `join --role=esc` over there.
+	// Under today's restriction this pair could no longer OPEN a conversation.
+	require.NoError(t, mgr.SetRole("valrpl01", session.RoleEsc))
+
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, replyRun([]string{"the answer"}, strings.NewReader(""), &stdout, &stderr),
+		"an ask that can never be answered stays open forever: replying must survive the role change")
+
+	inbox := filepath.Join(dataDir, "sessions", "escrpl01", "inbox")
+	assert.NoFileExists(t, filepath.Join(inbox, "msg-aaaaaaaaaaaa.json"), "the answered delivery is closed")
+	assert.FileExists(t, filepath.Join(inbox, "msg-bbbbbbbbbbbb.json"), "and ONLY that one")
+
+	// The exemption is a one-shot derived from an open state, not a channel: with
+	// nothing open, the same pair cannot start anything.
+	_, err := sendMessage(cfg, mgr, "escrpl01", "valrpl01", message.TypeQuery, "may I open one?", nil, false)
+	require.Error(t, err, "answering is not a channel: opening is still refused")
+	assert.Contains(t, err.Error(), "only a val writes to a val")
+}
+
+// The legacy branch, which is the first of the three ways an open ask can
+// predate the checks: a message carrying no fromScope at all.
+func TestReply_LegacyAskWithoutProvenanceIsStillAnswerable(t *testing.T) {
+	dataDir := t.TempDir()
+	cfg := nextTestConfig(dataDir)
+	mgr := newSessionManager(cfg)
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_SESSION_ID", "escrpl01")
+
+	plantOverviewSession(t, dataDir, "escrpl01", session.RoleVal, "VAL-bridge", "/repo/bridge", "", "working")
+	plantOverviewSession(t, dataDir, "valrpl01", session.RoleVal, "VAL-payload", "/repo/payload", "", session.StateOrchestrating)
+
+	// plantInboxAt writes no fromScope: exactly a message from before the field.
+	base := time.Now().UTC().Add(-time.Hour)
+	deliverPage(t, mgr, dataDir, base, base, plantedAsk{"msg-aaaaaaaaaaaa", "written before fromScope existed"})
+
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, replyRun([]string{"answered anyway"}, strings.NewReader(""), &stdout, &stderr),
+		"the index comes from the sender's MANIFEST, so an ask with no provenance is still answerable")
+	assert.NoFileExists(t, filepath.Join(dataDir, "sessions", "escrpl01", "inbox", "msg-aaaaaaaaaaaa.json"))
 }
