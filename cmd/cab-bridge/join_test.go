@@ -149,7 +149,7 @@ func TestJoin_WillNotRenameIntoANameLiveElsewhere(t *testing.T) {
 	mgr := newSessionManager(config.Config{DataDir: dataDir})
 	peers, _, perr := collectPeers(mgr, dataDir, 300, 65536, true, "", resolveScope(mine))
 	require.NoError(t, perr)
-	occupant, ok := findSessionHere(mgr, peers, session.RoleEsc, mine)
+	occupant, ok := findSessionHere(mgr, peers, mine)
 	require.True(t, ok)
 	assert.Equal(t, "ESC-mine", occupant.AgentName, "the refused rename left my name alone")
 }
@@ -310,14 +310,14 @@ func TestJoin_NameTakenElsewhereNamesAReachablePlace(t *testing.T) {
 	peers, _, err := collectPeers(mgr, dataDir, cfg.StaleSeconds, 65536, true, "", scope)
 	require.NoError(t, err)
 
-	occupant, path, clash := findNameElsewhere(mgr, peers, session.RoleVal, mineDir, "VAL-x")
+	occupant, path, clash := findNameElsewhere(mgr, peers, mineDir, "VAL-x")
 	require.True(t, clash)
 	assert.Equal(t, "occup001", occupant.SessionID)
 	assert.Equal(t, occupantDir, path, "the full path, not the basename")
 	assert.True(t, filepath.IsAbs(path), "an agent must be able to cd into what the error names")
 
 	// Same directory is a resume, not a clash.
-	_, _, clash = findNameElsewhere(mgr, peers, session.RoleVal, occupantDir, "VAL-x")
+	_, _, clash = findNameElsewhere(mgr, peers, occupantDir, "VAL-x")
 	assert.False(t, clash)
 }
 
@@ -498,4 +498,120 @@ func TestRoleNames_EveryTokenIsAUsableValue(t *testing.T) {
 	// The reservation is still said — beside the list, where it cannot be pasted
 	// as a value.
 	assert.Contains(t, session.RoleNamesWithNote(), "reserved for Claude Desktop")
+}
+
+// --- F-110: one directory, one working place --------------------------------
+
+// TestJoin_RestartingWithADifferentRoleKeepsOneSession is F-110 as it happened:
+// an agent was restarted with `--role=browser-tester` after first joining as
+// `--role=tester`, and the tool created a SECOND session on the same path with
+// the same name. Two live homonyms in one scope block every by-name recipient
+// until a human runs cleanup, and the trigger is an ordinary action.
+//
+// None of the three name guards could have caught it: they all look at another
+// path or another scope by construction, and delegate "same place" to
+// findSessionHere — which matched on the role and so found the place empty.
+func TestJoin_RestartingWithADifferentRoleKeepsOneSession(t *testing.T) {
+	dataDir := t.TempDir()
+	base := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700))
+	mine := filepath.Join(base, "bro")
+	require.NoError(t, os.MkdirAll(mine, 0o700))
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	require.NoError(t, runJoin([]string{"--role=tester", "--agent-name=BRO-x", "--project-path=" + mine}))
+	mgr := newSessionManager(config.Config{DataDir: dataDir})
+	leaveTheJoinProcessDead(t, mgr, dataDir, mine)
+
+	require.NoError(t, runJoin([]string{"--role=browser-tester", "--agent-name=BRO-x", "--project-path=" + mine}))
+
+	peers, _, perr := collectPeers(mgr, dataDir, 300, 65536, true, "", resolveScope(mine))
+	require.NoError(t, perr)
+
+	named := 0
+	for _, p := range peers {
+		if p.AgentName == "BRO-x" {
+			named++
+			assert.Equal(t, "browser-tester", p.Role, "the role is updated in place, not forked into a twin")
+		}
+	}
+	assert.Equal(t, 1, named, "one directory holds ONE session, whatever role it answers to")
+}
+
+// The complement, and the reason the role is an attribute rather than an
+// identity: changing it must keep the mailbox. A fork would have left the unread
+// mail in a session nobody addresses any more.
+func TestJoin_ChangingRoleKeepsTheMailbox(t *testing.T) {
+	dataDir := t.TempDir()
+	base := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700))
+	mine := filepath.Join(base, "bro")
+	require.NoError(t, os.MkdirAll(mine, 0o700))
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	require.NoError(t, runJoin([]string{"--role=tester", "--agent-name=BRO-x", "--project-path=" + mine}))
+	mgr := newSessionManager(config.Config{DataDir: dataDir})
+	peers, _, perr := collectPeers(mgr, dataDir, 300, 65536, true, "", resolveScope(mine))
+	require.NoError(t, perr)
+	occupant, ok := findSessionHere(mgr, peers, mine)
+	require.True(t, ok)
+	sid := occupant.SessionID
+	plantInboxAt(t, dataDir, sid, "msg-aaaaaaaaaaaa", "someone1", message.TypeQuery, "unread work", time.Now().UTC())
+	leaveTheJoinProcessDead(t, mgr, dataDir, mine)
+
+	require.NoError(t, runJoin([]string{"--role=critic", "--agent-name=BRO-x", "--project-path=" + mine}))
+
+	mf, err := mgr.LoadManifest(sid)
+	require.NoError(t, err, "same session id: it was updated, not replaced")
+	assert.Equal(t, session.RoleCritic, mf.Role)
+	assert.FileExists(t, filepath.Join(dataDir, "sessions", sid, "inbox", "msg-aaaaaaaaaaaa.json"),
+		"the mailbox travels with the place, not with the role")
+}
+
+// betterOccupant matters on a data dir that ALREADY holds two homonyms — the
+// state the fix prevents but does not repair. collectPeers returns them in
+// os.ReadDir order, so without a rank a join could adopt the DEAD twin and leave
+// the live one standing: the defect reproduced by its own fix.
+func TestBetterOccupant_PrefersTheLiveThenTheMostRecent(t *testing.T) {
+	t.Parallel()
+	older := time.Now().UTC().Add(-time.Hour)
+	newer := time.Now().UTC()
+
+	live := peerSummary{SessionID: "bbbbbbbb", Stale: false, LastHeartbeat: older}
+	dead := peerSummary{SessionID: "aaaaaaaa", Stale: true, LastHeartbeat: newer}
+	assert.True(t, betterOccupant(live, dead), "alive wins even with an older heartbeat and a later id")
+	assert.False(t, betterOccupant(dead, live))
+
+	recent := peerSummary{SessionID: "zzzzzzzz", Stale: false, LastHeartbeat: newer}
+	assert.True(t, betterOccupant(recent, live), "among the living, the most recent")
+
+	tieA := peerSummary{SessionID: "aaaaaaaa", Stale: false, LastHeartbeat: newer}
+	tieB := peerSummary{SessionID: "bbbbbbbb", Stale: false, LastHeartbeat: newer}
+	assert.True(t, betterOccupant(tieA, tieB), "and the id breaks the tie, so the choice is deterministic")
+	assert.False(t, betterOccupant(tieB, tieA))
+}
+
+// leaveTheJoinProcessDead reproduces what a real join leaves behind: the command
+// exits, so its PID is gone, while the heartbeat it just wrote is still fresh.
+// The session looks alive in every table and has nobody home — the exact state
+// the two BRO-bridge were found in (heartbeat 1m18s, PID dead).
+//
+// Without it these tests pass for the WRONG REASON. In-process the PID is the
+// test binary's own, so Register refuses with "session already exists for
+// project (pid N)" — a guard that cannot fire in the field, where join is a
+// one-shot process whose PID dies with it (LL-10, and BUG-A before it). The
+// pre-fix run was red because of that guard, not because of F-110.
+func leaveTheJoinProcessDead(t *testing.T, mgr *session.Manager, dataDir, projectPath string) {
+	t.Helper()
+	peers, _, err := collectPeers(mgr, dataDir, 300, 65536, true, "", resolveScope(projectPath))
+	require.NoError(t, err)
+	occupant, ok := findSessionHere(mgr, peers, projectPath)
+	require.True(t, ok, "there must be a session here to leave behind")
+	mf, err := mgr.LoadManifest(occupant.SessionID)
+	require.NoError(t, err)
+	mf.PID = deadPID
+	mf.LastHeartbeat = time.Now().UTC() // fresh on purpose: not stale, just nobody home
+	require.NoError(t, mgr.SaveManifest(mf))
 }

@@ -647,6 +647,36 @@ func (m *Manager) RenameAgent(sessionID, newName string) error {
 	})
 }
 
+// SetRole updates the role of an existing session in place, the same way
+// RenameAgent updates its name: same id, same mailbox, same cursor.
+//
+// F-110. The role was effectively part of a session's identity, so restarting an
+// agent under a different one produced a SECOND session on the same path with
+// the same name — two live homonyms, which blocks every by-name recipient. The
+// role is what an agent DOES, not which working place it is; a peer addresses it
+// by name and never by role.
+//
+// Like RenameAgent this must run BEFORE Register, or reuse still matches on the
+// old role (reconnect.go findIdentityMatches) and falls through to a fresh
+// registration — verified on the real binary, where fixing the lookup alone left
+// the two homonyms exactly as they were.
+func (m *Manager) SetRole(sessionID, newRole string) error {
+	return m.WithSessionLock(sessionID, func() error {
+		m.manifestMu.Lock()
+		defer m.manifestMu.Unlock()
+		manifest, err := m.LoadManifest(sessionID)
+		if err != nil {
+			return err
+		}
+		if manifest.Role == newRole {
+			return nil
+		}
+		manifest.Role = newRole
+		manifest.LastHeartbeat = m.now()
+		return m.SaveManifest(manifest)
+	})
+}
+
 // AdoptPID claims sessionID for the current process by writing its PID into the
 // manifest (and refreshing the heartbeat). The long-running listen command
 // calls this at startup so collision detection (BUG-6) and stale detection

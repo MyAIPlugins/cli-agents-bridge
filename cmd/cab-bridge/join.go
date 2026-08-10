@@ -113,10 +113,11 @@ func runJoin(args []string) error {
 		return fmt.Errorf("join: discover who is here: %w", err)
 	}
 
-	// Who already works here? This directory holds at most one session per role
-	// (that is the invariant F-90 protects), so an existing one is not "another
-	// agent" — it is this working place, whatever name it answers to.
-	occupant, occupied := findSessionHere(mgr, peers, *role, pp)
+	// Who already works here? This directory holds at most ONE session — that is
+	// the invariant, and F-110 is what it costs when it is only half applied — so
+	// an existing one is not "another agent": it is this working place, whatever
+	// name and whatever role it answers to.
+	occupant, occupied := findSessionHere(mgr, peers, pp)
 
 	name := *agentName
 	switch {
@@ -199,7 +200,7 @@ func runJoin(args []string) error {
 		// STALE: take it over. That is the real case, twice in one evening: an
 		// agent restarted and reclaiming its place. Nobody loses anything, because
 		// there is nobody on the other side.
-		if other, otherPath, clash := findNameElsewhere(mgr, peers, *role, pp, name); clash {
+		if other, otherPath, clash := findNameElsewhere(mgr, peers, pp, name); clash {
 			// The FULL path, not the basename: an error that names a place must
 			// name one the reader can go to.
 			return fmt.Errorf("join: this project already has a LIVE %q (%s, in %s, last seen %s ago).\n"+
@@ -213,7 +214,7 @@ func runJoin(args []string) error {
 		// rather than deleting it means its mailbox stays recoverable and the
 		// auto-gc collects it in its own time — and `formerAgentNames` records
 		// where the name went, so this stays inspectable afterwards.
-		if prev, prevPath, found := findStaleNamesake(mgr, peers, *role, pp, name); found {
+		if prev, prevPath, found := findStaleNamesake(mgr, peers, pp, name); found {
 			retired := name + "-superseded-" + prev.SessionID[:4]
 			if err := mgr.RenameAgent(prev.SessionID, retired); err != nil {
 				return fmt.Errorf("join: hand the name %q over from %s: %w", name, prev.SessionID, err)
@@ -235,6 +236,17 @@ func runJoin(args []string) error {
 			}
 			fmt.Fprintf(os.Stderr, "join: %s is now %q (was %q) — same session, same inbox\n",
 				occupant.SessionID, name, occupant.AgentName)
+		}
+		// The same move for the ROLE, and for the same reason (F-110): reuse
+		// matches on it too, so leaving the old one on disk sends this join into a
+		// fresh registration and leaves two live sessions of one name on one path.
+		// Verified on the real binary — fixing the lookup alone was not enough.
+		if occupied && occupant.Role != *role {
+			if err := mgr.SetRole(occupant.SessionID, *role); err != nil {
+				return fmt.Errorf("join: set role of %s to %q: %w", occupant.SessionID, *role, err)
+			}
+			fmt.Fprintf(os.Stderr, "join: %s is now role %q (was %q) — same session, same inbox\n",
+				occupant.SessionID, *role, occupant.Role)
 		}
 	}
 
@@ -316,28 +328,59 @@ func replayOpenAsks(mgr *session.Manager, cfg config.Config, sid string) (int, e
 	return len(ids), nil
 }
 
-// findSessionHere reports the session of this role already registered on this
-// exact project path — the one working place this directory holds, under
-// whatever name it currently answers to.
+// findSessionHere reports the session already registered on this exact project
+// path — the one working place this directory holds, under whatever name and
+// whatever ROLE it currently answers to.
 //
 // It used to be findNameClash, which took the wanted name and reported a
 // "clash" whenever the existing name differed. That framing was the error: two
 // sessions on one path are refused precisely so that the one living here IS the
 // caller. The name it carries is a fact about it, not a rival claim.
-func findSessionHere(mgr *session.Manager, peers []peerSummary, role, projectPath string) (peerSummary, bool) {
+//
+// The ROLE used to be part of the match, and that was F-110: restarting an agent
+// with a different role found this place EMPTY, so join registered a SECOND
+// session on the same path under the same name — two live homonyms in one scope,
+// exactly what the naming rule forbids. Reproduced in two commands. The role is
+// an attribute of the session, like the name that RenameAgent already updates;
+// it is not what identifies the place. The place is the path.
+//
+// None of the three name guards could have caught it: findNameElsewhere only
+// looks at OTHER paths, findStaleNamesake skips its own directory by design, and
+// findNameInAnotherScope skips its own scope. All three delegate "same place" to
+// this function, which is why the hole was here and not there.
+func findSessionHere(mgr *session.Manager, peers []peerSummary, projectPath string) (peerSummary, bool) {
+	var best peerSummary
+	found := false
 	for _, p := range peers {
-		if p.Role != role {
-			continue
-		}
 		mf, err := mgr.LoadManifest(p.SessionID)
 		if err != nil {
 			continue
 		}
-		if filepath.Clean(mf.ProjectPath) == filepath.Clean(projectPath) {
-			return p, true
+		if filepath.Clean(mf.ProjectPath) != filepath.Clean(projectPath) {
+			continue
+		}
+		if !found || betterOccupant(p, best) {
+			best, found = p, true
 		}
 	}
-	return peerSummary{}, false
+	return best, found
+}
+
+// betterOccupant ranks two sessions found on ONE path: alive beats stale, then
+// the most recent heartbeat, then the id so the choice is deterministic.
+//
+// It matters on a data dir that ALREADY holds two homonyms — the state this fix
+// prevents but does not repair. collectPeers returns them in os.ReadDir order,
+// so without a rank the join could adopt the DEAD twin and leave the live one
+// standing: the defect reproduced by its own fix.
+func betterOccupant(candidate, current peerSummary) bool {
+	if candidate.Stale != current.Stale {
+		return !candidate.Stale
+	}
+	if !candidate.LastHeartbeat.Equal(current.LastHeartbeat) {
+		return candidate.LastHeartbeat.After(current.LastHeartbeat)
+	}
+	return candidate.SessionID < current.SessionID
 }
 
 // findStaleNamesake reports a session in MY scope, in another directory, holding
@@ -345,7 +388,9 @@ func findSessionHere(mgr *session.Manager, peers []peerSummary, role, projectPat
 // findNameElsewhere, which reports only the live ones: together they cover the
 // same shape, and the pair is what makes the live/stale decision explicit rather
 // than accidental.
-func findStaleNamesake(mgr *session.Manager, peers []peerSummary, role, projectPath, wantName string) (peerSummary, string, bool) {
+// Takes no role either, for the same reason as findNameElsewhere: the parameter
+// was declared and never read.
+func findStaleNamesake(mgr *session.Manager, peers []peerSummary, projectPath, wantName string) (peerSummary, string, bool) {
 	for _, p := range peers {
 		if p.AgentName != wantName || !p.Stale {
 			continue
@@ -396,7 +441,12 @@ func findNameInAnotherScope(mgr *session.Manager, peers []peerSummary, wantName,
 // different project path. Stale ones do not count: a dead session's name is
 // free, and refusing on its behalf would strand an agent whose predecessor
 // simply died.
-func findNameElsewhere(mgr *session.Manager, peers []peerSummary, role, projectPath, wantName string) (peerSummary, string, bool) {
+// It takes no role, and never did in substance: the parameter it used to
+// declare was never read in the body. A signature that promises a behaviour the
+// body does not have is worse than an optimistic comment — the compiler does not
+// object and the reader has no reason to doubt it. It sent the F-110 diagnosis
+// to the wrong function, twice, before anybody opened the body.
+func findNameElsewhere(mgr *session.Manager, peers []peerSummary, projectPath, wantName string) (peerSummary, string, bool) {
 	for _, p := range peers {
 		if p.AgentName != wantName || p.Stale {
 			continue
