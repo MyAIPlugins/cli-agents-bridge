@@ -140,6 +140,7 @@ func runPeers(args []string) error {
 	// count that no longer means "files in the inbox" is a second way of saying
 	// the wrong thing, and costs nothing to fix.
 	fmt.Fprintln(tw, "SESSION_ID\tROLE\tSTATE\tAGENT_NAME\tPROJECT\tTEAM\tPID\tLISTENING\tHEARTBEAT_AGE\tSTALE\tUNREAD\tLAST_CONSUMED\tSCOPE")
+	scopeLabels := scopeColumn(peers)
 	now := time.Now().UTC()
 	for _, p := range peers {
 		age := now.Sub(p.LastHeartbeat).Truncate(time.Second)
@@ -155,10 +156,7 @@ func runPeers(args []string) error {
 		if teamCol == "" {
 			teamCol = "-"
 		}
-		scopeCol := p.Scope
-		if scopeCol == "" {
-			scopeCol = "-"
-		}
+		scopeCol := scopeLabels[p.Scope]
 		stateCol := p.State
 		if stateCol == "" {
 			stateCol = "-"
@@ -168,6 +166,48 @@ func runPeers(args []string) error {
 			listenerPIDCol(p.PID), listeningCol(p.Listening), age, stale, p.InboxCount, lastConsumed, scopeCol)
 	}
 	return tw.Flush()
+}
+
+// scopeColumn decides how to render each scope in the table: the BASENAME,
+// which is the name of the repository and the only part anybody reads.
+//
+// F-116. `--all-scopes` listed sessions from other projects with a column full
+// of absolute paths, so the boundary was there and unreadable — the list was
+// wider than reachability and said so nowhere. The basename is what identifies
+// the group; the full path is forensic and now lives in `inspect` and --json.
+//
+// An abbreviation that is AMBIGUOUS is worse than the long form, so two distinct
+// scopes sharing a basename (two checkouts of one repo) both fall back to their
+// full path. The shortening happens only where it cannot mislead — decided over
+// the whole list, not per row, because a column that shortens some rows and not
+// others is still readable, while one that shows the same label for two
+// different places is not.
+func scopeColumn(peers []peerSummary) map[string]string {
+	byBase := map[string]map[string]bool{}
+	for _, p := range peers {
+		if p.Scope == "" {
+			continue
+		}
+		base := filepath.Base(p.Scope)
+		if byBase[base] == nil {
+			byBase[base] = map[string]bool{}
+		}
+		byBase[base][p.Scope] = true
+	}
+
+	labels := map[string]string{"": "-"}
+	for _, p := range peers {
+		if p.Scope == "" {
+			continue
+		}
+		base := filepath.Base(p.Scope)
+		if len(byBase[base]) > 1 {
+			labels[p.Scope] = p.Scope // ambiguous: say the whole thing
+			continue
+		}
+		labels[p.Scope] = base
+	}
+	return labels
 }
 
 // listeningCol renders the three answers the column can give. `-` and `no` are

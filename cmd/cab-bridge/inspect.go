@@ -59,6 +59,13 @@ func runInspect(args []string) error {
 	} else {
 		fmt.Printf("Session %s (%s, %s)\n", mf.SessionID, mf.Role, mf.AgentName)
 		fmt.Printf("  Project: %s (%s)\n", mf.ProjectName, mf.ProjectPath)
+		// The FULL scope path, which `peers` no longer prints: that column now
+		// shows the basename, because the basename is what identifies the group
+		// and what an agent reads. The whole path is forensic — it belongs here
+		// and in --json, where nobody reads it in a hurry.
+		if mf.Scope != "" {
+			fmt.Printf("  Scope:   %s\n", mf.Scope)
+		}
 		fmt.Printf("  PID:     %d\n", mf.PID)
 		fmt.Printf("  Started: %s\n", mf.StartedAt.Format("2006-01-02 15:04:05 MST"))
 		fmt.Printf("  HB age:  %s\n", mf.LastHeartbeat.Format("2006-01-02 15:04:05 MST"))

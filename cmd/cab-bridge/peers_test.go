@@ -242,3 +242,37 @@ func TestListeningCol(t *testing.T) {
 	assert.Equal(t, "-", listenerPIDCol(0), "a zero printed as 0 is a number somebody would try to kill")
 	assert.Equal(t, "4321", listenerPIDCol(4321))
 }
+
+// --- F-116 (half): the scope column says the repo, not a path ---------------
+
+// TestScopeColumn covers what the column shows and the one case where the short
+// form would mislead.
+//
+// `--all-scopes` used to fill the column with absolute paths: the boundary was
+// present and unreadable, so the list was wider than reachability and said so
+// nowhere. The basename is the repository's name and the only part anybody
+// reads — but an ambiguous abbreviation is worse than the long form, so two
+// checkouts sharing a basename both keep their full path.
+func TestScopeColumn(t *testing.T) {
+	t.Parallel()
+
+	t.Run("distinct basenames shorten", func(t *testing.T) {
+		labels := scopeColumn([]peerSummary{
+			{Scope: "/Users/alan/develop/cli-agents-bridge"},
+			{Scope: "/Users/alan/develop/alancurtisagency-payload"},
+			{Scope: ""},
+		})
+		assert.Equal(t, "cli-agents-bridge", labels["/Users/alan/develop/cli-agents-bridge"])
+		assert.Equal(t, "alancurtisagency-payload", labels["/Users/alan/develop/alancurtisagency-payload"])
+		assert.Equal(t, "-", labels[""], "a legacy session with no scope stays a dash")
+	})
+
+	t.Run("colliding basenames keep the whole path", func(t *testing.T) {
+		a := "/Users/alan/develop/bridge"
+		b := "/Users/alan/other/bridge"
+		labels := scopeColumn([]peerSummary{{Scope: a}, {Scope: b}, {Scope: "/x/solo"}})
+		assert.Equal(t, a, labels[a], "two places cannot share one label")
+		assert.Equal(t, b, labels[b])
+		assert.Equal(t, "solo", labels["/x/solo"], "and the unambiguous one still shortens")
+	})
+}
