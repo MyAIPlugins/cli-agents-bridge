@@ -1,0 +1,19 @@
+internal/session/manager_test.go
+  s_9815573d52f42d::t_30eff814ade100 260-273,282-284
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "b89c4b1349ce9a72bbf5c18078c674806c8349ea",
+  "prompts": {},
+  "sessions": {
+    "s_9815573d52f42d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8df03128-82d8-47b9-bcaa-30b62ac013ea",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
