@@ -1,0 +1,50 @@
+cmd/cab-bridge/inspect.go
+  s_9815573d52f42d::t_f1c6c717f50dca 83-84
+  s_9815573d52f42d::t_f5d451097a489f 11
+  s_9815573d52f42d::t_4a06f57401c11e 55-59
+cmd/cab-bridge/send.go
+  s_9815573d52f42d::t_f1c6c717f50dca 52-54
+internal/session/scopevalue.go
+  s_9815573d52f42d::t_1d129c5578a0f6 1-124
+internal/session/scopevalue_test.go
+  s_9815573d52f42d::t_616ca270f5e436 1-71
+cmd/cab-bridge/peers.go
+  s_9815573d52f42d::t_f1c6c717f50dca 305
+cmd/cab-bridge/notify_watch.go
+  s_9815573d52f42d::t_f1c6c717f50dca 127
+cmd/cab-bridge/verbs.go
+  s_9815573d52f42d::t_f1c6c717f50dca 105,120,140,156,179,390,1364
+cmd/cab-bridge/common.go
+  s_9815573d52f42d::t_4a06f57401c11e 318-322,327
+cmd/cab-bridge/whoami.go
+  s_9815573d52f42d::t_f5d451097a489f 8
+  s_9815573d52f42d::t_f1c6c717f50dca 74-75
+internal/session/manager.go
+  s_9815573d52f42d::t_f1c6c717f50dca 421-426,456
+  s_9815573d52f42d::t_5a259ebf2eec59 316-324
+cmd/cab-bridge/next.go
+  s_9815573d52f42d::t_f1c6c717f50dca 421,633
+cmd/cab-bridge/recipient_test.go
+  s_9815573d52f42d::t_f1c6c717f50dca 423-427,522,539-543
+  s_9815573d52f42d::t_86a2bd96a39aae 619-703
+cmd/cab-bridge/join.go
+  s_9815573d52f42d::t_f1c6c717f50dca 317,447,455
+cmd/cab-bridge/overview.go
+  s_9815573d52f42d::t_f1c6c717f50dca 147,187
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "07de0301e173c2e1f50ed9dfebc0e6542ae80c24",
+  "prompts": {},
+  "sessions": {
+    "s_9815573d52f42d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8df03128-82d8-47b9-bcaa-30b62ac013ea",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
