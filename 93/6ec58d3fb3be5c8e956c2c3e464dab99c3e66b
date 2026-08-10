@@ -1,0 +1,25 @@
+cmd/cab-bridge/inspect.go
+  s_9815573d52f42d::t_477d4e018a60f7 62-68
+cmd/cab-bridge/peers_test.go
+  s_9815573d52f42d::t_b537a00aa837fa 245-278
+cmd/cab-bridge/peers.go
+  s_9815573d52f42d::t_a7e5f0204305ad 159
+  s_9815573d52f42d::t_67156ac96fab97 171-212
+  s_9815573d52f42d::t_69e5a03d2677cb 143
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "936ec58d3fb3be5c8e956c2c3e464dab99c3e66b",
+  "prompts": {},
+  "sessions": {
+    "s_9815573d52f42d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8df03128-82d8-47b9-bcaa-30b62ac013ea",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
