@@ -40,3 +40,9 @@ feedback/
 # Git worktrees for VAL/ESC pairs (separate checkouts under the repo, never tracked).
 # Dotted name: go ./... and recursive search ignore it regardless; gitignore keeps git clean.
 .worktrees/
+
+# Artefatti dei verificatori empirici (screenshot, trace, profili del Playwright MCP).
+# Nascono dentro il repo perche il MCP tiene il browser nella propria root: si
+# ignorano, non si spostano.
+.playwright-mcp/
+*-proof.png
