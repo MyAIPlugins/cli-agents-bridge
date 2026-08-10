@@ -22,7 +22,7 @@ import (
 //
 //	ask <who> "..."    asking — expects an answer, stays open until replied to
 //	tell <who> "..."   informing — fire and forget
-//	reply "..."        answering whoever asked — archives their open asks
+//	reply "..."        answering whoever asked — archives one delivery of theirs
 //
 // THE VERB CARRIES THE TYPE. No --type, no --in-reply-to, no id to transcribe:
 // "am I asking or informing" is something the writer already knows, so it is
@@ -172,6 +172,11 @@ type openAsk struct {
 	fromName string
 	path     string
 	when     string
+	// page is the delivery this ask belongs to: the instant CommitWakeCursor
+	// stamped on the whole page it went out in. Equality is the only thing read
+	// from it — see WakeCursor.NotifiedAt.
+	page    time.Time
+	content string
 }
 
 // collectOpenAsks returns the asks (type=query) still sitting in inbox/ that
@@ -193,7 +198,11 @@ func collectOpenAsks(mgr *session.Manager, cfg config.Config, sid string) ([]ope
 
 	var out []openAsk
 	for _, e := range entries {
-		if e.msg.Type != message.TypeQuery || !cursor.IsNotified(e.msg.ID) {
+		if e.msg.Type != message.TypeQuery {
+			continue
+		}
+		page, notified := cursor.NotifiedAt(e.msg.ID)
+		if !notified {
 			continue
 		}
 		out = append(out, openAsk{
@@ -202,6 +211,8 @@ func collectOpenAsks(mgr *session.Manager, cfg config.Config, sid string) ([]ope
 			fromName: e.msg.FromAgentName,
 			path:     e.path,
 			when:     e.msg.Timestamp,
+			page:     page,
+			content:  e.msg.Content,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -211,6 +222,57 @@ func collectOpenAsks(mgr *session.Manager, cfg config.Config, sid string) ([]ope
 		return out[i].when < out[j].when
 	})
 	return out, nil
+}
+
+// oldestPage returns the ids `reply` closes: the OLDEST DELIVERY of open asks
+// from target, and never more than one.
+//
+// F-109. `reply` used to close every NOTIFIED ask of that sender, and NOTIFIED
+// means "a next emitted it" — never "the agent read it". An ask that lands while
+// the answer is being written is handed over by the re-armed waiter and archived
+// as answered: reproduced as a "stop, do NOT do A" closed by a "done A as asked".
+//
+// Nothing on disk records that the agent READ anything — there is no ACK — so
+// any rule here is an ESTIMATE. This one estimates with the only grouping the
+// system genuinely knows: a delivery. CommitWakeCursor stamps ONE instant across
+// a whole page (wakecursor.go:130), so asks sharing `page` are exactly those one
+// `next` put in front of the agent at once.
+//
+// What it does NOT promise: the oldest open page can BE the unread one — answer
+// t1, B arrives as t2 while working, reply, and the only open page is t2. The
+// blast radius drops from every page to one, not to zero. That residue is why
+// the caller prints what stays open and the response carries `closes`: if it
+// happens, both sides see it immediately.
+//
+// A join replay MERGES pages, and rightly so: it puts every open ask back to
+// UNREAD and the following `next` re-delivers them in one page, so they were
+// shown together. The unit grows to match what the agent actually saw
+// (verified on the real binary, not inferred).
+func oldestPage(asks []openAsk, target string) []string {
+	var mine []openAsk
+	for _, a := range asks {
+		if a.from == target {
+			mine = append(mine, a)
+		}
+	}
+	if len(mine) == 0 {
+		return nil
+	}
+	// The minimum, not mine[0]: asks are ordered by the SENDER's timestamp, and
+	// a message can be delivered in a later page than one sent after it.
+	oldest := mine[0].page
+	for _, a := range mine[1:] {
+		if a.page.Before(oldest) {
+			oldest = a.page
+		}
+	}
+	var closeIDs []string
+	for _, a := range mine {
+		if a.page.Equal(oldest) {
+			closeIDs = append(closeIDs, a.id)
+		}
+	}
+	return closeIDs
 }
 
 // --- ask / tell -------------------------------------------------------------
@@ -373,11 +435,9 @@ func replyRun(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 			return rerr
 		}
 
-		var closeIDs []string
-		for _, a := range asks {
-			if a.from == target {
-				closeIDs = append(closeIDs, a.id)
-			}
+		closeIDs := oldestPage(asks, target)
+		if len(closeIDs) == 0 {
+			return fmt.Errorf("no open ask from %s to answer", target)
 		}
 		txn = &session.ReplyTxn{
 			ResponseID: session.DeterministicResponseID(sid, closeIDs[0]),
@@ -705,6 +765,26 @@ func finishReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *se
 		fmt.Fprintf(stdout, "  closed: %s\n", line)
 	}
 
+	// What this reply LEFT open, without which the page rule has no second half:
+	// closing one delivery is only safe if the ones it did not close are stated.
+	// Read back from the mailbox AFTER archiving rather than frozen in the
+	// journal — the journal would need keeping in sync with a set that keeps
+	// changing, and the mailbox is the set.
+	//
+	// It lists asks from OTHER senders too. They were never closed by a reply to
+	// this one, before this fix either; the note is deliberately true of both
+	// cases instead of guessing which one the reader is in.
+	if left, lerr := collectOpenAsks(mgr, cfg, sid); lerr == nil && len(left) > 0 {
+		// NOT "run next": these are NOTIFIED, and next only delivers UNREAD, so it
+		// would block on an empty wait instead of showing them (verified on the
+		// real binary — the smoke hung there). `read` is the command that exists.
+		// This echo is the ONLY place they surface on this side.
+		fmt.Fprintln(stdout, "  still open (not closed by this reply — `cab-bridge read <id>` to see one again, then reply):")
+		for _, line := range describeOpen(left) {
+			fmt.Fprintf(stdout, "    %s\n", line)
+		}
+	}
+
 	// F-34 in its v0.8 shape. Nothing unseen is ever CLOSED — collectOpenAsks
 	// only considers NOTIFIED messages — but the agent may still be answering
 	// without knowing something newer arrived. Say so: the original finding was
@@ -801,6 +881,28 @@ func describeClosed(cfg config.Config, sid string, ids []string) []string {
 			age = " · " + time.Since(t).Round(time.Minute).String() + " old"
 		}
 		out = append(out, fmt.Sprintf("%s · %q%s", id, previewContent(m.Content, 40), age))
+	}
+	return out
+}
+
+// describeOpen renders the asks a reply left open as "id · from NAME · preview
+// · age". It needs no directory lookup: collectOpenAsks already decoded them.
+//
+// The sender is named on every line because the two reasons for staying open —
+// a later delivery from the same agent, another agent entirely — read
+// identically otherwise.
+func describeOpen(asks []openAsk) []string {
+	out := make([]string, 0, len(asks))
+	for _, a := range asks {
+		from := a.fromName
+		if from == "" {
+			from = a.from
+		}
+		age := ""
+		if t, terr := time.Parse(time.RFC3339, a.when); terr == nil {
+			age = " · " + time.Since(t).Round(time.Minute).String() + " old"
+		}
+		out = append(out, fmt.Sprintf("%s · from %s · %q%s", a.id, from, previewContent(a.content, 40), age))
 	}
 	return out
 }

@@ -639,3 +639,170 @@ func TestResolveReplyTarget_TypoDoesNotBecomeTheAnswer(t *testing.T) {
 	assert.Contains(t, err.Error(), "looks like")
 	assert.Contains(t, err.Error(), "VAL-bridge")
 }
+
+// --- F-109: a reply closes ONE delivery -------------------------------------
+
+type plantedAsk struct{ id, content string }
+
+// deliverPage plants queries and marks them NOTIFIED in ONE commit — a single
+// page of `next`, which is what CommitWakeCursor produces for real
+// (wakecursor.go: one instant across the whole page).
+//
+// deliverAndNotify commits one id at a time, i.e. a DIFFERENT delivery each
+// time, and that difference is the entire subject here. The page instant is
+// passed in rather than taken from the clock: two commits microseconds apart
+// happen to differ, and a test that depends on happening to is not a test.
+func deliverPage(t *testing.T, mgr *session.Manager, dataDir string, sent, page time.Time, asks ...plantedAsk) {
+	t.Helper()
+	ids := make([]string, 0, len(asks))
+	for i, a := range asks {
+		plantInboxAt(t, dataDir, replySelf, a.id, replyPeer, message.TypeQuery, a.content, sent.Add(time.Duration(i)*time.Second))
+		ids = append(ids, a.id)
+	}
+	_, err := mgr.CommitWakeCursor(replySelf, ids, page, nil, nil)
+	require.NoError(t, err)
+}
+
+// TestReply_DoesNotCloseAnAskFromALaterDelivery is F-109 as reproduced: a
+// "stop, do NOT do A" that arrives while the answer is being written used to be
+// archived by the "done A as asked" that never considered it.
+func TestReply_DoesNotCloseAnAskFromALaterDelivery(t *testing.T) {
+	mgr, cfg, dataDir := newReplyPair(t)
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_SESSION_ID", replySelf)
+	base := time.Now().UTC().Add(-time.Hour)
+
+	deliverPage(t, mgr, dataDir, base, base, plantedAsk{"msg-aaaaaaaaaaaa", "do A"})
+	// The re-armed waiter hands this one over while the agent is writing.
+	deliverPage(t, mgr, dataDir, base.Add(time.Minute), base.Add(time.Minute), plantedAsk{"msg-bbbbbbbbbbbb", "stop, do NOT do A"})
+
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, replyRun([]string{"done A as asked"}, strings.NewReader(""), &stdout, &stderr))
+
+	assert.FileExists(t, filepath.Join(dataDir, "sessions", replySelf, "inbox", "msg-bbbbbbbbbbbb.json"),
+		"an ask from a later delivery must survive the reply")
+	assert.NoFileExists(t, filepath.Join(dataDir, "sessions", replySelf, "inbox", "msg-aaaaaaaaaaaa.json"),
+		"the delivery being answered is still closed")
+
+	// Said on both sides: here to the responder, and in `closes` to the asker.
+	assert.Contains(t, stdout.String(), "still open")
+	assert.Contains(t, stdout.String(), "msg-bbbbbbbbbbbb")
+	// And it must point at a command that WORKS on a NOTIFIED message. `next`
+	// delivers UNREAD only, so it hangs on an empty wait instead of showing
+	// this one — verified on the real binary, after the first draft of this echo
+	// said "run next to re-read". That sentence is the only place these asks
+	// surface on this side, so it does not get to be approximately right.
+	assert.Contains(t, stdout.String(), "cab-bridge read <id>")
+	assert.NotContains(t, stdout.String(), "run next")
+	open, err := collectOpenAsks(mgr, cfg, replySelf)
+	require.NoError(t, err)
+	require.Len(t, open, 1)
+	assert.Equal(t, "msg-bbbbbbbbbbbb", open[0].id)
+}
+
+// The cumulative answer must survive: several asks handed over TOGETHER are one
+// delivery, and one reply closes all of them.
+func TestReply_ClosesTheWholeDeliveryItAnswers(t *testing.T) {
+	mgr, cfg, dataDir := newReplyPair(t)
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_SESSION_ID", replySelf)
+	base := time.Now().UTC().Add(-time.Hour)
+
+	deliverPage(t, mgr, dataDir, base, base,
+		plantedAsk{"msg-aaaaaaaaaaaa", "first"},
+		plantedAsk{"msg-bbbbbbbbbbbb", "second"})
+
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, replyRun([]string{"one answer for both"}, strings.NewReader(""), &stdout, &stderr))
+
+	open, err := collectOpenAsks(mgr, cfg, replySelf)
+	require.NoError(t, err)
+	assert.Empty(t, open, "both were shown at once, so both are answered")
+	assert.NotContains(t, stdout.String(), "still open")
+}
+
+// A join replay MERGES pages, and the contract says so out loud: every open ask
+// goes back to UNREAD and the following `next` re-delivers them together, so
+// they were seen together and close together. Executable, so the sentence in
+// oldestPage's comment cannot drift away from the behaviour.
+func TestReply_AfterAJoinReplayTheMergedPageClosesTogether(t *testing.T) {
+	mgr, cfg, dataDir := newReplyPair(t)
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_SESSION_ID", replySelf)
+	base := time.Now().UTC().Add(-time.Hour)
+
+	deliverPage(t, mgr, dataDir, base, base, plantedAsk{"msg-aaaaaaaaaaaa", "first"})
+	deliverPage(t, mgr, dataDir, base.Add(time.Minute), base.Add(time.Minute), plantedAsk{"msg-bbbbbbbbbbbb", "second"})
+
+	// The compact: join puts both back to UNREAD...
+	n, err := replayOpenAsks(mgr, cfg, replySelf)
+	require.NoError(t, err)
+	require.Equal(t, 2, n)
+	// ...and the next `next` re-delivers them in one page.
+	_, err = mgr.CommitWakeCursor(replySelf, []string{"msg-aaaaaaaaaaaa", "msg-bbbbbbbbbbbb"}, base.Add(2*time.Minute), nil, nil)
+	require.NoError(t, err)
+
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, replyRun([]string{"answering what I was shown"}, strings.NewReader(""), &stdout, &stderr))
+
+	open, err := collectOpenAsks(mgr, cfg, replySelf)
+	require.NoError(t, err)
+	assert.Empty(t, open, "the replay showed them together, so they close together")
+}
+
+func TestOldestPage(t *testing.T) {
+	t.Parallel()
+	p1 := time.Date(2026, 8, 10, 10, 0, 0, 0, time.UTC)
+	p2 := p1.Add(time.Minute)
+
+	cases := []struct {
+		name   string
+		asks   []openAsk
+		target string
+		want   []string
+		why    string
+	}{
+		{
+			name:   "one delivery closes whole",
+			asks:   []openAsk{{id: "a", from: "val", page: p1}, {id: "b", from: "val", page: p1}},
+			target: "val",
+			want:   []string{"a", "b"},
+			why:    "shown together, answered together",
+		},
+		{
+			name:   "two deliveries close only the oldest",
+			asks:   []openAsk{{id: "a", from: "val", page: p1}, {id: "b", from: "val", page: p2}},
+			target: "val",
+			want:   []string{"a"},
+			why:    "F-109: the later delivery may never have been read",
+		},
+		{
+			name: "the oldest PAGE, not the first in order",
+			// Sent first, delivered later: ordering is by the sender's timestamp,
+			// so the head of the slice is not necessarily the oldest delivery.
+			asks:   []openAsk{{id: "early-sent", from: "val", page: p2}, {id: "late-sent", from: "val", page: p1}},
+			target: "val",
+			want:   []string{"late-sent"},
+			why:    "the page is a minimum, never asks[0]",
+		},
+		{
+			name:   "other senders are untouched",
+			asks:   []openAsk{{id: "a", from: "val", page: p1}, {id: "x", from: "cri", page: p1}},
+			target: "val",
+			want:   []string{"a"},
+			why:    "a reply goes to one agent",
+		},
+		{
+			name:   "nobody to answer",
+			asks:   []openAsk{{id: "x", from: "cri", page: p1}},
+			target: "val",
+			want:   nil,
+			why:    "no panic on an empty set — the caller turns this into an error",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, oldestPage(tc.asks, tc.target), tc.why)
+		})
+	}
+}
