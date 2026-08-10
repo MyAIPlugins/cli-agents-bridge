@@ -1,0 +1,19 @@
+skills/antigravity/browser-tester/SKILL.md
+  s_c3a7b4ab630317::t_2dd7b9c7fd6d34 40-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "e4861499392f8dccb2c5b2942e3e42c7bfc69a5b",
+  "prompts": {},
+  "sessions": {
+    "s_c3a7b4ab630317": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54f2afc1-7dea-42b7-a40d-0d4c6f0e3eea",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
