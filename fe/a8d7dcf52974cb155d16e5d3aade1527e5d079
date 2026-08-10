@@ -1,0 +1,24 @@
+cmd/cab-bridge/main.go
+  h_4a4009aad9cb45 132
+cmd/cab-bridge/next.go
+  h_4a4009aad9cb45 102-107
+cmd/cab-bridge/verbs.go
+  h_4a4009aad9cb45 25,175-179,201-205,214-215,227-277,438-440,768-787,888-909
+cmd/cab-bridge/verbs_test.go
+  h_4a4009aad9cb45 642-808
+internal/session/replytxn.go
+  h_4a4009aad9cb45 50-56
+internal/session/wakecursor.go
+  h_4a4009aad9cb45 60-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "fea8d7dcf52974cb155d16e5d3aade1527e5d079",
+  "prompts": {},
+  "humans": {
+    "h_4a4009aad9cb45": {
+      "author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
