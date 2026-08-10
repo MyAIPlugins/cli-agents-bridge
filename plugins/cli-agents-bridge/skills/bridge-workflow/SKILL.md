@@ -34,9 +34,11 @@ cab-bridge reply "..."          # answer whoever asked; closes that one delivery
 
 **No id is ever typed.** Recipients are agent names, which you read in `join`'s output. `reply` finds what it is answering by itself.
 
+**Another repository?** Add the project: `ask VAL-other@their-project "..."`. The token after `@` is the `SCOPE` column of `peers --all-scopes`, copied as printed — a basename, or a full path when two projects share one. Only orchestrators (`val`) may open a conversation across projects; **answering is never restricted**, so if a cross-project ask reaches you, a bare `reply` goes back on its own. Cross-project messages carry the sender's project, and `next` hands you a `fromAddress` already assembled — you copy it, you never build it.
+
 ## The mental model (read this first)
 
-Your inbox has three states, and only one command moves a file:
+Your inbox has four states, and only one command moves a file:
 
 | State | Meaning |
 |---|---|
@@ -48,7 +50,8 @@ Your inbox has three states, and only one command moves a file:
 - **`next` never moves a file, under any circumstance.** It shows you what is `UNREAD`, marks it `NOTIFIED`, and waits. Being woken and consuming are separate acts — that separation is the whole point of the model.
 - **Only `reply` archives, and it archives ONE delivery.** Answering someone closes the asks they sent you **in a single `next` page** — not everything of theirs that happens to be open. Anything of theirs that arrived later is left open, named in `reply`'s output, and **put back in the queue so your next `next` hands it to you again** (marked `redelivered`). Confirmation stays a side effect of doing the work, never a ritual — but the work you confirm is the delivery you were shown.
   Why it is a page and not everything: `NOTIFIED` means *the `next` process printed it*, not *you read it*. Rearm before you start working (you should) and a message arriving **while you write** is `NOTIFIED` without you having seen it — under the old rule your answer closed it too, so a *"stop, do not do A"* could be archived as answered by a *"did A as asked"*. Real incident, not a hypothetical.
-  **The honest limit**: no read-ACK exists, so this is not impossible-by-construction — the oldest open page can itself be one you never read. What is guaranteed is *at most one delivery per answer*, and *never in silence*: the responder sees what was closed and what stayed open, the sender sees `closes` on the response and `requeued` in `sent`.
+  **The honest limit**: no read-ACK exists, so this is not impossible-by-construction — the oldest open page can itself be one you never read. What is guaranteed is *at most one delivery per answer*, and *never in silence*: the responder sees what was closed and what stayed open, and the sender sees `closes` on the response.
+  **Do not go looking for `requeued` in `sent` to check any of this works.** It is a state that lasts as long as the gap between the answer and the re-delivery — measured at **574 ms** against a recipient who rearms before working, because the re-delivery lands on a `next` that is already waiting. The more disciplined the recipient, the less visible the mechanism, while it works better. `notified` afterwards is not a failure: it is the truth, the ask is delivered and still open.
 - **`next` has no window.** It waits until something arrives, indefinitely. If it is interrupted it says so (`"status": "interrupted"`) instead of exiting silently — so a wrapper can tell "interrupted while waiting" from "nothing happened".
 - **After a restart**, re-running `join` replays your still-open asks, and `next` marks them `redelivered` inline on the message. Treat a re-delivery normally: at-least-once delivery with the duplicate made visible, so you never have to *decide* whether something is a duplicate.
 
