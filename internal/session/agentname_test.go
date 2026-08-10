@@ -104,3 +104,15 @@ func TestResume_FindsTheSessionRegisteredWithASanitisedName(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, entries, 1, "and never leave a second session holding the first one's mail")
 }
+
+// F-3b: the FOURTH pen. A v1 manifest takes its agent name from ProjectName at
+// load time, so a directory carrying the separator produced an unaddressable
+// name on every load — from the new binary, today. Three doors had been counted
+// and there were four.
+func TestApplyV1Defaults_SanitisesTheDerivedName(t *testing.T) {
+	t.Parallel()
+	mf := &Manifest{ProjectName: "feat@2"}
+	mf.ApplyV1Defaults()
+	assert.Equal(t, "feat-2", mf.AgentName)
+	assert.NoError(t, ValidateAgentName(mf.AgentName), "every pen must produce an addressable name")
+}

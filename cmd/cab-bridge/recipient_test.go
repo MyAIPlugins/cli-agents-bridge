@@ -406,3 +406,60 @@ func TestReply_LegacyAskWithoutProvenanceIsStillAnswerable(t *testing.T) {
 		"the index comes from the sender's MANIFEST, so an ask with no provenance is still answerable")
 	assert.NoFileExists(t, filepath.Join(dataDir, "sessions", "escrpl01", "inbox", "msg-aaaaaaaaaaaa.json"))
 }
+
+// --- CRI2 on the document, which surfaced three code defects ----------------
+
+// F-6: an UNKNOWN scope is not a different scope.
+//
+// A legacy session (pre-F-17) has none, and comparing strings made `"" !=
+// "/repo/x"` read as a crossing — so such a session could no longer send a
+// PLAIN, in-scope ask, refused about a project it never named.
+//
+// The same conflation as P2-5, in another file of the same commit, with the
+// sentence describing it sitting in the file where it HAD been fixed.
+func TestCrossesScopes_UnknownIsNotDifferent(t *testing.T) {
+	t.Parallel()
+	assert.False(t, crossesScopes("", "/repo/x"), "a legacy sender does not know where it is")
+	assert.False(t, crossesScopes("/repo/x", ""), "and neither does a legacy recipient")
+	assert.False(t, crossesScopes("", ""))
+	assert.False(t, crossesScopes("/repo/x", "/repo/x"))
+	assert.True(t, crossesScopes("/repo/x", "/repo/y"), "two KNOWN and different scopes: that is a crossing")
+}
+
+func TestResolveRecipient_LegacySessionCanStillSendInScope(t *testing.T) {
+	dataDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.DataDir = dataDir
+	mgr := newSessionManager(cfg)
+
+	// A pre-F-17 session: no scope at all. It is an esc, so if its empty scope
+	// were read as "different", the val→val restriction would refuse it.
+	plantSessionFull(t, dataDir, "legacyes", session.RoleEsc, "ESC-legacy", "", "/repo/x", "working")
+	plantSessionFull(t, dataDir, "valhere1", session.RoleVal, "VAL-here", "", "/repo/x", "working")
+
+	target, err := resolveRecipientByName(cfg, mgr, "VAL-here", "legacyes")
+	require.NoError(t, err, "an unqualified, in-scope ask must not be refused about a project nobody named")
+	_, err = sendMessage(cfg, mgr, "legacyes", target, message.TypeQuery, "brief", nil, false)
+	require.NoError(t, err, "and the gateway must agree with the resolver")
+}
+
+// F-2: two sessions in ONE project are duplicates, not two projects — and the
+// way out is different. The branch offered the same token twice and announced
+// "matches 2 projects": paste it and the identical error comes back, with no
+// flag on the loop verbs to escape by.
+func TestResolveRecipient_SameScopeDuplicatesSayDuplicates(t *testing.T) {
+	dataDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.DataDir = dataDir
+	mgr := newSessionManager(cfg)
+
+	planted(t, dataDir, "valmine1", session.RoleVal, "VAL-bridge", "/repo/mine")
+	planted(t, dataDir, "dupone01", session.RoleVal, "VAL-dup", "/a/twin")
+	planted(t, dataDir, "duptwo02", session.RoleVal, "VAL-dup", "/a/twin")
+
+	_, err := resolveRecipientByName(cfg, mgr, "VAL-dup@twin", "valmine1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "are duplicates, not different projects")
+	assert.Contains(t, err.Error(), "cleanup", "here removing the dead one IS the way out")
+	assert.NotContains(t, err.Error(), "matches 2 projects", "there is one project and two sessions")
+}

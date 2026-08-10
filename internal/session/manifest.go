@@ -230,7 +230,12 @@ func (m *Manifest) ApplyV1Defaults() {
 		m.Role = RoleNeutral
 	}
 	if m.AgentName == "" {
-		m.AgentName = m.ProjectName
+		// SANITISED, because this is the FOURTH pen that writes AgentName — after
+		// Register, RenameAgent and Register's derived default — and the one
+		// nobody counted: a v1 manifest in a directory containing the scope
+		// separator produced an unaddressable name at every load, from the new
+		// binary, today (CRI2 F-3b). ProjectName is a basename like any other.
+		m.AgentName, _ = SanitizeDerivedName(m.ProjectName)
 	}
 	// PID stays 0 — there is no safe inference for a v1 manifest's owning
 	// process. Lock acquisition logic must handle PID=0 as "no lock holder

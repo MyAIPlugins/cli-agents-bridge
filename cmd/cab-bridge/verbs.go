@@ -136,8 +136,9 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, token, self
 	case 1:
 		// Compared on the SCOPES, not on the syntax: `VAL-x@my-own-repo` is not a
 		// cross-project message just because it was written the long way, and the
-		// first version refused it for that reason alone.
-		if me.Scope != candidates[0].Scope {
+		// first version refused it for that reason alone. And an UNKNOWN scope is
+		// not a different one — see crossesScopes.
+		if crossesScopes(me.Scope, candidates[0].Scope) {
 			if err := allowedAcrossScopes(me.Role, candidates[0].Role, name, rcpt.scope); err != nil {
 				return "", err
 			}
@@ -186,13 +187,34 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, token, self
 		// `peers` prints on those very rows (scopeColumn). Saying "remove the
 		// stale one" here would advise destroying a healthy session to fix a typo.
 		if rcpt.qualified() {
+			// SAME scope or DIFFERENT scopes are two different accidents with two
+			// different ways out, and `soleSessionNamed` already told them apart —
+			// this branch did not, and called everything "projects". With three
+			// homonyms, two of them in one project, it announced "matches 2
+			// projects" (false: two SESSIONS in one) and offered the same token
+			// twice as the remedy: paste it and you get the identical error, with
+			// no flag on the loop verbs to escape by (CRI2 F-2). Fail-closed, so
+			// nothing was ever sent — but a diagnostic that loops is not a way out.
+			scopes := map[string]bool{}
+			for _, c := range candidates {
+				scopes[c.Scope] = true
+			}
+			if len(scopes) == 1 {
+				var lines []string
+				for _, c := range candidates {
+					lines = append(lines, fmt.Sprintf("\n    %s  last seen %s ago", c.SessionID, time.Since(c.LastHeartbeat).Round(time.Second)))
+				}
+				sort.Strings(lines)
+				return "", fmt.Errorf("%d sessions in project %q answer to %q, so nothing was sent — they are duplicates, not different projects; remove the dead one with `cab-bridge cleanup --session-id=<id>`:%s",
+					len(candidates), rcpt.scope, name, strings.Join(lines, ""))
+			}
 			var lines []string
 			for _, c := range candidates {
 				lines = append(lines, fmt.Sprintf("\n    %s%s%s  (%s)", name, session.ScopeSeparator, c.Scope, c.SessionID))
 			}
 			sort.Strings(lines)
 			return "", fmt.Errorf("%q matches %d projects, so nothing was sent — address one by its full path:%s",
-				rcpt.String(), len(candidates), strings.Join(lines, ""))
+				rcpt.String(), len(scopes), strings.Join(lines, ""))
 		}
 		var lines []string
 		for _, c := range candidates {
