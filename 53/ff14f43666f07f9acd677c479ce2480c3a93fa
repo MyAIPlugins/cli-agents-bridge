@@ -1,0 +1,19 @@
+cmd/cab-bridge/inspect.go
+  s_9815573d52f42d::t_f32105a28aca5a 64-71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "53ff14f43666f07f9acd677c479ce2480c3a93fa",
+  "prompts": {},
+  "sessions": {
+    "s_9815573d52f42d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8df03128-82d8-47b9-bcaa-30b62ac013ea",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
