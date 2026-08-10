@@ -1,0 +1,68 @@
+cmd/cab-bridge/recipient_test.go
+  s_9815573d52f42d::t_5411af2a642587 1-216
+cmd/cab-bridge/send.go
+  s_9815573d52f42d::t_ee9365678dd5cf 64
+internal/session/manager.go
+  s_9815573d52f42d::t_365f5a10fd29ab 646-651
+  s_9815573d52f42d::t_3d2c20f83d4052 183-187
+  s_9815573d52f42d::t_dea646968a0b3f 108-118
+cmd/cab-bridge/verbs.go
+  s_9815573d52f42d::t_e22501be290aeb 154-160,169-170
+  s_9815573d52f42d::t_107c77decc990d 308-322
+  s_9815573d52f42d::t_f4c7de57f95afe 340
+  s_9815573d52f42d::t_42f68006f6b6b8 701,710-721,725
+  s_9815573d52f42d::t_99669bdb6d39d0 742-743
+  s_9815573d52f42d::t_e1a4becc0d530e 279-288
+  s_9815573d52f42d::t_bbdf29a3a57325 181-193,204-234
+  s_9815573d52f42d::t_887ab53fe09c8d 78-84,95-109,119
+  s_9815573d52f42d::t_d19fce74ef6323 760
+  s_9815573d52f42d::t_552836f9fde6b0 120-121,235,879-941,943-955,957-958
+  s_9815573d52f42d::t_34fcd23bdd54f6 163-167
+  s_9815573d52f42d::t_36bb760dfa340e 628-642
+  s_9815573d52f42d::t_ee9365678dd5cf 1278
+  s_9815573d52f42d::t_abad1a78145f04 137-141
+  s_f2dd77e072e24d::t_3fae63ad00b021 236
+cmd/cab-bridge/recipient.go
+  s_9815573d52f42d::t_74c8ebeff39593 1-76
+internal/message/schema.go
+  s_9815573d52f42d::t_68b1fe290364df 118-133
+cmd/cab-bridge/verbs_test.go
+  s_9815573d52f42d::t_f250b2fa168445 470-474,476,483-484,490
+internal/session/agentname.go
+  s_9815573d52f42d::t_8cfab3e7e73c92 38-44
+  s_9815573d52f42d::t_0f6f939ff1a680 5
+  s_9815573d52f42d::t_876efd4f8371ea 1-4,6-37,45-57
+cmd/cab-bridge/next.go
+  s_9815573d52f42d::t_80f5d95b9911cc 93-96,391-397,487,496,593,604-608
+  s_9815573d52f42d::t_df83e01b88f062 83-92
+internal/session/agentname_test.go
+  s_9815573d52f42d::t_a1c570d3de3f57 4-6,8,37-73
+  s_9815573d52f42d::t_4817293eed66c5 1-3,7,9-36,74
+cmd/cab-bridge/join.go
+  s_9815573d52f42d::t_f6cea33f1dfe1b 122-128
+  s_9815573d52f42d::t_e6ea6a489addb7 152-161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "845d378cdfaef8398c07768f223c85173463ebdb",
+  "prompts": {},
+  "sessions": {
+    "s_9815573d52f42d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8df03128-82d8-47b9-bcaa-30b62ac013ea",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    },
+    "s_f2dd77e072e24d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4690fb4c-d504-4f18-9dc5-87779a7442d4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
