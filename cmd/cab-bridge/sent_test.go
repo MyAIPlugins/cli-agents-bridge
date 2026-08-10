@@ -103,3 +103,39 @@ func TestArchivedID(t *testing.T) {
 		assert.Equal(t, want, archivedID(name), name)
 	}
 }
+
+// TestSent_ReQueuedIsItsOwnState: an ask put back in line by a reply (F-109) or
+// by a join must NOT travel backwards to `unread`.
+//
+// `unread` would have been literally true — that is where the file sits — and
+// misleading in the one way that matters: a sender watching the column sees a
+// message they were told was delivered become undelivered, with nothing saying
+// why. The cursor already knows the difference, so the honest state was free.
+func TestSent_ReQueuedIsItsOwnState(t *testing.T) {
+	dataDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.DataDir = dataDir
+	mgr := newSessionManager(cfg)
+
+	const me, peer = "sndme002", "sndpeer2"
+	plantOverviewSession(t, dataDir, me, session.RoleEsc, "ESC-r", "/repo/r", "", "working")
+	plantOverviewSession(t, dataDir, peer, session.RoleVal, "VAL-r", "/repo/r", "", session.StateOrchestrating)
+
+	now := time.Now().UTC()
+	plantInboxAt(t, dataDir, peer, "msg-aaaaaaaaaaaa", me, message.TypeQuery, "never shown", now)
+	plantInboxAt(t, dataDir, peer, "msg-bbbbbbbbbbbb", me, message.TypeQuery, "shown, then left open", now)
+	_, err := mgr.CommitWakeCursor(peer, []string{"msg-bbbbbbbbbbbb"}, now, nil, nil)
+	require.NoError(t, err)
+
+	index, err := buildMailboxIndex(cfg, mgr, peer)
+	require.NoError(t, err)
+	require.Equal(t, sentStateNotified, index["msg-bbbbbbbbbbbb"])
+
+	// Their reply left it open, so it went back in line.
+	require.NoError(t, mgr.ForgetNotified(peer, []string{"msg-bbbbbbbbbbbb"}))
+
+	index, err = buildMailboxIndex(cfg, mgr, peer)
+	require.NoError(t, err)
+	assert.Equal(t, sentStateRequeued, index["msg-bbbbbbbbbbbb"], "delivered once, on its way again — not undelivered")
+	assert.Equal(t, sentStateUnread, index["msg-aaaaaaaaaaaa"], "a genuinely unseen one keeps its own state")
+}

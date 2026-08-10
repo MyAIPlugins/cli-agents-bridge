@@ -774,12 +774,39 @@ func finishReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *se
 	// It lists asks from OTHER senders too. They were never closed by a reply to
 	// this one, before this fix either; the note is deliberately true of both
 	// cases instead of guessing which one the reader is in.
-	if left, lerr := collectOpenAsks(mgr, cfg, sid); lerr == nil && len(left) > 0 {
-		// NOT "run next": these are NOTIFIED, and next only delivers UNREAD, so it
-		// would block on an empty wait instead of showing them (verified on the
-		// real binary — the smoke hung there). `read` is the command that exists.
-		// This echo is the ONLY place they surface on this side.
-		fmt.Fprintln(stdout, "  still open (not closed by this reply — `cab-bridge read <id>` to see one again, then reply):")
+	//
+	// Counted BEFORE the re-queue below, which turns exactly these into UNREAD:
+	// counting after would fold them into "arrived that you have not seen yet" —
+	// the same asks announced twice, and the second time described wrongly.
+	unseen := countUnseenInbound(mgr, cfg, sid)
+
+	if left, lerr := collectOpenAsks(mgr, cfg, sid); lerr != nil {
+		fmt.Fprintf(stderr, "reply: could not list what stayed open (%v) — check with `cab-bridge inbox --list`\n", lerr)
+	} else if len(left) > 0 {
+		ids := make([]string, 0, len(left))
+		for _, a := range left {
+			ids = append(ids, a.id)
+		}
+		// Put them back in line, or the fix only MOVES the defect: nothing is
+		// archived unread any more, but a NOTIFIED ask is shown by no later
+		// `next` — that command delivers UNREAD only, and hangs on an empty wait
+		// otherwise (verified on the real binary). It would sit invisible until
+		// a join. This is the same move join makes after a compact, for the same
+		// reason, and the model is already at-least-once with a re-delivery
+		// marker (WakeCursor.Replayed), so seeing one twice costs nothing.
+		//
+		// With the re-arm-before-working discipline there is already a `next`
+		// waiting when this runs, so the re-delivery lands immediately.
+		requeueErr := mgr.ForgetNotified(sid, ids)
+		if requeueErr == nil {
+			fmt.Fprintln(stdout, "  still open (they come back on your next `next`; `cab-bridge read <id>` to see one now):")
+		} else {
+			// The sentence follows the OUTCOME, never the intention. Promising a
+			// re-delivery that did not happen is precisely the defect this commit
+			// exists to remove, and it would be the ninth time in two days.
+			fmt.Fprintf(stderr, "reply: could not put the open asks back in line (%v) — they stay delivered-but-unanswered\n", requeueErr)
+			fmt.Fprintln(stdout, "  still open (NOT re-delivered — `cab-bridge read <id>` to see one, then reply):")
+		}
 		for _, line := range describeOpen(left) {
 			fmt.Fprintf(stdout, "    %s\n", line)
 		}
@@ -790,8 +817,8 @@ func finishReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *se
 	// without knowing something newer arrived. Say so: the original finding was
 	// "I am replying without having read the last thing sent to me", and that
 	// half survives even though the dangerous half does not.
-	if n := countUnseenInbound(mgr, cfg, sid); n > 0 {
-		fmt.Fprintf(stderr, "reply: note: %d message(s) arrived that you have not seen yet — none was closed by this reply; run next to read them\n", n)
+	if unseen > 0 {
+		fmt.Fprintf(stderr, "reply: note: %d message(s) arrived that you have not seen yet — none was closed by this reply; run next to read them\n", unseen)
 	}
 	return nil
 }
