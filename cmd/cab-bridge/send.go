@@ -40,6 +40,22 @@ func sendMessage(cfg config.Config, mgr *session.Manager, fromSID, to, msgType, 
 	if err := routing.ValidateSendPair(senderManifest.Role, targetManifest.Role, allowMesh); err != nil {
 		return "", err
 	}
+	// F-116, and this is where the restriction BINDS: the scopes and roles of the
+	// two manifests being used to compose this very message. The resolver checks
+	// earlier so the error arrives before anything is written, but a check that
+	// runs on a lookup is a warning — `SetRole` sits between the two and F-110
+	// made it part of the ordinary path (CRI diff-gate P1-3).
+	//
+	// Cross-scope is decided by comparing the scopes, never by how the address
+	// was spelled: qualifying a peer in one's OWN project is a long way of
+	// writing a local message, not a crossing.
+	senderScope := session.EffectiveScope(senderManifest)
+	targetScope := session.EffectiveScope(targetManifest)
+	if session.CrossesScopes(senderScope, targetScope) {
+		if err := allowedAcrossScopes(senderManifest.Role, targetManifest.Role, targetManifest.AgentName, scopeLabelOf(targetScope, nil)); err != nil {
+			return "", err
+		}
+	}
 
 	msgID, err := message.GenerateMessageID()
 	if err != nil {
@@ -61,6 +77,7 @@ func sendMessage(cfg config.Config, mgr *session.Manager, fromSID, to, msgType, 
 		InReplyTo:     inReplyTo,
 		Metadata: message.Metadata{
 			FromProject:     senderManifest.ProjectName,
+			FromScope:       senderScope,
 			ProcessingState: message.StatusPending,
 		},
 	}

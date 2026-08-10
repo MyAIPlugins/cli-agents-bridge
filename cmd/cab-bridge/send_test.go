@@ -39,6 +39,14 @@ func plantRoleSession(t *testing.T, dataDir, id, role string) {
 		ProjectPath:   filepath.Join(dataDir, "proj-"+id),
 		AgentName:     "agent-" + id,
 		Role:          role,
+		// One project for both endpoints. These are legacy manifests (no Scope),
+		// and since F-116 a legacy session's project is DERIVED from its
+		// ProjectPath instead of being a wildcard — so two of them in different
+		// directories are two projects, exactly as two current sessions would be.
+		// These tests are about roles and outbox copies, not about crossing
+		// projects; without this they would exercise the val→val restriction by
+		// accident.
+		Scope:         filepath.Join(dataDir, "one-project"),
 		PID:           os.Getpid(),
 		StartedAt:     now,
 		LastHeartbeat: now,

@@ -105,6 +105,17 @@ func (m *Manager) Register(ctx context.Context, opts RegisterOpts) (*Manifest, f
 	if err != nil {
 		return nil, nil, fmt.Errorf("register: resolve ProjectPath %q: %w", opts.ProjectPath, err)
 	}
+	// F-116: the name must stay addressable, and this is the ONE place to say
+	// so — `join` and `register` both come through here, so validating in either
+	// of them would leave the third caller free. (Which is the mistake the CRI
+	// gate had just caught in the plan: checking the doors you happen to hold.
+	// The fourth door is RenameAgent, which writes AgentName without passing
+	// here, and carries the same check.)
+	//
+	// TYPED names are refused, DERIVED ones sanitised: see ValidateAgentName.
+	if err := ValidateAgentName(opts.AgentName); err != nil {
+		return nil, nil, fmt.Errorf("register: %w", err)
+	}
 
 	// F-27 reconnect-or-register: with Resume, try to resume an existing
 	// matching session (reusing its id/inbox/state) before creating a fresh one.
@@ -169,7 +180,11 @@ func (m *Manager) Register(ctx context.Context, opts RegisterOpts) (*Manifest, f
 		SchemaVersion: SchemaVersionV2,
 		ProjectName:   filepath.Base(absProj),
 		ProjectPath:   absProj,
-		AgentName:     defaultIfEmpty(opts.AgentName, filepath.Base(absProj)),
+		// The derived default is sanitised, never refused: nobody typed the
+		// directory's name, and failing a join over a worktree called `feat@2`
+		// would be an error for a choice the caller did not make. The caller
+		// says so on stderr (join.go) — this only guarantees the invariant.
+		AgentName:     defaultIfEmpty(opts.AgentName, derivedAgentName(absProj)),
 		Role:          defaultIfEmpty(opts.Role, RoleNeutral),
 		PID:           os.Getpid(),
 		StartedAt:     now,
@@ -298,7 +313,15 @@ var ErrNoSessionForCwd = errors.New("no session matches cwd or its ancestors")
 type Candidate struct {
 	ID          string
 	ProjectPath string
-	Scope       string
+	// Scope is the EFFECTIVE project (EffectiveScope): what every decision here
+	// is taken on, including the sibling grouping that raises the
+	// anti-impersonation warning.
+	Scope string
+	// StoredScope is the raw manifest field, kept for the TEXT of that warning —
+	// which talks about sessions grouped by what is on disk, so showing a derived
+	// value there would name something the grouping did not use. A declared
+	// forensic companion, never a second answer to "which project is this".
+	StoredScope string
 	AgentName   string
 	Role        string
 }
@@ -395,7 +418,12 @@ func (m *Manager) LookupByCWDDetails(cwd string) (Resolution, error) {
 			cand: Candidate{
 				ID:          e.Name(), // NEW-1: dir name, not mf.SessionID
 				ProjectPath: mf.ProjectPath,
-				Scope:       mf.Scope,
+				// EFFECTIVE, because this candidate feeds a POLICY: the sibling
+				// grouping below raises the anti-impersonation warning, and with the
+				// raw field a legacy session had an empty scope, no siblings, and the
+				// warning silently disappeared — in exactly the case B-1 exists for.
+				Scope:       EffectiveScope(mf),
+				StoredScope: mf.Scope,
 				AgentName:   mf.AgentName,
 				Role:        mf.Role,
 			},
@@ -425,7 +453,7 @@ func (m *Manager) LookupByCWDDetails(cwd string) (Resolution, error) {
 	if selected.Scope != "" {
 		selProj := filepath.Clean(selected.ProjectPath)
 		for _, s := range all {
-			if s.cand.Scope == selected.Scope && filepath.Clean(s.cand.ProjectPath) != selProj {
+			if SameProject(s.cand.Scope, selected.Scope) && filepath.Clean(s.cand.ProjectPath) != selProj {
 				res.ScopeSiblings = append(res.ScopeSiblings, s.cand)
 			}
 		}
@@ -628,6 +656,12 @@ func (m *Manager) Touch(sessionID string) error {
 // touchHeartbeatOwned for the same reasoning). Renaming to the current name is a
 // no-op, not an error — the caller should not have to check first.
 func (m *Manager) RenameAgent(sessionID, newName string) error {
+	// The fourth door onto AgentName, and the only one that does not go through
+	// Register (F-116). A rename is always something somebody typed, so the
+	// separator is refused here rather than sanitised.
+	if err := ValidateAgentName(newName); err != nil {
+		return fmt.Errorf("rename: %w", err)
+	}
 	return m.WithSessionLock(sessionID, func() error {
 		m.manifestMu.Lock()
 		defer m.manifestMu.Unlock()

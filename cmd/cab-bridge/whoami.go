@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 	"os"
 )
 
@@ -21,11 +22,16 @@ type whoamiReport struct {
 	Role        string `json:"role"`
 	TeamID      string `json:"teamId,omitempty"`
 	ProjectPath string `json:"projectPath"`
-	// Scope is the F-17 auto-derived project root this session belongs to (the
-	// value peers filters on by default). Shown from the stored manifest field,
-	// not recomputed, so it reflects the root captured at register time. Empty
-	// (omitted) for legacy/pre-F-17 sessions.
+	// Scope is the project root this session belongs to — the EFFECTIVE one, so
+	// it is the same answer the routing acts on. It used to be the stored field
+	// verbatim, which meant a legacy session read "(none)" here while being
+	// addressed as part of /repo/a: the tool gave two answers and the agent saw
+	// the wrong one.
 	Scope string `json:"scope,omitempty"`
+	// ScopeDerived says the value above was worked out from the project path
+	// rather than read from the manifest. A derived scope is a fact about the
+	// filesystem NOW, and an agent is entitled to know which of the two it has.
+	ScopeDerived bool `json:"scopeDerived,omitempty"`
 	// State is the F-23a agent task-state (idle/working/done/orchestrating) from
 	// the stored manifest; empty (omitted) for legacy/never-set.
 	State   string `json:"state,omitempty"`
@@ -60,14 +66,15 @@ func runWhoami(args []string) error {
 	}
 
 	report := whoamiReport{
-		SessionID:   mf.SessionID,
-		AgentName:   mf.AgentName,
-		Role:        mf.Role,
-		TeamID:      mf.TeamID,
-		ProjectPath: mf.ProjectPath,
-		Scope:       mf.Scope,
-		State:       mf.State,
-		DataDir:     cfg.DataDir,
+		SessionID:    mf.SessionID,
+		AgentName:    mf.AgentName,
+		Role:         mf.Role,
+		TeamID:       mf.TeamID,
+		ProjectPath:  mf.ProjectPath,
+		Scope:        session.EffectiveScope(mf),
+		ScopeDerived: session.ScopeIsDerived(mf),
+		State:        mf.State,
+		DataDir:      cfg.DataDir,
 	}
 
 	if *asJSON {
@@ -83,9 +90,15 @@ func runWhoami(args []string) error {
 	if team == "" {
 		team = "(none)"
 	}
+	// The EFFECTIVE scope (set above), plus a word when it had to be worked out.
+	// A legacy session used to read "(none)" here while the system routed it as
+	// belonging to /repo/a: two answers to the same question, and the one the
+	// agent reads was the wrong one.
 	scope := report.Scope
 	if scope == "" {
 		scope = "(none)"
+	} else if report.ScopeDerived {
+		scope += "  (derived from the project path)"
 	}
 	state := report.State
 	if state == "" {

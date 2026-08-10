@@ -119,6 +119,13 @@ func runJoin(args []string) error {
 	// name and whatever role it answers to.
 	occupant, occupied := findSessionHere(mgr, peers, pp)
 
+	// F-116: a name somebody TYPED is refused if it carries the separator; the
+	// deeper guard lives in Register/RenameAgent, this one exists only so the
+	// error names the flag the caller used instead of arriving as "register:".
+	if err := session.ValidateAgentName(*agentName); err != nil {
+		return fmt.Errorf("join: --agent-name: %w", err)
+	}
+
 	name := *agentName
 	switch {
 	case name != "":
@@ -142,7 +149,16 @@ func runJoin(args []string) error {
 		// Genuinely new here: invent one. From the WORKING DIRECTORY, not the scope
 		// (CRI2 P0) — deriving from the scope is not injective, so every agent of a
 		// role in one repository would land on the same name.
-		name, _ = deriveAgentName(*role, filepath.Base(pp), peers)
+		// A DERIVED name is sanitised, not refused: nobody typed the directory,
+		// and failing here would be an error for a choice the caller never made.
+		// Said out loud, because a silent rename of one's own identity is exactly
+		// the kind of quiet substitution this project keeps removing.
+		base, changed := session.SanitizeDerivedName(filepath.Base(pp))
+		if changed {
+			fmt.Fprintf(os.Stderr, "join: this directory's name contains %q, which cannot appear in an agent name (it separates a name from its project when addressing across repositories) — deriving from %q instead\n",
+				session.ScopeSeparator, base)
+		}
+		name, _ = deriveAgentName(*role, base, peers)
 	}
 
 	// CROSS-SCOPE GUARD, and it is not about ambiguity — scopes already isolate,
@@ -298,7 +314,7 @@ func runJoin(args []string) error {
 		SessionID: mf.SessionID,
 		AgentName: mf.AgentName,
 		Role:      mf.Role,
-		Scope:     mf.Scope,
+		Scope:     session.EffectiveScope(mf),
 		Action:    action,
 		Here:      othersHere(peers, mf.SessionID),
 		Hint:      "run next to receive work",
@@ -424,7 +440,11 @@ func findNameInAnotherScope(mgr *session.Manager, peers []peerSummary, wantName,
 		if err != nil {
 			continue
 		}
-		if mf.Scope == myScope {
+		// Effective on both sides, and the same conflation bit BOTH ways: two
+		// legacy sessions read as one project (so a homonym in another repo did
+		// not block), and a legacy against a current one in the SAME repo read as
+		// two (so a legitimate name was refused).
+		if session.SameProject(session.EffectiveScope(mf), myScope) {
 			continue // same project: that is the other guard's business
 		}
 		// Stale ones block TOO — the name belongs to another project, and taking
@@ -432,7 +452,7 @@ func findNameInAnotherScope(mgr *session.Manager, peers []peerSummary, wantName,
 		// then has to say the session is dead and how to remove it, or a session
 		// abandoned months ago in a repository you never touch would hold a name
 		// hostage forever with no way to find out why.
-		return p, mf.ProjectPath, mf.Scope, true
+		return p, mf.ProjectPath, session.EffectiveScope(mf), true
 	}
 	return peerSummary{}, "", "", false
 }

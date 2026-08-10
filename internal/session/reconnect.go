@@ -92,9 +92,12 @@ func (m *Manager) tryReuse(absProj string, opts RegisterOpts) (*Manifest, func()
 // StartedAt desc, then id) for a deterministic multi-match resolution.
 //
 // Identity = effective agent-name + effective role + scope + team + PROJECT
-// PATH, where the effective agent-name/role apply the SAME defaults Register
-// uses (so a resume with empty agent-name still matches a session registered
-// with the basename default). scopeMatch: equal non-empty scopes, OR a legacy
+// PATH, where the effective agent-name/role come from the SAME FUNCTIONS
+// Register writes with — derivedAgentName, not a second copy of the rule — so a
+// resume with an empty agent-name still matches a session registered with the
+// default. It said "the same defaults" and was true until the two drifted
+// apart; naming the function is the only form of that claim that cannot go
+// stale. scopeMatch: equal non-empty scopes, OR a legacy
 // candidate (empty scope) whose projectPath is an ancestor-or-equal of absProj.
 //
 // projectPath is part of the identity (§2.2, CRI diff-gate 1c P1-4). Without it
@@ -105,7 +108,22 @@ func (m *Manager) tryReuse(absProj string, opts RegisterOpts) (*Manifest, func()
 // scope keeps the old ancestor rule, since it has no projectPath discipline to
 // compare against.
 func (m *Manager) findIdentityMatches(absProj string, opts RegisterOpts) ([]identityMatch, error) {
-	wantAgent := defaultIfEmpty(opts.AgentName, filepath.Base(absProj))
+	// derivedAgentName, the SAME function Register writes with — not
+	// filepath.Base, which is what this line said until the two diverged.
+	//
+	// F-116 made Register sanitise the derived default, and this reader kept the
+	// raw basename: in a directory called `feat@2` the writer stored `feat-2` and
+	// `--resume` went looking for `feat@2`, found nothing, and registered a
+	// SECOND session. If the first held mail, the peer came back to an empty
+	// inbox with its work in the other session. Reproduced on the binary, two
+	// distinct ids.
+	//
+	// The canonical shape: a writer's semantics changed and its readers were not
+	// re-examined. The comment above claimed the two applied "the SAME defaults
+	// Register uses" — true when written, false the moment the sanitisation
+	// landed, and it is why nobody went looking. Calling the same function is the
+	// only version of that sentence that cannot go stale.
+	wantAgent := defaultIfEmpty(opts.AgentName, derivedAgentName(absProj))
 	wantRole := defaultIfEmpty(opts.Role, RoleNeutral)
 
 	sessionsRoot := filepath.Join(m.DataDir, "sessions")

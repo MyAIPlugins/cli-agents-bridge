@@ -315,11 +315,25 @@ func formatCandidateChoices(cands []session.Candidate) string {
 // and the executable remediation. Multi-line, on stderr only (the cmd layer
 // keeps stdout clean for --json / --emit). The remediation names the resolved
 // id with the flag before any positional (A-1/A-5).
+// The scope named here is the EFFECTIVE one — the value the grouping actually
+// ran on — with `(derived)` when it was worked out rather than read.
+//
+// It printed StoredScope for one commit, defended by a comment about "two facts,
+// named separately". Well argued and wrong in the case the same commit had just
+// made reachable: for a legacy session the stored field is EMPTY, so the warning
+// announced `share its scope ""` about a grouping performed on `zeta`, and the
+// number explaining it appeared nowhere. A message must name the fact it acted
+// on; a second, forensic fact is worth printing only beside the first, never
+// instead of it.
 func formatSharedScopeWarning(cmdName, cwd string, res session.Resolution) string {
 	sel := res.Candidates[0] // == the SelectedID candidate
+	scopeLabel := sel.Scope
+	if sel.StoredScope == "" && sel.Scope != "" {
+		scopeLabel += " (derived)"
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s: warning: cwd %q resolved to session %s (%s, role %s, project %s), but %d other session(s) share its scope %q with a different project path:",
-		cmdName, cwd, sel.ID, sel.AgentName, sel.Role, sel.ProjectPath, len(res.ScopeSiblings), sel.Scope)
+		cmdName, cwd, sel.ID, sel.AgentName, sel.Role, sel.ProjectPath, len(res.ScopeSiblings), scopeLabel)
 	for _, s := range res.ScopeSiblings {
 		fmt.Fprintf(&b, "\n  - %s (%s, role %s, project %s)", s.ID, s.AgentName, s.Role, s.ProjectPath)
 	}
