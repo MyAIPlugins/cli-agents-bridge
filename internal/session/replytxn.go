@@ -47,8 +47,13 @@ type ReplyTxn struct {
 	// Anchor is the oldest open ask of the set; it becomes the response's
 	// inReplyTo, because the schema holds a single one.
 	Anchor string `json:"anchor"`
-	// CloseIDs is the frozen, ordered set. An ask that arrives after the
-	// snapshot is NOT here: it stays open for the next reply.
+	// CloseIDs is the frozen, ordered set: ONE delivery of open asks, chosen by
+	// the caller (cmd/cab-bridge/verbs.go, oldestPage).
+	//
+	// It used to say "an ask that arrives after the snapshot is not here", which
+	// was true and beside the point — the dangerous ask arrives BEFORE the
+	// snapshot and after the agent stopped reading (F-109). What keeps it out is
+	// belonging to a later delivery, not to a later snapshot.
 	CloseIDs []string `json:"closeIds"`
 	State    string   `json:"state"`
 	// ArchivedIndex is how many CloseIDs have been archived. A crash between

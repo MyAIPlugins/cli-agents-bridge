@@ -129,7 +129,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  next                 Then forever: deliver whatever arrived, waiting until it does")
 	fmt.Fprintln(os.Stderr, "  ask <agent> [\"msg\"]  Ask something — stays open until they reply")
 	fmt.Fprintln(os.Stderr, "  tell <agent> [\"msg\"] Inform — no reply expected")
-	fmt.Fprintln(os.Stderr, "  reply [\"msg\"]        Answer whoever asked; closes their open asks")
+	fmt.Fprintln(os.Stderr, "  reply [\"msg\"]        Answer whoever asked; closes the asks that came in together")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "  With no message argument the text is read from stdin: tell VAL-x < report.md")
 	fmt.Fprintln(os.Stderr, "")

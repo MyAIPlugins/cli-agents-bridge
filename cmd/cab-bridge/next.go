@@ -99,10 +99,12 @@ type nextMessage struct {
 	// Closes lists the asks this reply archived. It exists on the message
 	// already; what was missing is that it never reached the READER.
 	//
-	// F-109: a reply closes every open ask from that sender, so a message sent
-	// while the other side was working could be archived by an answer that never
-	// considered it — and the sender saw "reply received, openAsks 0" with no way
-	// to know which of their asks had just been closed. Carrying the list inline
+	// F-109: a reply closes one DELIVERY of open asks from that sender, and the
+	// oldest open delivery can still be one the agent never read — so a message
+	// sent while the other side was working can be archived by an answer that
+	// never considered it. It cannot close several deliveries at once any more,
+	// but it is not impossible, and the sender used to see "reply received,
+	// openAsks 0" with no way to know WHICH ask had just closed. Carrying it
 	// is what lets them recognise an id they were not expecting, without going to
 	// look for it: the alternative was a rule telling agents to re-read their own
 	// output, which is the shape Alan ruled out.

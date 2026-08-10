@@ -57,6 +57,21 @@ func (c *WakeCursor) IsNotified(id string) bool {
 	return ok
 }
 
+// NotifiedAt returns when id was delivered — and, because CommitWakeCursor
+// stamps every id of one page with the SAME instant (see the loop below), that
+// value doubles as the IDENTITY OF THE DELIVERY: two ids share it exactly when
+// one `next` handed them over together.
+//
+// `reply` reads it that way rather than as a time, which is why it must not be
+// rounded, re-derived from the message, or made "more precise" later.
+func (c *WakeCursor) NotifiedAt(id string) (time.Time, bool) {
+	if c == nil || c.Notified == nil {
+		return time.Time{}, false
+	}
+	t, ok := c.Notified[id]
+	return t, ok
+}
+
 func (m *Manager) wakeCursorPath(sessionID string) string {
 	return filepath.Join(m.sessionDir(sessionID), wakeCursorFile)
 }
