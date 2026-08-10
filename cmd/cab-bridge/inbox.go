@@ -13,6 +13,7 @@ import (
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 	transportfs "github.com/myAIPlugins/cli-agents-bridge/internal/transport/fs"
 )
 
@@ -72,18 +73,20 @@ func runInbox(args []string) error {
 	sessionDir := filepath.Join(cfg.DataDir, "sessions", sid)
 
 	if *tidy {
-		n, err := tidyInbox(sessionDir, cfg.MaxMessageBytes)
+		res, err := tidyInbox(mgr, sid, sessionDir, cfg.MaxMessageBytes)
 		if err != nil {
 			return err
 		}
 		if *asJSON {
-			out, merr := json.MarshalIndent(map[string]int{"tidied": n}, "", "  ")
+			out, merr := json.MarshalIndent(map[string]int{
+				"tidied": res.moved, "openAsksLeft": res.openAsks, "unreadLeft": res.unread,
+			}, "", "  ")
 			if merr != nil {
 				return fmt.Errorf("inbox: marshal: %w", merr)
 			}
 			fmt.Println(string(out))
 		} else {
-			fmt.Printf("tidied %d message(s) to processed/\n", n)
+			fmt.Printf("tidied %d message(s) to processed/%s\n", res.moved, res.leftBehind())
 		}
 		return nil
 	}
@@ -157,29 +160,79 @@ func collectInbox(sessionDir string, maxContentBytes int) ([]inboxEntry, error) 
 	return out, nil
 }
 
-// tidyInbox is the F-22 --tidy sweep: it moves EVERY well-formed message file
-// currently in the session's inbox/ to processed/ via MoveToProcessed (lossless,
-// the same primitive the consume path uses), returning the count moved. It is
-// the explicit operator action "I have handled what --list showed, archive it" —
-// so it sweeps what was VISIBLE; a message that arrives afterwards stays in
-// inbox for the next pass (still recoverable via --list, which shows processed/
-// too). Malformed, .tmp.*, or unreadable files are LEFT in inbox for forensics
-// (same policy as consumeInboxEntry); processed/ is never touched. A missing or
-// empty inbox yields 0, not an error. A genuine move failure (EXDEV/permission)
-// is surfaced — never silently swallowed — with the count moved so far; a second
+// tidyResult is what one sweep did and what it deliberately did not do.
+type tidyResult struct {
+	moved    int
+	openAsks int // NOTIFIED queries: work still owed to whoever asked
+	unread   int // never emitted by any next: nobody has seen these
+}
+
+// leftBehind renders the second half of the summary. Empty when nothing was
+// skipped, because a line about zero exceptions is noise on the common path.
+func (r tidyResult) leftBehind() string {
+	var parts []string
+	if r.openAsks > 0 {
+		parts = append(parts, fmt.Sprintf("%d open ask(s)", r.openAsks))
+	}
+	if r.unread > 0 {
+		parts = append(parts, fmt.Sprintf("%d unread", r.unread))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " — " + strings.Join(parts, " and ") + " left in place"
+}
+
+// tidyInbox is the F-22 --tidy sweep: it archives what the operator has HANDLED,
+// which is what the help promises and what F-115 showed it was not doing.
+//
+// It moved every well-formed file, which cost two things that look different and
+// are the same mistake — archiving what nobody handled:
+//
+//   - an OPEN ASK (a NOTIFIED query) went to processed/, so `reply` answered
+//     "nothing to reply to" and the asker's `sent` showed `archived` with no
+//     answer ever sent. Found by tidying my own inbox with a val's ask in it,
+//     which is also why this comment exists;
+//   - an UNREAD message — arrived seconds ago, emitted by no `next` — vanished
+//     with NO TRACE ANYWHERE, and that one is worse: an open ask at least leaves
+//     `archived` visible to the sender, while an unread `tell` is awaited by
+//     nobody and was never seen by anybody. The val found this branch; I had
+//     only found the first.
+//
+// One predicate covers both: archive only what was SHOWN (cursor.IsNotified) and
+// is not an ask still owed an answer. Everything else — read tells, responses,
+// already-closed queries — is swept as before, which is the case the command
+// exists for.
+//
+// Skip, never refuse: the command must keep doing its job. What it left is
+// stated in the summary, so "nothing happened to my ask" is never something the
+// caller has to discover later.
+//
+// (The comment this replaces claimed it "sweeps what was VISIBLE" and that "a
+// message that arrives afterwards stays in inbox". Neither was true: no
+// visibility was ever consulted. Now both are.)
+//
+// Malformed, .tmp.*, or unreadable files are LEFT in inbox for forensics (same
+// policy as consumeInboxEntry); processed/ is never touched. A missing or empty
+// inbox yields 0, not an error. A genuine move failure (EXDEV/permission) is
+// surfaced — never silently swallowed — with the count moved so far; a second
 // --tidy retries the rest.
-func tidyInbox(sessionDir string, maxContentBytes int) (int, error) {
+func tidyInbox(mgr *session.Manager, sid, sessionDir string, maxContentBytes int) (tidyResult, error) {
+	var res tidyResult
+	cursor, _, cerr := mgr.ReadWakeCursor(sid)
+	if cerr != nil {
+		return res, fmt.Errorf("inbox: read wake cursor: %w", cerr)
+	}
 	inboxDir := filepath.Join(sessionDir, "inbox")
 	processedDir := filepath.Join(sessionDir, "processed")
 	dirEntries, err := os.ReadDir(inboxDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return 0, nil // inbox not created yet — nothing to tidy
+			return res, nil // inbox not created yet — nothing to tidy
 		}
-		return 0, fmt.Errorf("inbox: read inbox: %w", err)
+		return res, fmt.Errorf("inbox: read inbox: %w", err)
 	}
 
-	moved := 0
 	for _, e := range dirEntries {
 		name := e.Name()
 		if e.IsDir() || strings.HasPrefix(name, ".tmp.") || !strings.HasSuffix(name, ".json") {
@@ -191,15 +244,28 @@ func tidyInbox(sessionDir string, maxContentBytes int) (int, error) {
 			_ = security.WarnNotOurs(full, rerr)
 			continue // unreadable — leave in inbox for forensics
 		}
-		if _, derr := message.DecodeLenient(data, maxContentBytes); derr != nil {
+		m, derr := message.DecodeLenient(data, maxContentBytes)
+		if derr != nil {
 			continue // malformed — leave in inbox (forensics), never archive blindly
 		}
-		if err := transportfs.MoveToProcessed(full, processedDir); err != nil {
-			return moved, fmt.Errorf("inbox: tidy move %q (moved %d before failure): %w", full, moved, err)
+		// Never shown: not handled by definition, and it would disappear without
+		// leaving a trace on either side.
+		if !cursor.IsNotified(m.ID) {
+			res.unread++
+			continue
 		}
-		moved++
+		// Shown but still owed an answer. A query in inbox/ IS open: closing one
+		// moves it out, so its presence here is the state, not a guess.
+		if m.Type == message.TypeQuery {
+			res.openAsks++
+			continue
+		}
+		if err := transportfs.MoveToProcessed(full, processedDir); err != nil {
+			return res, fmt.Errorf("inbox: tidy move %q (moved %d before failure): %w", full, res.moved, err)
+		}
+		res.moved++
 	}
-	return moved, nil
+	return res, nil
 }
 
 // previewContent collapses a message body to a single scannable line: runs of
