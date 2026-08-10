@@ -1,0 +1,22 @@
+cmd/cab-bridge/sent.go
+  s_9815573d52f42d::t_a05d37e7767022 42-51
+  s_9815573d52f42d::t_47a3e07735df34 130
+cmd/cab-bridge/sent_test.go
+  s_9815573d52f42d::t_305837d6a0c688 142-182
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "bfe2538e0ce55674f3575ee9a40504112108e6d6",
+  "prompts": {},
+  "sessions": {
+    "s_9815573d52f42d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8df03128-82d8-47b9-bcaa-30b62ac013ea",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
