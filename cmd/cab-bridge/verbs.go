@@ -75,7 +75,13 @@ func resolveMessagePayload(arg string, hasArg bool, stdin io.Reader) (string, er
 //
 // By name and not by id because the id an agent re-types every day is its own
 // peer's, and that is the one it confabulates after a compact (LL-13/LL-14).
-func resolveRecipientByName(cfg config.Config, mgr *session.Manager, name, selfSID string) (string, error) {
+func resolveRecipientByName(cfg config.Config, mgr *session.Manager, token, selfSID string) (string, error) {
+	rcpt, perr := parseRecipient(token)
+	if perr != nil {
+		return "", perr
+	}
+	name := rcpt.name
+
 	// Scope and team come from MY OWN manifest, never from the cwd
 	// (CRI diff-gate P1-3). Once resolveCurrentSession has decided who I am —
 	// possibly from CAB_SESSION_ID — the directory stops participating: fixing
@@ -86,7 +92,21 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, name, selfS
 	if err != nil {
 		return "", fmt.Errorf("resolve recipient: load my own manifest %s: %w", selfSID, err)
 	}
-	peers, _, err := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, cfg.MaxMessageBytes, true, me.TeamID, me.Scope)
+
+	// A QUALIFIED address drops both filters and searches the whole data dir
+	// (F-116). Team included, deliberately: `peers --all-scopes` shows every
+	// team, so keeping that filter here would leave a peer VISIBLE IN THE LIST
+	// and unreachable — which is the defect this feature exists to close,
+	// rebuilt on another axis. `--team` stays what DESIGN §2.6 says it is, a
+	// discovery filter and not a security boundary.
+	//
+	// The UNqualified path is untouched: nobody pays for a feature they are not
+	// using, and its behaviour is the one every existing test pins.
+	teamFilter, scopeFilter := me.TeamID, me.Scope
+	if rcpt.qualified() {
+		teamFilter, scopeFilter = "", ""
+	}
+	peers, _, err := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, cfg.MaxMessageBytes, true, teamFilter, scopeFilter)
 	if err != nil {
 		return "", fmt.Errorf("resolve recipient: %w", err)
 	}
@@ -94,6 +114,9 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, name, selfS
 	var exact, live []peerSummary
 	for _, p := range peers {
 		if p.SessionID == selfSID || p.AgentName != name {
+			continue
+		}
+		if rcpt.qualified() && !scopeMatchesHint(p.Scope, rcpt.scope) {
 			continue
 		}
 		exact = append(exact, p)
@@ -111,6 +134,11 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, name, selfS
 
 	switch len(candidates) {
 	case 1:
+		if rcpt.qualified() {
+			if err := allowedAcrossScopes(me.Role, candidates[0].Role, name, rcpt.scope); err != nil {
+				return "", err
+			}
+		}
 		return candidates[0].SessionID, nil
 	case 0:
 		// A rename is invisible to whoever was not watching, and a peer that was
@@ -123,11 +151,23 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, name, selfS
 			return "", fmt.Errorf("no agent named %q in this scope — %s answered to that name and is now %q",
 				name, renamed.SessionID, renamed.AgentName)
 		}
+		if rcpt.qualified() {
+			// The question here is "wrong name, or wrong project?", and it is not
+			// answerable without the list of projects. Naming only the agents would
+			// answer half of it.
+			return "", fmt.Errorf("no agent named %q in project %q — projects with agents: %s",
+				name, rcpt.scope, strings.Join(knownScopes(peers), ", "))
+		}
 		known := knownAgentNames(peers, selfSID)
 		if len(known) == 0 {
-			return "", fmt.Errorf("no agent named %q in this scope, and no other agent is registered here", name)
+			// An EMPTY scope is the likeliest place to be looking for somebody who
+			// works elsewhere, so this is the message that most needs the other
+			// form — it was the one without it.
+			return "", fmt.Errorf("no agent named %q in this scope, and no other agent is registered here (another project: %s%s<project>, from the SCOPE column of `peers --all-scopes`)",
+				name, name, session.ScopeSeparator)
 		}
-		return "", fmt.Errorf("no agent named %q in this scope — registered here: %s", name, strings.Join(known, ", "))
+		return "", fmt.Errorf("no agent named %q in this scope — registered here: %s (another project: %s%s<project>)",
+			name, strings.Join(known, ", "), name, session.ScopeSeparator)
 	default:
 		var ids []string
 		for _, c := range candidates {
@@ -138,6 +178,19 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, name, selfS
 		// session the tool itself classifies as alive. With projectPath and
 		// heartbeat age the choice becomes mechanical, and removal stays a last
 		// resort rather than the first suggestion.
+		// Two scopes sharing a basename: the ambiguity is in the ADDRESS, not in
+		// the sessions, and it has an exact way out — the full path, which is what
+		// `peers` prints on those very rows (scopeColumn). Saying "remove the
+		// stale one" here would advise destroying a healthy session to fix a typo.
+		if rcpt.qualified() {
+			var lines []string
+			for _, c := range candidates {
+				lines = append(lines, fmt.Sprintf("\n    %s%s%s  (%s)", name, session.ScopeSeparator, c.Scope, c.SessionID))
+			}
+			sort.Strings(lines)
+			return "", fmt.Errorf("%q matches %d projects, so nothing was sent — address one by its full path:%s",
+				rcpt.String(), len(candidates), strings.Join(lines, ""))
+		}
 		var lines []string
 		for _, c := range candidates {
 			lines = append(lines, fmt.Sprintf("\n    %s  project %s  last seen %s ago", c.SessionID, c.ProjectName, time.Since(c.LastHeartbeat).Round(time.Second)))
@@ -146,6 +199,39 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, name, selfS
 		return "", fmt.Errorf("%d live agents are named %q, so nothing was sent:%s\n  they are different sessions: check which is the one you mean, and remove the stale one with `cab-bridge cleanup --session-id=<id>` only if it is genuinely dead",
 			len(candidates), name, strings.Join(lines, ""))
 	}
+}
+
+// allowedAcrossScopes is the F-116 restriction for this release: an address that
+// crosses projects is val→val only.
+//
+// It is a PRE-CHECK on the qualified path, not a second routing matrix.
+// ValidateSendPair stays the only policy, and stays untouched — because the
+// scope was in practice the barrier, and removing it for a qualified address
+// opens every pair that matrix already accepts, which is a decision nobody took.
+// Alan's requirement is orchestrator-to-orchestrator, that is the only real use
+// today, and it says itself in half a line. Widening it needs a case, not a flag.
+func allowedAcrossScopes(fromRole, toRole, name, scope string) error {
+	if fromRole == session.RoleVal && toRole == session.RoleVal {
+		return nil
+	}
+	return fmt.Errorf("across projects only a val writes to a val (you are %q, %s%s%s is %q) — route it through your own val, who can reach theirs",
+		fromRole, name, session.ScopeSeparator, scope, toRole)
+}
+
+// knownScopes lists the projects that have agents, so "no agent named X in
+// project Y" can be answered with "which projects exist, then".
+func knownScopes(peers []peerSummary) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, p := range peers {
+		if p.Scope == "" || seen[p.Scope] {
+			continue
+		}
+		seen[p.Scope] = true
+		out = append(out, filepath.Base(p.Scope))
+	}
+	sort.Strings(out)
+	return out
 }
 
 func knownAgentNames(peers []peerSummary, selfSID string) []string {
@@ -190,6 +276,16 @@ type openAsk struct {
 	// from it — see WakeCursor.NotifiedAt.
 	page    time.Time
 	content string
+	// scope is the sender's project, read from ITS MANIFEST — not from the
+	// message (F-116, CRI design-gate P1-3).
+	//
+	// Two questions on two different instants, and one datum cannot answer both:
+	// `fromScope` in the message says where the sender declared it was WHEN IT
+	// WROTE, which is the honest thing to display; this field says where it is
+	// NOW, which is the question when deciding where to deliver now. The message
+	// field also does not exist on anything sent before it was added, i.e. on the
+	// asks that have been open longest — exactly the ones needing disambiguation.
+	scope string
 }
 
 // collectOpenAsks returns the asks (type=query) still sitting in inbox/ that
@@ -209,6 +305,21 @@ func collectOpenAsks(mgr *session.Manager, cfg config.Config, sid string) ([]ope
 		return nil, err
 	}
 
+	// One manifest read per distinct sender, not per ask: a batch from one peer
+	// is the common shape, and this runs on the working loop.
+	scopeOf := map[string]string{}
+	senderScope := func(from string) string {
+		if s, ok := scopeOf[from]; ok {
+			return s
+		}
+		s := ""
+		if mf, lerr := mgr.LoadManifest(from); lerr == nil {
+			s = mf.Scope
+		}
+		scopeOf[from] = s
+		return s
+	}
+
 	var out []openAsk
 	for _, e := range entries {
 		if e.msg.Type != message.TypeQuery {
@@ -226,6 +337,7 @@ func collectOpenAsks(mgr *session.Manager, cfg config.Config, sid string) ([]ope
 			when:     e.msg.Timestamp,
 			page:     page,
 			content:  e.msg.Content,
+			scope:    senderScope(e.msg.From),
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -513,14 +625,21 @@ func replyRun(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 			}
 			return errNothingToReplyTo
 		}
-		// The names registered in my scope: used only to tell a near-miss from
-		// a genuine message, never to route.
-		var known []string
-		if me, merr := mgr.LoadManifest(sid); merr == nil {
-			if peers, _, perr := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, cfg.MaxMessageBytes, true, me.TeamID, me.Scope); perr == nil {
-				known = knownAgentNames(peers, sid)
-			}
-		}
+		// The names that could plausibly be the RECIPIENT of this reply: the
+		// senders with an open ask, and nobody else.
+		//
+		// It used to be every peer in my scope, and the plan for F-116 proposed
+		// widening it to the whole data dir — which would have made `reply GO`
+		// stop working the day somebody in an unrelated project registered an
+		// agent called `GO`: the meaning of a valid payload changing because of a
+		// session that has nothing to do with this conversation.
+		//
+		// Narrowing is the correct move and it also fixes today: this list only
+		// ever answers "did they mean to name a recipient, or is this the
+		// message?", and only a sender with an open ask can be the recipient of a
+		// reply. A typo aimed at a peer with no open ask is not a near-miss — it
+		// is a message. (CRI design-gate P1-3.)
+		known := senderNames(asks)
 		target, content, rerr := resolveReplyTarget(args, asks, known, stdin)
 		if rerr != nil {
 			return rerr
@@ -579,7 +698,7 @@ var errUndeliveredWaiting = errors.New("nothing NOTIFIED to reply to")
 // text equals a peer's name) is reported rather than guessed.
 func resolveReplyTarget(args []string, asks []openAsk, known []string, stdin io.Reader) (target, content string, err error) {
 	senders := map[string]string{}  // sessionID -> agent name
-	byName := map[string][]string{} // agent name -> EVERY sessionID with that name
+	byName := map[string][]string{} // agent NAME (never qualified) -> sessionIDs
 	for _, a := range asks {
 		senders[a.from] = a.fromName
 		if a.fromName != "" {
@@ -588,10 +707,22 @@ func resolveReplyTarget(args []string, asks []openAsk, known []string, stdin io.
 			}
 		}
 	}
+	// The argument may carry a project (`VAL-x@other-repo`), so recognising it as
+	// a NAME has to look past the separator — the map is keyed on bare names.
+	// A token that parses badly is not a recipient; it falls through to the
+	// payload rule below, which is where a message containing an `@` belongs.
+	asName := func(arg string) (string, bool) {
+		r, perr := parseRecipient(arg)
+		if perr != nil {
+			return "", false
+		}
+		_, ok := byName[r.name]
+		return r.name, ok
+	}
 
 	switch len(args) {
 	case 2:
-		sid, rerr := soleSessionNamed(byName, args[0], senders)
+		sid, rerr := soleSessionNamed(args[0], asks, senders)
 		if rerr != nil {
 			return "", "", rerr
 		}
@@ -608,8 +739,8 @@ func resolveReplyTarget(args []string, asks []openAsk, known []string, stdin io.
 		//
 		// The disambiguation earns its exception only when several agents have
 		// open asks and the argument names one of them.
-		if _, named := byName[args[0]]; named && len(senders) > 1 {
-			sid, rerr := soleSessionNamed(byName, args[0], senders)
+		if _, named := asName(args[0]); named && len(senders) > 1 {
+			sid, rerr := soleSessionNamed(args[0], asks, senders)
 			if rerr != nil {
 				return "", "", rerr
 			}
@@ -626,7 +757,7 @@ func resolveReplyTarget(args []string, asks []openAsk, known []string, stdin io.
 		//
 		// "e il ramo accanto?": the finding named one branch and the complement
 		// went unexamined, by me writing it and by the val ratifying it.
-		if _, isOpenAsker := byName[args[0]]; !isOpenAsker {
+		if _, isOpenAsker := asName(args[0]); !isOpenAsker {
 			// A near-miss on a name must NOT quietly become the message (CRI2 P1-1).
 			// `reply VAL-brige < report.md` used to send the string "VAL-brige" as the
 			// answer, never read the report, close the ask and exit 0 — after which
@@ -745,18 +876,86 @@ func min3(a, b, c int) int {
 	return m
 }
 
-func soleSessionNamed(byName map[string][]string, name string, senders map[string]string) (string, error) {
-	ids, ok := byName[name]
-	if !ok || len(ids) == 0 {
-		return "", fmt.Errorf("%q has no open ask of yours — open asks are from: %s", name, strings.Join(sortedNames(senders), ", "))
+func soleSessionNamed(name string, asks []openAsk, senders map[string]string) (string, error) {
+	rcpt, perr := parseRecipient(name)
+	if perr != nil {
+		return "", perr
 	}
-	if len(ids) > 1 {
-		sorted := append([]string(nil), ids...)
-		sort.Strings(sorted)
-		return "", fmt.Errorf("%d sessions have open asks under the name %q (%s) — this is ambiguous, so nothing was sent; clean up the duplicate with `cab-bridge cleanup --session-id=<id>`",
-			len(sorted), name, strings.Join(sorted, ", "))
+
+	seen := map[string]openAsk{} // sessionID -> one of its asks, for the scope
+	for _, a := range asks {
+		if a.fromName != rcpt.name {
+			continue
+		}
+		if rcpt.qualified() && !scopeMatchesHint(a.scope, rcpt.scope) {
+			continue
+		}
+		seen[a.from] = a
 	}
-	return ids[0], nil
+
+	switch len(seen) {
+	case 1:
+		for id := range seen {
+			return id, nil
+		}
+	case 0:
+		if rcpt.qualified() {
+			return "", fmt.Errorf("%q has no open ask of yours — open asks are from: %s", rcpt.String(), strings.Join(sortedNames(senders), ", "))
+		}
+		return "", fmt.Errorf("%q has no open ask of yours — open asks are from: %s", rcpt.name, strings.Join(sortedNames(senders), ", "))
+	}
+
+	// Two senders share a name. Before F-116 this was a dead end: the message
+	// said "clean up the duplicate", which means destroying a live session to
+	// answer a question — and if the two are in DIFFERENT PROJECTS neither is a
+	// duplicate and neither could be answered at all, id-free or otherwise.
+	//
+	// Now the qualified address is the way out, and it exists precisely because
+	// `register` and `join --force-new` can put two sessions under one name
+	// (verbs.go, soleSessionNamed's own note): a name is unique per scope only on
+	// the `join` path. (CRI design-gate P1-2.)
+	var lines []string
+	sameScope := true
+	var firstScope string
+	for id, a := range seen {
+		if firstScope == "" {
+			firstScope = a.scope
+		} else if a.scope != firstScope {
+			sameScope = false
+		}
+		lines = append(lines, fmt.Sprintf("\n    %s%s%s  (%s)", a.fromName, session.ScopeSeparator, scopeLabelOf(a.scope), id))
+	}
+	sort.Strings(lines)
+	if sameScope {
+		return "", fmt.Errorf("%d sessions in one project have open asks under the name %q — this is ambiguous, so nothing was sent; clean up the duplicate with `cab-bridge cleanup --session-id=<id>`:%s",
+			len(seen), rcpt.name, strings.Join(lines, ""))
+	}
+	return "", fmt.Errorf("%d agents named %q have open asks, in different projects — say which:%s",
+		len(seen), rcpt.name, strings.Join(lines, ""))
+}
+
+// scopeLabelOf renders a scope for an error message: its basename, or a marker
+// when the session has none (legacy, pre-F-17).
+func scopeLabelOf(scope string) string {
+	if scope == "" {
+		return "<no project>"
+	}
+	return filepath.Base(scope)
+}
+
+// senderNames lists the agent names that have an open ask right now.
+func senderNames(asks []openAsk) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, a := range asks {
+		if a.fromName == "" || seen[a.fromName] {
+			continue
+		}
+		seen[a.fromName] = true
+		out = append(out, a.fromName)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func contains(xs []string, x string) bool {
@@ -1076,6 +1275,7 @@ func deliverResponse(cfg config.Config, mgr *session.Manager, sid string, txn *s
 		Closes:        txn.CloseIDs,
 		Metadata: message.Metadata{
 			FromProject:     senderManifest.ProjectName,
+			FromScope:       senderManifest.Scope,
 			ProcessingState: message.StatusPending,
 		},
 	}

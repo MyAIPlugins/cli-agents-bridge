@@ -105,6 +105,17 @@ func (m *Manager) Register(ctx context.Context, opts RegisterOpts) (*Manifest, f
 	if err != nil {
 		return nil, nil, fmt.Errorf("register: resolve ProjectPath %q: %w", opts.ProjectPath, err)
 	}
+	// F-116: the name must stay addressable, and this is the ONE place to say
+	// so — `join` and `register` both come through here, so validating in either
+	// of them would leave the third caller free. (Which is the mistake the CRI
+	// gate had just caught in the plan: checking the doors you happen to hold.
+	// The fourth door is RenameAgent, which writes AgentName without passing
+	// here, and carries the same check.)
+	//
+	// TYPED names are refused, DERIVED ones sanitised: see ValidateAgentName.
+	if err := ValidateAgentName(opts.AgentName); err != nil {
+		return nil, nil, fmt.Errorf("register: %w", err)
+	}
 
 	// F-27 reconnect-or-register: with Resume, try to resume an existing
 	// matching session (reusing its id/inbox/state) before creating a fresh one.
@@ -169,7 +180,11 @@ func (m *Manager) Register(ctx context.Context, opts RegisterOpts) (*Manifest, f
 		SchemaVersion: SchemaVersionV2,
 		ProjectName:   filepath.Base(absProj),
 		ProjectPath:   absProj,
-		AgentName:     defaultIfEmpty(opts.AgentName, filepath.Base(absProj)),
+		// The derived default is sanitised, never refused: nobody typed the
+		// directory's name, and failing a join over a worktree called `feat@2`
+		// would be an error for a choice the caller did not make. The caller
+		// says so on stderr (join.go) — this only guarantees the invariant.
+		AgentName:     defaultIfEmpty(opts.AgentName, derivedAgentName(absProj)),
 		Role:          defaultIfEmpty(opts.Role, RoleNeutral),
 		PID:           os.Getpid(),
 		StartedAt:     now,
@@ -628,6 +643,12 @@ func (m *Manager) Touch(sessionID string) error {
 // touchHeartbeatOwned for the same reasoning). Renaming to the current name is a
 // no-op, not an error — the caller should not have to check first.
 func (m *Manager) RenameAgent(sessionID, newName string) error {
+	// The fourth door onto AgentName, and the only one that does not go through
+	// Register (F-116). A rename is always something somebody typed, so the
+	// separator is refused here rather than sanitised.
+	if err := ValidateAgentName(newName); err != nil {
+		return fmt.Errorf("rename: %w", err)
+	}
 	return m.WithSessionLock(sessionID, func() error {
 		m.manifestMu.Lock()
 		defer m.manifestMu.Unlock()

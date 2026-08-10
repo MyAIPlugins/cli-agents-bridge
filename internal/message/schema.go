@@ -115,7 +115,22 @@ type Message struct {
 // that should not pollute the top-level schema. MVP carries only
 // fromProject + processingState; v0.3+ may add threadId, retries, etc.
 type Metadata struct {
-	FromProject     string `json:"fromProject"`
+	FromProject string `json:"fromProject"`
+	// FromScope is the sender's project ROOT — the repository — at the moment it
+	// wrote (F-116, DESIGN §2.6). Added ALONGSIDE FromProject rather than
+	// changing it: the two are different values (FromProject is the basename of
+	// the sender's working directory, which for a worktree is not the repo), and
+	// putting a new meaning under an old JSON name would break the contract in
+	// silence for every reader.
+	//
+	// It is PROVENANCE, not authentication. Under the same-UID threat model it
+	// proves nothing about who wrote the message — it says where the sender said
+	// it was writing from — and the line that displays it must not suggest
+	// otherwise.
+	//
+	// Empty on everything written before this field existed, and on legacy v1.
+	// Absent means "not stated", never "same project as you".
+	FromScope       string `json:"fromScope,omitempty"`
 	ProcessingState string `json:"processingState"`
 }
 

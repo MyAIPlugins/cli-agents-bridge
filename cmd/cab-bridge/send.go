@@ -61,6 +61,7 @@ func sendMessage(cfg config.Config, mgr *session.Manager, fromSID, to, msgType, 
 		InReplyTo:     inReplyTo,
 		Metadata: message.Metadata{
 			FromProject:     senderManifest.ProjectName,
+			FromScope:       senderManifest.Scope,
 			ProcessingState: message.StatusPending,
 		},
 	}

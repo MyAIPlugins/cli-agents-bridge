@@ -80,10 +80,20 @@ type nextMessage struct {
 	ID            string `json:"id"`
 	From          string `json:"from"`
 	FromAgentName string `json:"fromAgentName,omitempty"`
-	FromRole      string `json:"fromRole,omitempty"`
-	Type          string `json:"type"`
-	Timestamp     string `json:"timestamp"`
-	Bytes         int    `json:"bytes"`
+	// FromScope appears ONLY when the sender's project differs from the reader's
+	// (F-116). In-scope it would be noise on every message; cross-scope it is the
+	// one thing that says "this did not come from your own team".
+	//
+	// Provenance, not authentication: it reports what the sender DECLARED when it
+	// wrote. Empty on messages written before the field existed — and absence is
+	// "not stated", never "same project as you", which is why nothing here fills
+	// the gap by looking the sender up now. That would answer a different
+	// question (where it is NOW) under the label of this one.
+	FromScope string `json:"fromScope,omitempty"`
+	FromRole  string `json:"fromRole,omitempty"`
+	Type      string `json:"type"`
+	Timestamp string `json:"timestamp"`
+	Bytes     int    `json:"bytes"`
 	// Content is the message body, omitted when Oversize is set.
 	Content string `json:"content,omitempty"`
 	// BodyFile is the on-disk PATH of the message, emitted INSTEAD of Content
@@ -378,6 +388,13 @@ func collectNextPage(mgr *session.Manager, cfg config.Config, sid, inboxDir stri
 	if err != nil {
 		return pageResult{}, false, fmt.Errorf("next: read wake cursor: %w", err)
 	}
+	// My own project, to decide which messages are worth labelling as foreign.
+	// A failure here is not worth refusing a delivery over: the label is dropped,
+	// never guessed.
+	myScope := ""
+	if mf, lerr := mgr.LoadManifest(sid); lerr == nil {
+		myScope = mf.Scope
+	}
 
 	entries, corrupt, foreign, err := readMailbox(inboxDir, cfg.MaxMessageBytes)
 	if err != nil {
@@ -467,7 +484,7 @@ func collectNextPage(mgr *session.Manager, cfg config.Config, sid, inboxDir stri
 		// duplicated metadata and the wrapper can inflate a payload well past
 		// the raw bytes on disk, and this limit exists to protect stdout, the
 		// harness capture and the agent's context (CRI diff-gate P1-4).
-		candidate := newNextMessage(e, false)
+		candidate := newNextMessage(e, false, myScope)
 		size := serializedSize(candidate)
 
 		// A single message over budget goes out alone as a pointer rather than
@@ -476,7 +493,7 @@ func collectNextPage(mgr *session.Manager, cfg config.Config, sid, inboxDir stri
 			if len(page.Messages) > 0 {
 				break
 			}
-			page.Messages = append(page.Messages, newNextMessage(e, true))
+			page.Messages = append(page.Messages, newNextMessage(e, true, myScope))
 			emitted = append(emitted, e.msg.ID)
 			break
 		}
@@ -573,7 +590,7 @@ func serializedSize(m nextMessage) int {
 	return len(data)
 }
 
-func newNextMessage(e mailboxEntry, oversize bool) nextMessage {
+func newNextMessage(e mailboxEntry, oversize bool, myScope string) nextMessage {
 	m := nextMessage{
 		ID:            e.msg.ID,
 		From:          e.msg.From,
@@ -583,6 +600,11 @@ func newNextMessage(e mailboxEntry, oversize bool) nextMessage {
 		Timestamp:     e.msg.Timestamp,
 		Bytes:         e.bytes,
 		Closes:        e.msg.Closes,
+	}
+	// Only when it differs, and only when the sender stated it: an empty field
+	// means "not stated" and must not be rendered as agreement.
+	if from := e.msg.Metadata.FromScope; from != "" && from != myScope {
+		m.FromScope = from
 	}
 	if e.replayed {
 		m.Redelivered = true

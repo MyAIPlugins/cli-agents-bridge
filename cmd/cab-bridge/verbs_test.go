@@ -467,23 +467,27 @@ func TestSoleSessionNamed_FailsClosedOnHomonyms(t *testing.T) {
 	t.Parallel()
 	senders := map[string]string{"aaaaaaa1": "VAL-same", "bbbbbbb2": "VAL-same"}
 
+	homonyms := []openAsk{
+		{id: "msg-aaaaaaaaaaaa", from: "aaaaaaa1", fromName: "VAL-same", scope: "/repo/one"},
+		{id: "msg-bbbbbbbbbbbb", from: "bbbbbbb2", fromName: "VAL-same", scope: "/repo/one"},
+	}
+
 	t.Run("two_sessions_one_name_is_refused", func(t *testing.T) {
-		byName := map[string][]string{"VAL-same": {"aaaaaaa1", "bbbbbbb2"}}
-		_, err := soleSessionNamed(byName, "VAL-same", senders)
+		_, err := soleSessionNamed("VAL-same", homonyms, senders)
 		require.Error(t, err, "the remediation must not be the trap")
 		assert.Contains(t, err.Error(), "aaaaaaa1")
 		assert.Contains(t, err.Error(), "bbbbbbb2")
 	})
 
 	t.Run("single_session_resolves", func(t *testing.T) {
-		byName := map[string][]string{"VAL-one": {"aaaaaaa1"}}
-		got, err := soleSessionNamed(byName, "VAL-one", senders)
+		one := []openAsk{{id: "msg-aaaaaaaaaaaa", from: "aaaaaaa1", fromName: "VAL-one", scope: "/repo/one"}}
+		got, err := soleSessionNamed("VAL-one", one, senders)
 		require.NoError(t, err)
 		assert.Equal(t, "aaaaaaa1", got)
 	})
 
 	t.Run("unknown_name_is_refused", func(t *testing.T) {
-		_, err := soleSessionNamed(map[string][]string{}, "NOBODY", senders)
+		_, err := soleSessionNamed("NOBODY", homonyms, senders)
 		assert.Error(t, err)
 	})
 }
