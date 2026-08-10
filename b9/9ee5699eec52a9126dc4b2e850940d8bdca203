@@ -1,0 +1,16 @@
+cmd/cab-bridge/verbs.go
+  h_4a4009aad9cb45 39-47,50-53,364,368-444
+cmd/cab-bridge/verbs_test.go
+  h_4a4009aad9cb45 831-946
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "b99ee5699eec52a9126dc4b2e850940d8bdca203",
+  "prompts": {},
+  "humans": {
+    "h_4a4009aad9cb45": {
+      "author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
