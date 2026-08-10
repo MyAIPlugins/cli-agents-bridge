@@ -405,9 +405,15 @@ func collectNextPage(mgr *session.Manager, cfg config.Config, sid, inboxDir stri
 	// My own project, to decide which messages are worth labelling as foreign.
 	// A failure here is not worth refusing a delivery over: the label is dropped,
 	// never guessed.
-	myScope := ""
+	// TWO facts, not one: which scope is mine, and whether I know it. Collapsing
+	// them into an empty string made a failed manifest read say "your scope is
+	// nothing", so every modern message compared unequal and came out labelled
+	// FOREIGN — while the comment claimed the label was dropped. Not knowing and
+	// being different are different things, and flattening them is what produced
+	// the defect (CRI diff-gate P2-5).
+	myScope, myScopeKnown := "", false
 	if mf, lerr := mgr.LoadManifest(sid); lerr == nil {
-		myScope = mf.Scope
+		myScope, myScopeKnown = mf.Scope, true
 	}
 
 	entries, corrupt, foreign, err := readMailbox(inboxDir, cfg.MaxMessageBytes)
@@ -498,7 +504,7 @@ func collectNextPage(mgr *session.Manager, cfg config.Config, sid, inboxDir stri
 		// duplicated metadata and the wrapper can inflate a payload well past
 		// the raw bytes on disk, and this limit exists to protect stdout, the
 		// harness capture and the agent's context (CRI diff-gate P1-4).
-		candidate := newNextMessage(e, false, myScope)
+		candidate := newNextMessage(e, false, myScope, myScopeKnown)
 		size := serializedSize(candidate)
 
 		// A single message over budget goes out alone as a pointer rather than
@@ -507,7 +513,7 @@ func collectNextPage(mgr *session.Manager, cfg config.Config, sid, inboxDir stri
 			if len(page.Messages) > 0 {
 				break
 			}
-			page.Messages = append(page.Messages, newNextMessage(e, true, myScope))
+			page.Messages = append(page.Messages, newNextMessage(e, true, myScope, myScopeKnown))
 			emitted = append(emitted, e.msg.ID)
 			break
 		}
@@ -604,7 +610,7 @@ func serializedSize(m nextMessage) int {
 	return len(data)
 }
 
-func newNextMessage(e mailboxEntry, oversize bool, myScope string) nextMessage {
+func newNextMessage(e mailboxEntry, oversize bool, myScope string, myScopeKnown bool) nextMessage {
 	m := nextMessage{
 		ID:            e.msg.ID,
 		From:          e.msg.From,
@@ -617,7 +623,7 @@ func newNextMessage(e mailboxEntry, oversize bool, myScope string) nextMessage {
 	}
 	// Only when it differs, and only when the sender stated it: an empty field
 	// means "not stated" and must not be rendered as agreement.
-	if from := e.msg.Metadata.FromScope; from != "" && from != myScope {
+	if from := e.msg.Metadata.FromScope; myScopeKnown && from != "" && from != myScope {
 		m.FromScope = from
 		if e.msg.FromAgentName != "" {
 			m.FromAddress = recipient{name: e.msg.FromAgentName, scope: from}.String()

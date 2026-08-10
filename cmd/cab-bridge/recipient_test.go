@@ -228,7 +228,7 @@ func TestNextMessage_CrossScopeCarriesAPastableAddress(t *testing.T) {
 		Metadata: message.Metadata{FromScope: theirs},
 	}}
 
-	got := newNextMessage(e, false, "/Users/alan/develop/bridge")
+	got := newNextMessage(e, false, "/Users/alan/develop/bridge", true)
 	assert.Equal(t, theirs, got.FromScope)
 	assert.Equal(t, "VAL-payload@"+theirs, got.FromAddress, "the agent copies, it does not assemble")
 
@@ -238,13 +238,96 @@ func TestNextMessage_CrossScopeCarriesAPastableAddress(t *testing.T) {
 	assert.True(t, scopeMatchesHint(theirs, parsed.scope), "and resolve to the sender's scope")
 
 	// Same scope: neither field, because both would be noise on every message.
-	same := newNextMessage(e, false, theirs)
+	same := newNextMessage(e, false, theirs, true)
 	assert.Empty(t, same.FromScope)
 	assert.Empty(t, same.FromAddress)
 
 	// Legacy message with no fromScope: nothing invented, nothing looked up.
 	legacy := mailboxEntry{msg: &message.Message{ID: "msg-bbbbbbbbbbbb", From: "old", FromAgentName: "VAL-old", Type: message.TypeQuery}}
-	old := newNextMessage(legacy, false, "/Users/alan/develop/bridge")
+	old := newNextMessage(legacy, false, "/Users/alan/develop/bridge", true)
 	assert.Empty(t, old.FromScope, "absent means not stated, never 'same project as you'")
 	assert.Empty(t, old.FromAddress)
+
+	// And when MY OWN scope could not be read, nothing is labelled: not knowing
+	// and being different are two facts, and an empty string collapsed them into
+	// "everything is foreign" while the comment claimed the label was dropped.
+	unknown := newNextMessage(e, false, "", false)
+	assert.Empty(t, unknown.FromScope, "a failed manifest read must drop the label, not invent one")
+	assert.Empty(t, unknown.FromAddress)
+}
+
+// --- diff-gate CRI, the four P1 --------------------------------------------
+
+// P1-2: the way out of an ambiguity must be a token that RESOLVES. The first
+// version wrote its own shortening and handed back `VAL-same@twin` twice — two
+// identical strings for two different projects, neither of which reaches
+// anybody. The remediation was the trap, again, three lines below a comment
+// saying it must not be.
+func TestSoleSessionNamed_AmbiguousBasenamesGetDistinctWorkingTokens(t *testing.T) {
+	t.Parallel()
+	senders := map[string]string{"aaaaaaa1": "VAL-same", "bbbbbbb2": "VAL-same"}
+	asks := []openAsk{
+		{id: "msg-aaaaaaaaaaaa", from: "aaaaaaa1", fromName: "VAL-same", scope: "/a/twin"},
+		{id: "msg-bbbbbbbbbbbb", from: "bbbbbbb2", fromName: "VAL-same", scope: "/b/twin"},
+	}
+
+	_, err := soleSessionNamed("VAL-same", asks, senders)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "VAL-same@/a/twin", "the basename is shared, so only the path resolves")
+	assert.Contains(t, err.Error(), "VAL-same@/b/twin")
+
+	// And both tokens the message offered actually work.
+	for _, token := range []struct{ addr, want string }{
+		{"VAL-same@/a/twin", "aaaaaaa1"},
+		{"VAL-same@/b/twin", "bbbbbbb2"},
+	} {
+		got, err := soleSessionNamed(token.addr, asks, senders)
+		require.NoError(t, err, "%q was offered as the way out and must work", token.addr)
+		assert.Equal(t, token.want, got)
+	}
+}
+
+func TestScopeLabels_ShortenOnlyWhereItCannotMislead(t *testing.T) {
+	t.Parallel()
+	labels := scopeLabels([]string{"/a/twin", "/b/twin", "/x/solo"})
+	assert.Equal(t, "/a/twin", labels["/a/twin"], "two places cannot share one label")
+	assert.Equal(t, "/b/twin", labels["/b/twin"])
+	assert.Equal(t, "solo", labels["/x/solo"], "and the unambiguous one still shortens")
+}
+
+// P1-3: the restriction has to BIND where the message is composed, not where
+// the name was looked up.
+//
+// The two are separated by SetRole, which F-110 put on the ordinary path: the
+// resolver saw val→val, the role changed, and the message left for an `esc` in
+// another repository. A check that runs on a lookup is a warning; this test
+// pins that the guarantee is at the gateway, on the manifests actually used.
+func TestSendMessage_CrossScopeRestrictionBindsAtTheGateway(t *testing.T) {
+	dataDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.DataDir = dataDir
+	mgr := newSessionManager(cfg)
+
+	const mine, theirs = "/repo/bridge", "/repo/payload"
+	planted(t, dataDir, "valmine1", session.RoleVal, "VAL-bridge", mine)
+	planted(t, dataDir, "valthem1", session.RoleVal, "VAL-payload", theirs)
+
+	// The lookup happens while both are vals, and passes.
+	target, err := resolveRecipientByName(cfg, mgr, "VAL-payload@payload", "valmine1")
+	require.NoError(t, err)
+
+	// Then the recipient changes role — an ordinary `join --role=esc` there.
+	require.NoError(t, mgr.SetRole(target, session.RoleEsc))
+
+	_, err = sendMessage(cfg, mgr, "valmine1", target, message.TypeQuery, "brief", nil, false)
+	require.Error(t, err, "the resolver's answer is stale by the time we compose: the gateway must re-decide")
+	assert.Contains(t, err.Error(), "only a val writes to a val")
+
+	// And the complement: qualifying a peer in MY OWN project is a long way of
+	// writing a local address, not a crossing — it must not be refused.
+	planted(t, dataDir, "escmine1", session.RoleEsc, "ESC-bridge", mine)
+	local, err := resolveRecipientByName(cfg, mgr, "ESC-bridge@bridge", "valmine1")
+	require.NoError(t, err, "same scope, spelled the long way")
+	_, err = sendMessage(cfg, mgr, "valmine1", local, message.TypeQuery, "brief", nil, false)
+	require.NoError(t, err, "cross-scope is decided by comparing scopes, never by how the address was written")
 }

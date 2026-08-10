@@ -72,3 +72,35 @@ func TestRegisterAndRename_HoldTheInvariantAtThePoint(t *testing.T) {
 	require.NoError(t, release2())
 	assert.Equal(t, "feat-2", mf2.AgentName)
 }
+
+// P1-1 of the diff gate: the writer sanitised the derived name and the READER
+// kept the raw basename, so `--resume` in a directory called `feat@2` looked for
+// a session named `feat@2`, found none, and registered a SECOND one. If the
+// first held mail, the peer came back to an empty inbox with its work in the
+// other session.
+//
+// The canonical shape — a writer's semantics changed without re-examining its
+// readers — and the comment on findIdentityMatches said the two used "the SAME
+// defaults", which was true until it silently was not.
+func TestResume_FindsTheSessionRegisteredWithASanitisedName(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewManager(dir, time.Second)
+	proj := filepath.Join(dir, "feat@2")
+	require.NoError(t, os.MkdirAll(proj, 0o700))
+
+	first, release, err := mgr.Register(context.Background(), RegisterOpts{ProjectPath: proj, Role: RoleEsc, Scope: proj})
+	require.NoError(t, err)
+	require.NoError(t, release())
+	assert.Equal(t, "feat-2", first.AgentName)
+
+	again, release2, err := mgr.Register(context.Background(), RegisterOpts{ProjectPath: proj, Role: RoleEsc, Scope: proj, Resume: true})
+	require.NoError(t, err)
+	require.NoError(t, release2())
+
+	assert.Equal(t, first.SessionID, again.SessionID,
+		"a resume must find the session the writer actually created, not one named after the raw directory")
+
+	entries, err := os.ReadDir(filepath.Join(dir, "sessions"))
+	require.NoError(t, err)
+	assert.Len(t, entries, 1, "and never leave a second session holding the first one's mail")
+}

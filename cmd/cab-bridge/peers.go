@@ -183,29 +183,47 @@ func runPeers(args []string) error {
 // others is still readable, while one that shows the same label for two
 // different places is not.
 func scopeColumn(peers []peerSummary) map[string]string {
-	byBase := map[string]map[string]bool{}
+	scopes := make([]string, 0, len(peers))
 	for _, p := range peers {
-		if p.Scope == "" {
+		scopes = append(scopes, p.Scope)
+	}
+	labels := scopeLabels(scopes)
+	labels[""] = "-"
+	return labels
+}
+
+// scopeLabels is that rule on its own, so the one place that shortens a scope is
+// the one place that decides when it may not.
+//
+// It exists because the FIRST version of the qualified-address errors wrote its
+// own shortening — plain basenames — and handed back `VAL-same@twin` twice for
+// two different projects: two tokens, neither of which resolves, offered as the
+// way out of an ambiguity (CRI diff-gate P1-2). The remediation was the trap,
+// again, three lines under a comment saying it must not be.
+func scopeLabels(scopes []string) map[string]string {
+	byBase := map[string]map[string]bool{}
+	for _, s := range scopes {
+		if s == "" {
 			continue
 		}
-		base := filepath.Base(p.Scope)
+		base := filepath.Base(s)
 		if byBase[base] == nil {
 			byBase[base] = map[string]bool{}
 		}
-		byBase[base][p.Scope] = true
+		byBase[base][s] = true
 	}
 
-	labels := map[string]string{"": "-"}
-	for _, p := range peers {
-		if p.Scope == "" {
+	labels := map[string]string{}
+	for _, s := range scopes {
+		if s == "" {
 			continue
 		}
-		base := filepath.Base(p.Scope)
+		base := filepath.Base(s)
 		if len(byBase[base]) > 1 {
-			labels[p.Scope] = p.Scope // ambiguous: say the whole thing
+			labels[s] = s // ambiguous within this set: only the whole path resolves
 			continue
 		}
-		labels[p.Scope] = base
+		labels[s] = base
 	}
 	return labels
 }

@@ -134,7 +134,10 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, token, self
 
 	switch len(candidates) {
 	case 1:
-		if rcpt.qualified() {
+		// Compared on the SCOPES, not on the syntax: `VAL-x@my-own-repo` is not a
+		// cross-project message just because it was written the long way, and the
+		// first version refused it for that reason alone.
+		if me.Scope != candidates[0].Scope {
 			if err := allowedAcrossScopes(me.Role, candidates[0].Role, name, rcpt.scope); err != nil {
 				return "", err
 			}
@@ -201,10 +204,17 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, token, self
 	}
 }
 
-// allowedAcrossScopes is the F-116 restriction for this release: an address that
+// allowedAcrossScopes is the F-116 restriction for this release: a message that
 // crosses projects is val→val only.
 //
-// It is a PRE-CHECK on the qualified path, not a second routing matrix.
+// Here it is an EARLY ERROR, not the guarantee — the guarantee is at the
+// gateway (send.go), on the manifests actually used to compose the message.
+// Between this lookup and that write sits `SetRole`, which F-110 put on the
+// normal path: val→val could pass here, the role change, and the message leave
+// for an `esc` in another repository. The same distinction between a warning
+// and an invariant that unexported roleNames was about.
+//
+// It is not a second routing matrix.
 // ValidateSendPair stays the only policy, and stays untouched — because the
 // scope was in practice the barrier, and removing it for a qualified address
 // opens every pair that matrix already accepts, which is a decision nobody took.
@@ -221,6 +231,7 @@ func allowedAcrossScopes(fromRole, toRole, name, scope string) error {
 // knownScopes lists the projects that have agents, so "no agent named X in
 // project Y" can be answered with "which projects exist, then".
 func knownScopes(peers []peerSummary) []string {
+	labels := scopeColumn(peers)
 	seen := map[string]bool{}
 	var out []string
 	for _, p := range peers {
@@ -228,7 +239,9 @@ func knownScopes(peers []peerSummary) []string {
 			continue
 		}
 		seen[p.Scope] = true
-		out = append(out, filepath.Base(p.Scope))
+		// The shared rule again: a list that names two projects identically
+		// would answer "which projects exist" with a token that reaches neither.
+		out = append(out, labels[p.Scope])
 	}
 	sort.Strings(out)
 	return out
@@ -914,6 +927,16 @@ func soleSessionNamed(name string, asks []openAsk, senders map[string]string) (s
 	// `register` and `join --force-new` can put two sessions under one name
 	// (verbs.go, soleSessionNamed's own note): a name is unique per scope only on
 	// the `join` path. (CRI design-gate P1-2.)
+	// The labels come from the SAME rule the peers column uses: basename when it
+	// is unique in this set, full path when it is not. Writing a second
+	// shortening here is exactly what handed back two identical tokens for two
+	// different projects — a way out that did not work.
+	scopes := make([]string, 0, len(seen))
+	for _, a := range seen {
+		scopes = append(scopes, a.scope)
+	}
+	labels := scopeLabels(scopes)
+
 	var lines []string
 	sameScope := true
 	var firstScope string
@@ -923,7 +946,7 @@ func soleSessionNamed(name string, asks []openAsk, senders map[string]string) (s
 		} else if a.scope != firstScope {
 			sameScope = false
 		}
-		lines = append(lines, fmt.Sprintf("\n    %s%s%s  (%s)", a.fromName, session.ScopeSeparator, scopeLabelOf(a.scope), id))
+		lines = append(lines, fmt.Sprintf("\n    %s%s%s  (%s)", a.fromName, session.ScopeSeparator, scopeLabelOf(a.scope, labels), id))
 	}
 	sort.Strings(lines)
 	if sameScope {
@@ -934,13 +957,16 @@ func soleSessionNamed(name string, asks []openAsk, senders map[string]string) (s
 		len(seen), rcpt.name, strings.Join(lines, ""))
 }
 
-// scopeLabelOf renders a scope for an error message: its basename, or a marker
-// when the session has none (legacy, pre-F-17).
-func scopeLabelOf(scope string) string {
+// scopeLabelOf renders a scope for an error message, using the label the shared
+// rule chose for this set — so what the message offers is always addressable.
+func scopeLabelOf(scope string, labels map[string]string) string {
 	if scope == "" {
 		return "<no project>"
 	}
-	return filepath.Base(scope)
+	if l, ok := labels[scope]; ok {
+		return l
+	}
+	return scope
 }
 
 // senderNames lists the agent names that have an open ask right now.
