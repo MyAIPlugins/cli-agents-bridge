@@ -1,6 +1,6 @@
 ---
 name: bridge-workflow
-description: How to coordinate two (or more) CLI agent sessions with the cab-bridge binary — the five-command working loop (join, next, ask, tell, reply), the mailbox model with explicit states (UNREAD/NOTIFIED/ARCHIVED) where next never consumes and only reply archives, recipients by agent name, scope = git repository so same-repo worktrees pair automatically, agent state, inbox inspection, and external wake for peers without native push (notify-watch). Use when one agent session needs to hand work to, or exchange messages with, another agent session on the same machine.
+description: How to coordinate two (or more) CLI agent sessions with the cab-bridge binary — the five-command working loop (join, next, ask, tell, reply), the mailbox model with explicit states (UNREAD/NOTIFIED/REQUEUED/ARCHIVED) where next never consumes and reply archives one delivery, putting anything that arrived later back in the queue, recipients by agent name, scope = git repository so same-repo worktrees pair automatically, agent state, inbox inspection, and external wake for peers without native push (notify-watch). Use when one agent session needs to hand work to, or exchange messages with, another agent session on the same machine.
 ---
 
 # cab-bridge — coordinating agent sessions
@@ -27,7 +27,7 @@ cab-bridge join --role=val      # once, at the start
 cab-bridge next                 # then forever: the only command of the cycle
 cab-bridge ask <agent> "..."    # ask something — stays open until they reply
 cab-bridge tell <agent> "..."   # inform — no reply expected
-cab-bridge reply "..."          # answer whoever asked; closes their open asks
+cab-bridge reply "..."          # answer whoever asked; closes that one delivery
 ```
 
 **The verb carries the type.** There is no `--type` and no `--in-reply-to`: whether you are asking or informing is something you already know, so it is language, not configuration. Whether a message stays open, gets replayed after a restart, and how long it is kept all follow from the verb you chose.
@@ -42,10 +42,13 @@ Your inbox has three states, and only one command moves a file:
 |---|---|
 | `UNREAD` | arrived, never shown to you |
 | `NOTIFIED` | `next` has shown it to you — **still in your inbox** |
+| `REQUEUED` | was shown to you, you did not close it, it is on its way to you again |
 | `ARCHIVED` | done with — moved to `processed/` |
 
 - **`next` never moves a file, under any circumstance.** It shows you what is `UNREAD`, marks it `NOTIFIED`, and waits. Being woken and consuming are separate acts — that separation is the whole point of the model.
-- **Only `reply` archives.** Answering someone closes *all* their open asks in one transaction. Confirmation is therefore a side effect of doing the work, never a ritual you must remember.
+- **Only `reply` archives, and it archives ONE delivery.** Answering someone closes the asks they sent you **in a single `next` page** — not everything of theirs that happens to be open. Anything of theirs that arrived later is left open, named in `reply`'s output, and **put back in the queue so your next `next` hands it to you again** (marked `redelivered`). Confirmation stays a side effect of doing the work, never a ritual — but the work you confirm is the delivery you were shown.
+  Why it is a page and not everything: `NOTIFIED` means *the `next` process printed it*, not *you read it*. Rearm before you start working (you should) and a message arriving **while you write** is `NOTIFIED` without you having seen it — under the old rule your answer closed it too, so a *"stop, do not do A"* could be archived as answered by a *"did A as asked"*. Real incident, not a hypothetical.
+  **The honest limit**: no read-ACK exists, so this is not impossible-by-construction — the oldest open page can itself be one you never read. What is guaranteed is *at most one delivery per answer*, and *never in silence*: the responder sees what was closed and what stayed open, the sender sees `closes` on the response and `requeued` in `sent`.
 - **`next` has no window.** It waits until something arrives, indefinitely. If it is interrupted it says so (`"status": "interrupted"`) instead of exiting silently — so a wrapper can tell "interrupted while waiting" from "nothing happened".
 - **After a restart**, re-running `join` replays your still-open asks, and `next` marks them `redelivered` inline on the message. Treat a re-delivery normally: at-least-once delivery with the duplicate made visible, so you never have to *decide* whether something is a duplicate.
 
@@ -78,7 +81,7 @@ Prefer stdin (or a file) for anything longer than a line. **The shell interprets
 
 ## Roles
 
-`val` (orchestrates), `esc` (executes), **`critic`** (reviews and criticises — talks to everyone, and is not blocked like `esc→esc`), `observer` (reads only), `neutral`. `architect` is **reserved** for Claude Desktop arriving over the MCP connector; do not assign it to reviewers. Custom roles are accepted by routing. Two structural rules:
+`val` (orchestrates), `esc` (executes), **`critic`** (reviews and criticises — **sends only to its `val`**, which passes things on: independence is the point of the role, and two critics comparing notes converge into one voice), `observer` (reads only), `neutral`. `architect` is **reserved** for Claude Desktop arriving over the MCP connector; do not assign it to reviewers. Custom roles are accepted by routing. Two structural rules:
 
 - **`observer` cannot send.** No flag overrides it — it is read-only by design.
 - **`esc → esc` is rejected** by default; route through the orchestrator, or pass `--allow-mesh` for a deliberate mesh. Two equal agents with no hierarchy should use a custom role (`--role=peer`), which is allowed out of the box.
@@ -90,7 +93,7 @@ If you are a reviewer, `critic` is the role meant for you.
 
 Claude Code sessions have native push: a backgrounded `next` wakes the agent when it returns. **Codex CLI does not** — measured: the process picks the mail up in milliseconds, but the model only sees it when it gets another turn.
 
-Such a peer stays reachable by **holding a persistent goal in its own runtime** — the goal is what grants it the next turn; without one it finishes a reply and ceases to exist until a human writes to it. Its goal must say **wait on the `next` process itself — 20 minutes per round — and never `sleep` alongside it**, plus *one consumer at a time*. `next` has no window: it hangs until mail arrives, so the cycle is holding the wait open, and the 20 minutes is how long you wait, not a pause between rounds. Two opposite failures on one day: a peer that did not wait at all re-polled every 10-30 seconds, and a peer that put `sleep 300` beside its `next` burned a turn per nap while staying blind to a question its own `next` had already delivered. The pattern that holds — verified over 14 unbroken hours — sits between them. The goal must also say that **a delivered message is worked immediately** — obvious until a timing rule sits next to it, at which point the timing rule wins and the message waits. That belongs in the peer's own skill, not in your brief — but if a peer answers once and then goes quiet, **a missing goal is the first thing to check.**
+Such a peer stays reachable by **holding a persistent goal in its own runtime** — the goal is what grants it the next turn; without one it finishes a reply and ceases to exist until a human writes to it. Its goal must say **wait on the `next` process itself, asking for the longest window its wait tool accepts, and never `sleep` alongside it**, plus *one consumer at a time*. `next` has no window: it hangs until mail arrives, so the cycle is holding the wait open — the window is how long you wait, not a pause between rounds. A long window is free **because `next` delivers and exits**, so the wait returns on process exit: measured on Codex, the wait does *not* return on intermediate output (output at 2 s on a process that lived 30 more returned at 31.9 s), so do not carry this rule over to processes that keep running. Shortening the window buys nothing and costs a model turn each time — 55-second slices are ~65 waits an hour where 5-minute slices are 12. Beware silent truncation: on Codex the effective max is 300,000 ms and asking for an hour returned empty at 300,036 ms **with no error**, so if the number matters, measure the return instead of trusting what you passed. Two opposite failures on one day: a peer that did not wait at all re-polled every 10-30 seconds, and a peer that put `sleep 300` beside its `next` burned a turn per nap while staying blind to a question its own `next` had already delivered. The pattern that holds — verified over 14 unbroken hours — sits between them. The goal must also say that **a delivered message is worked immediately** — obvious until a timing rule sits next to it, at which point the timing rule wins and the message waits. That belongs in the peer's own skill, not in your brief — but if a peer answers once and then goes quiet, **a missing goal is the first thing to check.**
 
 If low latency really matters, the wake has to come from outside instead:
 
