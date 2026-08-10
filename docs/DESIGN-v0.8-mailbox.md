@@ -83,11 +83,19 @@ La distinzione vive nel **verbo**, non in un flag né in una deduzione: *sto chi
 |---|---|---|---|---|
 | `ask` | query | **sì**, finché non risposto | **sì**, resta azionabile | — |
 | `tell` | notify | no | no, one-shot | — |
-| `reply` | response | no | no | **sì**: archivia gli `ask` aperti di quel mittente |
+| `reply` | response | no | no | **sì**: archivia gli `ask` di quel mittente mostrati in UNA consegna (vedi emendamento F-109) |
 
 Tre nodi sciolti da una scelta sola: la riga outbound conta solo ciò che aspetta davvero (niente assuefazione), il `join` rimette in coda solo ciò che è ancora azionabile (niente notifiche di tre giorni fa), e l'**aggiornamento di metà lavoro è un `tell`, non un `reply`** — quindi non chiude niente. Quest'ultimo punto chiude il P1 di CRI2 sul reply intermedio senza affidarlo a una frase da ricordare in una skill: il metodo VAL/ESC insegna gli aggiornamenti a checkpoint, e con verbi distinti l'agente comunicativo non archivia più per sbaglio un brief su cui sta ancora lavorando.
 
 **`reply` archivia tutti gli `ask` aperti di quel mittente** (CRI2 P1-1b), elencandoli nell'echo: `→ VAL-bridge (chiusi: msg-A, msg-A2)`. Il caso quotidiano è brief + correzione coperti da una sola risposta; archiviarne uno solo lascerebbe l'altro `NOTIFIED` per sempre, falso-pendente. I `tell` non sono mai "aperti", quindi non entrano.
+
+> **EMENDAMENTO 10 agosto — F-109. Questa regola era sbagliata, e in produzione ha chiuso un contrordine mai letto.** `reply` archivia **una consegna**: gli `ask` di quel mittente che un **singolo `next`** ha mostrato insieme (identificati dal `notifiedAt` comune — `CommitWakeCursor` assegna lo stesso istante a tutti gli id di una pagina, quindi il timestamp è l'identità della consegna, non un tempo). Quello arrivato **dopo** resta aperto, viene nominato sotto la risposta, e **torna in coda**: `ForgetNotified` lo riporta a `UNREAD` e il `next` successivo lo riconsegna marcato `redelivered`; per il mittente lo stato è **`requeued`**, non `unread`, perché "mostrato e rimesso in coda" non è "mai consegnato".
+>
+> **Il presupposto non scritto della vecchia regola era `NOTIFIED` = "l'agente l'ha letto".** È falso: `NOTIFIED` significa *"il processo `next` l'ha emesso"*, e con il riarmo-prima-di-lavorare — che è la pratica corretta — un messaggio che arriva **mentre l'agente scrive** è `NOTIFIED` senza essere stato letto. Riprodotto: un *"fermati, NON fare A"* archiviato come risposto da un *"fatto A come chiesto"*.
+>
+> **Limite dichiarato, perché non è eliminabile qui**: senza un ACK di lettura — tolto in §2.4 e giustamente — nessuna regola può sapere cosa l'agente abbia letto. La pagina più vecchia può essere proprio quella non letta. Ciò che il contratto garantisce è **al massimo una consegna per risposta** e **mai in silenzio** (chi risponde vede cosa lascia aperto, il mittente vede `closes` sulla risposta e `requeued` in `sent`) — **non** l'impossibilità del caso.
+>
+> Il **replay** di `join` fonde più consegne in una (`CommitWakeCursor` unico → stesso `notifiedAt`): non è una degradazione, perché il `next` post-join le rimostra insieme e chiuderle insieme è coerente con la regola, che è *"chiudi ciò che ti è stato mostrato in una volta"*.
 
 **Chiusura multipla — una risposta, una transazione, un set congelato** (CRI, quarto giro). Al **primo** tentativo `reply` fotografa **sotto lock** il set ordinato degli `ask` `NOTIFIED` aperti di quel mittente e persiste **un solo journal** con `closeIDs: [A, A2]` e **un solo response-id**. Ogni retry riusa quel set, anche se nel frattempo è arrivato A3 — che resta aperto e verrà chiuso dalla risposta successiva. Dopo `SENT` si archiviano **tutti e soli** i `closeIDs`; un recovery parziale riprende dall'indice senza rispedire.
 
