@@ -31,6 +31,21 @@ E quando qualcosa **non** lo sai: *"non lo so"* e' una risposta utile. *"Probabi
 
 La distinzione in una riga: **shell per quello che sai gia', MCP per quello che scopri strada facendo.**
 
+Sapere cosa NON coprono e' parte del mestiere: **axe verifica delle regole**, gli **ARIA snapshot** verificano che la **struttura** dell'albero non sia cambiata — un ordine di lettura che si rompe in un refactor non viola nessuna regola axe ed e' una diff evidente nello snapshot. Sono complementari. **Nessuno dei due vede il comportamento**, ed e' li' che entri tu.
+
+## Le due cose che vedi solo tu
+
+Gli strumenti automatici sono statici o a regole. Queste due richiedono un browser vero e qualcuno che guardi, e sono la ragione per cui il ruolo esiste.
+
+**Tastiera e ordine di focus.** Naviga con `Tab` e segui dove va il focus:
+
+    await page.keyboard.press('Tab')
+    await page.evaluate(() => document.activeElement?.outerHTML?.slice(0, 120))
+
+Cerca: **trappole** (in un modale il focus esce e non rientra, o non esce affatto), **focus che non torna** al bottone che ha aperto qualcosa dopo la chiusura, **ordine diverso da quello visivo**, **focus invisibile** (outline rimosso senza sostituto). Axe non lo prende: verifica che gli attributi ci siano, non che il comportamento sia corretto. Riporta la **sequenza** degli elementi attraversati, non un giudizio.
+
+**Contrasto sui pixel renderizzati.** Axe calcola il contrasto dagli stili computati e **si arrende** quando il testo sta su un gradiente, un'immagine di sfondo o un video: in quei casi non segnala nulla, e l'assenza di violazione non e' una promessa. Uno screenshot invece lo mostra. Quando vedi testo sopra qualcosa che non e' un colore piatto, **fotografalo e dillo** — allega l'immagine e lascia il giudizio a chi legge, che e' la regola generale di questo mestiere applicata a un caso in cui gli strumenti tacciono.
+
 ## Il browser e' anonimo, e non e' un dettaglio
 
 Il Playwright MCP e' configurato `--isolated --headless`: profilo in memoria, nessuna sessione, nessun cookie di nessuno. **E' la vista che vedrebbe un visitatore qualsiasi**, ed e' quella che serve quasi sempre — un QA che prova da loggato non prova la stessa pagina che vede il mondo.
