@@ -682,21 +682,49 @@ func TestLegacyEndToEnd_ProvenanceTokenAndDisambiguation(t *testing.T) {
 		assert.Equal(t, "legacyvl", got)
 	})
 
-	t.Run("3. two legacy homonyms are disambiguated by the tokens shown", func(t *testing.T) {
-		asks := []openAsk{
-			{id: "msg-aaaaaaaaaaaa", from: "legacyvl", fromName: "VAL-same", scope: repoA},
-			{id: "msg-bbbbbbbbbbbb", from: "valfarrr", fromName: "VAL-same", scope: repoB},
+	t.Run("3. two homonyms are disambiguated by the tokens shown", func(t *testing.T) {
+		// Through collectOpenAsks — the point where the derived scope is PUT on an
+		// openAsk — instead of building the structs by hand with the answer
+		// already in them. A test that asserts a derivation has to run where the
+		// derivation happens, or the correct result is the one the test supplied
+		// (CRI final gate). Proven by reverting verbs.go to mf.Scope: red.
+		me := "recvhere"
+		plantSessionFull(t, dataDir, me, session.RoleVal, "VAL-recv", repoB, repoB, "working")
+
+		// Two senders with ONE name, in two repositories: the current one, and a
+		// LEGACY whose project is only derivable from its ProjectPath.
+		plantSessionFull(t, dataDir, "twincurr", session.RoleVal, "VAL-twin", repoB, repoB, "working")
+		plantSessionFull(t, dataDir, "twinlegc", session.RoleVal, "VAL-twin", "", filepath.Join(repoA, "work"), "working")
+
+		// plantMsg, not plantInboxAt: the latter hardcodes the sender's agent name,
+		// and the whole point here is two senders sharing ONE name.
+		plantMsg(t, dataDir, me, "inbox", "msg-cccccccccccc", "twincurr", "VAL-twin", message.TypeQuery, "from the current one")
+		plantMsg(t, dataDir, me, "inbox", "msg-dddddddddddd", "twinlegc", "VAL-twin", message.TypeQuery, "from the legacy one")
+		now := time.Now().UTC()
+		_, cerr := mgr.CommitWakeCursor(me, []string{"msg-cccccccccccc", "msg-dddddddddddd"}, now, nil, nil)
+		require.NoError(t, cerr)
+
+		asks, aerr := collectOpenAsks(mgr, cfg, me)
+		require.NoError(t, aerr)
+		require.Len(t, asks, 2)
+
+		byID := map[string]openAsk{}
+		for _, a := range asks {
+			byID[a.from] = a
 		}
-		senders := map[string]string{"legacyvl": "VAL-same", "valfarrr": "VAL-same"}
+		assert.Equal(t, repoB, byID["twincurr"].scope)
+		assert.Equal(t, repoA, byID["twinlegc"].scope,
+			"the legacy sender's project comes from its path, and collectOpenAsks is where that happens")
 
-		_, aerr := soleSessionNamed("VAL-same", asks, senders)
-		require.Error(t, aerr)
-		assert.Contains(t, aerr.Error(), "VAL-same@repo-a")
-		assert.Contains(t, aerr.Error(), "VAL-same@repo-b")
+		senders := map[string]string{"twincurr": "VAL-twin", "twinlegc": "VAL-twin"}
+		_, serr := soleSessionNamed("VAL-twin", asks, senders)
+		require.Error(t, serr, "one name, two projects: never a silent pick")
+		assert.Contains(t, serr.Error(), "VAL-twin@repo-a")
+		assert.Contains(t, serr.Error(), "VAL-twin@repo-b")
 
-		for token, want := range map[string]string{"VAL-same@repo-a": "legacyvl", "VAL-same@repo-b": "valfarrr"} {
+		for token, want := range map[string]string{"VAL-twin@repo-a": "twinlegc", "VAL-twin@repo-b": "twincurr"} {
 			got, gerr := soleSessionNamed(token, asks, senders)
-			require.NoError(t, gerr, "%s was offered and must work", token)
+			require.NoError(t, gerr, "%s was offered as the way out", token)
 			assert.Equal(t, want, got)
 		}
 	})
