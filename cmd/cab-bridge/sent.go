@@ -39,7 +39,16 @@ type sentSummary struct {
 const (
 	sentStateUnread   = "unread"   // in the recipient's inbox, never notified
 	sentStateNotified = "notified" // handed to a next of theirs, not yet closed
-	sentStateArchived = "archived" // closed by their reply
+	// sentStateArchived: OUT of their inbox. Two causes, not one — a reply closed
+	// it, or `inbox --tidy` swept it away — and the state cannot tell them apart,
+	// because both end as the same file in processed/.
+	//
+	// It used to be documented as "closed by their reply", which is false for
+	// every `tell` ever archived (that verb expects no reply, so none can exist)
+	// and, worse, for an `ask` the other side tidied without answering: the sender
+	// reads "they replied" about an answer that never came. Verified on the real
+	// binary, on the surface a val uses to find out whether a brief was handled.
+	sentStateArchived = "archived"
 	// sentStateRequeued: shown to them, not closed, and put back in line to be
 	// delivered again — by their `join` after a compact, or by a `reply` that
 	// left it open (F-109).
@@ -118,7 +127,7 @@ func runSent(args []string) error {
 	}
 	// A one-line gloss: the state names are precise but they do not explain
 	// themselves, and none of them means "the work is done".
-	fmt.Fprintln(os.Stdout, "\nunread = still in their inbox · notified = handed to their next · requeued = shown to them, not closed, on its way again · archived = closed by their reply (which does not prove they read it) · expired/unreadable/unknown = see docs")
+	fmt.Fprintln(os.Stdout, "\nunread = still in their inbox · notified = handed to their next · requeued = shown to them, not closed, on its way again · archived = out of their inbox: a reply closed it, or they tidied it away (neither proves they read it) · expired/unreadable/unknown = see docs")
 	return nil
 }
 

@@ -139,3 +139,44 @@ func TestSent_ReQueuedIsItsOwnState(t *testing.T) {
 	assert.Equal(t, sentStateRequeued, index["msg-bbbbbbbbbbbb"], "delivered once, on its way again — not undelivered")
 	assert.Equal(t, sentStateUnread, index["msg-aaaaaaaaaaaa"], "a genuinely unseen one keeps its own state")
 }
+
+// TestSent_ArchivedDoesNotClaimAReply pins what `archived` is allowed to mean.
+//
+// A `tell` archived by `inbox --tidy` reaches processed/ exactly like a query
+// closed by a reply, and the index cannot tell them apart. So the word must not
+// promise the cause: it used to be documented as "closed by their reply", which
+// is false for EVERY tell (that verb expects no reply, so none can exist) and,
+// worse, for an ask the other side tidied without answering — the sender would
+// read "they replied" about an answer that never came.
+func TestSent_ArchivedDoesNotClaimAReply(t *testing.T) {
+	dataDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.DataDir = dataDir
+	mgr := newSessionManager(cfg)
+
+	const me, peer = "sndme003", "sndpeer3"
+	plantOverviewSession(t, dataDir, me, session.RoleVal, "VAL-t", "/repo/t", "", session.StateOrchestrating)
+	plantOverviewSession(t, dataDir, peer, session.RoleEsc, "ESC-t", "/repo/t", "", "working")
+
+	// A tell, delivered and then tidied away — never replied to, and unreplyable.
+	now := time.Now().UTC()
+	plantInboxAt(t, dataDir, peer, "msg-aaaaaaaaaaaa", me, message.TypeNotify, "a brief", now)
+	_, err := mgr.CommitWakeCursor(peer, []string{"msg-aaaaaaaaaaaa"}, now, nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Join(dataDir, "sessions", peer, "processed"), 0o700))
+	require.NoError(t, os.Rename(
+		filepath.Join(dataDir, "sessions", peer, "inbox", "msg-aaaaaaaaaaaa.json"),
+		filepath.Join(dataDir, "sessions", peer, "processed", "20260810-msg-aaaaaaaaaaaa.json")))
+
+	index, err := buildMailboxIndex(cfg, mgr, peer)
+	require.NoError(t, err)
+	require.Equal(t, sentStateArchived, index["msg-aaaaaaaaaaaa"], "out of their inbox is what the state knows")
+
+	// And the gloss must not attribute it to a reply that cannot exist.
+	out := captureStdout(t, func() {
+		t.Setenv("CAB_DATA_DIR", dataDir)
+		require.NoError(t, runSent([]string{"--session-id=" + me}))
+	})
+	assert.NotContains(t, out, "closed by their reply", "a tell is archived without any reply")
+	assert.Contains(t, out, "out of their inbox")
+}
