@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -58,6 +59,88 @@ func parseRecipient(token string) (recipient, error) {
 			token, session.ScopeSeparator)
 	}
 	return recipient{name: name, scope: scope}, nil
+}
+
+// effectiveScope answers the question the whole feature actually asks — WHICH
+// PROJECT DOES THIS SESSION BELONG TO — for a manifest that may predate the
+// field (F-17), and says whether it could answer at all.
+//
+// This exists because `""` meant two different things and nobody had ever
+// decided which: "this session has no project" and "I do not know this
+// session's project". Every reader picked one, and we corrected THREE
+// COMPARISONS — next.go, verbs.go, send.go — without ever fixing the VALUE. The
+// fourth face was not a comparison at all: `collectPeers` treats an empty scope
+// filter as NO FILTER, so a legacy session searched the entire data dir,
+// resolved a bare name in another repository, and — since an unknown scope is
+// not a crossing — delivered esc→val across projects with nobody having typed a
+// project. Silent misrouting, not a bypassed restriction (CRI final gate).
+//
+// A legacy session's project is derivable: it is the same git-common-root that
+// registration and the F-27 backfill already compute from ProjectPath. Derived,
+// it behaves like any current session — no global search, no exemption — and
+// F-6 stays closed because within its own repository the derived scope is equal.
+// The two opposite defects disappear together, which is the sign the root was
+// one.
+//
+// UNKNOWN is a value, not a wildcard: a session whose project cannot be derived
+// matches only other sessions in the same condition. Treating it as "matches
+// everything" is precisely what produced the defect above.
+func effectiveScope(mf *session.Manifest) (string, bool) {
+	if mf == nil {
+		return "", false
+	}
+	if mf.Scope != "" {
+		return mf.Scope, true
+	}
+	if mf.ProjectPath == "" {
+		return "", false
+	}
+	// Silent on failure, unlike resolveScope: that one runs on the caller's own
+	// cwd where a warning is actionable, while this runs over other people's
+	// manifests where an unresolvable path is just an old session.
+	home, _ := os.UserHomeDir()
+	root, err := session.FindProjectRoot(mf.ProjectPath, home)
+	if err != nil || root == "" {
+		return "", false
+	}
+	if resolved, rerr := filepath.EvalSymlinks(root); rerr == nil {
+		return resolved, true
+	}
+	return root, true
+}
+
+// effectiveScopeCache derives a session's project once per session id: the
+// derivation walks the filesystem, and a peer list is read on every send.
+func effectiveScopeCache(mgr *session.Manager) func(sessionID string) (string, bool) {
+	type entry struct {
+		scope string
+		known bool
+	}
+	seen := map[string]entry{}
+	return func(sessionID string) (string, bool) {
+		if e, ok := seen[sessionID]; ok {
+			return e.scope, e.known
+		}
+		var e entry
+		if mf, err := mgr.LoadManifest(sessionID); err == nil {
+			e.scope, e.known = effectiveScope(mf)
+		}
+		seen[sessionID] = e
+		return e.scope, e.known
+	}
+}
+
+// sameProject compares two sessions by their EFFECTIVE scope, unknown included:
+// two sessions that cannot say where they are belong together and to nobody
+// else.
+func sameProject(aScope string, aKnown bool, bScope string, bKnown bool) bool {
+	if aKnown != bKnown {
+		return false
+	}
+	if !aKnown {
+		return true // both unknown: one group, and it reaches no real repository
+	}
+	return aScope == bScope
 }
 
 // crossesScopes reports whether a message between these two scopes leaves its

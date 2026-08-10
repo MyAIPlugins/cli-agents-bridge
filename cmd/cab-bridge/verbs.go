@@ -102,21 +102,33 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, token, self
 	//
 	// The UNqualified path is untouched: nobody pays for a feature they are not
 	// using, and its behaviour is the one every existing test pins.
-	teamFilter, scopeFilter := me.TeamID, me.Scope
+	myScope, myScopeKnown := effectiveScope(me)
+
+	// The scope filter is applied BELOW, on effective scopes, not here: an empty
+	// one means NO FILTER to collectPeers, so a legacy session searched the whole
+	// data dir and resolved a bare name in another repository — which is how a
+	// plain `ask` left its project without anybody naming one (CRI final gate).
+	teamFilter := me.TeamID
 	if rcpt.qualified() {
-		teamFilter, scopeFilter = "", ""
+		teamFilter = ""
 	}
-	peers, _, err := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, cfg.MaxMessageBytes, true, teamFilter, scopeFilter)
+	peers, _, err := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, cfg.MaxMessageBytes, true, teamFilter, "")
 	if err != nil {
 		return "", fmt.Errorf("resolve recipient: %w", err)
 	}
 
+	scopeOf := effectiveScopeCache(mgr)
 	var exact, live []peerSummary
 	for _, p := range peers {
 		if p.SessionID == selfSID || p.AgentName != name {
 			continue
 		}
-		if rcpt.qualified() && !scopeMatchesHint(p.Scope, rcpt.scope) {
+		theirScope, theirKnown := scopeOf(p.SessionID)
+		if rcpt.qualified() {
+			if !scopeMatchesHint(theirScope, rcpt.scope) {
+				continue
+			}
+		} else if !sameProject(myScope, myScopeKnown, theirScope, theirKnown) {
 			continue
 		}
 		exact = append(exact, p)
@@ -138,7 +150,8 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, token, self
 		// cross-project message just because it was written the long way, and the
 		// first version refused it for that reason alone. And an UNKNOWN scope is
 		// not a different one — see crossesScopes.
-		if crossesScopes(me.Scope, candidates[0].Scope) {
+		theirScope, _ := scopeOf(candidates[0].SessionID)
+		if crossesScopes(myScope, theirScope) {
 			if err := allowedAcrossScopes(me.Role, candidates[0].Role, name, rcpt.scope); err != nil {
 				return "", err
 			}

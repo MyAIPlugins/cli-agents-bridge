@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -462,4 +463,82 @@ func TestResolveRecipient_SameScopeDuplicatesSayDuplicates(t *testing.T) {
 	assert.Contains(t, err.Error(), "are duplicates, not different projects")
 	assert.Contains(t, err.Error(), "cleanup", "here removing the dead one IS the way out")
 	assert.NotContains(t, err.Error(), "matches 2 projects", "there is one project and two sessions")
+}
+
+// --- final gate: the fourth face, and it was the VALUE not a comparison ------
+
+// The three regressions CRI asked for, in one place because they are one root:
+// `""` meant both "has no project" and "I do not know its project", and three
+// fixes had corrected COMPARISONS without ever deciding the VALUE.
+func TestEffectiveScope_LegacySessionBehavesLikeACurrentOne(t *testing.T) {
+	dataDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.DataDir = dataDir
+	mgr := newSessionManager(cfg)
+
+	// Two real repositories on disk, so the derivation has something to find.
+	// The paths are SYMLINK-RESOLVED because that is what registration stores
+	// (resolveScope ends in EvalSymlinks) and what the derivation returns — on
+	// macOS /var is a link to /private/var, so an unresolved literal would make
+	// the two disagree for a reason that has nothing to do with projects.
+	repoA, repoB := filepath.Join(dataDir, "repo-a"), filepath.Join(dataDir, "repo-b")
+	for _, r := range []string{repoA, repoB} {
+		require.NoError(t, os.MkdirAll(filepath.Join(r, ".git"), 0o700))
+	}
+	var err error
+	repoA, err = filepath.EvalSymlinks(repoA)
+	require.NoError(t, err)
+	repoB, err = filepath.EvalSymlinks(repoB)
+	require.NoError(t, err)
+
+	// A LEGACY esc in repo A: no Scope field at all, only ProjectPath.
+	plantSessionFull(t, dataDir, "legacyes", session.RoleEsc, "ESC-legacy", "", filepath.Join(repoA, "work"), "working")
+	// A current val in repo B, and a current val in repo A.
+	plantSessionFull(t, dataDir, "valfarrr", session.RoleVal, "VAL-far", repoB, repoB, "working")
+	plantSessionFull(t, dataDir, "valnearr", session.RoleVal, "VAL-near", repoA, repoA, "working")
+
+	t.Run("1. a bare name does not leave the project", func(t *testing.T) {
+		_, err := resolveRecipientByName(cfg, mgr, "VAL-far", "legacyes")
+		require.Error(t, err, "an empty scope filter meant NO filter: the search covered the whole data dir")
+		assert.Contains(t, err.Error(), "no agent named")
+
+		// And nothing is written even if one forces the id through the gateway.
+		_, err = sendMessage(cfg, mgr, "legacyes", "valfarrr", message.TypeQuery, "hi", nil, false)
+		require.Error(t, err, "esc -> val across projects is what the contract forbids")
+		assert.Contains(t, err.Error(), "only a val writes to a val")
+		assert.NoDirExists(t, filepath.Join(dataDir, "sessions", "valfarrr", "inbox"))
+	})
+
+	t.Run("2. inside its own project it works normally", func(t *testing.T) {
+		target, err := resolveRecipientByName(cfg, mgr, "VAL-near", "legacyes")
+		require.NoError(t, err, "the derived scope of repo A equals the current session's, so this is local")
+		_, err = sendMessage(cfg, mgr, "legacyes", target, message.TypeQuery, "hi", nil, false)
+		require.NoError(t, err, "and no restriction applies to a message that never leaves")
+	})
+
+	t.Run("3. a legacy reader is not told its own neighbour is foreign", func(t *testing.T) {
+		mf, err := mgr.LoadManifest("legacyes")
+		require.NoError(t, err)
+		myScope, known := effectiveScope(mf)
+		require.True(t, known, "derivable from ProjectPath")
+
+		e := mailboxEntry{msg: &message.Message{
+			ID: "msg-aaaaaaaaaaaa", From: "valnearr", FromAgentName: "VAL-near",
+			Type: message.TypeQuery, Metadata: message.Metadata{FromScope: repoA},
+		}}
+		got := newNextMessage(e, false, myScope, known)
+		assert.Empty(t, got.FromScope, "same project: labelling it foreign would be the fourth face of the same defect")
+		assert.Empty(t, got.FromAddress)
+	})
+}
+
+// UNKNOWN is a value, not a wildcard: sessions whose project cannot be derived
+// form one group and reach no real repository.
+func TestSameProject_UnknownIsAGroupNotAWildcard(t *testing.T) {
+	t.Parallel()
+	assert.True(t, sameProject("", false, "", false), "two sessions that cannot say where they are belong together")
+	assert.False(t, sameProject("", false, "/repo/a", true), "and to nobody else")
+	assert.False(t, sameProject("/repo/a", true, "", false))
+	assert.True(t, sameProject("/repo/a", true, "/repo/a", true))
+	assert.False(t, sameProject("/repo/a", true, "/repo/b", true))
 }

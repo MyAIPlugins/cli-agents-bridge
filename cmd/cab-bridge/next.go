@@ -411,9 +411,14 @@ func collectNextPage(mgr *session.Manager, cfg config.Config, sid, inboxDir stri
 	// FOREIGN — while the comment claimed the label was dropped. Not knowing and
 	// being different are different things, and flattening them is what produced
 	// the defect (CRI diff-gate P2-5).
+	// The EFFECTIVE scope, so a legacy manifest of my own repository is not
+	// presented as foreign: reading the manifest tells me it exists, deriving
+	// tells me where it is, and only the second answers this question. Setting
+	// known=true for any readable manifest made a sender from MY OWN project
+	// arrive labelled cross-project (CRI2, the fourth face).
 	myScope, myScopeKnown := "", false
 	if mf, lerr := mgr.LoadManifest(sid); lerr == nil {
-		myScope, myScopeKnown = mf.Scope, true
+		myScope, myScopeKnown = effectiveScope(mf)
 	}
 
 	entries, corrupt, foreign, err := readMailbox(inboxDir, cfg.MaxMessageBytes)
