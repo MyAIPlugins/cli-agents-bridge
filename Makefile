@@ -16,6 +16,26 @@ VERSION     := $(if $(GIT_VERSION),$(GIT_VERSION),dev)
 
 GO_FLAGS    := -trimpath -ldflags="-s -w -X main.version=$(VERSION)"
 
+# How many TEST BINARIES run at once. Go's default is GOMAXPROCS — 8 here — so
+# one `make test-race` alone assumes it owns the machine, and three agents
+# building on one laptop reached load 10.85 with an e2e dying on a 300s timeout.
+#
+# 4 is measured, not guessed (two runs each, same load window):
+#
+#   -p 8 (default)  9.09s      -p 2  14.55s
+#   -p 4            9.26s      -p 1  26.99s
+#
+# Half the footprint for 170ms, because the wall clock is set by the slowest
+# single package (cmd/cab-bridge, ~9s) and 4 slots still cover every slow one.
+#
+# It is NOT GOMAXPROCS: the test binaries are separate processes, each with its
+# own full GOMAXPROCS, so the concurrency INSIDE each test — the thing a race
+# detector explores — is untouched. Throttling GOMAXPROCS instead would weaken
+# exactly what the gate exists to verify.
+#
+# Override on an idle machine: make test-race GO_TEST_PARALLEL=8
+GO_TEST_PARALLEL ?= 4
+
 .PHONY: help build test test-race cross-compile-all install-dev install-plugin lint clean
 
 help: ## Show this help
@@ -28,11 +48,17 @@ build: ## Build binary for host platform (darwin-arm64 on Alan's machine)
 	go build $(GO_FLAGS) -o $(BIN_DIR)/$(BINARY) $(PKG)
 	@echo "built: $(BIN_DIR)/$(BINARY) ($(VERSION))"
 
+# -count=1 disables the test cache, and it is not optional here (LL-11, twice):
+# without it Go serves untouched packages from cache and prints `(cached)`, so a
+# change to a SHARED struct or helper never re-runs the tests of the packages
+# that use it but that nobody opened. Both times the result was a green declared
+# by one side and red when the other re-ran it. A gate that may answer from
+# cache is not a gate; the price is ~9s instead of ~0s, and ~0s was never real.
 test: ## Run unit + integration tests
-	go test ./...
+	go test -count=1 -p $(GO_TEST_PARALLEL) ./...
 
 test-race: ## Run tests with race detector (CI gate)
-	go test -race ./...
+	go test -race -count=1 -p $(GO_TEST_PARALLEL) ./...
 
 cross-compile-all: ## Cross-compile darwin-{arm64,amd64} + linux-{amd64,arm64} (no cgo) — matches .goreleaser.yml + ci.yml
 	@mkdir -p $(BIN_DIR)
