@@ -40,8 +40,19 @@ const (
 	sentStateUnread   = "unread"   // in the recipient's inbox, never notified
 	sentStateNotified = "notified" // handed to a next of theirs, not yet closed
 	sentStateArchived = "archived" // closed by their reply
-	sentStateUnknown  = "unknown"  // that session no longer exists
-	sentStateExpired  = "expired"  // session is there, the message is not — retention took it
+	// sentStateRequeued: shown to them, not closed, and put back in line to be
+	// delivered again — by their `join` after a compact, or by a `reply` that
+	// left it open (F-109).
+	//
+	// It exists so this state does not have to travel BACKWARDS to `unread`.
+	// Reusing `unread` would have been literally true (that is where it sits)
+	// and misleading in the one way that matters: a sender watching the column
+	// would see a message they had been told was delivered become undelivered,
+	// with nothing to explain it. The cursor already distinguishes the two
+	// (WakeCursor.Replayed), so the honest state was there for the taking.
+	sentStateRequeued = "requeued"
+	sentStateUnknown  = "unknown" // that session no longer exists
+	sentStateExpired  = "expired" // session is there, the message is not — retention took it
 	// sentStateUnreadable: the file IS in their mailbox and cannot be decoded.
 	// Not "expired" — nothing pruned it — and not an I/O error of ours either.
 	sentStateUnreadable = "unreadable"
@@ -107,7 +118,7 @@ func runSent(args []string) error {
 	}
 	// A one-line gloss: the state names are precise but they do not explain
 	// themselves, and none of them means "the work is done".
-	fmt.Fprintln(os.Stdout, "\nunread = still in their inbox · notified = handed to their next · archived = closed by their reply (which does not prove they read it) · expired/unreadable/unknown = see docs")
+	fmt.Fprintln(os.Stdout, "\nunread = still in their inbox · notified = handed to their next · requeued = shown to them, not closed, on its way again · archived = closed by their reply (which does not prove they read it) · expired/unreadable/unknown = see docs")
 	return nil
 }
 
@@ -226,9 +237,14 @@ func buildMailboxIndex(cfg config.Config, mgr *session.Manager, to string) (map[
 		}
 	}
 	for _, e := range inbox {
-		if cursor.IsNotified(e.msg.ID) {
+		switch {
+		// Checked FIRST: the two are mutually exclusive in the cursor, and the
+		// order states which one is the more specific fact.
+		case cursor.WasReplayed(e.msg.ID):
+			index[e.msg.ID] = sentStateRequeued
+		case cursor.IsNotified(e.msg.ID):
 			index[e.msg.ID] = sentStateNotified
-		} else {
+		default:
 			index[e.msg.ID] = sentStateUnread
 		}
 	}

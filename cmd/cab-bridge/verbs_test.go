@@ -173,10 +173,16 @@ func TestReply_AskArrivingAfterTheSnapshotStaysOpen(t *testing.T) {
 
 	assert.FileExists(t, filepath.Join(dataDir, "sessions", replySelf, "inbox", "msg-cccccccccccc.json"),
 		"an ask that arrived after the snapshot must stay open")
+	// It is no longer open in the NOTIFIED sense, and that is the F-109 change:
+	// the reply put it back in line, so the next `next` shows it again instead
+	// of it sitting delivered-but-unanswered where nothing returns for it. What
+	// this test has always guarded — it is not archived — is the line above.
+	cursor, cerr := requireCursor(t, mgr)
+	require.NoError(t, cerr)
+	assert.True(t, cursor.WasReplayed("msg-cccccccccccc"), "queued for re-delivery, not closed")
 	open, err := collectOpenAsks(mgr, cfg, replySelf)
 	require.NoError(t, err)
-	require.Len(t, open, 1)
-	assert.Equal(t, "msg-cccccccccccc", open[0].id)
+	assert.Empty(t, open, "nothing is NOTIFIED any more: it is waiting to be shown again")
 }
 
 // TestReply_ClosesCarriesTheWholeSetAndInReplyToTheAnchor pins the schema
@@ -539,11 +545,14 @@ func TestReply_CrashWithMultipleAsksAndOneArrivingMidTransaction(t *testing.T) {
 		"an ask that arrived after the snapshot must NOT be closed by a transaction that never saw it")
 	assert.Len(t, peerInbox(t, dataDir), 1, "still exactly one response — the retry must not resend")
 
-	// The late ask is still open, and a following reply closes it.
+	// The late ask survives and is back in line for the next `next` (F-109):
+	// before that fix it stayed NOTIFIED, which no later delivery ever shows.
+	cursor, cerr := requireCursor(t, mgr)
+	require.NoError(t, cerr)
+	assert.True(t, cursor.WasReplayed("msg-cccccccccccc"))
 	open, err := collectOpenAsks(mgr, cfg, replySelf)
 	require.NoError(t, err)
-	require.Len(t, open, 1)
-	assert.Equal(t, "msg-cccccccccccc", open[0].id)
+	assert.Empty(t, open)
 
 	second := newTxn(replySelf, []string{"msg-cccccccccccc"}, "answering the third")
 	assert.NotEqual(t, txn.ResponseID, second.ResponseID, "a different anchor means a different response id")
@@ -687,17 +696,30 @@ func TestReply_DoesNotCloseAnAskFromALaterDelivery(t *testing.T) {
 	// Said on both sides: here to the responder, and in `closes` to the asker.
 	assert.Contains(t, stdout.String(), "still open")
 	assert.Contains(t, stdout.String(), "msg-bbbbbbbbbbbb")
-	// And it must point at a command that WORKS on a NOTIFIED message. `next`
-	// delivers UNREAD only, so it hangs on an empty wait instead of showing
-	// this one — verified on the real binary, after the first draft of this echo
-	// said "run next to re-read". That sentence is the only place these asks
-	// surface on this side, so it does not get to be approximately right.
 	assert.Contains(t, stdout.String(), "cab-bridge read <id>")
-	assert.NotContains(t, stdout.String(), "run next")
-	open, err := collectOpenAsks(mgr, cfg, replySelf)
-	require.NoError(t, err)
-	require.Len(t, open, 1)
-	assert.Equal(t, "msg-bbbbbbbbbbbb", open[0].id)
+
+	// And PUT BACK IN LINE, which is what makes the sentence above a mechanism
+	// instead of an instruction: a NOTIFIED ask is shown by no later `next`, so
+	// leaving it there would move the defect from "archived unread" to "parked
+	// where nothing returns for it".
+	cursor, cerr := requireCursor(t, mgr)
+	assert.False(t, cursor.IsNotified("msg-bbbbbbbbbbbb"), "no longer NOTIFIED: it is queued again")
+	assert.True(t, cursor.WasReplayed("msg-bbbbbbbbbbbb"), "and marked so the re-delivery says it is one")
+	require.NoError(t, cerr)
+
+	// The mechanism, end to end: the very next collection has it, flagged.
+	res, ready, nerr := collectNextPage(mgr, cfg, replySelf, filepath.Join(dataDir, "sessions", replySelf, "inbox"), 1)
+	require.NoError(t, nerr)
+	require.True(t, ready, "there is something to deliver again")
+	require.Len(t, res.page.Messages, 1)
+	assert.Equal(t, "msg-bbbbbbbbbbbb", res.page.Messages[0].ID)
+	assert.True(t, res.page.Messages[0].Redelivered, "it says it is a re-delivery")
+}
+
+func requireCursor(t *testing.T, mgr *session.Manager) (*session.WakeCursor, error) {
+	t.Helper()
+	c, _, err := mgr.ReadWakeCursor(replySelf)
+	return c, err
 }
 
 // The cumulative answer must survive: several asks handed over TOGETHER are one

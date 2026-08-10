@@ -70,8 +70,9 @@ const (
 )
 
 type nextMessage struct {
-	// Redelivered marks a message this session had already been shown before a
-	// crash or restart. §2.3 asks for the marker INLINE: the join line that
+	// Redelivered marks a message this session had already been shown: by a join
+	// after a crash or restart, or by a `reply` that left the ask open and put it
+	// back in line (F-109). §2.3 asks for the marker INLINE: the join line that
 	// announced the replay is on another command's stderr, minutes earlier and
 	// without ids, which is exactly the correlation-at-a-distance the inline
 	// field exists to avoid (CRI2 P1-3).
