@@ -48,6 +48,14 @@ Quindi *"non c'e'"* non si scrive mai sulla base di un selettore solo:
 
 Se il testo c'e' nella pagina ma il tuo selettore non lo trova, **il difetto e' nel selettore**. E' esattamente cosi' che si e' guardato un contenitore vuoto invece dei campi che stavano accanto.
 
+**E la ricerca per testo NON basta, perche' copre solo meta' del problema.** Copre *"c'e' ma non lo vedo"*; non copre **"c'e' ma non e' ancora stato costruito"**. Con il rendering differito (`RenderIfInViewport` e simili) l'elemento **non esiste nel DOM**: nessun `innerText` lo contiene, e il markup e' vuoto **gia' nella risposta del server** — quindi supera anche il controllo *"guarda cosa manda il server invece di cosa disegna il client"*, che e' il ripiego naturale quando si sospetta il client.
+
+> **Un elemento assente e un elemento non ancora montato sono indistinguibili da fermo.**
+
+Quindi: **scrolla e RIMISURA prima di OGNI dichiarazione di assenza** — non *"scrolla se sospetti"*, sempre. Un caso reale e' costato una giornata: un gruppo di campi dichiarato vuoto su tre ambienti era l'**ultimo** della pagina, quindi a caricamento sempre fuori dal viewport; un solo `scrollIntoView` l'ha portato da 710 a 1051 byte.
+
+**Corollario sui conteggi, e vale piu' della regola**: *un totale e' un dato solo se dichiari a che scroll l'hai preso.* Senza quella riga due misuratori onesti producono due numeri diversi — 24 e 31 input sulla stessa pagina, entrambi veri — e la discussione diventa **su chi ha sbagliato** invece che su cosa mancava alla domanda. E' successo, ed e' costato la fiducia in un agente che non aveva sbagliato niente.
+
 ## 3. Rileggi il TUO screenshot contro la TUA conclusione
 
 Prima di consegnare, **apri l'immagine che hai appena catturato e guardala**, chiedendoti una sola cosa: *quello che sto per scrivere e' compatibile con quello che si vede?*
