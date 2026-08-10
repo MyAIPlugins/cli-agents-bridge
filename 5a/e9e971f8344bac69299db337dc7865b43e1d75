@@ -1,0 +1,14 @@
+.gitignore
+  h_4a4009aad9cb45 43-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "5ae9e971f8344bac69299db337dc7865b43e1d75",
+  "prompts": {},
+  "humans": {
+    "h_4a4009aad9cb45": {
+      "author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
