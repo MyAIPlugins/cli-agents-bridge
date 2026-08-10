@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
@@ -213,4 +214,37 @@ func TestReplyGuardrail_IsBuiltFromOpenAskersOnly(t *testing.T) {
 	}, []string{"VAL-x", "CRI-z"}, strings.NewReader("the report"))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "looks like")
+}
+
+// The cross-scope page carries the address ready to paste, and it must be the
+// one that resolves — the full path, since here there is no list of other scopes
+// to detect an ambiguous basename with.
+func TestNextMessage_CrossScopeCarriesAPastableAddress(t *testing.T) {
+	t.Parallel()
+	const theirs = "/Users/alan/develop/payload"
+	e := mailboxEntry{msg: &message.Message{
+		ID: "msg-aaaaaaaaaaaa", From: "valthem1", FromAgentName: "VAL-payload",
+		Type: message.TypeQuery, Content: "brief",
+		Metadata: message.Metadata{FromScope: theirs},
+	}}
+
+	got := newNextMessage(e, false, "/Users/alan/develop/bridge")
+	assert.Equal(t, theirs, got.FromScope)
+	assert.Equal(t, "VAL-payload@"+theirs, got.FromAddress, "the agent copies, it does not assemble")
+
+	parsed, err := parseRecipient(got.FromAddress)
+	require.NoError(t, err, "and what it copies must parse back")
+	assert.Equal(t, "VAL-payload", parsed.name)
+	assert.True(t, scopeMatchesHint(theirs, parsed.scope), "and resolve to the sender's scope")
+
+	// Same scope: neither field, because both would be noise on every message.
+	same := newNextMessage(e, false, theirs)
+	assert.Empty(t, same.FromScope)
+	assert.Empty(t, same.FromAddress)
+
+	// Legacy message with no fromScope: nothing invented, nothing looked up.
+	legacy := mailboxEntry{msg: &message.Message{ID: "msg-bbbbbbbbbbbb", From: "old", FromAgentName: "VAL-old", Type: message.TypeQuery}}
+	old := newNextMessage(legacy, false, "/Users/alan/develop/bridge")
+	assert.Empty(t, old.FromScope, "absent means not stated, never 'same project as you'")
+	assert.Empty(t, old.FromAddress)
 }

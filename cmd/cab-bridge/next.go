@@ -90,10 +90,24 @@ type nextMessage struct {
 	// the gap by looking the sender up now. That would answer a different
 	// question (where it is NOW) under the label of this one.
 	FromScope string `json:"fromScope,omitempty"`
-	FromRole  string `json:"fromRole,omitempty"`
-	Type      string `json:"type"`
-	Timestamp string `json:"timestamp"`
-	Bytes     int    `json:"bytes"`
+	// FromAddress is the token that writes BACK to this sender, ready to paste —
+	// `VAL-payload@/Users/alan/develop/payload`. Present only when FromScope is,
+	// i.e. only when the plain name would not reach them.
+	//
+	// Composing is not transcribing, so assembling it from the two fields above
+	// would not have broken the rule that an agent never re-types an identifier.
+	// It would only have made the agent THINK, which is the thing this whole arc
+	// keeps removing: it copies, it does not assemble.
+	//
+	// The FULL path, not the basename, for the reason the scope column shortens
+	// and this does not: here there is no list of the other scopes, so ambiguity
+	// cannot be detected — and an ambiguous abbreviation is worse than a long
+	// exact one. This token always resolves.
+	FromAddress string `json:"fromAddress,omitempty"`
+	FromRole    string `json:"fromRole,omitempty"`
+	Type        string `json:"type"`
+	Timestamp   string `json:"timestamp"`
+	Bytes       int    `json:"bytes"`
 	// Content is the message body, omitted when Oversize is set.
 	Content string `json:"content,omitempty"`
 	// BodyFile is the on-disk PATH of the message, emitted INSTEAD of Content
@@ -605,6 +619,9 @@ func newNextMessage(e mailboxEntry, oversize bool, myScope string) nextMessage {
 	// means "not stated" and must not be rendered as agreement.
 	if from := e.msg.Metadata.FromScope; from != "" && from != myScope {
 		m.FromScope = from
+		if e.msg.FromAgentName != "" {
+			m.FromAddress = recipient{name: e.msg.FromAgentName, scope: from}.String()
+		}
 	}
 	if e.replayed {
 		m.Redelivered = true
