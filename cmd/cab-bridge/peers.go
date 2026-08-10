@@ -302,7 +302,7 @@ func collectPeers(mgr *session.Manager, dataDir string, staleSeconds, maxContent
 		// a value that already carries its meaning. Filling this field with the
 		// raw one is what left eight readers deciding for themselves what an empty
 		// string meant.
-		effScope := effectiveScope(mf)
+		effScope := session.EffectiveScope(mf)
 
 		// F-23a: staleness via the single shared definition (orchestrating is
 		// heartbeat-exempt). Same source of truth as status + cleanup globalSweep.

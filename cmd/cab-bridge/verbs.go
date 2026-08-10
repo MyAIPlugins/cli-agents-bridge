@@ -102,7 +102,7 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, token, self
 	//
 	// The UNqualified path is untouched: nobody pays for a feature they are not
 	// using, and its behaviour is the one every existing test pins.
-	myScope := effectiveScope(me)
+	myScope := session.EffectiveScope(me)
 
 	// The scope filter is applied BELOW, on effective scopes, not here: an empty
 	// one means NO FILTER to collectPeers, so a legacy session searched the whole
@@ -117,7 +117,7 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, token, self
 		return "", fmt.Errorf("resolve recipient: %w", err)
 	}
 
-	scopeOf := effectiveScopeCache(mgr)
+	scopeOf := mgr.EffectiveScopeCache()
 
 	// `peers` now means THE WHOLE DATA DIR, because the scope filter moved down
 	// into the loop — and the readers of the zero-match branch below were written
@@ -137,7 +137,7 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, token, self
 	if !rcpt.qualified() {
 		inScope = inScope[:0:0]
 		for _, p := range peers {
-			if sameProject(myScope, scopeOf(p.SessionID)) {
+			if session.SameProject(myScope, scopeOf(p.SessionID)) {
 				inScope = append(inScope, p)
 			}
 		}
@@ -153,7 +153,7 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, token, self
 			if !scopeMatchesHint(theirScope, rcpt.scope) {
 				continue
 			}
-		} else if !sameProject(myScope, theirScope) {
+		} else if !session.SameProject(myScope, theirScope) {
 			continue
 		}
 		exact = append(exact, p)
@@ -176,7 +176,7 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, token, self
 		// first version refused it for that reason alone. And an UNKNOWN scope is
 		// not a different one — see crossesScopes.
 		theirScope := scopeOf(candidates[0].SessionID)
-		if crossesScopes(myScope, theirScope) {
+		if session.CrossesScopes(myScope, theirScope) {
 			if err := allowedAcrossScopes(me.Role, candidates[0].Role, name, rcpt.scope); err != nil {
 				return "", err
 			}
@@ -387,7 +387,7 @@ func collectOpenAsks(mgr *session.Manager, cfg config.Config, sid string) ([]ope
 		}
 		s := ""
 		if mf, lerr := mgr.LoadManifest(from); lerr == nil {
-			s = effectiveScope(mf)
+			s = session.EffectiveScope(mf)
 		}
 		scopeOf[from] = s
 		return s
@@ -1361,7 +1361,7 @@ func deliverResponse(cfg config.Config, mgr *session.Manager, sid string, txn *s
 		Closes:        txn.CloseIDs,
 		Metadata: message.Metadata{
 			FromProject:     senderManifest.ProjectName,
-			FromScope:       effectiveScope(senderManifest),
+			FromScope:       session.EffectiveScope(senderManifest),
 			ProcessingState: message.StatusPending,
 		},
 	}

@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
 // runInspect prints a session manifest as JSON on stdout. Replaces the jq
@@ -51,6 +52,11 @@ func runInspect(args []string) error {
 	}
 
 	if *asJSON {
+		// SECOND declared forensic exception, and the one no grep can find: this
+		// serialises the manifest by REFLECTION, so `scope` goes out raw without
+		// any line of code mentioning the field. Right for a forensic dump — the
+		// record as it is on disk — but it has to be named here, or whoever
+		// applies the criterion finds it and cannot tell deliberate from missed.
 		out, err := json.MarshalIndent(mf, "", "  ")
 		if err != nil {
 			return fmt.Errorf("inspect: marshal: %w", err)
@@ -74,8 +80,8 @@ func runInspect(args []string) error {
 		// Everywhere else shows only the first — two answers to "which project am
 		// I in" is what left a legacy session reading "(none)" while being routed
 		// as if it were in /repo/a.
-		if eff := effectiveScope(mf); eff != "" {
-			if scopeIsDerived(mf) {
+		if eff := session.EffectiveScope(mf); eff != "" {
+			if session.ScopeIsDerived(mf) {
 				fmt.Printf("  Scope:   %s (derived from the project path; not in the manifest)\n", eff)
 			} else {
 				fmt.Printf("  Scope:   %s\n", eff)

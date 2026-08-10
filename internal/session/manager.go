@@ -313,7 +313,15 @@ var ErrNoSessionForCwd = errors.New("no session matches cwd or its ancestors")
 type Candidate struct {
 	ID          string
 	ProjectPath string
-	Scope       string
+	// Scope is the EFFECTIVE project (EffectiveScope): what every decision here
+	// is taken on, including the sibling grouping that raises the
+	// anti-impersonation warning.
+	Scope string
+	// StoredScope is the raw manifest field, kept for the TEXT of that warning —
+	// which talks about sessions grouped by what is on disk, so showing a derived
+	// value there would name something the grouping did not use. A declared
+	// forensic companion, never a second answer to "which project is this".
+	StoredScope string
 	AgentName   string
 	Role        string
 }
@@ -410,7 +418,12 @@ func (m *Manager) LookupByCWDDetails(cwd string) (Resolution, error) {
 			cand: Candidate{
 				ID:          e.Name(), // NEW-1: dir name, not mf.SessionID
 				ProjectPath: mf.ProjectPath,
-				Scope:       mf.Scope,
+				// EFFECTIVE, because this candidate feeds a POLICY: the sibling
+				// grouping below raises the anti-impersonation warning, and with the
+				// raw field a legacy session had an empty scope, no siblings, and the
+				// warning silently disappeared — in exactly the case B-1 exists for.
+				Scope:       EffectiveScope(mf),
+				StoredScope: mf.Scope,
 				AgentName:   mf.AgentName,
 				Role:        mf.Role,
 			},
@@ -440,7 +453,7 @@ func (m *Manager) LookupByCWDDetails(cwd string) (Resolution, error) {
 	if selected.Scope != "" {
 		selProj := filepath.Clean(selected.ProjectPath)
 		for _, s := range all {
-			if s.cand.Scope == selected.Scope && filepath.Clean(s.cand.ProjectPath) != selProj {
+			if SameProject(s.cand.Scope, selected.Scope) && filepath.Clean(s.cand.ProjectPath) != selProj {
 				res.ScopeSiblings = append(res.ScopeSiblings, s.cand)
 			}
 		}

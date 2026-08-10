@@ -144,7 +144,7 @@ func buildOverview(mgr *session.Manager, cfg config.Config, sid string) (overvie
 			SessionID: me.SessionID,
 			AgentName: me.AgentName,
 			Role:      me.Role,
-			Scope:     effectiveScope(me),
+			Scope:     session.EffectiveScope(me),
 			State:     me.State,
 			Stale:     session.IsStale(me, cfg.StaleSeconds, now),
 		},
@@ -184,7 +184,7 @@ func buildOverview(mgr *session.Manager, cfg config.Config, sid string) (overvie
 	// repository: a legacy val would be shown an esc of another project as its
 	// own executor. The comment this replaces claimed the opposite ("keeps this
 	// correct even for an inherited/legacy scope"), which is why nobody looked.
-	peers, _, err := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, cfg.MaxMessageBytes, true, me.TeamID, effectiveScope(me))
+	peers, _, err := collectPeers(mgr, cfg.DataDir, cfg.StaleSeconds, cfg.MaxMessageBytes, true, me.TeamID, session.EffectiveScope(me))
 	if err != nil {
 		return overviewReport{}, fmt.Errorf("overview: discover peers: %w", err)
 	}

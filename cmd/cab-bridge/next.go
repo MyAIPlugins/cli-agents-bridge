@@ -418,7 +418,7 @@ func collectNextPage(mgr *session.Manager, cfg config.Config, sid, inboxDir stri
 	// arrive labelled cross-project (CRI2, the fourth face).
 	myScope := ""
 	if mf, lerr := mgr.LoadManifest(sid); lerr == nil {
-		myScope = effectiveScope(mf)
+		myScope = session.EffectiveScope(mf)
 	}
 
 	entries, corrupt, foreign, err := readMailbox(inboxDir, cfg.MaxMessageBytes)
@@ -630,7 +630,7 @@ func newNextMessage(e mailboxEntry, oversize bool, myScope string) nextMessage {
 	// means "not stated" and must not be rendered as agreement.
 	// crossesScopes, not "!=": an unknown scope on either side is not a crossing,
 	// and the label must be dropped rather than guessed.
-	if from := e.msg.Metadata.FromScope; crossesScopes(from, myScope) {
+	if from := e.msg.Metadata.FromScope; session.CrossesScopes(from, myScope) {
 		m.FromScope = from
 		if e.msg.FromAgentName != "" {
 			m.FromAddress = recipient{name: e.msg.FromAgentName, scope: from}.String()

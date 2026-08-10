@@ -124,7 +124,7 @@ func runNotifyWatch(args []string) error {
 
 	logw := os.Stderr
 	// Non-negotiable #6 startup-target print: who is being watched and what runs.
-	fmt.Fprintf(logw, "notify-watch: watching session %s (agent %q, role %s, scope %s)\n", sid, mf.AgentName, mf.Role, effectiveScope(mf))
+	fmt.Fprintf(logw, "notify-watch: watching session %s (agent %q, role %s, scope %s)\n", sid, mf.AgentName, mf.Role, session.EffectiveScope(mf))
 	fmt.Fprintf(logw, "notify-watch: hook %v (shell=%v) poll=%v hook-timeout=%v watch-name=%s\n", hookArgv, *shell, *pollInterval, *hookTimeout, *watchName)
 
 	wcfg := watchConfig{

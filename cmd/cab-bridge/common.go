@@ -315,15 +315,16 @@ func formatCandidateChoices(cands []session.Candidate) string {
 // and the executable remediation. Multi-line, on stderr only (the cmd layer
 // keeps stdout clean for --json / --emit). The remediation names the resolved
 // id with the flag before any positional (A-1/A-5).
-// The scope printed here is the STORED field, and that is deliberate: this
-// warning is about sessions that the lookup grouped together BY that field, so
-// showing a derived value would name something the grouping did not use. It is
-// the declared forensic exception to "read the scope through effectiveScope".
+// The scope printed here is the STORED field — Candidate carries both since the
+// grouping moved to the effective one. Deliberate and declared: the sentence
+// talks about what is on disk, while the GROUPING it describes is now taken on
+// the effective value. Two facts, named separately, instead of one word doing
+// both jobs badly.
 func formatSharedScopeWarning(cmdName, cwd string, res session.Resolution) string {
 	sel := res.Candidates[0] // == the SelectedID candidate
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s: warning: cwd %q resolved to session %s (%s, role %s, project %s), but %d other session(s) share its scope %q with a different project path:",
-		cmdName, cwd, sel.ID, sel.AgentName, sel.Role, sel.ProjectPath, len(res.ScopeSiblings), sel.Scope)
+		cmdName, cwd, sel.ID, sel.AgentName, sel.Role, sel.ProjectPath, len(res.ScopeSiblings), sel.StoredScope)
 	for _, s := range res.ScopeSiblings {
 		fmt.Fprintf(&b, "\n  - %s (%s, role %s, project %s)", s.ID, s.AgentName, s.Role, s.ProjectPath)
 	}

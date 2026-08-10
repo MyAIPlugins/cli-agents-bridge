@@ -420,11 +420,11 @@ func TestReply_LegacyAskWithoutProvenanceIsStillAnswerable(t *testing.T) {
 // sentence describing it sitting in the file where it HAD been fixed.
 func TestCrossesScopes_UnknownIsNotDifferent(t *testing.T) {
 	t.Parallel()
-	assert.False(t, crossesScopes("", "/repo/x"), "a legacy sender does not know where it is")
-	assert.False(t, crossesScopes("/repo/x", ""), "and neither does a legacy recipient")
-	assert.False(t, crossesScopes("", ""))
-	assert.False(t, crossesScopes("/repo/x", "/repo/x"))
-	assert.True(t, crossesScopes("/repo/x", "/repo/y"), "two KNOWN and different scopes: that is a crossing")
+	assert.False(t, session.CrossesScopes("", "/repo/x"), "a legacy sender does not know where it is")
+	assert.False(t, session.CrossesScopes("/repo/x", ""), "and neither does a legacy recipient")
+	assert.False(t, session.CrossesScopes("", ""))
+	assert.False(t, session.CrossesScopes("/repo/x", "/repo/x"))
+	assert.True(t, session.CrossesScopes("/repo/x", "/repo/y"), "two KNOWN and different scopes: that is a crossing")
 }
 
 func TestResolveRecipient_LegacySessionCanStillSendInScope(t *testing.T) {
@@ -519,7 +519,7 @@ func TestEffectiveScope_LegacySessionBehavesLikeACurrentOne(t *testing.T) {
 	t.Run("3. a legacy reader is not told its own neighbour is foreign", func(t *testing.T) {
 		mf, err := mgr.LoadManifest("legacyes")
 		require.NoError(t, err)
-		myScope := effectiveScope(mf)
+		myScope := session.EffectiveScope(mf)
 		require.NotEmpty(t, myScope, "derivable from ProjectPath")
 
 		e := mailboxEntry{msg: &message.Message{
@@ -536,11 +536,11 @@ func TestEffectiveScope_LegacySessionBehavesLikeACurrentOne(t *testing.T) {
 // form one group and reach no real repository.
 func TestSameProject_UnknownIsAGroupNotAWildcard(t *testing.T) {
 	t.Parallel()
-	assert.True(t, sameProject("", ""), "two sessions that cannot say where they are belong together")
-	assert.False(t, sameProject("", "/repo/a"), "and to nobody else")
-	assert.False(t, sameProject("/repo/a", ""))
-	assert.True(t, sameProject("/repo/a", "/repo/a"))
-	assert.False(t, sameProject("/repo/a", "/repo/b"))
+	assert.True(t, session.SameProject("", ""), "two sessions that cannot say where they are belong together")
+	assert.False(t, session.SameProject("", "/repo/a"), "and to nobody else")
+	assert.False(t, session.SameProject("/repo/a", ""))
+	assert.True(t, session.SameProject("/repo/a", "/repo/a"))
+	assert.False(t, session.SameProject("/repo/a", "/repo/b"))
 }
 
 // R-1: moving the scope filter out of collectPeers changed what `peers` MEANS
@@ -614,5 +614,90 @@ func TestLegacySession_OverviewAndJoinUseTheEffectiveScope(t *testing.T) {
 		// Different repo: blocked, which is what the guard is for.
 		_, _, _, clash = findNameInAnotherScope(mgr, peers, "ESC-far", repoA)
 		assert.True(t, clash, "and two projects are two projects")
+	})
+}
+
+// The three from the previous round, written now rather than deferred: the code
+// already satisfies them, and code that is right with nobody able to say why is
+// the condition `listenUntil` was in.
+func TestLegacyEndToEnd_ProvenanceTokenAndDisambiguation(t *testing.T) {
+	dataDir := t.TempDir()
+	cfg := nextTestConfig(dataDir)
+	mgr := newSessionManager(cfg)
+
+	repoA, repoB := filepath.Join(dataDir, "repo-a"), filepath.Join(dataDir, "repo-b")
+	for _, r := range []string{repoA, repoB} {
+		require.NoError(t, os.MkdirAll(filepath.Join(r, ".git"), 0o700))
+	}
+	var err error
+	repoA, err = filepath.EvalSymlinks(repoA)
+	require.NoError(t, err)
+	repoB, err = filepath.EvalSymlinks(repoB)
+	require.NoError(t, err)
+
+	// A LEGACY val (no Scope field) in repo A, a current val in repo B.
+	plantSessionFull(t, dataDir, "legacyvl", session.RoleVal, "VAL-legacy", "", filepath.Join(repoA, "work"), "working")
+	plantSessionFull(t, dataDir, "valfarrr", session.RoleVal, "VAL-far", repoB, repoB, "working")
+
+	t.Run("1. the file carries a DERIVED provenance, and next shows the address", func(t *testing.T) {
+		target, rerr := resolveRecipientByName(cfg, mgr, "VAL-far@repo-b", "legacyvl")
+		require.NoError(t, rerr)
+		_, serr := sendMessage(cfg, mgr, "legacyvl", target, message.TypeQuery, "cross-repo", nil, false)
+		require.NoError(t, serr, "val -> val across projects is the one crossing this release allows")
+
+		entries, rerr := os.ReadDir(filepath.Join(dataDir, "sessions", "valfarrr", "inbox"))
+		require.NoError(t, rerr)
+		require.Len(t, entries, 1)
+		data, rerr := os.ReadFile(filepath.Join(dataDir, "sessions", "valfarrr", "inbox", entries[0].Name()))
+		require.NoError(t, rerr)
+		m, derr := message.DecodeLenient(data, 65536)
+		require.NoError(t, derr)
+		assert.Equal(t, repoA, m.Metadata.FromScope,
+			"the sender had no scope field: the wire must carry the DERIVED one, or provenance and routing disagree")
+
+		got := newNextMessage(mailboxEntry{msg: m}, false, repoB)
+		assert.Equal(t, repoA, got.FromScope)
+		assert.Equal(t, "VAL-legacy@"+repoA, got.FromAddress)
+		parsed, perr := parseRecipient(got.FromAddress)
+		require.NoError(t, perr)
+		assert.True(t, scopeMatchesHint(repoA, parsed.scope), "and the address the reader is handed resolves")
+	})
+
+	t.Run("2. peers prints the derived scope, and that token works", func(t *testing.T) {
+		peers, _, perr := collectPeers(mgr, dataDir, cfg.StaleSeconds, 65536, true, "", "")
+		require.NoError(t, perr)
+		labels := scopeColumn(peers)
+
+		var printed string
+		for _, p := range peers {
+			if p.AgentName == "VAL-legacy" {
+				printed = labels[p.Scope]
+			}
+		}
+		require.Equal(t, "repo-a", printed, "a legacy peer is listed under the project it belongs to")
+
+		// The token from the column, pasted by somebody in repo B.
+		got, rerr := resolveRecipientByName(cfg, mgr, "VAL-legacy@"+printed, "valfarrr")
+		require.NoError(t, rerr, "every token peers prints can be pasted into a command")
+		assert.Equal(t, "legacyvl", got)
+	})
+
+	t.Run("3. two legacy homonyms are disambiguated by the tokens shown", func(t *testing.T) {
+		asks := []openAsk{
+			{id: "msg-aaaaaaaaaaaa", from: "legacyvl", fromName: "VAL-same", scope: repoA},
+			{id: "msg-bbbbbbbbbbbb", from: "valfarrr", fromName: "VAL-same", scope: repoB},
+		}
+		senders := map[string]string{"legacyvl": "VAL-same", "valfarrr": "VAL-same"}
+
+		_, aerr := soleSessionNamed("VAL-same", asks, senders)
+		require.Error(t, aerr)
+		assert.Contains(t, aerr.Error(), "VAL-same@repo-a")
+		assert.Contains(t, aerr.Error(), "VAL-same@repo-b")
+
+		for token, want := range map[string]string{"VAL-same@repo-a": "legacyvl", "VAL-same@repo-b": "valfarrr"} {
+			got, gerr := soleSessionNamed(token, asks, senders)
+			require.NoError(t, gerr, "%s was offered and must work", token)
+			assert.Equal(t, want, got)
+		}
 	})
 }

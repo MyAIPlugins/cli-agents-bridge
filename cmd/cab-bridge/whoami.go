@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 	"os"
 )
 
@@ -70,8 +71,8 @@ func runWhoami(args []string) error {
 		Role:         mf.Role,
 		TeamID:       mf.TeamID,
 		ProjectPath:  mf.ProjectPath,
-		Scope:        effectiveScope(mf),
-		ScopeDerived: scopeIsDerived(mf),
+		Scope:        session.EffectiveScope(mf),
+		ScopeDerived: session.ScopeIsDerived(mf),
 		State:        mf.State,
 		DataDir:      cfg.DataDir,
 	}
