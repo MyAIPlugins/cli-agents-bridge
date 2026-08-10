@@ -1,0 +1,16 @@
+cmd/cab-bridge/inbox.go
+  h_4a4009aad9cb45 16,76,81-83,89,163-218,220-225,231,233,247-248,251-262,264,266,268
+cmd/cab-bridge/inbox_test.go
+  h_4a4009aad9cb45 9,14,125-131,136-141,143-144,151,153,170-196,198-214,220-222,224,239-247,257-258
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "720262a44deb4326fcdc9ae3b5ba4f1f14578afe",
+  "prompts": {},
+  "humans": {
+    "h_4a4009aad9cb45": {
+      "author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
