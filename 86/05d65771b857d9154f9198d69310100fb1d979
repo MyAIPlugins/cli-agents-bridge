@@ -1,0 +1,22 @@
+cmd/cab-bridge/next.go
+  h_4a4009aad9cb45 73-75
+cmd/cab-bridge/sent.go
+  h_4a4009aad9cb45 43-55,121,240-245,247
+cmd/cab-bridge/sent_test.go
+  h_4a4009aad9cb45 106-141
+cmd/cab-bridge/verbs.go
+  h_4a4009aad9cb45 777-809,820-821
+cmd/cab-bridge/verbs_test.go
+  h_4a4009aad9cb45 176-182,185,548-552,555,700-722
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "8605d65771b857d9154f9198d69310100fb1d979",
+  "prompts": {},
+  "humans": {
+    "h_4a4009aad9cb45": {
+      "author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
