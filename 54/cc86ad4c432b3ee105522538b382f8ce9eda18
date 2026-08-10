@@ -1,0 +1,37 @@
+plugins/cli-agents-bridge/.claude-plugin/plugin.json
+  s_c3a7b4ab630317::t_6fdf5a7166bf38 4
+ROADMAP.md
+  s_c3a7b4ab630317::t_5b6be6c19a5e18 52-53
+.claude-plugin/marketplace.json
+  s_c3a7b4ab630317::t_6fdf5a7166bf38 12
+CHANGELOG.md
+  s_a4fab0bd7299e6::t_351d4da558facb 123-135
+docs/DESIGN-v0.8-mailbox.md
+  s_a4fab0bd7299e6::t_b4c07c51f499a6 296-349,351-354
+plugins/cli-agents-bridge/skills/bridge-workflow/SKILL.md
+  s_c3a7b4ab630317::t_45401003f2589f 37-38,41,53-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "54cc86ad4c432b3ee105522538b382f8ce9eda18",
+  "prompts": {},
+  "sessions": {
+    "s_a4fab0bd7299e6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019feb4d-e636-7421-8a8d-fa5fbc3b0f57",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    },
+    "s_c3a7b4ab630317": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54f2afc1-7dea-42b7-a40d-0d4c6f0e3eea",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
