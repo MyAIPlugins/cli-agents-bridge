@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
@@ -174,4 +175,70 @@ func TestRunPeers_ScopeFiltering(t *testing.T) {
 		assert.Contains(t, stdout, "teamed01", "team filter is cross-scope by design")
 		assert.NotContains(t, stdout, "inscope1")
 	})
+}
+
+// --- F-112: peers says who is actually listening ----------------------------
+
+// TestPeers_ListeningAndOverviewCannotDisagree is the F-112 regression, and it
+// is written as a COMPARISON on purpose.
+//
+// The finding was not "peers is wrong": it was that peers and overview answered
+// the same question independently, so they could disagree in the same instant —
+// overview said `listener: not listening` while peers showed `ok`, about the same
+// session, one minute after the process died. Pinning peers alone would leave the
+// two free to drift apart again; pinning them AGAINST EACH OTHER is what the
+// single source (ListenerOwner.Listening) buys.
+func TestPeers_ListeningAndOverviewCannotDisagree(t *testing.T) {
+	dataDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.DataDir = dataDir
+	mgr := newSessionManager(cfg)
+
+	const scope = "/repo/live"
+	// A fresh heartbeat on all three: this is the F-112 window, where the
+	// heartbeat is frozen at the instant the one-shot exited and STALE still
+	// reads `ok` — correctly, because the session is not abandoned.
+	plantSessionFull(t, dataDir, "lsnalive", session.RoleEsc, "ESC-alive", scope, scope, "working")
+	plantSessionFull(t, dataDir, "lsndead0", session.RoleEsc, "ESC-dead", scope, scope, "working")
+	plantSessionFull(t, dataDir, "lsnnever", session.RoleVal, "VAL-never", scope, scope, session.StateOrchestrating)
+	plantListener(t, dataDir, "lsnalive", os.Getpid(), 3)
+	plantListener(t, dataDir, "lsndead0", deadPID, 3)
+	// lsnnever: no listener record at all.
+
+	peers, _, err := collectPeers(mgr, dataDir, cfg.StaleSeconds, 65536, true, "", scope)
+	require.NoError(t, err)
+	got := map[string]peerSummary{}
+	for _, p := range peers {
+		got[p.SessionID] = p
+	}
+
+	require.NotNil(t, got["lsnalive"].Listening)
+	assert.True(t, *got["lsnalive"].Listening)
+	assert.Equal(t, os.Getpid(), got["lsnalive"].PID, "the PID is the one holding the wait, the one a kill would reach")
+
+	require.NotNil(t, got["lsndead0"].Listening)
+	assert.False(t, *got["lsndead0"].Listening, "the record is there and the process is not")
+	assert.Equal(t, 0, got["lsndead0"].PID, "no process to signal, so no number to offer")
+	assert.False(t, got["lsndead0"].Stale, "and STALE stays ok: a fresh heartbeat means not abandoned, which is a different fact")
+
+	assert.Nil(t, got["lsnnever"].Listening, "never listened is not the same as not listening now")
+
+	// The comparison. Same instant, same fact, both commands.
+	for _, sid := range []string{"lsnalive", "lsndead0", "lsnnever"} {
+		rep, berr := buildOverview(mgr, cfg, sid)
+		require.NoError(t, berr)
+		peerSaysListening := got[sid].Listening != nil && *got[sid].Listening
+		assert.Equal(t, rep.ListenerActive, peerSaysListening,
+			"peers and overview must answer identically for %s", sid)
+	}
+}
+
+func TestListeningCol(t *testing.T) {
+	t.Parallel()
+	yes, no := true, false
+	assert.Equal(t, "yes", listeningCol(&yes))
+	assert.Equal(t, "no", listeningCol(&no))
+	assert.Equal(t, "-", listeningCol(nil), "never listened reads as absence, not as a fault")
+	assert.Equal(t, "-", listenerPIDCol(0), "a zero printed as 0 is a number somebody would try to kill")
+	assert.Equal(t, "4321", listenerPIDCol(4321))
 }

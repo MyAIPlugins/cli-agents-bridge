@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"text/tabwriter"
 	"time"
 
@@ -16,13 +17,39 @@ import (
 )
 
 type peerSummary struct {
-	SessionID     string    `json:"sessionId"`
-	Role          string    `json:"role"`
-	AgentName     string    `json:"agentName"`
-	ProjectName   string    `json:"projectName"`
+	SessionID   string `json:"sessionId"`
+	Role        string `json:"role"`
+	AgentName   string `json:"agentName"`
+	ProjectName string `json:"projectName"`
+	// PID is the LISTENER's process — the one that actually holds this session's
+	// wait — and 0 when nobody is listening.
+	//
+	// It used to be the manifest's PID, i.e. whichever process last touched the
+	// file. For a one-shot command that process is dead by definition the moment
+	// it returns, so `kill -0` on that number reported a perfectly healthy agent
+	// as gone: the column answered a third question nobody asks ("who wrote this
+	// manifest last") with a number that misleads on the two they do ask, "is it
+	// alive" and "what do I signal". The manifest PID is still in `inspect`,
+	// where a forensic detail belongs and nobody reads it in a hurry.
 	PID           int       `json:"pid"`
 	LastHeartbeat time.Time `json:"lastHeartbeat"`
 	Stale         bool      `json:"stale"`
+	// Listening reports whether a waiter is alive on this session RIGHT NOW.
+	// nil means it never listened at all, which is not the same as "no" — a val
+	// that orchestrates legitimately has no waiter between two messages, and a
+	// column that flattened the two would read as a fault on a normal state.
+	//
+	// Deliberately NOT folded into Stale (F-112). Stale means "abandoned" and has
+	// four consumers with real consequences — cleanup's sweep, the stale-namesake
+	// takeover, by-name routing, betterOccupant — plus the orchestrating
+	// exemption of F-23a, which exists precisely to keep a val that is working a
+	// gate from being marked dead. "Not listening right now" is a fresher,
+	// narrower fact and gets its own column.
+	//
+	// Same source as overview's `listener:` line (ListenerOwner.Listening), which
+	// is the whole point: two commands answering the same question independently
+	// is what let them disagree in the same instant.
+	Listening *bool `json:"listening,omitempty"`
 	// InboxCount is how many messages this peer has NOT been shown yet — the
 	// UNREAD count, not the file count.
 	//
@@ -112,7 +139,7 @@ func runPeers(args []string) error {
 	// UNREAD, not INBOX: the header names what the number IS. "INBOX" over a
 	// count that no longer means "files in the inbox" is a second way of saying
 	// the wrong thing, and costs nothing to fix.
-	fmt.Fprintln(tw, "SESSION_ID\tROLE\tSTATE\tAGENT_NAME\tPROJECT\tTEAM\tPID\tHEARTBEAT_AGE\tSTALE\tUNREAD\tLAST_CONSUMED\tSCOPE")
+	fmt.Fprintln(tw, "SESSION_ID\tROLE\tSTATE\tAGENT_NAME\tPROJECT\tTEAM\tPID\tLISTENING\tHEARTBEAT_AGE\tSTALE\tUNREAD\tLAST_CONSUMED\tSCOPE")
 	now := time.Now().UTC()
 	for _, p := range peers {
 		age := now.Sub(p.LastHeartbeat).Truncate(time.Second)
@@ -136,10 +163,34 @@ func runPeers(args []string) error {
 		if stateCol == "" {
 			stateCol = "-"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\t%d\t%s\t%s\n",
-			p.SessionID, p.Role, stateCol, p.AgentName, p.ProjectName, teamCol, p.PID, age, stale, p.InboxCount, lastConsumed, scopeCol)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
+			p.SessionID, p.Role, stateCol, p.AgentName, p.ProjectName, teamCol,
+			listenerPIDCol(p.PID), listeningCol(p.Listening), age, stale, p.InboxCount, lastConsumed, scopeCol)
 	}
 	return tw.Flush()
+}
+
+// listeningCol renders the three answers the column can give. `-` and `no` are
+// kept apart on purpose: `no` on a val that orchestrates would read as a fault
+// on a state that is normal by design.
+func listeningCol(listening *bool) string {
+	switch {
+	case listening == nil:
+		return "-"
+	case *listening:
+		return "yes"
+	default:
+		return "no"
+	}
+}
+
+// listenerPIDCol prints the PID only when there is a process to signal. A zero
+// rendered as "0" is a number somebody would try to kill.
+func listenerPIDCol(pid int) string {
+	if pid <= 0 {
+		return "-"
+	}
+	return strconv.Itoa(pid)
 }
 
 // collectPeers lists peer sessions. teamFilter, when non-empty, restricts the
@@ -200,14 +251,29 @@ func collectPeers(mgr *session.Manager, dataDir string, staleSeconds, maxContent
 			hiddenByScope++
 			continue
 		}
+		// One extra file read per peer, on a command run often — said out loud
+		// rather than hidden: it is the same order of magnitude as the manifest
+		// read just above, and it is what makes this column answer from the SAME
+		// fact overview answers from (F-112).
+		var listening *bool
+		listenerPID := 0
+		if owner, ok, oerr := mgr.ReadListener(mf.SessionID); oerr == nil && ok {
+			alive := owner.Listening()
+			listening = &alive
+			if alive {
+				listenerPID = owner.PID
+			}
+		}
+
 		out = append(out, peerSummary{
 			SessionID:         mf.SessionID,
 			Role:              mf.Role,
 			AgentName:         mf.AgentName,
 			ProjectName:       mf.ProjectName,
-			PID:               mf.PID,
+			PID:               listenerPID,
 			LastHeartbeat:     mf.LastHeartbeat,
 			Stale:             stale,
+			Listening:         listening,
 			InboxCount:        countUnread(mgr, e.Name(), filepath.Join(sessionsRoot, e.Name()), maxContentBytes),
 			LastConsumedMsgID: mf.LastConsumedMsgID,
 			TeamID:            mf.TeamID,
