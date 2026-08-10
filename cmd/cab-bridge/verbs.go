@@ -36,8 +36,21 @@ import (
 // dependency this rule exists to remove. tty detection is also out: verified
 // empirically that stdin is not a tty inside the harness, so every short
 // `tell X "hi"` would block on an empty pipe.
+//
+// F-113: but an argument AND redirected content is not a rule to apply, it is a
+// contradiction to report. `reply VAL-x < report.md` sent the five bytes of the
+// name and threw the report away, closing the ask with exit 0 — and it is the
+// complement of the F-105 fix, which made the argument win precisely so that a
+// val called `OK` could be answered with the word `OK`. Two mutually exclusive
+// readings of one input; the defect was never which one we picked, it was
+// picking in SILENCE. So the ambiguous combination is refused and the two
+// unambiguous forms are named. Nothing else changes.
 func resolveMessagePayload(arg string, hasArg bool, stdin io.Reader) (string, error) {
 	if hasArg {
+		if stdinIsRedirected(stdin) {
+			return "", fmt.Errorf("an argument AND redirected input: %q would be sent and the redirected content thrown away, so nothing was sent. "+
+				"Use one form or the other: `<verb> [<agent>] \"the message\"`, or `<verb> [<agent>] < file.md`", previewContent(arg, 30))
+		}
 		if strings.TrimSpace(arg) == "" {
 			// An empty ARGUMENT is exactly the shell-ate-the-text case (a stray
 			// backtick, a $, an apostrophe), so this is where the guidance is
@@ -348,7 +361,85 @@ func runSendVerb(verb, msgType string, args []string, stdin io.Reader, stdout, s
 		return fmt.Errorf("%s (%s): %w", verb, whoIThoughtIWas(mgr, sid), err)
 	}
 	fmt.Fprintln(stdout, formatSendEcho(myName(mgr, sid), args[0], msgID, content, verb))
+	warnNotListening(mgr, sid, stderr)
 	return nil
+}
+
+// warnNotListening says, on the one occasion when it is observable without
+// asking, that nothing is waiting for mail on this session.
+//
+// F-114. Being out of earshot is invisible by construction: no command fails, no
+// message bounces, and `overview` tells you only if you already suspect it. It
+// happened twice in two days to a val, and the second time it was Alan who
+// noticed, not him. Sending is the moment the gap matters — you have just spoken
+// to someone — so it is where the fact belongs.
+//
+// A NOTE, never an error: writing to a peer who is not listening is legitimate,
+// and so is being the peer who is not listening. Nothing is blocked.
+//
+// The wording states the MECHANISM, not a prediction, and that is what makes it
+// true for the no-push peers too (Codex, Desktop): their notify-watch is a
+// non-consuming poller, so their mail waits in the inbox until they run `next`
+// exactly like everybody else's. A line saying "you will not receive the reply"
+// would have been false for them — and their watcher leaves no liveness record
+// to tell them apart, so a guess would have been a guess.
+//
+// No exemption for `orchestrating` (the state that is heartbeat-exempt): the
+// re-arm discipline applies to a val too, and the val this was reported by was
+// orchestrating when its own waiter died. Exempting the state would have
+// silenced the exact case that produced the finding.
+func warnNotListening(mgr *session.Manager, sid string, stderr io.Writer) {
+	owner, ok, err := mgr.ReadListener(sid)
+	if err != nil {
+		// Pure observability: a damaged record is not worth a line here, and a
+		// warning about a warning is noise on the path that has just succeeded.
+		return
+	}
+	// NO record means never listened once — which is the worst case of all, not
+	// a reason to stay quiet. (`peers` renders that same state as `-` rather than
+	// `no`, because there the question is "is this peer faulty"; here it is "will
+	// anything be waiting for the answer", and the answer is no either way.)
+	if ok && owner.Listening() {
+		return
+	}
+	fmt.Fprintln(stderr, "note: no next is listening on this session — anything sent back waits in your inbox until you run next")
+}
+
+// stdinIsRedirected reports whether the caller pointed real content at stdin.
+//
+// NOT tty detection, which this file already rules out for a measured reason:
+// inside the harness stdin is a SOCKET — not a tty, not a pipe, not a file — so
+// "is it a terminal" answers nothing here. The question that does have an answer
+// is "did somebody redirect content into it", and that is visible without
+// reading a byte:
+//
+//	harness, no redirection   socket        -> false
+//	< report.md               regular, 10 B -> true
+//	echo ... |                named pipe    -> true
+//	< /dev/null               char device   -> false
+//	< empty.md                regular, 0 B  -> false   (nothing to throw away)
+//
+// A pipe counts regardless of size: the byte count on a pipe is whatever
+// happens to be buffered at this instant, so a slow producer would read as
+// empty. A regular file's size is exact, so it is used.
+//
+// A non-*os.File reader — every injected stdin in the tests — is not a
+// redirection and returns false, which keeps the guard off the unit tests and
+// forces the ones that DO exercise it to use a real file, i.e. the real thing.
+func stdinIsRedirected(r io.Reader) bool {
+	f, ok := r.(*os.File)
+	if !ok {
+		return false
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	mode := fi.Mode()
+	if mode&os.ModeNamedPipe != 0 {
+		return true
+	}
+	return mode.IsRegular() && fi.Size() > 0
 }
 
 func argAt(args []string, i int) string {
