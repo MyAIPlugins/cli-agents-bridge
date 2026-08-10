@@ -107,7 +107,7 @@ func runSent(args []string) error {
 	}
 	// A one-line gloss: the state names are precise but they do not explain
 	// themselves, and none of them means "the work is done".
-	fmt.Fprintln(os.Stdout, "\nunread = still in their inbox · notified = handed to their next · archived = they replied · expired/unreadable/unknown = see docs")
+	fmt.Fprintln(os.Stdout, "\nunread = still in their inbox · notified = handed to their next · archived = closed by their reply (which does not prove they read it) · expired/unreadable/unknown = see docs")
 	return nil
 }
 

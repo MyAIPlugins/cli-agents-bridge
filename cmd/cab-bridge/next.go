@@ -96,6 +96,17 @@ type nextMessage struct {
 	// agent reading one message must not have to correlate it with a hint at
 	// the top of the page to work out that the body is a path, not the text.
 	Note string `json:"note,omitempty"`
+	// Closes lists the asks this reply archived. It exists on the message
+	// already; what was missing is that it never reached the READER.
+	//
+	// F-109: a reply closes every open ask from that sender, so a message sent
+	// while the other side was working could be archived by an answer that never
+	// considered it — and the sender saw "reply received, openAsks 0" with no way
+	// to know which of their asks had just been closed. Carrying the list inline
+	// is what lets them recognise an id they were not expecting, without going to
+	// look for it: the alternative was a rule telling agents to re-read their own
+	// output, which is the shape Alan ruled out.
+	Closes []string `json:"closes,omitempty"`
 }
 
 // outboundAsk is one of MY asks still waiting for an answer.
@@ -568,6 +579,7 @@ func newNextMessage(e mailboxEntry, oversize bool) nextMessage {
 		Type:          e.msg.Type,
 		Timestamp:     e.msg.Timestamp,
 		Bytes:         e.bytes,
+		Closes:        e.msg.Closes,
 	}
 	if e.replayed {
 		m.Redelivered = true
