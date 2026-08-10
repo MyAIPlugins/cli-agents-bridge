@@ -61,8 +61,14 @@ func runInspect(args []string) error {
 		fmt.Printf("  Project: %s (%s)\n", mf.ProjectName, mf.ProjectPath)
 		// The FULL scope path, which `peers` no longer prints: that column now
 		// shows the basename, because the basename is what identifies the group
-		// and what an agent reads. The whole path is forensic — it belongs here
-		// and in --json, where nobody reads it in a hurry.
+		// and what an agent reads. The whole path stays here, in --json, and in
+		// the self views (`whoami`, `overview`) — none of which is read in a
+		// hurry.
+		//
+		// The list matters, and the first draft of this comment got it wrong by
+		// saying "here and in --json": somebody trusting it would have concluded
+		// that dropping the path from `overview` costs nothing. Caught by the val
+		// on the day we counted thirteen of these.
 		if mf.Scope != "" {
 			fmt.Printf("  Scope:   %s\n", mf.Scope)
 		}
