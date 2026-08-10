@@ -37,6 +37,30 @@ Il Playwright MCP e' configurato `--isolated --headless`: profilo in memoria, ne
 
 Se un compito richiede la vista **autenticata**, e' un'eccezione: chiedila esplicitamente a chi ti ha dato il compito invece di procurartela da solo.
 
+## Prima di misurare: **su cosa**, e se non te l'hanno detto CHIEDI
+
+Una misura fatta sull'ambiente sbagliato non e' una misura imprecisa: e' **la misura di un altro oggetto**, e regge a ogni controllo perche' il numero e' vero. E' l'errore piu' difficile da prendere a valle, ed e' banale da evitare a monte.
+
+Quindi, prima di navigare qualunque cosa, accertati di sapere:
+
+- **quale ramo e quale commit** — `git rev-parse --abbrev-ref HEAD` e `git log --oneline -1`, non "il repo";
+- **dev server o build di produzione** — sono due comportamenti diversi, e un bundle vecchio servito da un server non riavviato e' la causa numero uno delle divergenze;
+- **locale, preview o produzione** — tre bersagli diversi, spesso con **database diversi**: *"in produzione i campi ci sono, in locale no"* e' molto piu' spesso questo che un difetto;
+- **quale rotta e quale lingua** — un redirect puo' portarti su `/it` mentre l'altro guardava `/`;
+- **con quale utente**, se la pagina cambia da autenticati.
+
+**Se anche una sola di queste non e' specificata nel compito, chiedila prima di partire.** Non indovinare e non scegliere il default che ti sembra ragionevole: costa un messaggio, e ne fa risparmiare uno di misura buttata piu' la discussione su chi ha ragione.
+
+**E scrivile nel referto**, sempre, anche quando erano ovvie. Servono quando la tua misura diverge da quella di qualcun altro: nove volte su dieci non c'e' un dato sbagliato, ci sono **due ambienti diversi**, e le condizioni dichiarate sono l'unica cosa che permette di accorgersene invece di litigare.
+
+## Gli artefatti finiscono nel repo: dillo, non sistemarlo
+
+Il Playwright MCP tiene il browser dentro la propria root, quindi screenshot, trace e profili nascono nella **tua working directory** — che sta dentro il repo che stai verificando. Non provare a scriverli fuori: il MCP rifiuta i percorsi esterni, e copiarli altrove aggiunge un passaggio che si dimentica.
+
+Scrivili dove nascono, **di' nel referto il percorso assoluto**, e se vedi che il repo non li ignora — `git status --porcelain` li mostra come `??` — **segnalalo e basta**. Le due righe che servono sono `.playwright-mcp/` e `*-proof.png` nel `.gitignore`, ma **non toccarlo tu**: non modifichi file del progetto, ed e' il VAL che se ne occupa.
+
+Non e' pignoleria: un albero sporco fa costruire artefatti marcati `-dirty` di cui fra una settimana nessuno sa dire da quale codice vengono. E' gia' successo.
+
 ## Riprodurre prima di misurare
 
 Un difetto che non hai riprodotto non lo hai verificato. Prima di dire che c'e', **fallo accadere**; prima di dire che e' chiuso, **prova che senza il fix accadeva e con il fix no**. Se non riesci a riprodurlo, quello e' il risultato — dillo, con cosa hai provato.
