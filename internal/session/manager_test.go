@@ -257,9 +257,20 @@ func TestLookupByCWDDetails_SharedScopeSiblings(t *testing.T) {
 	assert.Equal(t, "lkupesc0", res2.ScopeSiblings[0].ID)
 }
 
-// TestLookupByCWDDetails_EmptyScopeNoSiblings: with no scope (legacy/v1), there
-// is no shared-scope hazard even with multiple distinct-path sessions.
-func TestLookupByCWDDetails_EmptyScopeNoSiblings(t *testing.T) {
+// TestLookupByCWDDetails_DifferentDerivedProjectsAreNotSiblings: two sessions
+// with no scope field but DIFFERENT project paths are two projects, so neither
+// is the other's sibling.
+//
+// It used to be called EmptyScopeNoSiblings and to assert "empty scope → no
+// shared-scope siblings", which is the rule F-116 reversed: an empty field no
+// longer means "no project", it means the project is derived. The body was
+// already exercising the case above — distinct derived projects — so the test
+// stayed green while ASSERTING something false. A test that claims one thing and
+// checks another never fails to say so, and whoever reads it concludes the old
+// rule still holds.
+//
+// It is also, unrenamed, the third regression the reviewer asked for.
+func TestLookupByCWDDetails_DifferentDerivedProjectsAreNotSiblings(t *testing.T) {
 	t.Parallel()
 	mgr := NewManager(t.TempDir(), time.Second)
 	plantManifestDetails(t, mgr, "lkupemp1", "/repo/a", "", "VAL-x", RoleVal)
@@ -268,7 +279,9 @@ func TestLookupByCWDDetails_EmptyScopeNoSiblings(t *testing.T) {
 	res, err := mgr.LookupByCWDDetails("/repo/a")
 	require.NoError(t, err)
 	assert.Equal(t, "lkupemp1", res.SelectedID)
-	assert.Empty(t, res.ScopeSiblings, "empty scope → no shared-scope siblings")
+	assert.Equal(t, "/repo/a", res.Candidates[0].Scope, "derived from the project path")
+	assert.Empty(t, res.Candidates[0].StoredScope, "and the record still says nothing")
+	assert.Empty(t, res.ScopeSiblings, "/repo/a and /repo/b are two projects, not one missing scope")
 }
 
 // TestLookupByCWDDetails_NoMatch: a cwd matching nothing → ErrNoSessionForCwd,
