@@ -251,7 +251,7 @@ Difesa in profondità: la dir `0700` non è necessaria (il socket è già 0600) 
 
 ## 9.4 Costo di implementazione per il bridge — da valutare
 
-Il transport è WebSocket. Il bridge ha una policy **zero dipendenze runtime** (CLAUDE.md). Le opzioni:
+Il transport è WebSocket. Il bridge ha una policy **zero dipendenze runtime** (`docs/dev-conventions.md`). Le opzioni:
 
 - implementare in Go stdlib puro l'handshake + il framing RFC 6455 (subset: text frame, masking client, close). Il mio client Node è ~120 righe; in Go stimo 150-250 con i test. Fattibile, ma è codice di protocollo da mantenere;
 - accettare `gorilla/websocket` → **viola la policy zero-deps**;

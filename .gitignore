@@ -50,3 +50,7 @@ feedback/
 # ignorano, non si spostano.
 .playwright-mcp/
 *-proof.png
+
+# Note di metodo interne: caricate come ISTRUZIONI da Claude Code in
+# qualsiasi clone, quindi non vanno nel repo pubblico. Vedi F-127.
+CLAUDE.md

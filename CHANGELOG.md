@@ -76,7 +76,7 @@ Everything below landed *after* the mailbox rewrite, from a security pass that s
 - **The `notify-watch` guardrail was dead** and nothing said so: it depended on a field that v0.8 stopped writing, so the condition was permanently false and the watcher no longer refused to start next to a live consumer. Repaired, with the reason rewritten — the hazard is no longer double *consumption* of files but a double *wake*.
 
 ### Method
-Four full design-gate rounds with two cross-vendor critics (Codex and Fable) before a line of production code, then per-phase diff-gates. **Six P0s, four of them inside the VAL's own syntheses** — a synthesis that resolves a critic's objection arrives at the next round *pre-validated*, and that patina makes it hard to question, most of all for whoever wrote it. The final acceptance pass found a P0 deeper than the one just closed, on the branch the gate had not named. See `docs/DESIGN-v0.8-mailbox.md` for the normative contract and CLAUDE.md LL-18.
+Four full design-gate rounds with two cross-vendor critics (Codex and Fable) before a line of production code, then per-phase diff-gates. **Six P0s, four of them inside the VAL's own syntheses** — a synthesis that resolves a critic's objection arrives at the next round *pre-validated*, and that patina makes it hard to question, most of all for whoever wrote it. The final acceptance pass found a P0 deeper than the one just closed, on the branch the gate had not named. See `docs/DESIGN-v0.8-mailbox.md` for the normative contract. LL-18 lives in the project's internal method notes, which are not published.
 
 ---
 

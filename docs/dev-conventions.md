@@ -1,6 +1,8 @@
 # Developer conventions — cli-agents-bridge
 
-Style, commit format, and test pattern conventions in use across Sprint 0-3. Extracted from CLAUDE.md project rules + empirical patterns from the Sprint 1-3 commits.
+Style, commit format, and test pattern conventions in use across Sprint 0-3. Distilled from the project rules plus empirical patterns from the Sprint 1-3 commits.
+
+**This file is the published source for the rules the code refers to.** Comments and older documents in this repository sometimes cite `CLAUDE.md`: those are the maintainers' internal method notes, which are not published — every rule they invoke that constrains the code is restated here.
 
 ---
 
@@ -118,12 +120,19 @@ Mandatory on every commit:
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ```
 
-### Discipline rules (CLAUDE.md)
+### Discipline rules
 
 - No emoji in commit messages, code, or docs (unless explicitly requested).
 - Commit one logical unit at a time — not one commit per micro-change.
-- VAL commits docs separately from ESC code commits for audit clarity.
+- Docs are committed separately from code, for audit clarity.
 - No commit until done criteria are green.
+
+### Project rules the code cites
+
+Two rules are invoked by name in source comments; they constrain the code, so they are stated here rather than only in the internal notes.
+
+- **No implicit fallbacks.** A fallback must be explicit in the code, documented, and tested. Silent degradation is a defect: when an operation cannot do what it says, it returns an error rather than quietly doing something else. Cited by `internal/message/validate.go`, `internal/routing/role.go`, `internal/transport/fs/atomic.go`, `internal/transport/fs/process.go`.
+- **Zero runtime dependencies.** The bridge ships as a single static Go binary: no jq, no Python, no Node, no cgo. A design that needs a runtime dependency is rejected or reworked, not shipped with an install note.
 
 ---
 
@@ -191,7 +200,7 @@ Test wall-clock should never exceed a few seconds.
 
 ## Lessons learned
 
-The CLAUDE.md `## Lessons learned` section captures durable insights from each sprint. Active entries as of Sprint 3:
+The maintainers keep a running `Lessons learned` log in their internal notes, one entry per durable insight. Active entries as of Sprint 3:
 
 - **LL-1**: empirically-unverified hypotheses are delayed mines — flag "DA VERIFICARE" explicitly.
 - **LL-2**: `/ultraplan` cloud is valuable for kickoff (independence) but echo-chamber for late-stage review.
