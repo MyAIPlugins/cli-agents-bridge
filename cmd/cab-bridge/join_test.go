@@ -615,3 +615,286 @@ func leaveTheJoinProcessDead(t *testing.T, mgr *session.Manager, dataDir, projec
 	mf.LastHeartbeat = time.Now().UTC() // fresh on purpose: not stale, just nobody home
 	require.NoError(t, mgr.SaveManifest(mf))
 }
+
+// --- F-124 lotto 1: the name has to survive a shell -------------------------
+
+// plantUnsafeName rewrites a session's name straight on disk, the way a binary
+// that predates the grammar left it. Not through RenameAgent, which validates:
+// the point is a name that exists BECAUSE nothing refused it.
+func plantUnsafeName(t *testing.T, dataDir, sid, unsafe string) {
+	t.Helper()
+	mgr := newSessionManager(config.Config{DataDir: dataDir})
+	mf, err := mgr.LoadManifest(sid)
+	require.NoError(t, err)
+	mf.AgentName = unsafe
+	require.NoError(t, mgr.SaveManifest(mf))
+}
+
+// TestJoin_LegacyUnsafeNameIsNamedAndRepairable is the test that carries the
+// weight of this lot, and it exists because the FIX would otherwise break live
+// agents (CRI design-gate #3).
+//
+// `Manager.Register` validates the agent name at :116, BEFORE the resume branch
+// at :123 — and on a bare re-join it is `join` itself that reads the occupant's
+// name and hands it back to Register. So tightening the grammar does not merely
+// refuse NEW bad names: it stops the idempotent re-join that the skill
+// prescribes after every compact, for a session that was registered when the
+// name was allowed.
+//
+// Reproduced before the fix with a throwaway patch: `register: agent name
+// "ESC bridge" is not addressable`, exit 1, and not one word about the way out.
+// The way out already existed (join.go renames in place, same id, same inbox) —
+// what was missing was anybody saying so.
+func TestJoin_LegacyUnsafeNameIsNamedAndRepairable(t *testing.T) {
+	for _, tc := range []struct{ label, unsafe, repaired string }{
+		{"a space", "ESC bridge", "ESC-bridge"},
+		{"a leading dash", "-dash", "dash"},
+	} {
+		t.Run(tc.label, func(t *testing.T) {
+			dataDir := t.TempDir()
+			proj := t.TempDir()
+			t.Setenv("CAB_DATA_DIR", dataDir)
+			t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+			require.NoError(t, runJoin([]string{"--role=esc", "--agent-name=ESC-safe", "--project-path=" + proj}))
+			entries, err := os.ReadDir(filepath.Join(dataDir, "sessions"))
+			require.NoError(t, err)
+			require.Len(t, entries, 1)
+			sid := entries[0].Name()
+
+			plantUnsafeName(t, dataDir, sid, tc.unsafe)
+			// Mail that predates the repair: it has to survive, because the repair
+			// is a rename and identity is the id.
+			plantMsg(t, dataDir, sid, "inbox", "msg-aaaaaaaaaaaa", "val00001", "VAL-x", message.TypeQuery, "brief")
+
+			// 1. The bare re-join: the one the skill prescribes, and the one that
+			// breaks. It must refuse — and refuse by NAMING the repair.
+			err = runJoin([]string{"--role=esc", "--project-path=" + proj})
+			require.Error(t, err, "a name that cannot be addressed must not pass silently")
+			assert.Contains(t, err.Error(), tc.unsafe, "say WHICH name is the problem")
+			assert.Contains(t, err.Error(), "--agent-name="+tc.repaired,
+				"and hand over a command that runs, not a rule to work out")
+			assert.NotContains(t, err.Error(), "register:",
+				"the diagnosis must not arrive from two levels down, where it explains nothing")
+
+			// 2. The way out actually works, in place.
+			require.NoError(t, runJoin([]string{"--role=esc", "--agent-name=" + tc.repaired, "--project-path=" + proj}))
+
+			after, err := os.ReadDir(filepath.Join(dataDir, "sessions"))
+			require.NoError(t, err)
+			require.Len(t, after, 1, "the repair must not leave a second session holding the first one's mail")
+			assert.Equal(t, sid, after[0].Name(), "same id: the label changed, the identity did not")
+
+			mgr := newSessionManager(config.Config{DataDir: dataDir})
+			mf, err := mgr.LoadManifest(sid)
+			require.NoError(t, err)
+			assert.Equal(t, tc.repaired, mf.AgentName)
+			assert.Contains(t, mf.FormerAgentNames, tc.unsafe,
+				"a peer still writing to the old name has to be told where it went")
+			assert.FileExists(t, filepath.Join(dataDir, "sessions", sid, "inbox", "msg-aaaaaaaaaaaa.json"),
+				"same inbox — checked against the session's real path, not one rebuilt from a variable")
+		})
+	}
+}
+
+// TestRegister_FusedBasenamesStayAddressable is the consumer end of CRI
+// diff-gate P1-2, through the PUBLIC command rather than through the helper.
+//
+// The unit test in internal/session says two fused basenames get different
+// names. This one says the thing that actually matters: that `tell` can still
+// reach one of them. Before the digest, `a+b` and `a:b` both derived `a-b`, two
+// live sessions answered to it, and `tell a-b` exited 1 with "2 live agents are
+// named a-b" — a recipient made unreachable by the fix meant to make names
+// reachable.
+//
+// Through `register`, not `join`, deliberately: the guard the first plan leaned
+// on lives in join, and Manager.Register — the surface of the public command —
+// has no name-uniqueness check at all. The defence was on one path and the
+// defect on the other.
+func TestRegister_FusedBasenamesStayAddressable(t *testing.T) {
+	dataDir := t.TempDir()
+	base := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700)) // one scope
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	plus := filepath.Join(base, "a+b")
+	colon := filepath.Join(base, "a:b")
+	for _, d := range []string{plus, colon} {
+		require.NoError(t, os.MkdirAll(d, 0o700))
+		require.NoError(t, runRegister([]string{"--role=esc", "--project-path=" + d}))
+	}
+
+	mgr := newSessionManager(config.Config{DataDir: dataDir})
+	peers, _, err := collectPeers(mgr, dataDir, 300, 65536, true, "", resolveScope(base))
+	require.NoError(t, err)
+
+	names := map[string]string{} // agent name -> project it came from
+	for _, p := range peers {
+		if prev, dup := names[p.AgentName]; dup {
+			t.Fatalf("two projects derived one name %q: %s and %s", p.AgentName, prev, p.ProjectName)
+		}
+		names[p.AgentName] = p.ProjectName
+	}
+	require.Len(t, names, 2, "two directories, two agents")
+
+	// And the names are not merely distinct on disk: one of them can be written
+	// to. A sender in the same scope, addressing by the derived name.
+	sender := filepath.Join(base, "sender")
+	require.NoError(t, os.MkdirAll(sender, 0o700))
+	require.NoError(t, runJoin([]string{"--role=val", "--agent-name=VAL-sender", "--project-path=" + sender}))
+	sid := ""
+	peers, _, err = collectPeers(mgr, dataDir, 300, 65536, true, "", resolveScope(base))
+	require.NoError(t, err)
+	for _, p := range peers {
+		if p.AgentName == "VAL-sender" {
+			sid = p.SessionID
+		}
+	}
+	require.NotEmpty(t, sid)
+	t.Setenv("CAB_SESSION_ID", sid)
+
+	for name := range names {
+		var stdout, stderr bytes.Buffer
+		require.NoError(t,
+			runSendVerb("tell", message.TypeNotify, []string{name, "hi"}, strings.NewReader(""), &stdout, &stderr),
+			"the derived name %q must be reachable, which is the whole point of deriving one", name)
+	}
+}
+
+// TestRepairedSession_OldNameIsRecordedNotForwarded is CRI diff-gate P2-4: the
+// repair message used to promise that peers writing to the old name would be
+// told where it went, and the test "proved" it by looking at FormerAgentNames
+// instead of calling the consumer.
+//
+// Executed here: for `-dash` the forward CANNOT fire, because runSendVerb
+// refuses a leading dash as a flag before any resolution. So the promise is
+// reduced to what is true — the old name stays on record — and this test is what
+// keeps the two from drifting apart again.
+func TestRepairedSession_OldNameIsRecordedNotForwarded(t *testing.T) {
+	dataDir := t.TempDir()
+	base := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700))
+	proj := filepath.Join(base, "work")
+	sender := filepath.Join(base, "sender")
+	require.NoError(t, os.MkdirAll(proj, 0o700))
+	require.NoError(t, os.MkdirAll(sender, 0o700))
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	require.NoError(t, runJoin([]string{"--role=esc", "--agent-name=ESC-safe", "--project-path=" + proj}))
+	mgr := newSessionManager(config.Config{DataDir: dataDir})
+	peers, _, err := collectPeers(mgr, dataDir, 300, 65536, true, "", resolveScope(base))
+	require.NoError(t, err)
+	require.Len(t, peers, 1)
+	sid := peers[0].SessionID
+
+	plantUnsafeName(t, dataDir, sid, "-dash")
+	require.NoError(t, runJoin([]string{"--role=esc", "--agent-name=dash", "--project-path=" + proj}))
+
+	mf, err := mgr.LoadManifest(sid)
+	require.NoError(t, err)
+	require.Contains(t, mf.FormerAgentNames, "-dash", "the old label is on record")
+
+	require.NoError(t, runJoin([]string{"--role=val", "--agent-name=VAL-sender", "--project-path=" + sender}))
+	peers, _, err = collectPeers(mgr, dataDir, 300, 65536, true, "", resolveScope(base))
+	require.NoError(t, err)
+	for _, p := range peers {
+		if p.AgentName == "VAL-sender" {
+			t.Setenv("CAB_SESSION_ID", p.SessionID)
+		}
+	}
+
+	// The new name works.
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, runSendVerb("tell", message.TypeNotify, []string{"dash", "hi"}, strings.NewReader(""), &stdout, &stderr))
+
+	// The OLD one does not, and not for the reason the message used to imply:
+	// it never reaches the lookup that would have redirected it.
+	err = runSendVerb("tell", message.TypeNotify, []string{"-dash", "hi"}, strings.NewReader(""), &stdout, &stderr)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "takes no flags",
+		"refused as a flag before resolution — so no redirect is possible, and the repair message must not promise one")
+	assert.NotContains(t, err.Error(), "is now",
+		"and it certainly cannot say where the name went")
+}
+
+// TestRepairCommand_IsRunnableFromAnywhere runs the command the error PRINTS,
+// instead of asserting a substring of it.
+//
+// CRI re-gate P1: `register --resume --project-path=A` works from any cwd, and
+// the repair it suggested was `join --role=... --agent-name=...` with no path —
+// so `join` fell back to the CWD, registered a NEW session there, and left the
+// legacy one with its mail untouched. The message said "SAME id, SAME inbox"
+// and delivered neither.
+//
+// The previous test asserted that the error CONTAINED `join --agent-name`. It
+// did. A substring cannot notice that the command targets a different project —
+// fourth time in this lot that a test proved a property adjacent to the one that
+// mattered, and the way out was the same each time: run the thing.
+func TestRepairCommand_IsRunnableFromAnywhere(t *testing.T) {
+	dataDir := t.TempDir()
+	base := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700))
+	projA := filepath.Join(base, "work")     // where the legacy session lives
+	cwdB := filepath.Join(base, "elsewhere") // where the operator happens to be
+	require.NoError(t, os.MkdirAll(projA, 0o700))
+	require.NoError(t, os.MkdirAll(cwdB, 0o700))
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	require.NoError(t, runJoin([]string{"--role=esc", "--agent-name=ESC-ok", "--project-path=" + projA}))
+	entries, err := os.ReadDir(filepath.Join(dataDir, "sessions"))
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	legacyID := entries[0].Name()
+	plantUnsafeName(t, dataDir, legacyID, "-dash")
+	plantMsg(t, dataDir, legacyID, "inbox", "msg-aaaaaaaaaaaa", "val00001", "VAL-x", message.TypeQuery, "brief")
+
+	// The refusal, asked for from a DIFFERENT directory — which is what
+	// --project-path is for.
+	t.Chdir(cwdB)
+	err = runRegister([]string{"--role=esc", "--resume", "--project-path=" + projA})
+	require.Error(t, err)
+
+	// Pull the command out of the message and RUN IT. Splitting on spaces is
+	// exactly what a shell does, so a path with a space would break here — that
+	// is the known debt this lot leaves to lot 2, and the fixture avoids it on
+	// purpose rather than by accident.
+	var cmd []string
+	for _, line := range strings.Split(err.Error(), "\n") {
+		if f := strings.Fields(line); len(f) > 1 && f[0] == "cab-bridge" {
+			cmd = f[1:]
+			break
+		}
+	}
+	require.NotEmpty(t, cmd, "the error has to carry a command, not a description:\n%s", err)
+	require.Equal(t, "join", cmd[0])
+
+	require.NoError(t, runJoin(cmd[1:]), "the printed command must run as printed")
+
+	// SAME id, SAME inbox, ONE manifest — the three things the message promises.
+	after, err := os.ReadDir(filepath.Join(dataDir, "sessions"))
+	require.NoError(t, err)
+	assert.Len(t, after, 1, "the repair must not register a second session in whatever cwd I was standing in")
+	assert.Equal(t, legacyID, after[0].Name(), "SAME id")
+	assert.FileExists(t, filepath.Join(dataDir, "sessions", legacyID, "inbox", "msg-aaaaaaaaaaaa.json"), "SAME inbox")
+
+	mgr := newSessionManager(config.Config{DataDir: dataDir})
+	mf, err := mgr.LoadManifest(legacyID)
+	require.NoError(t, err)
+	assert.Equal(t, "dash", mf.AgentName)
+	assert.Contains(t, mf.FormerAgentNames, "-dash")
+
+	// And the session is addressable now: the point of the whole exercise.
+	require.NoError(t, runJoin([]string{"--role=val", "--agent-name=VAL-sender", "--project-path=" + cwdB}))
+	peers, _, perr := collectPeers(mgr, dataDir, 300, 65536, true, "", resolveScope(base))
+	require.NoError(t, perr)
+	for _, p := range peers {
+		if p.AgentName == "VAL-sender" {
+			t.Setenv("CAB_SESSION_ID", p.SessionID)
+		}
+	}
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, runSendVerb("tell", message.TypeNotify, []string{"dash", "hi"}, strings.NewReader(""), &stdout, &stderr))
+}

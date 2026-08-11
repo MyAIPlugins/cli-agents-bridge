@@ -95,6 +95,12 @@ func deriveAgentName(myRole, dirBase string, peers []peerSummary) (name, basis s
 	// refused (F-90), and who pairs with whom is visible in `peers` and in the
 	// scope — it never needed encoding in a string.
 	myPrefix := roleUpper(myRole)
+	// REDUNDANT since F-124, and kept on purpose: SanitizeDerivedName now
+	// guarantees a non-empty result and its only caller here passes through it,
+	// so no degenerate base can reach this line. Left as defence in depth — but
+	// SAID, because a guard whose comment does not admit it is unreachable is the
+	// shape that made a listenUntil check silently always-false: the next reader
+	// cannot tell a live defence from a leftover.
 	if dirBase == "" || dirBase == "." || dirBase == string(filepath.Separator) {
 		dirBase = "session" // never produce a bare "ESC-" on a degenerate path
 	}

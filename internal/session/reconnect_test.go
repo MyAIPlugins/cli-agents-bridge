@@ -232,3 +232,266 @@ func TestRegister_Resume_DifferentRole_NoMatch(t *testing.T) {
 	t.Cleanup(func() { _ = rel2() })
 	assert.NotEqual(t, val.SessionID, mf.SessionID, "different role must not be resumed")
 }
+
+// --- F-124: a DERIVED name must not be part of the resume identity ----------
+
+// TestResume_NoNameGivenFindsTheSessionWhateverItIsCalled is the second P1 of
+// the re-gate, and the version WITHOUT an upgrade in it — which is what showed
+// the real cause.
+//
+// The gate described it as "the upgrade breaks resume", and that is one face:
+// the identity was built with the CURRENT derivation, so any change to the
+// derivation orphaned sessions written by the previous binary. But the same
+// defect fires with one binary and no derivation change at all: register with an
+// explicit name, then resume WITHOUT one, and the resume looks for the DERIVED
+// name, does not find the explicit one, and starts a second session on the same
+// directory — mail included. Reproduced on the real binary before this fix:
+// acc8c9e9 'ESC-explicit' with 1 message, c8354d2b 'work' with 0.
+//
+// So "teach the reader the old derivations" would have fixed neither: here there
+// is no historic derivation, there is a name somebody chose.
+func TestResume_NoNameGivenFindsTheSessionWhateverItIsCalled(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewManager(dir, time.Second)
+	proj := filepath.Join(dir, "work")
+	require.NoError(t, os.MkdirAll(proj, 0o700))
+
+	first, release, err := mgr.Register(context.Background(), RegisterOpts{
+		ProjectPath: proj, AgentName: "ESC-explicit", Role: RoleEsc, Scope: proj,
+	})
+	require.NoError(t, err)
+	require.NoError(t, release())
+	abandon(t, mgr, first.SessionID)
+
+	// Mail arrives before the resume: the whole cost of getting this wrong.
+	inbox := filepath.Join(dir, "sessions", first.SessionID, "inbox")
+	require.NoError(t, os.MkdirAll(inbox, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(inbox, "msg-aaaaaaaaaaaa.json"), []byte("{}"), 0o600))
+
+	again, release2, err := mgr.Register(context.Background(), RegisterOpts{
+		ProjectPath: proj, Role: RoleEsc, Scope: proj, Resume: true,
+	})
+	require.NoError(t, err)
+	require.NoError(t, release2())
+
+	assert.Equal(t, first.SessionID, again.SessionID,
+		"the resume must find the session that is HERE, not the one the current derivation would have named")
+	assert.Equal(t, "ESC-explicit", again.AgentName,
+		"and adopt its name: with no name asked for, the name is an output of the resume")
+
+	entries, err := os.ReadDir(filepath.Join(dir, "sessions"))
+	require.NoError(t, err)
+	assert.Len(t, entries, 1, "never a second session holding the first one's mail")
+	assert.FileExists(t, filepath.Join(inbox, "msg-aaaaaaaaaaaa.json"))
+}
+
+// The upgrade face of the same defect, with a FIXTURE written the way the
+// previous binary wrote it — because a test that creates and resumes with the
+// same code cannot see a change of derivation. This is the two-version test the
+// gate asked for, without needing two binaries: `a-b` is what `725347c` stored
+// for a directory called `a+b`, and `1b09ba0` stored `a-b-<digest>`. Neither is
+// what the current code derives.
+func TestResume_FindsASessionNamedByAnEarlierDerivation(t *testing.T) {
+	for _, historic := range []struct {
+		label, name string
+	}{
+		{"the substituting derivation (725347c)", "a-b"},
+		{"the digest derivation (1b09ba0)", "a-b-59f4"},
+	} {
+		t.Run(historic.label, func(t *testing.T) {
+			dir := t.TempDir()
+			mgr := NewManager(dir, time.Second)
+			proj := filepath.Join(dir, "a+b")
+			require.NoError(t, os.MkdirAll(proj, 0o700))
+
+			// Written by the older binary: same project, same role, a name this
+			// code would never derive.
+			first, release, err := mgr.Register(context.Background(), RegisterOpts{
+				ProjectPath: proj, AgentName: historic.name, Role: RoleEsc, Scope: proj,
+			})
+			if err != nil {
+				// `a+b` is refused as a TYPED name today, so plant it the way the
+				// old binary left it on disk: as a derived default nobody typed.
+				first, release, err = mgr.Register(context.Background(), RegisterOpts{
+					ProjectPath: proj, AgentName: "placeholder", Role: RoleEsc, Scope: proj,
+				})
+				require.NoError(t, err)
+				require.NoError(t, release())
+				mf, lerr := mgr.LoadManifest(first.SessionID)
+				require.NoError(t, lerr)
+				mf.AgentName = historic.name
+				require.NoError(t, mgr.SaveManifest(mf))
+			} else {
+				require.NoError(t, release())
+			}
+			abandon(t, mgr, first.SessionID)
+
+			again, release2, err := mgr.Register(context.Background(), RegisterOpts{
+				ProjectPath: proj, Role: RoleEsc, Scope: proj, Resume: true,
+			})
+			require.NoError(t, err)
+			require.NoError(t, release2())
+
+			assert.Equal(t, first.SessionID, again.SessionID,
+				"a session written by an older derivation must still be re-entered, or the upgrade orphans its inbox")
+			assert.Equal(t, historic.name, again.AgentName, "and keeps the name it already had")
+		})
+	}
+}
+
+// TestResume_TwoNamesOnOnePathIsAmbiguousNotATieBreak REPLACES a test that
+// certified the wrong property, and the replacement is the finding.
+//
+// The first version asserted that the pick was DETERMINISTIC — five runs, same
+// answer — and it was true. But repeatability is not correctness: the pick took
+// the most recent heartbeat, which meant an empty mailbox over one holding a
+// message, silently. "Making a choice repeatable does not make it right"
+// (CRI re-gate P1-1), and §2.2 of the mailbox design already said that where
+// duplicates exist the system fails closed instead of choosing.
+//
+// Third time in this lot that a test of mine proved a property ADJACENT to the
+// one that was needed. The shape is always the same: I assert what the code
+// does, and the question was what it should do.
+func TestResume_TwoNamesOnOnePathIsAmbiguousNotATieBreak(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewManager(dir, time.Second)
+	proj := filepath.Join(dir, "work")
+	require.NoError(t, os.MkdirAll(proj, 0o700))
+
+	older, release, err := mgr.Register(context.Background(), RegisterOpts{
+		ProjectPath: proj, AgentName: "ESC-older", Role: RoleEsc, Scope: proj,
+	})
+	require.NoError(t, err)
+	require.NoError(t, release())
+	abandon(t, mgr, older.SessionID)
+
+	// A second one on the SAME path: only ForceNew can produce this, and it is
+	// the state the old identity rule would leave behind every time a name
+	// changed — so it is not hypothetical, it is the wreckage of the defect.
+	newer, release2, err := mgr.Register(context.Background(), RegisterOpts{
+		ProjectPath: proj, AgentName: "ESC-newer", Role: RoleEsc, Scope: proj, ForceNew: true,
+	})
+	require.NoError(t, err)
+	require.NoError(t, release2())
+	abandon(t, mgr, newer.SessionID)
+
+	// Make "most recent" unambiguous instead of relying on write ordering.
+	mf, err := mgr.LoadManifest(newer.SessionID)
+	require.NoError(t, err)
+	mf.LastHeartbeat = time.Now().UTC()
+	require.NoError(t, mgr.SaveManifest(mf))
+	mf, err = mgr.LoadManifest(older.SessionID)
+	require.NoError(t, err)
+	mf.LastHeartbeat = time.Now().UTC().Add(-time.Hour)
+	require.NoError(t, mgr.SaveManifest(mf))
+
+	// Mail in the OLDER one, so a silent pick has something real to lose.
+	inbox := filepath.Join(dir, "sessions", older.SessionID, "inbox")
+	require.NoError(t, os.MkdirAll(inbox, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(inbox, "msg-aaaaaaaaaaaa.json"), []byte("{}"), 0o600))
+
+	_, _, err = mgr.Register(context.Background(), RegisterOpts{
+		ProjectPath: proj, Role: RoleEsc, Scope: proj, Resume: true,
+	})
+	require.Error(t, err, "two names on one path are two identities: never a silent pick")
+	assert.ErrorIs(t, err, ErrAmbiguousResume)
+	assert.Contains(t, err.Error(), "ESC-older", "the way out needs both names to choose between")
+	assert.Contains(t, err.Error(), "ESC-newer")
+	assert.Contains(t, err.Error(), "--agent-name", "and the flag that resolves it")
+
+	// Fail-closed means nothing moved: no third session, and the mail is where
+	// it was.
+	entries, err := os.ReadDir(filepath.Join(dir, "sessions"))
+	require.NoError(t, err)
+	assert.Len(t, entries, 2, "a refused resume must not register a fresh session either")
+	assert.FileExists(t, filepath.Join(inbox, "msg-aaaaaaaaaaaa.json"))
+
+	// And naming one resumes it: the ambiguity is in the question, not in the
+	// sessions, so the way out is an answer and never a cleanup.
+	got, release3, err := mgr.Register(context.Background(), RegisterOpts{
+		ProjectPath: proj, AgentName: "ESC-older", Role: RoleEsc, Scope: proj, Resume: true,
+	})
+	require.NoError(t, err)
+	require.NoError(t, release3())
+	assert.Equal(t, older.SessionID, got.SessionID, "the one I named, not the most recent one")
+}
+
+// The complement, and it must keep working: several records under ONE name are
+// the ordinary post-compact case, not an ambiguity — most-recent-first still
+// applies there. Without this the fix above would turn a normal resume into an
+// error the moment a session had ever been reclaimed.
+func TestResume_SeveralRecordsOfOneNameAreStillOneIdentity(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewManager(dir, time.Second)
+	proj := filepath.Join(dir, "work")
+	require.NoError(t, os.MkdirAll(proj, 0o700))
+
+	first, release, err := mgr.Register(context.Background(), RegisterOpts{
+		ProjectPath: proj, AgentName: "ESC-same", Role: RoleEsc, Scope: proj,
+	})
+	require.NoError(t, err)
+	require.NoError(t, release())
+	abandon(t, mgr, first.SessionID)
+
+	second, release2, err := mgr.Register(context.Background(), RegisterOpts{
+		ProjectPath: proj, AgentName: "ESC-same", Role: RoleEsc, Scope: proj, ForceNew: true,
+	})
+	require.NoError(t, err)
+	require.NoError(t, release2())
+	abandon(t, mgr, second.SessionID)
+
+	mf, err := mgr.LoadManifest(second.SessionID)
+	require.NoError(t, err)
+	mf.LastHeartbeat = time.Now().UTC()
+	require.NoError(t, mgr.SaveManifest(mf))
+
+	got, release3, err := mgr.Register(context.Background(), RegisterOpts{
+		ProjectPath: proj, Role: RoleEsc, Scope: proj, Resume: true,
+	})
+	require.NoError(t, err, "one name, several records: that is continuity, not ambiguity")
+	require.NoError(t, release3())
+	assert.Equal(t, second.SessionID, got.SessionID, "and the most recent one is the continuation")
+}
+
+// CRI re-gate P1-2: the resume must not adopt a name the rest of the tool
+// refuses. `join` stops on such a session and offers the in-place repair;
+// `register --resume` walked past that gate and returned `resumed` with a name
+// `tell` rejects before any lookup. Two doors, opposite answers, one state.
+func TestResume_RefusesToAdoptAnUnaddressableName(t *testing.T) {
+	for _, name := range []string{"-dash", "a+b", "ESC bridge"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			mgr := NewManager(dir, time.Second)
+			proj := filepath.Join(dir, "work")
+			require.NoError(t, os.MkdirAll(proj, 0o700))
+
+			first, release, err := mgr.Register(context.Background(), RegisterOpts{
+				ProjectPath: proj, AgentName: "ESC-placeholder", Role: RoleEsc, Scope: proj,
+			})
+			require.NoError(t, err)
+			require.NoError(t, release())
+			// Left on disk the way a pre-grammar binary left it.
+			mf, err := mgr.LoadManifest(first.SessionID)
+			require.NoError(t, err)
+			mf.AgentName = name
+			require.NoError(t, mgr.SaveManifest(mf))
+			abandon(t, mgr, first.SessionID)
+
+			_, _, err = mgr.Register(context.Background(), RegisterOpts{
+				ProjectPath: proj, Role: RoleEsc, Scope: proj, Resume: true,
+			})
+			require.Error(t, err, "resuming into an unaddressable name hands back a peer nobody can write to")
+			assert.ErrorIs(t, err, ErrUnaddressableResume)
+			assert.Contains(t, err.Error(), "cab-bridge join --role=esc --agent-name=",
+				"and the remediation is the one join already implements, not a second copy of it")
+
+			// Nothing was created and nothing was renamed: fail-closed.
+			entries, rerr := os.ReadDir(filepath.Join(dir, "sessions"))
+			require.NoError(t, rerr)
+			assert.Len(t, entries, 1)
+			after, rerr := mgr.LoadManifest(first.SessionID)
+			require.NoError(t, rerr)
+			assert.Equal(t, name, after.AgentName, "a refused resume does not migrate the name behind anyone's back")
+		})
+	}
+}

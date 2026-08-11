@@ -650,6 +650,14 @@ func (m *Manager) Touch(sessionID string) error {
 // The old name is remembered rather than discarded, so a peer still writing to
 // it gets told where it went instead of "no such agent".
 //
+// LIMIT, and it is not hypothetical (F-124, CRI diff-gate P2-4): that redirect
+// only fires for an old name the verbs can still LOOK UP. A former name starting
+// with `-` is refused as a flag by runSendVerb before any resolution, and one
+// containing `@` is parsed as a qualified address first — so for those two
+// shapes the record is inspectable but not reachable by writing to it. Renaming
+// away from an unaddressable name is exactly the case F-124 created, so the two
+// meet: the record is kept for `inspect`, not as a working forward.
+//
 // Under the SESSION LOCK, not manifestMu alone: the session being renamed may
 // have a live waiter beating its heartbeat from another process, and an
 // in-process mutex does not serialise against that (see the manifestMu doc, and

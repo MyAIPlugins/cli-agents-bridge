@@ -235,7 +235,24 @@ func (m *Manifest) ApplyV1Defaults() {
 		// nobody counted: a v1 manifest in a directory containing the scope
 		// separator produced an unaddressable name at every load, from the new
 		// binary, today (CRI2 F-3b). ProjectName is a basename like any other.
-		m.AgentName, _ = SanitizeDerivedName(m.ProjectName)
+		//
+		// FROZEN ON THE @-ONLY ALGORITHM, deliberately, and not to be "aligned"
+		// with SanitizeDerivedName later (F-124, CRI diff-gate P1-1).
+		//
+		// This is the only pen on a READ path, and a read here is not free: it
+		// runs inside LoadManifest, and touchHeartbeat is load-modify-save
+		// (manager.go:586), so whatever this computes is PERSISTED at the first
+		// heartbeat — with no FormerAgentNames, because from the disk's point of
+		// view there was no previous name to record.
+		//
+		// The argument for widening it was that an absent AgentName means the
+		// session never had a name, so nothing is being renamed. That confuses
+		// the field with the identity: the derived value is what `peers` showed
+		// and what the resolver matched, so it WAS the name, and widening the
+		// repair would change it under peers that still hold the old one — once,
+		// silently, and irreversibly at the next write. A v1 name stays exactly
+		// as addressable, or unaddressable, as it has always been.
+		m.AgentName = strings.ReplaceAll(m.ProjectName, ScopeSeparator, derivedNameReplacement)
 	}
 	// PID stays 0 — there is no safe inference for a v1 manifest's owning
 	// process. Lock acquisition logic must handle PID=0 as "no lock holder

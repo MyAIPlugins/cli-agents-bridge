@@ -145,6 +145,35 @@ func runJoin(args []string) error {
 		// and calls the difference a collision. An agent named by a human then met
 		// that stop on every single re-arm, forever — not once at onboarding.
 		name = occupant.AgentName
+
+		// F-124. Tightening the name grammar does not only refuse NEW bad names:
+		// it stops the bare re-join of a session registered when the name was
+		// allowed — because it is THIS line that reads the occupant's name and
+		// hands it back to Register, which validates before it resumes
+		// (manager.go:116 vs :123). Left alone, an agent doing the idempotent
+		// re-join the skill prescribes after every compact would get
+		// `register: agent name ... cannot contain " "` from two levels down, with
+		// nothing about the way out.
+		//
+		// The way out already exists — the rename below is in-place, same id and
+		// same mailbox — so what was missing was somebody saying so. Refusing here
+		// rather than letting Register refuse is the whole of the fix.
+		//
+		// Deliberately NOT offered: `cab-bridge tell 'ESC bridge'`, which does
+		// work today. It would be a copyable command that keeps the shape we are
+		// removing, and how to quote a token is the next lot's subject.
+		if verr := session.ValidateAgentName(name); verr != nil {
+			// SuggestAddressableName, not SanitizeDerivedName: this is a name
+			// being cleaned up, not a directory being derived from, so it wants
+			// no digest — `ESC bridge` should be offered as `ESC-bridge`.
+			repaired := session.SuggestAddressableName(name)
+			return fmt.Errorf("join: this session is named %q and cannot be addressed as it is — %w\n"+
+				"  It was registered when that name was allowed, so nothing is wrong with the session:\n"+
+				"  only the label. Repair it in place — SAME id, SAME inbox, and the old name stays on\n"+
+				"  record (FormerAgentNames), so it remains visible in `inspect`:\n"+
+				"    cab-bridge join --role=%s --agent-name=%s",
+				name, verr, *role, repaired)
+		}
 	default:
 		// Genuinely new here: invent one. From the WORKING DIRECTORY, not the scope
 		// (CRI2 P0) — deriving from the scope is not injective, so every agent of a
@@ -153,10 +182,18 @@ func runJoin(args []string) error {
 		// and failing here would be an error for a choice the caller never made.
 		// Said out loud, because a silent rename of one's own identity is exactly
 		// the kind of quiet substitution this project keeps removing.
-		base, changed := session.SanitizeDerivedName(filepath.Base(pp))
+		// The ABSOLUTE path, not the basename: the digest that keeps two repaired
+		// names apart is computed from it (SanitizeDerivedName).
+		base, changed := session.SanitizeDerivedName(pp)
 		if changed {
-			fmt.Fprintf(os.Stderr, "join: this directory's name contains %q, which cannot appear in an agent name (it separates a name from its project when addressing across repositories) — deriving from %q instead\n",
-				session.ScopeSeparator, base)
+			// Name the RESULT, not the cause. This used to announce that the
+			// directory "contains @" — true when `@` was the only rune we
+			// replaced, and false the moment F-124 widened the set: a directory
+			// called `my repo` would have been told it contained an `@`. A message
+			// that states a specific cause has to be re-checked every time the
+			// rule behind it moves, and this one was not.
+			fmt.Fprintf(os.Stderr, "join: this directory is called %q, which cannot be used as an agent name as it stands — deriving from %q instead\n",
+				filepath.Base(pp), base)
 		}
 		name, _ = deriveAgentName(*role, base, peers)
 	}
