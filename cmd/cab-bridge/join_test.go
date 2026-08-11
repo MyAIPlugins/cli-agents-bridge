@@ -615,3 +615,84 @@ func leaveTheJoinProcessDead(t *testing.T, mgr *session.Manager, dataDir, projec
 	mf.LastHeartbeat = time.Now().UTC() // fresh on purpose: not stale, just nobody home
 	require.NoError(t, mgr.SaveManifest(mf))
 }
+
+// --- F-124 lotto 1: the name has to survive a shell -------------------------
+
+// plantUnsafeName rewrites a session's name straight on disk, the way a binary
+// that predates the grammar left it. Not through RenameAgent, which validates:
+// the point is a name that exists BECAUSE nothing refused it.
+func plantUnsafeName(t *testing.T, dataDir, sid, unsafe string) {
+	t.Helper()
+	mgr := newSessionManager(config.Config{DataDir: dataDir})
+	mf, err := mgr.LoadManifest(sid)
+	require.NoError(t, err)
+	mf.AgentName = unsafe
+	require.NoError(t, mgr.SaveManifest(mf))
+}
+
+// TestJoin_LegacyUnsafeNameIsNamedAndRepairable is the test that carries the
+// weight of this lot, and it exists because the FIX would otherwise break live
+// agents (CRI design-gate #3).
+//
+// `Manager.Register` validates the agent name at :116, BEFORE the resume branch
+// at :123 — and on a bare re-join it is `join` itself that reads the occupant's
+// name and hands it back to Register. So tightening the grammar does not merely
+// refuse NEW bad names: it stops the idempotent re-join that the skill
+// prescribes after every compact, for a session that was registered when the
+// name was allowed.
+//
+// Reproduced before the fix with a throwaway patch: `register: agent name
+// "ESC bridge" is not addressable`, exit 1, and not one word about the way out.
+// The way out already existed (join.go renames in place, same id, same inbox) —
+// what was missing was anybody saying so.
+func TestJoin_LegacyUnsafeNameIsNamedAndRepairable(t *testing.T) {
+	for _, tc := range []struct{ label, unsafe, repaired string }{
+		{"a space", "ESC bridge", "ESC-bridge"},
+		{"a leading dash", "-dash", "dash"},
+	} {
+		t.Run(tc.label, func(t *testing.T) {
+			dataDir := t.TempDir()
+			proj := t.TempDir()
+			t.Setenv("CAB_DATA_DIR", dataDir)
+			t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+			require.NoError(t, runJoin([]string{"--role=esc", "--agent-name=ESC-safe", "--project-path=" + proj}))
+			entries, err := os.ReadDir(filepath.Join(dataDir, "sessions"))
+			require.NoError(t, err)
+			require.Len(t, entries, 1)
+			sid := entries[0].Name()
+
+			plantUnsafeName(t, dataDir, sid, tc.unsafe)
+			// Mail that predates the repair: it has to survive, because the repair
+			// is a rename and identity is the id.
+			plantMsg(t, dataDir, sid, "inbox", "msg-aaaaaaaaaaaa", "val00001", "VAL-x", message.TypeQuery, "brief")
+
+			// 1. The bare re-join: the one the skill prescribes, and the one that
+			// breaks. It must refuse — and refuse by NAMING the repair.
+			err = runJoin([]string{"--role=esc", "--project-path=" + proj})
+			require.Error(t, err, "a name that cannot be addressed must not pass silently")
+			assert.Contains(t, err.Error(), tc.unsafe, "say WHICH name is the problem")
+			assert.Contains(t, err.Error(), "--agent-name="+tc.repaired,
+				"and hand over a command that runs, not a rule to work out")
+			assert.NotContains(t, err.Error(), "register:",
+				"the diagnosis must not arrive from two levels down, where it explains nothing")
+
+			// 2. The way out actually works, in place.
+			require.NoError(t, runJoin([]string{"--role=esc", "--agent-name=" + tc.repaired, "--project-path=" + proj}))
+
+			after, err := os.ReadDir(filepath.Join(dataDir, "sessions"))
+			require.NoError(t, err)
+			require.Len(t, after, 1, "the repair must not leave a second session holding the first one's mail")
+			assert.Equal(t, sid, after[0].Name(), "same id: the label changed, the identity did not")
+
+			mgr := newSessionManager(config.Config{DataDir: dataDir})
+			mf, err := mgr.LoadManifest(sid)
+			require.NoError(t, err)
+			assert.Equal(t, tc.repaired, mf.AgentName)
+			assert.Contains(t, mf.FormerAgentNames, tc.unsafe,
+				"a peer still writing to the old name has to be told where it went")
+			assert.FileExists(t, filepath.Join(dataDir, "sessions", sid, "inbox", "msg-aaaaaaaaaaaa.json"),
+				"same inbox — checked against the session's real path, not one rebuilt from a variable")
+		})
+	}
+}

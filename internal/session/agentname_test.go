@@ -116,3 +116,97 @@ func TestApplyV1Defaults_SanitisesTheDerivedName(t *testing.T) {
 	assert.Equal(t, "feat-2", mf.AgentName)
 	assert.NoError(t, ValidateAgentName(mf.AgentName), "every pen must produce an addressable name")
 }
+
+// --- F-124 lotto 1: a name has to survive the shell that carries it ---------
+
+// TestValidateAgentName_TheGrammar pins the whole rule, refusals included,
+// because the property is not "no spaces" — it is that a name must reach the
+// binary as ONE argument and be read as a recipient once it does.
+//
+// Two clauses, and they are not the same clause twice:
+//   - the shell must deliver it whole. A space split `tell 'ESC bridge'` into
+//     two arguments and, with an agent called `ESC` alive, delivered the six
+//     bytes of the second half TO THAT AGENT, exit 0.
+//   - the verbs must read it as a positional. `cab-bridge tell -foo hi` is
+//     refused at verbs.go:490 before any lookup, so a name starting with `-` is
+//     unaddressable however carefully it is quoted (CRI design-gate #2).
+func TestValidateAgentName_TheGrammar(t *testing.T) {
+	t.Parallel()
+
+	for _, ok := range []string{"", "VAL-bridge", "a", "_x", "x.y-z", "ESC2", "VAL_bridge"} {
+		assert.NoError(t, ValidateAgentName(ok), "%q is addressable", ok)
+	}
+
+	// The shell clause.
+	for _, bad := range []string{"ESC bridge", "a\tb", "a\nb", "it's", "back`tick", "a$b", "a;b", "a*b", `a\b`, "a|b"} {
+		err := ValidateAgentName(bad)
+		require.Error(t, err, "%q", bad)
+		assert.Contains(t, err.Error(), "ONE argument",
+			"the reason is the shell, and an error that does not say so reads as an arbitrary rule")
+	}
+
+	// The positional clause: a leading dash survives any quoting and still loses.
+	err := ValidateAgentName("-dash")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "flag", "the reason here is the CLI grammar, not the shell — a different cause deserves a different sentence")
+
+	// And `@` keeps the reason it already had: the addressing grammar, not the
+	// shell. Two causes, two sentences.
+	err = ValidateAgentName("VAL@home")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "separates a name from its project")
+}
+
+// TestSanitizeDerivedName_EveryRuleIsDecided covers the derived half, where a
+// refusal is not available: nobody typed the directory, so the answer is a
+// repair. Each row is a rule that cannot be read off the code.
+func TestSanitizeDerivedName_EveryRuleIsDecided(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		in, want string
+		changed  bool
+		why      string
+	}{
+		{"esc-v08", "esc-v08", false, "an already-safe base is returned untouched"},
+		{"my repo", "my-repo", true, "the ordinary case: a directory with a space"},
+		{"feat@2", "feat-2", true, "the separator keeps working exactly as before"},
+		{"a   b", "a-b", true, "a RUN of unsafe runes collapses to one dash, not three"},
+		{"-dash-", "dash", true, "leading and trailing separators are stripped: the first character cannot be a dash"},
+		{".hidden", "hidden", true, "and a leading dot is stripped for the same reason it cannot lead"},
+		{"caffè", "caff", true, "a replaced rune at the end leaves a trailing dash, which the strip then removes"},
+		{"---", "session", true, "a base with nothing usable left must not become the empty string"},
+		{"", "session", true, "nor may an empty one"},
+	} {
+		got, changed := SanitizeDerivedName(tc.in)
+		assert.Equal(t, tc.want, got, "%q: %s", tc.in, tc.why)
+		assert.Equal(t, tc.changed, changed, "%q: the caller can only say it happened if we tell it", tc.in)
+		assert.NoError(t, ValidateAgentName(got), "%q: whatever comes out must be addressable", tc.in)
+	}
+
+	// Multi-byte input, and NOT a proof of rune-awareness: with runs collapsing,
+	// a byte-wise loop would produce the same string here. Iterating on runes is
+	// how the code is written; this only pins that the OUTPUT is safe and
+	// non-empty, which is the part a caller can depend on.
+	got, _ := SanitizeDerivedName("日本")
+	assert.Equal(t, "session", got, "every rune replaced, then stripped to nothing: the fallback carries it")
+	assert.NoError(t, ValidateAgentName(got))
+}
+
+// The fallback has to live INSIDE SanitizeDerivedName, not in one caller.
+//
+// deriveAgentName (naming.go) already guards against an empty base, but it
+// guards its own call site only: derivedAgentName here and ApplyV1Defaults in
+// manifest.go would each have taken the empty string. Three pens, one of them on
+// a READ path, and a guard that covered one of the three.
+func TestSanitizeDerivedName_FallbackCoversEveryCaller(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "session", derivedAgentName("/tmp/---"),
+		"the derived default must never be an empty name")
+
+	mf := &Manifest{ProjectName: "my repo"}
+	mf.ApplyV1Defaults()
+	assert.Equal(t, "my-repo", mf.AgentName,
+		"the read path derives a name too, and it is the only pen that writes one without anybody joining")
+	assert.NoError(t, ValidateAgentName(mf.AgentName))
+}

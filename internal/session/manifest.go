@@ -235,6 +235,16 @@ func (m *Manifest) ApplyV1Defaults() {
 		// nobody counted: a v1 manifest in a directory containing the scope
 		// separator produced an unaddressable name at every load, from the new
 		// binary, today (CRI2 F-3b). ProjectName is a basename like any other.
+		//
+		// F-124: it is also the only pen on a READ path, so the name it produces
+		// CAN CHANGE BETWEEN TWO VERSIONS OF THE BINARY without anybody joining —
+		// widening what SanitizeDerivedName repairs widens this too, by design.
+		// That is not a silent rename of an identity: an empty AgentName means
+		// this manifest never had a name, so what appears here is a computed
+		// default and there is no previous name to record in FormerAgentNames.
+		// Stated because nothing else says it, and the difference between "a
+		// default was recomputed" and "somebody's name changed under them" is the
+		// whole reason this is allowed to happen on a read.
 		m.AgentName, _ = SanitizeDerivedName(m.ProjectName)
 	}
 	// PID stays 0 — there is no safe inference for a v1 manifest's owning
