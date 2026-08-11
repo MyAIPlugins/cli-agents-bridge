@@ -1,0 +1,25 @@
+.github/workflows/ci.yml
+  s_ea503823ea741c::t_6efb3760f912cd 39-41,43-45
+tests/integration/makefile_lint_test.go
+  s_ea503823ea741c::t_1e7197d06ccb3a 129-132,138,140
+  s_ea503823ea741c::t_0b5a6fa4439ccc 95-100,102-103,106,109-120,170-192
+  s_ea503823ea741c::t_8e9c6b0de28f7b 7,73-84,88,93-94,101,104-105,107-108,121-128,133-137,139,141-161,164-169
+Makefile
+  s_ea503823ea741c::t_6efb3760f912cd 135-148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "05e5d0fa341c3893a133cb3e6fe1b8075b0fe738",
+  "prompts": {},
+  "sessions": {
+    "s_ea503823ea741c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "446e39f2-1d7e-4224-8bb9-b841db1a013b",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
