@@ -1,0 +1,25 @@
+internal/session/manifest.go
+  s_ea503823ea741c::t_d35063bb58f201 209-230
+cmd/cab-bridge/join.go
+  s_ea503823ea741c::t_1bfe1833c218a7 341-344,346
+cmd/cab-bridge/register.go
+  s_ea503823ea741c::t_1bfe1833c218a7 112
+cmd/cab-bridge/join_test.go
+  s_ea503823ea741c::t_2f22564653313f 1036-1106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4f5cf731de255f80e6bfd8f722f0aa11aa93496d",
+  "prompts": {},
+  "sessions": {
+    "s_ea503823ea741c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "446e39f2-1d7e-4224-8bb9-b841db1a013b",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
