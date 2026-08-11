@@ -690,7 +690,10 @@ func TestJoin_LegacyUnsafeNameIsNamedAndRepairable(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tc.repaired, mf.AgentName)
 			assert.Contains(t, mf.FormerAgentNames, tc.unsafe,
-				"a peer still writing to the old name has to be told where it went")
+				"the old name stays ON RECORD, which is all the message promises — for `-dash` "+
+					"and for anything with `@` no peer can be redirected, because the verbs "+
+					"refuse those before the lookup that would do it (see "+
+					"TestRepairedSession_OldNameIsRecordedNotForwarded, which runs `tell`)")
 			assert.FileExists(t, filepath.Join(dataDir, "sessions", sid, "inbox", "msg-aaaaaaaaaaaa.json"),
 				"same inbox — checked against the session's real path, not one rebuilt from a variable")
 		})
@@ -897,4 +900,84 @@ func TestRepairCommand_IsRunnableFromAnywhere(t *testing.T) {
 	}
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, runSendVerb("tell", message.TypeNotify, []string{"dash", "hi"}, strings.NewReader(""), &stdout, &stderr))
+}
+
+// TestJoin_RelativeProjectPathIsTheSameProject — CRI re-gate P2.
+//
+// `pp` reached scope detection, the occupant lookup and the name derivation as
+// the caller typed it. With `--project-path=.` that meant: a name derived from
+// `.` (`ESC-_2E`), and findSessionHere comparing `Clean(".")` against the stored
+// ABSOLUTE path, so the occupant was invisible.
+//
+// The shape suggests "two sessions", and I assumed that. Executed, it is worse
+// in a different way: the cross-name guard then refuses the re-join with "this
+// project already has a LIVE ESC-_2E" — the session locks its own owner out,
+// permanently, which is F-110 again. Written down because the deduction was
+// wrong and only running it said so.
+func TestJoin_RelativeProjectPathIsTheSameProject(t *testing.T) {
+	dataDir := t.TempDir()
+	base := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700))
+	work := filepath.Join(base, "work")
+	require.NoError(t, os.MkdirAll(work, 0o700))
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	t.Chdir(work)
+
+	require.NoError(t, runJoin([]string{"--role=esc", "--project-path=."}))
+	entries, err := os.ReadDir(filepath.Join(dataDir, "sessions"))
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	sid := entries[0].Name()
+
+	mgr := newSessionManager(config.Config{DataDir: dataDir})
+	mf, err := mgr.LoadManifest(sid)
+	require.NoError(t, err)
+	assert.Equal(t, "ESC-work", mf.AgentName,
+		"the name comes from the directory, not from how the flag spelled it")
+
+	// The re-arm the skill prescribes, in all three spellings of one place.
+	for _, spelling := range []string{".", work, filepath.Join(work, ".")} {
+		require.NoError(t, runJoin([]string{"--role=esc", "--project-path=" + spelling}),
+			"%q is the same project: a re-join must find the occupant, not stop on it", spelling)
+		after, rerr := os.ReadDir(filepath.Join(dataDir, "sessions"))
+		require.NoError(t, rerr)
+		assert.Len(t, after, 1, "%q must not produce a second session", spelling)
+		assert.Equal(t, sid, after[0].Name(), "%q resolves to the same session", spelling)
+	}
+}
+
+// TestRegister_SaysWhenTheNameIsNotTheDirectorys — CRI re-gate P2-5.
+//
+// SanitizeDerivedName returns `changed` so the caller can say so out loud, and
+// `join` did. `register` printed the id and nothing else, so `my repo` quietly
+// became `my_20repo`. The two commands differed for no reason anybody chose.
+func TestRegister_SaysWhenTheNameIsNotTheDirectorys(t *testing.T) {
+	dataDir := t.TempDir()
+	base := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700))
+	spaced := filepath.Join(base, "my repo")
+	plain := filepath.Join(base, "plain")
+	require.NoError(t, os.MkdirAll(spaced, 0o700))
+	require.NoError(t, os.MkdirAll(plain, 0o700))
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	stderr := captureStderr(t, func() {
+		require.NoError(t, runRegister([]string{"--role=esc", "--json=false", "--project-path=" + spaced}))
+	})
+	assert.Contains(t, stderr, "my repo", "name the directory")
+	assert.Contains(t, stderr, "my_20repo", "and the name it actually got")
+
+	// The quiet cases stay quiet: nothing to announce when nothing changed, and
+	// nothing to announce when the caller chose the name.
+	stderr = captureStderr(t, func() {
+		require.NoError(t, runRegister([]string{"--role=esc", "--json=false", "--project-path=" + plain}))
+	})
+	assert.NotContains(t, stderr, "deriving from", "an unchanged name is not news")
+
+	stderr = captureStderr(t, func() {
+		require.NoError(t, runRegister([]string{"--role=val", "--json=false", "--agent-name=VAL-chosen", "--project-path=" + spaced, "--force-new"}))
+	})
+	assert.NotContains(t, stderr, "deriving from", "nothing was derived: the caller said the name")
 }

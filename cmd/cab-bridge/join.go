@@ -101,6 +101,27 @@ func runJoin(args []string) error {
 			return fmt.Errorf("join: getwd: %w", err)
 		}
 	}
+	// ABSOLUTE, once, before scope / occupant lookup / derivation — the same
+	// filepath.Abs that Manager.Register applies to what it stores, so the two
+	// stop disagreeing about which project this is.
+	//
+	// With `--project-path=.` the raw token reached all three: the name derived
+	// from `.` (`ESC-_2E`), and findSessionHere compared `Clean(".")` against the
+	// stored ABSOLUTE path and never matched — so the occupant was invisible and
+	// the cross-name guard then refused the re-join with "this project already
+	// has a LIVE ESC-_2E", i.e. the session blocked its own owner out. Not two
+	// sessions, as the shape suggests: a permanent stop on re-entry, which is
+	// F-110 all over again.
+	//
+	// Abs and NOT EvalSymlinks, deliberately: resolveScope canonicalises symlinks
+	// on the SCOPE axis, and its own comment records that ProjectPath stays
+	// lexical on a separate axis. Resolving symlinks here would make this path
+	// stop matching the ProjectPath already stored in every existing manifest.
+	if abs, aerr := filepath.Abs(pp); aerr == nil {
+		pp = abs
+	} else {
+		fmt.Fprintf(os.Stderr, "join: cannot make %q absolute (non-fatal): %v\n", pp, aerr)
+	}
 	scope := resolveScope(pp)
 
 	// AFTER the scope is known, never before: the sweep is confined to this

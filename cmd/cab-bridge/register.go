@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
@@ -59,7 +60,31 @@ func runRegister(args []string) error {
 		}
 	}
 
+	// Absolute before anything reads it, for the reason spelled out in join.go:
+	// Register stores filepath.Abs of this, and every lookup compares against
+	// what is stored.
+	if abs, aerr := filepath.Abs(pp); aerr == nil {
+		pp = abs
+	}
+
 	scope := resolveScope(pp)
+
+	// SAY IT WHEN THE NAME IS NOT THE DIRECTORY'S (F-124 P2-5).
+	//
+	// SanitizeDerivedName returns `changed` precisely so the caller can say so
+	// out loud, and `join` does. `register` did not: it printed the id and
+	// nothing else, so a project called `my repo` silently became `my_20repo`
+	// with no line anywhere. Same family as the silent rename this whole lot
+	// exists to remove — the difference between the two commands was never a
+	// decision, just the one that got written first.
+	//
+	// stderr, so stdout stays the manifest JSON or the bare id that scripts read.
+	if *agentName == "" {
+		if derived, changed := session.SanitizeDerivedName(pp); changed {
+			fmt.Fprintf(os.Stderr, "register: this directory is called %q, which cannot be used as an agent name as it stands — deriving from %q instead\n",
+				filepath.Base(pp), derived)
+		}
+	}
 
 	// Auto-gc orphan sessions before creating a new one (v0.2.1, F10). Sweeps
 	// sessions whose owning PID is dead AND heartbeat is older than AutoGCHours
