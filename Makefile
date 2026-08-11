@@ -87,9 +87,38 @@ install-plugin: build ## Copy binary into plugins/cli-agents-bridge/bin/ for mar
 	@echo "  /plugin marketplace add $(PWD)"
 	@echo "  /plugin install cli-agents-bridge@cli-agents-bridge-marketplace"
 
-lint: ## Run go vet (staticcheck optional — install with: go install honnef.co/go/tools/cmd/staticcheck@latest)
+# STATICCHECK IS REQUIRED, and looked for where `go install` actually puts it.
+#
+# This used to be one line:
+#
+#	@command -v staticcheck >/dev/null 2>&1 && staticcheck ./... || echo "not installed, skipping"
+#
+# which had three defects, and the third is the one that mattered:
+#
+#  1. `command -v` only searches $PATH, and `go install` writes to
+#     $(go env GOPATH)/bin, which is not on the PATH of this machine. The tool
+#     was installed and the gate could not see it.
+#  2. The `||` catches BOTH "not found" AND "found, and it failed". With
+#     staticcheck present and five warnings, `make lint` printed all five and
+#     then announced "staticcheck not installed, skipping" — the wrong cause,
+#     stated after the evidence to the contrary had scrolled past.
+#  3. And it exited 0. A green `make lint` with five live warnings, which is how
+#     they survived nine rounds of gates.
+#
+# So: resolve the binary in PATH *and* in GOPATH/bin, fail loudly when it is
+# missing instead of narrating the skip, and let its exit code through. A gate
+# that skips a check and mentions it in an echo nobody reads is not a gate.
+STATICCHECK ?= $(shell command -v staticcheck 2>/dev/null || echo $(shell go env GOPATH)/bin/staticcheck)
+
+lint: ## Run go vet + staticcheck (required; install with: go install honnef.co/go/tools/cmd/staticcheck@latest)
 	go vet ./...
-	@command -v staticcheck >/dev/null 2>&1 && staticcheck ./... || echo "staticcheck not installed, skipping (run: go install honnef.co/go/tools/cmd/staticcheck@latest)"
+	@if [ ! -x "$(STATICCHECK)" ]; then \
+		echo "make lint: staticcheck not found (looked in \$$PATH and $(shell go env GOPATH)/bin)"; \
+		echo "  install it:  go install honnef.co/go/tools/cmd/staticcheck@latest"; \
+		echo "  this is a hard failure on purpose: a lint that silently skips is not a lint"; \
+		exit 1; \
+	fi
+	$(STATICCHECK) ./...
 
 clean: ## Remove build artifacts
 	rm -rf $(BIN_DIR)
