@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/shellarg"
 	"os"
 	"path/filepath"
 	"sort"
@@ -144,7 +145,7 @@ func (m *Manager) tryReuse(absProj string, opts RegisterOpts) (*Manifest, func()
 	if verr := ValidateAgentName(c.mf.AgentName); verr != nil {
 		return nil, nil, fmt.Errorf("%w: the session here is named %q and cannot be addressed — %v\n  repair it in place (SAME id, SAME inbox):\n    cab-bridge join --role=%s --agent-name=%s --project-path=%s",
 			ErrUnaddressableResume, c.mf.AgentName, verr,
-			defaultIfEmpty(opts.Role, RoleNeutral), SuggestAddressableName(c.mf.AgentName), c.mf.ProjectPath)
+			shellarg.Quote(defaultIfEmpty(opts.Role, RoleNeutral)), SuggestAddressableName(c.mf.AgentName), shellarg.Quote(c.mf.ProjectPath))
 	}
 	release, lerr := AcquireLock(filepath.Join(m.sessionDir(c.id), "lock"), false)
 	if lerr != nil {

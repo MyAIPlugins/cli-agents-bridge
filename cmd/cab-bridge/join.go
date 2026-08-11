@@ -15,6 +15,7 @@ import (
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/shellarg"
 )
 
 // join is the one command an agent runs at the start (DESIGN v0.8 §2.2),
@@ -193,7 +194,7 @@ func runJoin(args []string) error {
 				"  only the label. Repair it in place — SAME id, SAME inbox, and the old name stays on\n"+
 				"  record (FormerAgentNames), so it remains visible in `inspect`:\n"+
 				"    cab-bridge join --role=%s --agent-name=%s",
-				name, verr, *role, repaired)
+				name, verr, shellarg.Quote(*role), repaired)
 		}
 	default:
 		// Genuinely new here: invent one. From the WORKING DIRECTORY, not the scope
@@ -215,6 +216,14 @@ func runJoin(args []string) error {
 			// rule behind it moves, and this one was not.
 			fmt.Fprintf(os.Stderr, "join: this directory is called %q, which cannot be used as an agent name as it stands — deriving from %q instead\n",
 				filepath.Base(pp), base)
+		}
+		// The SAME announcement for the other half of the name. A role the caller
+		// typed being quietly reshaped into their identity is the substitution
+		// this project keeps removing — and here it is less excusable than the
+		// directory, because the directory is something nobody chose.
+		if prefix, adjusted := roleUpper(*role); adjusted {
+			fmt.Fprintf(os.Stderr, "join: the role %q cannot be used as it stands in an agent name — deriving from %q instead\n",
+				*role, prefix)
 		}
 		name, _ = deriveAgentName(*role, base, peers)
 	}
@@ -257,7 +266,7 @@ func runJoin(args []string) error {
 				"  The tool cannot tell which of the two is the mistake: pick a different name for\n"+
 				"  whichever is wrong.\n"+
 				"    cab-bridge join --role=%s --agent-name=<name>%s",
-				name, other.SessionID, otherScope, otherPath, scope, *role, wayOut)
+				name, other.SessionID, otherScope, otherPath, scope, shellarg.Quote(*role), wayOut)
 		}
 	}
 
@@ -282,7 +291,7 @@ func runJoin(args []string) error {
 				"  ambiguous, so this one stops rather than take the name from an agent at work.\n"+
 				"  Pick another name:  cab-bridge join --role=%s --agent-name=<name>\n"+
 				"  — or stop that session first, if it is the one you are replacing",
-				name, other.SessionID, otherPath, time.Since(other.LastHeartbeat).Truncate(time.Second), *role)
+				name, other.SessionID, otherPath, time.Since(other.LastHeartbeat).Truncate(time.Second), shellarg.Quote(*role))
 		}
 		// The stale twin: it yields the name and keeps everything else. Renaming it
 		// rather than deleting it means its mailbox stays recoverable and the

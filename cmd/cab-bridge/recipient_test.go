@@ -2,7 +2,10 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/shellarg"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,7 +22,8 @@ import (
 // --- F-116: the addressing grammar -----------------------------------------
 
 // TestRecipient_RoundTrip is the property the whole grammar rests on: every
-// token `peers` prints can be pasted into a command.
+// token `peers` prints can be pasted into a command — which since lot 2 means
+// the RENDERED column, not the raw scope (internal/shellarg).
 //
 // Tested as format -> parse -> format rather than as two separate functions,
 // because the defect it prevents lives BETWEEN them: a formatter and a parser
@@ -220,10 +224,11 @@ func TestReplyGuardrail_IsBuiltFromOpenAskersOnly(t *testing.T) {
 	assert.Contains(t, err.Error(), "looks like")
 }
 
-// The cross-scope page carries the address ready to paste, and it must be the
+// The cross-scope page carries the address — logical in fromAddress, pastable
+// in fromAddressShellArg — and it must be the
 // one that resolves — the full path, since here there is no list of other scopes
 // to detect an ambiguous basename with.
-func TestNextMessage_CrossScopeCarriesAPastableAddress(t *testing.T) {
+func TestNextMessage_CrossScopeCarriesTheLogicalAddress(t *testing.T) {
 	t.Parallel()
 	const theirs = "/Users/alan/develop/payload"
 	e := mailboxEntry{msg: &message.Message{
@@ -234,7 +239,9 @@ func TestNextMessage_CrossScopeCarriesAPastableAddress(t *testing.T) {
 
 	got := newNextMessage(e, false, "/Users/alan/develop/bridge")
 	assert.Equal(t, theirs, got.FromScope)
-	assert.Equal(t, "VAL-payload@"+theirs, got.FromAddress, "the agent copies, it does not assemble")
+	assert.Equal(t, "VAL-payload@"+theirs, got.FromAddress,
+		"the agent copies, it does not assemble — this is the LOGICAL form, to parse; "+
+			"the one to paste is FromAddressShellArg, covered by TestNextMessage_ShellArgIsWiredAndSymmetric")
 
 	parsed, err := parseRecipient(got.FromAddress)
 	require.NoError(t, err, "and what it copies must parse back")
@@ -751,3 +758,68 @@ func TestSharedScopeWarning_NamesTheScopeItGroupedOn(t *testing.T) {
 	assert.Contains(t, got, "(derived)", "and say that it was worked out, not read")
 	assert.NotContains(t, got, `scope ""`, "naming the empty stored field explains nothing")
 }
+
+// TestNextMessage_ShellArgIsWiredAndSymmetric uses FromAddressShellArg as a
+// VALUE, which no test did when the field landed: the only place the name
+// appeared was the skill tripwire, reading it as text. A field nobody evaluates
+// is a field whose wiring nothing protects — shellarg's own tests stay green if
+// a call site quietly stops calling it.
+func TestNextMessage_ShellArgIsWiredAndSymmetric(t *testing.T) {
+	t.Parallel()
+	const hostile = "/Users/alan/Alan's Project" // apostrophe: the case the manual rule got wrong
+	e := mailboxEntry{msg: &message.Message{
+		ID: "msg-aaaaaaaaaaaa", From: "valthem1", FromAgentName: "VAL-payload",
+		Type: message.TypeQuery, Content: "brief",
+		Metadata: message.Metadata{FromScope: hostile},
+	}}
+
+	got := newNextMessage(e, false, "/Users/alan/develop/bridge")
+
+	require.NotEmpty(t, got.FromAddress, "cross-scope: the logical address is present")
+	require.NotEmpty(t, got.FromAddressShellArg, "and so is the pastable one")
+	assert.Equal(t, shellarg.Quote(got.FromAddress), got.FromAddressShellArg,
+		"one datum, two renderings — the shell form must be the raw one rendered, not a second value")
+
+	// Through JSON, then through a real shell: the two layers that can each eat
+	// a byte, in the order a reader meets them.
+	encoded, err := json.Marshal(got)
+	require.NoError(t, err)
+	var decoded nextMessage
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+
+	out, err := exec.Command("/bin/sh", "-c", `printf '%s\0' `+decoded.FromAddressShellArg).Output()
+	require.NoError(t, err, "the shell must accept it: %q", decoded.FromAddressShellArg)
+	argv := strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00")
+	require.Len(t, argv, 1, "ONE argv entry after JSON and the shell")
+	assert.Equal(t, got.FromAddress, argv[0], "and it evaluates back to the logical address")
+
+	// SYMMETRY: the new field must appear exactly where the raw one does, never
+	// on its own. Three cases where the raw is absent, and a fourth where the
+	// sender has no name.
+	for _, tc := range []struct {
+		name    string
+		entry   mailboxEntry
+		myScope string
+	}{
+		{"same scope", e, hostile},
+		{"legacy message with no fromScope", mailboxEntry{msg: &message.Message{
+			ID: "msg-bbbbbbbbbbbb", From: "old", FromAgentName: "VAL-old", Type: message.TypeQuery}}, "/repo/mine"},
+		{"my own scope unknown", e, ""},
+		{"sender with no name", mailboxEntry{msg: &message.Message{
+			ID: "msg-cccccccccccc", From: "x", Type: message.TypeQuery,
+			Metadata: message.Metadata{FromScope: hostile}}}, "/repo/mine"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newNextMessage(tc.entry, false, tc.myScope)
+			assert.Empty(t, m.FromAddress, "the raw address is absent here")
+			assert.Empty(t, m.FromAddressShellArg,
+				"and the shell one must be too — a pastable address to nowhere is worse than none")
+		})
+	}
+}
+
+// The producer wiring lives in shellarg_wiring_test.go. A test that stood here
+// carried that name and called shellarg.Quote directly: it proved the renderer a
+// second time and would have stayed green with every call site disconnected —
+// "the mechanism exists -> the producer uses it", inside the test written to
+// forbid exactly that inference (CRI re-gate, P2).

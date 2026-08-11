@@ -15,6 +15,7 @@ import (
 	"github.com/myAIPlugins/cli-agents-bridge/internal/routing"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/shellarg"
 	transportfs "github.com/myAIPlugins/cli-agents-bridge/internal/transport/fs"
 )
 
@@ -244,7 +245,7 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, token, self
 			}
 			var lines []string
 			for _, c := range candidates {
-				lines = append(lines, fmt.Sprintf("\n    %s%s%s  (%s)", name, session.ScopeSeparator, c.Scope, c.SessionID))
+				lines = append(lines, fmt.Sprintf("\n    %s  (%s)", shellarg.Quote(name+session.ScopeSeparator+c.Scope), c.SessionID))
 			}
 			sort.Strings(lines)
 			return "", fmt.Errorf("%q matches %d projects, so nothing was sent — address one by its full path:%s",
@@ -487,7 +488,7 @@ func runSendVerb(verb, msgType string, args []string, stdin io.Reader, stdout, s
 		return fmt.Errorf("%s: takes no flags — the verb carries the type, and the recipient is an agent name: cab-bridge %s <agent-name> [\"message\"]", verb, verb)
 	}
 	if len(args) > 2 {
-		return fmt.Errorf("%s: too many arguments — quote the message as one argument: cab-bridge %s %s \"...\"", verb, verb, args[0])
+		return fmt.Errorf("%s: too many arguments — quote the message as one argument: cab-bridge %s %s \"...\"", verb, verb, shellarg.Quote(args[0]))
 	}
 
 	cfg, err := loadConfigOrFail()
@@ -843,7 +844,7 @@ func resolveReplyTarget(args []string, asks []openAsk, known []string, stdin io.
 						"If %q is your message to whoever DID ask, pipe it on stdin instead", args[0], args[0])
 				}
 				return "", "", fmt.Errorf("%q is not one of the agents with an open ask, but it looks like %q — if you meant to answer them use `reply %s \"...\"`; if %q really is your message, pipe it on stdin instead",
-					args[0], match, match, args[0])
+					args[0], match, shellarg.Quote(match), args[0])
 			}
 		}
 		target, err = soleSender(senders)
@@ -1002,7 +1003,7 @@ func soleSessionNamed(name string, asks []openAsk, senders map[string]string) (s
 		} else if a.scope != firstScope {
 			sameScope = false
 		}
-		lines = append(lines, fmt.Sprintf("\n    %s%s%s  (%s)", a.fromName, session.ScopeSeparator, scopeLabelOf(a.scope, labels), id))
+		lines = append(lines, fmt.Sprintf("\n    %s  (%s)", shellarg.Quote(a.fromName+session.ScopeSeparator+scopeLabelOf(a.scope, labels)), id))
 	}
 	sort.Strings(lines)
 	if sameScope {
@@ -1061,7 +1062,7 @@ func soleSender(senders map[string]string) (string, error) {
 	}
 	names := sortedNames(senders)
 	return "", fmt.Errorf("%d agents have open asks (%s) — say who: cab-bridge reply %s \"...\"",
-		len(senders), strings.Join(names, ", "), names[0])
+		len(senders), strings.Join(names, ", "), shellarg.Quote(names[0]))
 }
 
 func sortedNames(senders map[string]string) []string {

@@ -1104,3 +1104,61 @@ func TestOutcome_IsReadFromTheResultNotTheClock(t *testing.T) {
 		assert.Equal(t, sid, after[0].Name())
 	})
 }
+
+// A derived agent name is half ROLE and half DIRECTORY. The directory half went
+// through SanitizeDerivedName from the first day of F-124; the role half went
+// through strings.ToUpper and nothing else — and a role is deliberately not an
+// enum. So `--role='browser tester'`, which register accepts and README
+// advertises, derived `BROWSER TESTER-002` and Register refused it two levels
+// down: a join that failed on a NAME the caller never chose, quoting the
+// agent-name grammar at somebody who had only typed a role.
+//
+// Found by the wiring harness (shellarg_wiring_test.go) on its first run, while
+// looking for something else entirely.
+func TestJoin_ACustomRoleStillDerivesAnAddressableName(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	proj := t.TempDir()
+
+	_, stderr := captureStdoutStderr(t, func() {
+		require.NoError(t, runJoin([]string{"--role=browser tester", "--project-path=" + proj}),
+			"a legal role must not fail a join on a name nobody typed")
+	})
+	assert.Contains(t, stderr, "cannot be used as it stands in an agent name",
+		"and the reshaping is announced, exactly as the directory's is — a silent rename of one's own identity is the substitution this project keeps removing")
+
+	cfg := config.DefaultConfig()
+	cfg.DataDir = dataDir
+	mgr := newSessionManager(cfg)
+	peers, _, err := collectPeers(mgr, dataDir, cfg.StaleSeconds, cfg.MaxMessageBytes, true, "", "")
+	require.NoError(t, err)
+	require.Len(t, peers, 1, "the session must exist: the point is that the join SUCCEEDED")
+	assert.NoError(t, session.ValidateAgentName(peers[0].AgentName),
+		"whatever is derived must be addressable, whatever the role was")
+	assert.Equal(t, "BROWSER-TESTER-"+filepath.Base(proj), peers[0].AgentName)
+	assert.Equal(t, "browser tester", peers[0].Role, "the ROLE itself is stored as typed — only the name is reshaped")
+}
+
+// And the other half of that fix: every role anybody actually uses passes
+// through untouched, so this changes nothing for anyone not using a custom one.
+func TestRoleUpper_LeavesEverySelectableRoleAlone(t *testing.T) {
+	t.Parallel()
+	for _, rc := range session.SelectableRoles {
+		prefix, changed := roleUpper(rc.Name)
+		assert.False(t, changed, "%q is a standard role and must not be reshaped", rc.Name)
+		assert.Equal(t, strings.ToUpper(rc.Name), prefix)
+	}
+
+	for _, tc := range []struct{ role, want string }{
+		{"browser tester", "BROWSER-TESTER"},
+		{"qa/e2e", "QA-E2E"},
+		{"-leading", "LEADING"},
+		{"@@@", "session"}, // nothing addressable survives: the fallback, not an empty prefix
+	} {
+		prefix, changed := roleUpper(tc.role)
+		assert.True(t, changed, "%q needs reshaping", tc.role)
+		assert.Equal(t, tc.want, prefix)
+		assert.NoError(t, session.ValidateAgentName(prefix+"-dir"), "and the whole derived name is addressable")
+	}
+}

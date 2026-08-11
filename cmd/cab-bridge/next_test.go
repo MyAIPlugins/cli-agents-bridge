@@ -894,3 +894,97 @@ func TestNext_RefusesToDeliverFromAnInboxHoldingAPlantedFile(t *testing.T) {
 	assert.NotContains(t, stdout.String(), "msg-aaaaaaaaaaaa",
 		"no page is emitted at all: the mailbox is not trustworthy right now")
 }
+
+// --- F-124: the shell-safe address costs bytes, and bytes are budgeted -------
+
+const crossSenderScope = "/repo/elsewhere"
+
+// plantCrossScopeInbox plants a message from ANOTHER project, which is the only
+// case that carries fromAddress — and therefore the only one that carries its
+// shell-safe twin.
+func plantCrossScopeInbox(t *testing.T, dataDir, sid, id string, ts time.Time) {
+	t.Helper()
+	dir := filepath.Join(dataDir, "sessions", sid, "inbox")
+	require.NoError(t, os.MkdirAll(dir, 0o700))
+	m := message.Message{
+		ID:            id,
+		SchemaVersion: message.SchemaVersionV2,
+		From:          "farsess1",
+		FromRole:      "val",
+		FromAgentName: "VAL-far",
+		To:            sid,
+		ToRole:        "esc",
+		Type:          message.TypeQuery,
+		Timestamp:     ts.UTC().Format(time.RFC3339Nano),
+		Status:        message.StatusPending,
+		Content:       "body",
+		Metadata: message.Metadata{
+			FromProject: "far", FromScope: crossSenderScope, ProcessingState: message.StatusPending,
+		},
+	}
+	data, err := json.Marshal(&m)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, id+".json"), data, 0o600))
+}
+
+// crossScopeMessageCost measures, on a REAL emitted page, what one cross-scope
+// message costs with the shell field and what the same message cost before the
+// field existed.
+func crossScopeMessageCost(t *testing.T) (withField, withoutField int) {
+	t.Helper()
+	mgr, cfg, sid, dataDir := newNextSession(t)
+	plantCrossScopeInbox(t, dataDir, sid, "msg-000000000000", time.Now().UTC())
+
+	p := runNextOnce(t, mgr, cfg, sid, 2*time.Second)
+	require.Len(t, p.Messages, 1)
+	m := p.Messages[0]
+	require.NotEmpty(t, m.FromAddressShellArg, "the fixture must really be cross-scope, or this measures nothing")
+
+	bare := m
+	bare.FromAddressShellArg = ""
+	return serializedSize(m), serializedSize(bare)
+}
+
+// TestNext_TheShellArgIsInsideThePageBudget pins what is true by construction
+// today and was never checked: serializedSize marshals the whole struct, so a
+// field added to the emitted message is budgeted along with the rest.
+//
+// The regression is written at the ONE budget that tells the two apart — exactly
+// what the page cost BEFORE the field existed. A field emitted outside the
+// budget would let that page through unchanged; being inside it, the second
+// message no longer fits and is declared in hasMore instead of quietly
+// inflating a limit that exists to protect the reader's context.
+func TestNext_TheShellArgIsInsideThePageBudget(t *testing.T) {
+	withField, withoutField := crossScopeMessageCost(t)
+	require.Greater(t, withField, withoutField, "the field must cost something")
+	require.LessOrEqual(t, withField, 2*withoutField,
+		"one message must still fit in the tight budget, or this exercises the oversize path instead")
+
+	base := time.Now().UTC()
+	ids := []string{"msg-aaaaaaaaaaaa", "msg-bbbbbbbbbbbb"}
+
+	t.Run("at the pre-field budget the second message no longer fits", func(t *testing.T) {
+		mgr, cfg, sid, dataDir := newNextSession(t)
+		for i, id := range ids {
+			plantCrossScopeInbox(t, dataDir, sid, id, base.Add(time.Duration(i)*time.Second))
+		}
+		cfg.MaxPageBytes = 2 * withoutField // both would fit if the field were free
+
+		p := runNextOnce(t, mgr, cfg, sid, 2*time.Second)
+		assert.Equal(t, 2, p.Total)
+		assert.Equal(t, 1, p.Returned, "the field is counted, so the pair no longer fits")
+		assert.True(t, p.HasMore, "and what did not fit is declared, not dropped")
+	})
+
+	t.Run("with room for the field both fit", func(t *testing.T) {
+		mgr, cfg, sid, dataDir := newNextSession(t)
+		for i, id := range ids {
+			plantCrossScopeInbox(t, dataDir, sid, id, base.Add(time.Duration(i)*time.Second))
+		}
+		cfg.MaxPageBytes = 2 * withField
+
+		p := runNextOnce(t, mgr, cfg, sid, 2*time.Second)
+		assert.Equal(t, 2, p.Returned, "the budget is the only thing that moved")
+		assert.False(t, p.HasMore)
+	})
+}

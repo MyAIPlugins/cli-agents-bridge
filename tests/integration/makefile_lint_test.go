@@ -532,18 +532,52 @@ func TestCopyWorkingTree_IgnoresAnInheritedGitEnvironment(t *testing.T) {
 	initCmd.Dir = alien
 	require.NoError(t, initCmd.Run())
 
-	for _, env := range []struct{ name, value string }{
-		{"GIT_DIR", filepath.Join(alien, ".git")},
-		{"GIT_INDEX_FILE", filepath.Join(alien, ".git", "index")},
-		{"GIT_WORK_TREE", alien},
+	// The three do NOT behave alike, and saying they did was a generalisation
+	// this test previously carried in an assertion message. Measured, on the
+	// UNSANITISED command:
+	//
+	//	GIT_DIR         --show-toplevel = the real root  -> old selector TRUE
+	//	GIT_INDEX_FILE  --show-toplevel = the real root  -> old selector TRUE
+	//	GIT_WORK_TREE   --show-toplevel = the ALIEN      -> old selector FALSE
+	//
+	// So only the first two produce "selector green, producer empty", which is
+	// the shape that made the defect survive a careful reading. GIT_WORK_TREE
+	// would have sent the old code down the walk, which copies correctly — it was
+	// never broken, and it is here to stay unbroken.
+	//
+	// Keeping the row and stating the difference beats dropping it: the value of
+	// the case is that ONE environment variable out of three behaves differently,
+	// and a reader who assumes they are interchangeable is the reader this
+	// comment exists for.
+	for _, env := range []struct {
+		name, value      string
+		oldSelectorFound bool // whether the pre-fix selector still saw the real root
+	}{
+		{"GIT_DIR", filepath.Join(alien, ".git"), true},
+		{"GIT_INDEX_FILE", filepath.Join(alien, ".git", "index"), true},
+		{"GIT_WORK_TREE", alien, false},
 	} {
 		t.Run(env.name, func(t *testing.T) {
 			t.Setenv(env.name, env.value)
 
-			// The selector is NOT the part that breaks — assert that too, so the
-			// test says which half was innocent.
+			// With the fix in place the selector is right for all three; the
+			// column above records which ones it was ALREADY right about, and it
+			// is the reason fixing the selector alone would not have been enough.
 			assert.True(t, isRepoRoot(repoRoot),
-				"%s does not stop the selector from recognising the root: that is why fixing only it was not enough", env.name)
+				"%s must not stop the sanitised selector from recognising the root", env.name)
+
+			// And the table above is CHECKED, not just written: run git the way
+			// the pre-fix code did — inheriting the environment — and confirm
+			// which variables still pointed at the real root. A column nobody
+			// verifies is one more piece of prose that cannot fail.
+			raw, rerr := exec.Command("git", "-C", repoRoot, "rev-parse", "--show-toplevel").Output()
+			require.NoError(t, rerr)
+			unsanitised, rerr := filepath.EvalSymlinks(strings.TrimSpace(string(raw)))
+			require.NoError(t, rerr)
+			realRoot, rerr := filepath.EvalSymlinks(repoRoot)
+			require.NoError(t, rerr)
+			assert.Equal(t, env.oldSelectorFound, unsanitised == realRoot,
+				"%s: the pre-fix selector behaved as the table claims", env.name)
 
 			dst := filepath.Join(t.TempDir(), "copy")
 			require.NoError(t, os.MkdirAll(dst, 0o700))

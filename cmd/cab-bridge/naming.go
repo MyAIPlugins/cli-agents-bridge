@@ -94,7 +94,7 @@ func deriveAgentName(myRole, dirBase string, peers []peerSummary) (name, basis s
 	// Injectivity comes for free: two sessions in one directory are already
 	// refused (F-90), and who pairs with whom is visible in `peers` and in the
 	// scope — it never needed encoding in a string.
-	myPrefix := roleUpper(myRole)
+	myPrefix, _ := roleUpper(myRole)
 	// REDUNDANT since F-124, and kept on purpose: SanitizeDerivedName now
 	// guarantees a non-empty result and its only caller here passes through it,
 	// so no degenerate base can reach this line. Left as defence in depth — but
@@ -107,8 +107,27 @@ func deriveAgentName(myRole, dirBase string, peers []peerSummary) (name, basis s
 	return myPrefix + "-" + dirBase, "working-dir"
 }
 
-func roleUpper(role string) string {
-	return strings.ToUpper(role)
+// roleUpper turns a role into the half of an agent NAME it becomes, and reports
+// whether it had to change to get there.
+//
+// A role is deliberately NOT an enum — internal/routing/role.go: "Validation is
+// structural, not enumerated", README: "custom roles accepted as-is" — so
+// `--role='browser tester'` is legal and arrives here. The other half of the
+// derived name, the directory, goes through SanitizeDerivedName; this half went
+// through nothing, and one half sanitised plus one half raw produced
+// `BROWSER TESTER-002`, refused by Register two levels down. The result was a
+// `join` that failed on a NAME the caller never chose, quoting the agent-name
+// grammar at somebody who had only typed a role.
+//
+// Sanitised rather than refused, for the reason the directory is: the caller
+// asked for a role, not for a name. Injectivity is not needed here the way it is
+// for directories — two sessions in one directory are already refused, so the
+// suffix is what keeps names apart — and every standard role passes through
+// untouched, so nothing changes for anybody not using a custom one.
+func roleUpper(role string) (prefix string, changed bool) {
+	upper := strings.ToUpper(role)
+	safe := session.SuggestAddressableName(upper)
+	return safe, safe != upper
 }
 
 // findRenamed reports the session that used to answer to `name`, so an error

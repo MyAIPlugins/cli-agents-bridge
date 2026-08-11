@@ -18,6 +18,7 @@ import (
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/shellarg"
 )
 
 // next is the one command of the working loop (DESIGN v0.8 §2.2). It delivers
@@ -90,7 +91,7 @@ type nextMessage struct {
 	// the gap by looking the sender up now. That would answer a different
 	// question (where it is NOW) under the label of this one.
 	FromScope string `json:"fromScope,omitempty"`
-	// FromAddress is the token that writes BACK to this sender, ready to paste —
+	// FromAddress is the token that writes BACK to this sender —
 	// `VAL-payload@/Users/alan/develop/payload`. Present only when FromScope is,
 	// i.e. only when the plain name would not reach them.
 	//
@@ -103,11 +104,43 @@ type nextMessage struct {
 	// and this does not: here there is no list of the other scopes, so ambiguity
 	// cannot be detected — and an ambiguous abbreviation is worse than a long
 	// exact one. This token always resolves.
+	//
+	// LOGICAL value: parse it, compare it, pass it to an API. To paste it into a
+	// shell use FromAddressShellArg below — this one is not quoted, and a project
+	// path may contain a space or an apostrophe.
 	FromAddress string `json:"fromAddress,omitempty"`
-	FromRole    string `json:"fromRole,omitempty"`
-	Type        string `json:"type"`
-	Timestamp   string `json:"timestamp"`
-	Bytes       int    `json:"bytes"`
+	// FromAddressShellArg is FromAddress rendered as ONE POSIX shell argument.
+	//
+	// CONTRACT: the decoded JSON value is a single shell word for POSIX `sh` (and
+	// for bash/zsh); evaluating it yields exactly FromAddress as one argv entry,
+	// with no globbing, no substitution and no side effects. A token that needs
+	// no quoting is byte-identical to FromAddress, so the ordinary message reads
+	// the same as before.
+	//
+	// A SEPARATE FIELD rather than quoting FromAddress in place, and the reason is
+	// not tidiness: FromAddress is documented as the pastable value in skills that
+	// live OUTSIDE this repository, which no gate can read and no merge can
+	// update. Changing its meaning would have a window — between the merge and
+	// whenever those files caught up — in which the instruction in circulation is
+	// actively wrong. An added field has no such instant.
+	//
+	// It exists at all because "always put it in quotes", which is what one skill
+	// told agents to do, is not merely inconvenient — it is WRONG: it holds for a
+	// space and breaks on an apostrophe, since the reader closes the quote they
+	// opened (`Alan's Project` → `unmatched '`). The algorithm belongs in the
+	// renderer, not in the reader.
+	//
+	// OUT OF CONTRACT: a tab or newline in the path round-trips through the shell
+	// correctly but breaks any line-oriented surface it is printed on. Values are
+	// safe; displays are not.
+	//
+	// Derived from the SAME recipient as FromAddress, right next to it, so the two
+	// cannot drift: there is one datum, rendered twice.
+	FromAddressShellArg string `json:"fromAddressShellArg,omitempty"`
+	FromRole            string `json:"fromRole,omitempty"`
+	Type                string `json:"type"`
+	Timestamp           string `json:"timestamp"`
+	Bytes               int    `json:"bytes"`
 	// Content is the message body, omitted when Oversize is set.
 	Content string `json:"content,omitempty"`
 	// BodyFile is the on-disk PATH of the message, emitted INSTEAD of Content
@@ -631,7 +664,12 @@ func newNextMessage(e mailboxEntry, oversize bool, myScope string) nextMessage {
 	if from := e.msg.Metadata.FromScope; session.CrossesScopes(from, myScope) {
 		m.FromScope = from
 		if e.msg.FromAgentName != "" {
-			m.FromAddress = recipient{name: e.msg.FromAgentName, scope: from}.String()
+			// ONE datum, two renderings, assigned together — no caller can
+			// populate one without the other, so there is nothing to keep in
+			// sync. Same presence conditions as FromAddress by construction.
+			addr := recipient{name: e.msg.FromAgentName, scope: from}.String()
+			m.FromAddress = addr
+			m.FromAddressShellArg = shellarg.Quote(addr)
 		}
 	}
 	if e.replayed {

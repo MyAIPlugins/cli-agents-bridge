@@ -12,6 +12,7 @@ import (
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/cleanup"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/shellarg"
 )
 
 // ErrConfirmRequired is returned by runCleanup when scope=global is invoked
@@ -83,7 +84,7 @@ func runCleanup(args []string) error {
 				"  were deleted from a live data dir.\n"+
 				"  If that is really the one you mean:\n"+
 				"    cab-bridge cleanup --scope=global --force --data-dir=%s",
-				cfg.DataDir, cfg.DataDir)
+				cfg.DataDir, shellarg.Quote(cfg.DataDir))
 		}
 		if filepath.Clean(*dataDirFlag) != filepath.Clean(cfg.DataDir) {
 			return fmt.Errorf("cleanup: --data-dir=%s does not match the data dir in effect (%s).\n"+

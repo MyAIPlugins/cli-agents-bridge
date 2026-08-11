@@ -14,6 +14,7 @@ import (
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/shellarg"
 )
 
 type peerSummary struct {
@@ -156,7 +157,16 @@ func runPeers(args []string) error {
 		if teamCol == "" {
 			teamCol = "-"
 		}
-		scopeCol := scopeLabels[p.Scope]
+		// Quoted only where it must be: shellarg.Quote returns an ordinary label
+		// untouched, so on every normal row this column reads exactly as before.
+		// The one that would not survive a paste — a space, an apostrophe — comes
+		// out ready to use instead of merely readable.
+		//
+		// The HUMAN column is also the place people copy from, which is the whole
+		// of F-124; `peers --json` keeps `scope` raw, so anything parsing uses
+		// that. The renderer belongs to display and remediation, never to
+		// matching, JSON or storage.
+		scopeCol := shellarg.Quote(scopeLabels[p.Scope])
 		stateCol := p.State
 		if stateCol == "" {
 			stateCol = "-"

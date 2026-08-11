@@ -34,7 +34,7 @@ cab-bridge reply "..."          # answer whoever asked; closes that one delivery
 
 **No id is ever typed.** Recipients are agent names, which you read in `join`'s output. `reply` finds what it is answering by itself.
 
-**Another repository?** Add the project: `ask VAL-other@their-project "..."`. The token after `@` is the `SCOPE` column of `peers --all-scopes`, copied as printed — a basename, or a full path when two projects share one. Only orchestrators (`val`) may open a conversation across projects; **answering is never restricted**, so if a cross-project ask reaches you, a bare `reply` goes back on its own. Cross-project messages carry the sender's project, and `next` hands you a `fromAddress` already assembled — you copy it, you never build it.
+**Another repository?** Add the project: `ask VAL-other@their-project "..."`. The token after `@` is the `SCOPE` column of `peers --all-scopes`, copied as printed — a basename, or a full path when two projects share one. Only orchestrators (`val`) may open a conversation across projects; **answering is never restricted**, so if a cross-project ask reaches you, a bare `reply` goes back on its own. Cross-project messages carry the sender's project, and `next` hands you the address already assembled — you copy it, you never build it. Two fields, and the difference matters: **`fromAddressShellArg` is the one to paste into a command**, already safe as a single argument; `fromAddress` is the same value unquoted, for parsing or comparing. Do not add quotes of your own around either — a project path can contain an apostrophe, and quotes you add by hand break on it.
 
 ## The mental model (read this first)
 
