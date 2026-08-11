@@ -818,44 +818,8 @@ func TestNextMessage_ShellArgIsWiredAndSymmetric(t *testing.T) {
 	}
 }
 
-// TestProducers_AreActuallyWiredToTheRenderer is the regression the renderer's
-// own tests cannot be: shellarg is proven as a property, but nothing notices if
-// a call site stops calling it.
-//
-// One hostile value per class of producer, evaluated by /bin/sh — not the whole
-// matrix repeated, just proof that the wire is connected.
-func TestProducers_AreActuallyWiredToTheRenderer(t *testing.T) {
-	t.Parallel()
-	// A value that is BOTH split by a space and broken by the manual quoting
-	// rule, so a producer that forgot the renderer cannot pass by accident.
-	const hostile = "/tmp/Alan's Project"
-
-	// evaluate returns the argv a shell would produce from the fragment.
-	evaluate := func(t *testing.T, fragment string) []string {
-		t.Helper()
-		out, err := exec.Command("/bin/sh", "-c", `printf '%s\0' `+fragment).Output()
-		require.NoError(t, err, "the shell rejected %q — the producer did not render it", fragment)
-		return strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00")
-	}
-
-	t.Run("the peers SCOPE column", func(t *testing.T) {
-		argv := evaluate(t, shellarg.Quote(hostile))
-		require.Len(t, argv, 1)
-		assert.Equal(t, hostile, argv[0])
-	})
-
-	t.Run("a qualified address", func(t *testing.T) {
-		addr := recipient{name: "VAL-x", scope: hostile}.String()
-		argv := evaluate(t, shellarg.Quote(addr))
-		require.Len(t, argv, 1, "the whole token is one argument, separator included")
-		assert.Equal(t, addr, argv[0])
-	})
-
-	// And the negative half: the SAME value unrendered breaks, which is what
-	// makes the assertions above mean something.
-	t.Run("unrendered, the same value breaks the shell", func(t *testing.T) {
-		_, err := exec.Command("/bin/sh", "-c", `printf '%s\0' `+hostile).Output()
-		require.Error(t, err,
-			"if the raw value survived a shell, these tests would pass with the renderer disconnected")
-	})
-}
+// The producer wiring lives in shellarg_wiring_test.go. A test that stood here
+// carried that name and called shellarg.Quote directly: it proved the renderer a
+// second time and would have stayed green with every call site disconnected —
+// "the mechanism exists -> the producer uses it", inside the test written to
+// forbid exactly that inference (CRI re-gate, P2).

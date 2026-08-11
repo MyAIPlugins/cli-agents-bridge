@@ -217,6 +217,14 @@ func runJoin(args []string) error {
 			fmt.Fprintf(os.Stderr, "join: this directory is called %q, which cannot be used as an agent name as it stands — deriving from %q instead\n",
 				filepath.Base(pp), base)
 		}
+		// The SAME announcement for the other half of the name. A role the caller
+		// typed being quietly reshaped into their identity is the substitution
+		// this project keeps removing — and here it is less excusable than the
+		// directory, because the directory is something nobody chose.
+		if prefix, adjusted := roleUpper(*role); adjusted {
+			fmt.Fprintf(os.Stderr, "join: the role %q cannot be used as it stands in an agent name — deriving from %q instead\n",
+				*role, prefix)
+		}
 		name, _ = deriveAgentName(*role, base, peers)
 	}
 

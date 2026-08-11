@@ -3,7 +3,9 @@ package session
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -494,4 +496,68 @@ func TestResume_RefusesToAdoptAnUnaddressableName(t *testing.T) {
 			assert.Equal(t, name, after.AgentName, "a refused resume does not migrate the name behind anyone's back")
 		})
 	}
+}
+
+// shellArgvOf runs the command a message offers, against a stand-in for its
+// first word that reports the argv it was handed. Twelve lines duplicated from
+// cmd/cab-bridge rather than shared: a test helper crossing a package boundary
+// would need a non-test package to live in, and that is a worse trade.
+func shellArgvOf(t *testing.T, text, start string) []string {
+	t.Helper()
+	i := strings.Index(text, start)
+	require.GreaterOrEqual(t, i, 0, "no command starting %q in:\n%s", start, text)
+	cmd := text[i:]
+	if j := strings.IndexAny(cmd, "\n`"); j >= 0 {
+		cmd = cmd[:j]
+	}
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, strings.Fields(cmd)[0]),
+		[]byte("#!/bin/sh\nprintf '%s\\0' \"$@\"\n"), 0o700))
+	c := exec.Command("/bin/sh", "-c", cmd)
+	c.Env = []string{"PATH=" + dir}
+	out, err := c.Output()
+	require.NoError(t, err, "the shell refused the emitted command — it was not rendered: %s", cmd)
+	return strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00")
+}
+
+// The repair command this refusal prints carries BOTH a role and a project path,
+// and until F-124's second lot it rendered the path and left the role bare —
+// one argument of two, which is how a producer looks when nobody asked which
+// values it interpolates rather than which one is in front of them.
+//
+// Roles are not an enum (internal/routing/role.go), and a project path comes
+// from the filesystem: neither is under the tool's control, and both land in a
+// line whose entire purpose is to be pasted into a shell.
+func TestResume_TheRepairCommandSurvivesAPaste(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewManager(dir, time.Second)
+	proj := filepath.Join(dir, "Alan's twin")
+	require.NoError(t, os.MkdirAll(proj, 0o700))
+
+	// Registered under the custom role too: a resume matches on the role
+	// (wantRole below), so an agent that registered as `esc` and resumes as
+	// something else does not reuse — it registers anew, and this test would
+	// then be asserting on a session that was never refused.
+	first, release, err := mgr.Register(context.Background(), RegisterOpts{
+		ProjectPath: proj, AgentName: "ESC-placeholder", Role: "browser tester", Scope: proj,
+	})
+	require.NoError(t, err)
+	require.NoError(t, release())
+
+	mf, err := mgr.LoadManifest(first.SessionID)
+	require.NoError(t, err)
+	mf.AgentName = "ESC bridge" // the way a pre-grammar binary left it
+	require.NoError(t, mgr.SaveManifest(mf))
+	abandon(t, mgr, first.SessionID)
+
+	_, _, err = mgr.Register(context.Background(), RegisterOpts{
+		ProjectPath: proj, Role: "browser tester", Scope: proj, Resume: true,
+	})
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrUnaddressableResume)
+
+	argv := shellArgvOf(t, err.Error(), "cab-bridge join")
+	assert.Contains(t, argv, "--role=browser tester", "the role must arrive as ONE argument")
+	assert.Contains(t, argv, "--project-path="+proj, "and so must the path — this is the pair that was half-rendered")
+	assert.Contains(t, argv, "--agent-name=ESC-bridge")
 }
