@@ -53,17 +53,26 @@ func TestScenario1_OneValOneEscRoundTrip(t *testing.T) {
 		sentIDs = append(sentIDs, msgID)
 	}
 
-	// Verify ESC's inbox contains all 10 messages
+	// Verify ESC's inbox contains all 10 messages — BY IDENTITY, not by count.
+	//
+	// This used to count `.json` files and stop there, while sentIDs was
+	// collected and never read (staticcheck SA4010). Silencing that by deleting
+	// the slice would have removed the trace of the assertion this test was
+	// evidently reaching for: ten files prove that ten things arrived, not that
+	// they are the ten that were sent. A bridge delivering one message ten times
+	// passed this test.
 	escInbox := filepath.Join(dataDir, "sessions", escID, "inbox")
 	entries, err := os.ReadDir(escInbox)
 	require.NoError(t, err)
-	gotJSON := 0
+	gotIDs := make([]string, 0, len(entries))
 	for _, e := range entries {
 		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
-			gotJSON++
+			gotIDs = append(gotIDs, strings.TrimSuffix(e.Name(), ".json"))
 		}
 	}
-	assert.Equal(t, 10, gotJSON, "ESC inbox must contain all 10 dispatched messages")
+	assert.Len(t, gotIDs, 10, "ESC inbox must contain all 10 dispatched messages")
+	assert.ElementsMatch(t, sentIDs, gotIDs,
+		"and they must be the ones the sender was told it had sent — same set, no duplicates, nothing invented")
 
 	// status on ESC reports inboxCount=10
 	statusOut, _, statusExit := run(t, []string{"status", "--session-id=" + escID}, dataDirEnv(dataDir))

@@ -211,10 +211,6 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, token, self
 		return "", fmt.Errorf("no agent named %q in this scope — registered here: %s (another project: %s%s<project>)",
 			name, strings.Join(known, ", "), name, session.ScopeSeparator)
 	default:
-		var ids []string
-		for _, c := range candidates {
-			ids = append(ids, c.SessionID)
-		}
 		// List WHAT distinguishes them (CRI2 P2-6). The old message named no
 		// discriminator — "which of the two?" — while advising to destroy a
 		// session the tool itself classifies as alive. With projectPath and

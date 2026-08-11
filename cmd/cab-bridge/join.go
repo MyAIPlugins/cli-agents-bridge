@@ -281,7 +281,7 @@ func runJoin(args []string) error {
 				"  Two sessions of one name in one project would make every by-name recipient\n"+
 				"  ambiguous, so this one stops rather than take the name from an agent at work.\n"+
 				"  Pick another name:  cab-bridge join --role=%s --agent-name=<name>\n"+
-				"  — or stop that session first, if it is the one you are replacing.",
+				"  — or stop that session first, if it is the one you are replacing",
 				name, other.SessionID, otherPath, time.Since(other.LastHeartbeat).Truncate(time.Second), *role)
 		}
 		// The stale twin: it yields the name and keeps everything else. Renaming it
