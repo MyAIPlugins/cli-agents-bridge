@@ -149,3 +149,39 @@ func TestIsProcessAlive(t *testing.T) {
 	// Very high PID is unlikely to exist (see test note in TestAcquireLock_StaleRecovery)
 	assert.False(t, IsProcessAlive(999999))
 }
+
+// TestAcquireLock_TheMessageNamesNoRemedy is the F-126 regression, and what it
+// protects is a SENTENCE — the kind of thing no other test in this repo can
+// fail on.
+//
+// The message used to end with "(use --force-new to override)", baked into the
+// primitive. Eleven call sites inherit whatever it says, and the advice was
+// true at exactly one of them: Register, the only caller whose forceNew comes
+// from a flag. Five of the other ten are reached from the five loop verbs,
+// which v0.8 gave no flags at all — `cab-bridge ask --force-new` answers "takes
+// no flags". So the loop printed a remedy that its own parser refuses.
+//
+// The rule this pins: a primitive that does not know its caller states FACTS.
+// The remedy belongs to whoever knows the command, and here the two remedies
+// are opposites — retry everywhere, --force-new at Register, where the holder
+// is a live session and retrying never helps.
+//
+// WHAT IT CANNOT SHOW: that the remedies the callers DO add are the right ones.
+// It is a tripwire on the primitive, not an oracle on the eleven.
+func TestAcquireLock_TheMessageNamesNoRemedy(t *testing.T) {
+	t.Parallel()
+	lockPath := filepath.Join(t.TempDir(), "session.lock")
+	require.NoError(t, os.WriteFile(lockPath, []byte("1\n"), 0o600)) // PID 1: alive everywhere
+
+	_, err := AcquireLock(lockPath, false)
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrLockHeld)
+
+	msg := err.Error()
+	assert.NotContains(t, msg, "--", "the primitive must name NO flag: it does not know which command is calling")
+
+	// And the other half, which is what keeps the assertion above from being
+	// satisfied by an empty message: the facts a caller needs are still there.
+	assert.Contains(t, msg, lockPath, "the lock path is a fact and must survive")
+	assert.Contains(t, msg, "pid=1", "so is the holder")
+}
