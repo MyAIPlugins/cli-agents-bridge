@@ -132,6 +132,20 @@ lint: ## Run go vet + staticcheck (required; version pinned in .staticcheck-vers
 		echo "  this is a hard failure on purpose: a lint that silently skips is not a lint"; \
 		exit 1; \
 	fi
+	@# AND IT HAS TO BE THE PINNED ONE. Resolving a path is not the same as
+	@# running the version the project pinned: whatever sits first in $$PATH was
+	@# executed regardless, so an old binary gave a false green and a new one a
+	@# false red — while the commit that introduced .staticcheck-version claimed
+	@# a single source. It governed the CI install and this help text, not the
+	@# binary that actually ran (CRI).
+	@got="$$($(STATICCHECK) --version 2>/dev/null | sed -E 's/.*\((v[0-9.]+)\).*/\1/')"; \
+	if [ "$$got" != "$(STATICCHECK_VERSION)" ]; then \
+		echo "make lint: staticcheck version mismatch"; \
+		echo "  pinned  (.staticcheck-version): $(STATICCHECK_VERSION)"; \
+		echo "  running ($(STATICCHECK)): $${got:-unknown}"; \
+		echo "  install the pinned one:  go install honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION)"; \
+		exit 1; \
+	fi
 	$(STATICCHECK) ./...
 
 clean: ## Remove build artifacts

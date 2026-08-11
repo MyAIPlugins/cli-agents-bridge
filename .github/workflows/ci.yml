@@ -36,13 +36,13 @@ jobs:
       - name: go vet
         run: go vet ./...
       - name: staticcheck
-        # PINNED, and pinned to the version actually verified against this tree:
-        # v0.7.0 (staticcheck 2026.1), the one that reports zero warnings here on
-        # Go 1.26. Not @latest — a lint that moves under you turns an unrelated
-        # PR red for something its author did not write.
+        # PINNED, and the pin lives in .staticcheck-version — the ONE place, read
+        # by this job and by `make lint`. Not @latest: a lint that moves under
+        # you turns an unrelated PR red for something its author did not write.
         #
-        # The first draft of this line said v0.5.1, a number written from memory
-        # and never run. On a file that authorises merges.
+        # No version literal in this comment either. An earlier draft named the
+        # number here "for the reader", and that is a second source: changing the
+        # file left this line stating the old one, with the test still green.
         run: |
           # Version from .staticcheck-version, the same file the Makefile reads,
           # so the local gate and this one cannot drift onto two linters.
