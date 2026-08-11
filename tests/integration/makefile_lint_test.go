@@ -341,8 +341,7 @@ func copyWorkingTree(t *testing.T, src, dst string) {
 	// --show-toplevel is the property that was meant: compare it with src, both
 	// resolved, and take the Git branch only when they are the same directory.
 	if isRepoRoot(src) {
-		list := exec.Command("git", "ls-files", "-z")
-		list.Dir = src
+		list := gitCommand(src, "ls-files", "-z")
 		tracked, lerr := list.Output()
 		require.NoError(t, lerr, "git ls-files")
 		tarc := exec.Command("tar", "-c", "-f", "-", "--null", "-T", "-")
@@ -402,7 +401,7 @@ func copyWorkingTree(t *testing.T, src, dst string) {
 // under /var arrives as a link to /private/var, so a raw string comparison would
 // say "not the root" about the root.
 func isRepoRoot(dir string) bool {
-	out, err := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel").Output()
+	out, err := gitCommand(dir, "rev-parse", "--show-toplevel").Output()
 	if err != nil {
 		return false
 	}
@@ -466,4 +465,94 @@ func TestCopyWorkingTree_PicksTheBranchByROOTNotByContainment(t *testing.T) {
 	copyWorkingTree(t, nested, again)
 	assert.FileExists(t, filepath.Join(again, "Makefile"),
 		"the walk must carry the tree even when git would answer about somebody else's repository")
+}
+
+// gitCommand runs git in dir with the INHERITED GIT ENVIRONMENT STRIPPED.
+//
+// Sanitising only the selector would not have been enough, and that is the whole
+// finding: `isRepoRoot` and `git ls-files` are two subprocesses, and the
+// variables hit them differently. With GIT_DIR pointing at an unrelated
+// repository, `rev-parse --show-toplevel` still answered with the RIGHT path —
+// the selector passed — while `ls-files` queried the alien index and returned 0
+// files instead of 157. Empty fixture, "No rule to make target 'install-dev'".
+//
+// AND IT IS NOT A LABORATORY CASE: git exports GIT_DIR into every hook. A
+// pre-commit or pre-push that runs `make test` inherits it, and exec.Command
+// hands it to its children. Whoever meets this is not building a scenario, they
+// are committing.
+//
+// EVERY GIT_ VARIABLE, not a list of the ones that matter. A list is a whitelist
+// of what I happened to think of, and today's lesson is that the one that gets
+// you is the one you did not have in mind — the PATH while we were isolating the
+// data dir, the environment while we were enumerating directories. The prefix
+// costs nothing here: both commands are purely local queries.
+//
+// LIMIT, stated: this covers variables named GIT_*. Something like HOME still
+// changes which global config git reads — it does not change WHICH REPOSITORY is
+// queried, which is what this function is defending, but it is not "the git
+// environment is neutralised" either.
+func gitCommand(dir string, args ...string) *exec.Cmd {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	env := os.Environ()
+	clean := env[:0]
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "GIT_") {
+			continue
+		}
+		clean = append(clean, kv)
+	}
+	cmd.Env = clean
+	return cmd
+}
+
+// TestCopyWorkingTree_IgnoresAnInheritedGitEnvironment pins BOTH subprocesses,
+// because fixing only the one that looked responsible would have left the defect
+// in place.
+//
+// With GIT_DIR pointing at an unrelated repository the SELECTOR still answers
+// correctly — `rev-parse --show-toplevel` returns the real root, so isRepoRoot
+// says true — and the PRODUCER is the one that breaks: `ls-files` reads the
+// alien index and lists nothing. The fixture comes out empty and make reports a
+// missing target. Two commands, one environment, and only one of them visibly
+// wrong.
+//
+// Reachable without trying: git exports GIT_DIR into every hook, so a pre-commit
+// running `make test` inherits it.
+func TestCopyWorkingTree_IgnoresAnInheritedGitEnvironment(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	repoRoot, err := filepath.Abs("../..")
+	require.NoError(t, err)
+
+	// An unrelated repository, with an index of its own that has nothing in it.
+	alien := t.TempDir()
+	initCmd := exec.Command("git", "init", "-q")
+	initCmd.Dir = alien
+	require.NoError(t, initCmd.Run())
+
+	for _, env := range []struct{ name, value string }{
+		{"GIT_DIR", filepath.Join(alien, ".git")},
+		{"GIT_INDEX_FILE", filepath.Join(alien, ".git", "index")},
+		{"GIT_WORK_TREE", alien},
+	} {
+		t.Run(env.name, func(t *testing.T) {
+			t.Setenv(env.name, env.value)
+
+			// The selector is NOT the part that breaks — assert that too, so the
+			// test says which half was innocent.
+			assert.True(t, isRepoRoot(repoRoot),
+				"%s does not stop the selector from recognising the root: that is why fixing only it was not enough", env.name)
+
+			dst := filepath.Join(t.TempDir(), "copy")
+			require.NoError(t, os.MkdirAll(dst, 0o700))
+			copyWorkingTree(t, repoRoot, dst)
+
+			for _, must := range []string{"Makefile", "go.mod", filepath.Join("cmd", "cab-bridge", "main.go")} {
+				assert.FileExists(t, filepath.Join(dst, must),
+					"%s must not make the copy empty — an empty tree surfaces as 'No rule to make target'", env.name)
+			}
+		})
+	}
 }
