@@ -1,0 +1,22 @@
+tests/integration/makefile_lint_test.go
+  s_ea503823ea741c::t_f31d515ed7616f 277,308-384
+  s_ea503823ea741c::t_e1e710f6bacaf0 385
+Makefile
+  s_ea503823ea741c::t_14b8352bf25cfd 185-190,192
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "44d9fa4eb2f47c7be27cd796414fa2a448721416",
+  "prompts": {},
+  "sessions": {
+    "s_ea503823ea741c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "446e39f2-1d7e-4224-8bb9-b841db1a013b",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
