@@ -36,7 +36,9 @@ install -m 755 cab-bridge ~/.local/bin/
 
 `mkdir -p` is not optional: `install` does not create its destination, and a fresh machine often has no `~/.local/bin` — without it the command fails with an error naming a temporary file you have never seen.
 
-`~/.local/bin` must also be on your `PATH`. Verify the download against `checksums.txt`, published alongside the archives.
+`~/.local/bin` must also be on your `PATH`.
+
+Verify the download against `checksums.txt`, published alongside the archives. Be clear about what that proves: the archive reached you **intact** — no truncated download, no corrupted mirror. It does **not** prove the release is **genuine**, because `checksums.txt` ships from the same place as the archive, so a tampered release would carry matching sums. There is no signature yet.
 
 Or build from source (Go 1.25+):
 
