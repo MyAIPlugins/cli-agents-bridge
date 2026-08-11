@@ -1,0 +1,35 @@
+internal/session/reconnect_test.go
+  s_ea503823ea741c::t_d5178a11b5919d 235-388
+internal/session/reconnect.go
+  s_ea503823ea741c::t_58b462c93e9fc2 148
+  s_ea503823ea741c::t_173b3979ad5ddf 112-122,124-132,134-147
+  s_ea503823ea741c::t_799637f4c2945c 174-177
+  s_ea503823ea741c::t_b2e8b6447af826 94-102
+internal/session/agentname_test.go
+  s_ea503823ea741c::t_8094309bd33ce6 268-269
+  s_ea503823ea741c::t_2be3d0a4e06391 30-31,34,76,98,270
+  s_ea503823ea741c::t_2e17c43a301f7c 175,179-187,190
+  s_ea503823ea741c::t_077015e74c77d6 202-210,212-242,244-246,248
+internal/session/agentname.go
+  s_ea503823ea741c::t_a839a1f01c8283 240-245,247
+  s_ea503823ea741c::t_15e35c23c4c38f 195-217,224,227,229-231,234
+  s_ea503823ea741c::t_bd1530f2f281b6 43-45
+  s_ea503823ea741c::t_b9c8cf43ab9243 129-170
+  s_ea503823ea741c::t_5567df8a3ef20b 46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "0e47dc97c6acd5ed92384c10159054a00bb87c0c",
+  "prompts": {},
+  "sessions": {
+    "s_ea503823ea741c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "446e39f2-1d7e-4224-8bb9-b841db1a013b",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
