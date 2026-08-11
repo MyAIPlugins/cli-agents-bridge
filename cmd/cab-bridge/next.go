@@ -485,9 +485,7 @@ func collectNextPage(mgr *session.Manager, cfg config.Config, sid, inboxDir stri
 		CorruptCount: len(corrupt),
 		Messages:     []nextMessage{},
 	}
-	for _, name := range corrupt {
-		page.Corrupt = append(page.Corrupt, name)
-	}
+	page.Corrupt = append(page.Corrupt, corrupt...)
 	if cursorWarn != "" {
 		page.Warnings = append(page.Warnings, cursorWarn)
 	}

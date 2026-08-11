@@ -106,6 +106,12 @@ func TestCollectPeers_LegacyEmptyScope_HiddenByDefault_ShownWithAll(t *testing.T
 // /JSON goes to stdout, so a test must inspect both.
 func captureStdoutStderr(t *testing.T, fn func()) (string, string) {
 	t.Helper()
+	// GUARD: capturing means REPLACING a process-wide global, so this test must
+	// not run beside another one. t.Setenv is refused by the runtime in a
+	// parallel test — "testing: test using t.Setenv, t.Chdir ... can not use
+	// t.Parallel" — which turns "do not do this" into "cannot be done", with a
+	// message that says why. See mustNotRunInParallel.
+	mustNotRunInParallel(t)
 	oldOut, oldErr := os.Stdout, os.Stderr
 	rOut, wOut, err := os.Pipe()
 	require.NoError(t, err)

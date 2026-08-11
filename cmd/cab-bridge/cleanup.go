@@ -87,7 +87,7 @@ func runCleanup(args []string) error {
 		}
 		if filepath.Clean(*dataDirFlag) != filepath.Clean(cfg.DataDir) {
 			return fmt.Errorf("cleanup: --data-dir=%s does not match the data dir in effect (%s).\n"+
-				"  Refusing rather than guessing which of the two you meant.",
+				"  Refusing rather than guessing which of the two you meant",
 				*dataDirFlag, cfg.DataDir)
 		}
 	}
