@@ -12,15 +12,23 @@ import (
 // It has to be absent from agent names, or the grammar is not invertible: with a
 // name like `VAL@home` there is no way to tell which `@` separates what.
 //
-// F-124 NOTE, and it is the reason the sentence above is shorter than it was:
-// this used to end by claiming the rule the whole addressing rests on is that
-// every token `peers` prints can be pasted into a command. That rule is NOT true
-// today, and saying it here made it look settled. What IS true after this lot:
-// an agent NAME is guaranteed to survive a shell and to be read as a recipient.
-// The SCOPE half of a qualified address is not — a project path may contain a
-// space, `peers` prints it raw, and `next` puts the full path in `fromAddress`
-// on every cross-project message. Until that is fixed a qualified address has to
-// be quoted by whoever pastes it.
+// F-124, closed in two lots, and the promise now says exactly what it covers:
+//
+//	the NAME half     guaranteed HERE (lot 1): one shell word, and a positional
+//	                  the verbs accept
+//	the SCOPE half    a filesystem path, which nobody controls — so the tool
+//	                  RENDERS it (lot 2, internal/shellarg) instead of asking
+//	                  the reader to quote it
+//
+// The reader was asked to quote for a while, and that instruction was not merely
+// inconvenient: "always between quotes" holds for a space and breaks on an
+// apostrophe, because the reader closes the quote they opened. No rule applied
+// by hand covers every path; a renderer does.
+//
+// Consequence for anyone printing a token: the pastable form is not always the
+// same string as the logical one. `peers` quotes its human column and keeps
+// `--json` raw; `next` carries `fromAddress` to parse and `fromAddressShellArg`
+// to paste.
 const ScopeSeparator = "@"
 
 // derivedNameReplacement is what an unusable rune becomes when the name arrives

@@ -19,7 +19,8 @@ import (
 // --- F-116: the addressing grammar -----------------------------------------
 
 // TestRecipient_RoundTrip is the property the whole grammar rests on: every
-// token `peers` prints can be pasted into a command.
+// token `peers` prints can be pasted into a command — which since lot 2 means
+// the RENDERED column, not the raw scope (internal/shellarg).
 //
 // Tested as format -> parse -> format rather than as two separate functions,
 // because the defect it prevents lives BETWEEN them: a formatter and a parser
@@ -220,7 +221,8 @@ func TestReplyGuardrail_IsBuiltFromOpenAskersOnly(t *testing.T) {
 	assert.Contains(t, err.Error(), "looks like")
 }
 
-// The cross-scope page carries the address ready to paste, and it must be the
+// The cross-scope page carries the address — logical in fromAddress, pastable
+// in fromAddressShellArg — and it must be the
 // one that resolves — the full path, since here there is no list of other scopes
 // to detect an ambiguous basename with.
 func TestNextMessage_CrossScopeCarriesAPastableAddress(t *testing.T) {
