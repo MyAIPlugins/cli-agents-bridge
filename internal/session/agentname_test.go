@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strings"
 	"testing"
 	"time"
 
@@ -29,11 +27,11 @@ func TestAgentName_TypedIsRefusedDerivedIsSanitised(t *testing.T) {
 	assert.Contains(t, err.Error(), "separates a name from its project",
 		"the error has to say WHY, or it reads as an arbitrary rule")
 
-	// F-124: the argument is the absolute PATH now, and a repaired name carries a
-	// digest of it, so the assertion is on the shape rather than on a literal.
+	// F-124: the argument is the absolute PATH, and the repair is an ESCAPE, so
+	// the original basename can be recovered from the result.
 	got, changed := SanitizeDerivedName("/work/feat@2")
 	assert.True(t, changed, "the caller must be able to say it happened")
-	assert.True(t, strings.HasPrefix(got, "feat-2-"), "got %q", got)
+	assert.Equal(t, "feat_402", got, "`@` is 0x40")
 	assert.NoError(t, ValidateAgentName(got), "and what comes out must be addressable")
 
 	got, changed = SanitizeDerivedName("/work/esc-v08")
@@ -75,7 +73,7 @@ func TestRegisterAndRename_HoldTheInvariantAtThePoint(t *testing.T) {
 	mf2, release2, err := mgr.Register(context.Background(), RegisterOpts{ProjectPath: odd, Role: RoleEsc})
 	require.NoError(t, err, "nobody typed the directory's name")
 	require.NoError(t, release2())
-	assert.True(t, strings.HasPrefix(mf2.AgentName, "feat-2-"), "got %q", mf2.AgentName)
+	assert.Equal(t, "feat_402", mf2.AgentName)
 	assert.NoError(t, ValidateAgentName(mf2.AgentName))
 }
 
@@ -97,7 +95,7 @@ func TestResume_FindsTheSessionRegisteredWithASanitisedName(t *testing.T) {
 	first, release, err := mgr.Register(context.Background(), RegisterOpts{ProjectPath: proj, Role: RoleEsc, Scope: proj})
 	require.NoError(t, err)
 	require.NoError(t, release())
-	require.True(t, strings.HasPrefix(first.AgentName, "feat-2-"), "got %q", first.AgentName)
+	require.Equal(t, "feat_402", first.AgentName)
 
 	again, release2, err := mgr.Register(context.Background(), RegisterOpts{ProjectPath: proj, Role: RoleEsc, Scope: proj, Resume: true})
 	require.NoError(t, err)
@@ -173,31 +171,25 @@ func TestValidateAgentName_TheGrammar(t *testing.T) {
 func TestSanitizeDerivedName_EveryRuleIsDecided(t *testing.T) {
 	t.Parallel()
 
-	// A repaired name carries a digest of the PATH, so the rows pin the stem and
-	// the shape; the digest itself has its own test below.
 	for _, tc := range []struct {
-		path, stem string
+		path, want string
 		changed    bool
 		why        string
 	}{
-		{"/w/esc-v08", "esc-v08", false, "an already-safe base is returned untouched, and takes no digest"},
-		{"/w/my repo", "my-repo", true, "the ordinary case: a directory with a space"},
-		{"/w/feat@2", "feat-2", true, "the separator keeps working exactly as before"},
-		{"/w/a   b", "a-b", true, "a RUN of unsafe runes collapses to one dash, not three"},
-		{"/w/-dash-", "dash", true, "leading and trailing separators are stripped: the first character cannot be a dash"},
-		{"/w/.hidden", "hidden", true, "and a leading dot is stripped for the same reason it cannot lead"},
-		{"/w/caffè", "caff", true, "a replaced rune at the end leaves a trailing dash, which the strip then removes"},
-		{"/w/---", "session", true, "a base with nothing usable left must not become the empty string"},
-		{"/w/日本", "session", true, "every rune replaced, then stripped to nothing: the fallback carries it"},
+		{"/w/esc-v08", "esc-v08", false, "an already-safe base comes back untouched: the ordinary case pays nothing"},
+		{"/w/my repo", "my_20repo", true, "the ordinary repair: a space is 0x20"},
+		{"/w/feat@2", "feat_402", true, "and `@` is 0x40 — it used to become `-`, which was not reversible"},
+		{"/w/a   b", "a_20_20_20b", true, "no collapsing: a run of three has to come back as three"},
+		{"/w/-dash-", "_2Ddash-", true, "only the HEAD is restricted, so the trailing dash stays"},
+		{"/w/.hidden", "_2Ehidden", true, "a leading dot escapes for the same reason a dash does"},
+		{"/w/caffè", "caff_C3_A8", true, "one escape per BYTE, so the inverse needs no knowledge of encodings"},
+		{"/w/---", "_2D--", true, "three dashes are a fine name once the head is escaped"},
+		{"/w/日本", "_E6_97_A5_E6_9C_AC", true, "the degenerate case: ugly, and nobody typed it"},
 	} {
 		got, changed := SanitizeDerivedName(tc.path)
+		assert.Equal(t, tc.want, got, "%q: %s", tc.path, tc.why)
 		assert.Equal(t, tc.changed, changed, "%q: the caller can only say it happened if we tell it", tc.path)
 		assert.NoError(t, ValidateAgentName(got), "%q: whatever comes out must be addressable", tc.path)
-		if !tc.changed {
-			assert.Equal(t, tc.stem, got, "%q: %s", tc.path, tc.why)
-			continue
-		}
-		assert.Regexp(t, "^"+regexp.QuoteMeta(tc.stem)+"-[0-9a-f]{4}$", got, "%q: %s", tc.path, tc.why)
 	}
 }
 
@@ -207,26 +199,55 @@ func TestSanitizeDerivedName_EveryRuleIsDecided(t *testing.T) {
 // through the public `register` at the time: two live sessions answering to one
 // name, and `tell a-b` exiting 1 with "2 live agents are named a-b".
 //
-// The digest is taken from the PATH rather than the basename, so two directories
-// are distinguished by the thing that actually differs between them. That makes
-// it injective in the directory instead of merely unlikely to clash.
-func TestSanitizeDerivedName_FusedBasenamesStayDistinct(t *testing.T) {
+// A first attempt used a 16-bit digest of the path. It was NOT enough, and the
+// reason is worth keeping: distinct inputs do not give distinct outputs, because
+// what limits a function is its CODOMAIN. The critic built two real paths sharing
+// `e051` and registered two live `a-b-e051`. Only an inverse makes a function
+// injective, so the derivation escapes instead of hashing.
+//
+// This asserts the PROPERTY over a generated corpus, not a pair I chose: a pair
+// proves that those two differ, which is exactly what the digest also satisfied.
+func TestSanitizeDerivedName_IsInjectiveOverACorpus(t *testing.T) {
 	t.Parallel()
-	plus, _ := SanitizeDerivedName("/repo/a+b")
-	colon, _ := SanitizeDerivedName("/repo/a:b")
-	assert.NotEqual(t, plus, colon, "two directories the grammar fuses must not become one agent")
-	assert.NoError(t, ValidateAgentName(plus))
-	assert.NoError(t, ValidateAgentName(colon))
 
-	// Stable across calls: the agent re-reads the name from `join`, so it must
-	// not move under it.
+	alphabet := []string{"a", "_", "+", "-", ".", "0", " ", "é", "@", "Z"}
+	var corpus []string
+	var gen func(string, int)
+	gen = func(prefix string, depth int) {
+		if prefix != "" {
+			corpus = append(corpus, prefix)
+		}
+		if depth == 0 {
+			return
+		}
+		for _, c := range alphabet {
+			gen(prefix+c, depth-1)
+		}
+	}
+	gen("", 3)
+	require.Greater(t, len(corpus), 1000, "the corpus has to be big enough to be worth calling one")
+
+	seen := make(map[string]string, len(corpus))
+	for _, base := range corpus {
+		got, _ := SanitizeDerivedName("/repo/" + base)
+		require.NoError(t, ValidateAgentName(got), "%q derived %q, which is not addressable", base, got)
+		if prev, dup := seen[got]; dup {
+			t.Fatalf("collision: %q and %q both derive %q", prev, base, got)
+		}
+		seen[got] = base
+	}
+	assert.Len(t, seen, len(corpus), "distinct directories, distinct names — no exceptions in the corpus")
+
+	// The case that kills this idea if the marker is not escaped first: a
+	// directory named exactly like another one's encoding.
+	plus, _ := SanitizeDerivedName("/repo/a+b")
+	literal, _ := SanitizeDerivedName("/repo/" + plus)
+	assert.Equal(t, "a_2Bb", plus)
+	assert.Equal(t, "a_5F2Bb", literal, "the marker escapes FIRST, or these two are one name")
+
+	// Stable: the agent re-reads its name from `join`, so it must not move.
 	again, _ := SanitizeDerivedName("/repo/a+b")
 	assert.Equal(t, plus, again, "the same directory always derives the same name")
-
-	// And the degenerate ones do not all pile onto `session` either.
-	d1, _ := SanitizeDerivedName("/repo/---")
-	d2, _ := SanitizeDerivedName("/repo/日本")
-	assert.NotEqual(t, d1, d2, "the fallback is a stem, not a shared name")
 
 	// WHAT IS NOT FIXED, pinned so the limit is a decision and not a surprise:
 	// two different projects whose basenames are ALREADY identical still derive
@@ -244,8 +265,9 @@ func TestSanitizeDerivedName_FusedBasenamesStayDistinct(t *testing.T) {
 // empty string.
 func TestSanitizeDerivedName_FallbackCoversEveryCaller(t *testing.T) {
 	t.Parallel()
-	assert.Regexp(t, `^session-[0-9a-f]{4}$`, derivedAgentName("/tmp/---"),
-		"the derived default must never be an empty name")
+	assert.Equal(t, "_2D--", derivedAgentName("/tmp/---"),
+		"three dashes are a perfectly good name once the HEAD is escaped: the grammar only restricts the front")
+	assert.NoError(t, ValidateAgentName(derivedAgentName("/tmp/---")))
 }
 
 // P1-1 of the diff gate: the v1 read-default is FROZEN on the @-only algorithm.

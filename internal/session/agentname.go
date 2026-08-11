@@ -2,7 +2,6 @@ package session
 
 import (
 	"fmt"
-	"hash/fnv"
 	"path/filepath"
 	"strings"
 )
@@ -40,6 +39,10 @@ const derivedNameReplacement = "-"
 // call site, while derivedAgentName below and Manifest.ApplyV1Defaults — the
 // only pen on a READ path — would each have taken the empty string.
 const derivedNameFallback = "session"
+
+// markerByte is the escape marker: `_`, chosen because it is already inside the
+// grammar and may lead a name.
+const markerByte = '_'
 
 // nameSafeRune reports whether a rune may appear in an agent name at all.
 //
@@ -123,16 +126,48 @@ func derivedAgentName(absProj string) string {
 	return name
 }
 
-// sanitizeToken is the repair itself, with no policy attached: substitute,
-// collapse, strip. It returns "" when nothing usable is left, and the two
-// callers below decide what that means for them.
+// escapeToken encodes a string into the name grammar so that the original can
+// be recovered from the result. It is the injective half of this file.
 //
-// Three rules, written down because not one can be read off the code:
+//	a byte outside the grammar  ->  _XX   (uppercase hex of the BYTE)
+//	the marker `_` itself       ->  _5F   (FIRST, before anything else)
+//	a leading `-` or `.`        ->  _2D / _2E  (only the head is restricted)
 //
-//	every rune outside nameSafeRune becomes `-`
-//	a RUN of them collapses to a single `-`   (`a   b` -> `a-b`, not `a---b`)
-//	leading and trailing `-` and `.` are stripped, so the result can lead
-func sanitizeToken(s string) string {
+// THE PROOF IS THE INVERSE, not a table of examples: every `_` in the output is
+// followed by exactly two hex digits, so decoding is deterministic — and a
+// function with an inverse is injective. That is why the marker has to be
+// escaped before anything else: without it a directory literally called `a_2Bb`
+// would encode to itself and collide with `a+b`, and the whole property dies on
+// that one case.
+//
+// Bytes rather than runes: a multi-byte rune becomes one escape per byte, which
+// keeps the inverse total and needs no knowledge of encodings.
+func escapeToken(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == markerByte || c >= 0x80 || !nameSafeRune(rune(c)) {
+			fmt.Fprintf(&b, "%c%02X", markerByte, c)
+			continue
+		}
+		b.WriteByte(c)
+	}
+	out := b.String()
+	if out == "" {
+		return out
+	}
+	// The head is escaped the same way as everything else, so the inverse needs
+	// no special case for it.
+	if lead := rune(out[0]); !nameSafeLeadRune(lead) {
+		out = fmt.Sprintf("%c%02X%s", markerByte, out[0], out[1:])
+	}
+	return out
+}
+
+// readableToken is the OTHER repair, and it is deliberately not injective:
+// substitute, collapse runs, strip the ends. Used only where a name is being
+// cleaned up for a human to read and run, never where one is derived.
+func readableToken(s string) string {
 	var b strings.Builder
 	replacing := false
 	for _, r := range s {
@@ -157,62 +192,60 @@ func sanitizeToken(s string) string {
 // with nobody having typed it — and a hard refusal there would fail a `join` for
 // a choice the user never made.
 //
-// It takes the ABSOLUTE PATH, not the basename, and that is the whole of the
-// injectivity fix. Substitution is many-to-one by construction: `a+b` and `a:b`
-// both reduce to `a-b`, with a single replacement each — so the collapse is an
-// aggravator, not the cause, and dropping it would fix nothing. Two directories
-// that reduce to one name got two live sessions answering to it and `tell a-b`
-// exiting 1 with "2 live agents are named a-b" (CRI diff-gate P1-2, reproduced).
+// It ESCAPES rather than substitutes, and that is the whole of it. Substitution
+// is many-to-one by construction: `a+b` and `a:b` both reduce to `a-b` with one
+// replacement each — the run-collapse was never the cause — and two directories
+// reducing to one name produced two live sessions answering to it, with `tell
+// a-b` exiting 1 on "2 live agents are named a-b" (CRI diff-gate P1-2).
 //
-// So when a substitution actually happened, the name carries a short digest OF
-// THE PATH. Distinct directories have distinct paths by definition, which makes
-// the result injective in the directory rather than merely unlikely to clash —
-// the residual case needs a real 16-bit digest collision between two paths, and
-// that one fails closed with the message above.
+// A short digest was tried and is NOT enough: a hash with 65536 outputs collides
+// whatever you feed it, and the critic built two real paths sharing `e051`.
+// Distinct inputs do not give distinct outputs — the codomain is what limits.
+// Only a function with an inverse is injective by construction, so escapeToken
+// is the derivation and the digest is gone.
 //
-// A basename that is already addressable is returned untouched, no digest: the
-// ordinary case stays readable, and the cost lands only where the repair does.
+// AND THE PROPERTY THAT MATTERS IS NOT UNIQUENESS — it is that the name is a
+// PURE FUNCTION OF THE DIRECTORY. Uniqueness follows for free from injectivity;
+// the reverse does not. Enforcing uniqueness at registration instead (a counter,
+// `my-repo-2`) would make the name depend on the ORDER sessions registered in,
+// so the same directory could derive a different name after a restart — and a
+// derived name that is not stable breaks re-entry, which is the very defect this
+// lot is closing. Whoever is tempted to "improve" this with a counter: that is
+// what it costs.
+//
+// A basename already inside the grammar comes back untouched, so the ordinary
+// case pays nothing and only the repair is ugly (`my repo` -> `my_20repo`).
 //
 // WHAT THIS DOES NOT FIX, and it must be said here or it becomes the defect
 // nobody looks for: two DIFFERENT projects whose basenames are already identical
 // (`alpha/work` and `beta/work`) still derive one name. That collided before
 // this change too — Manager.Register has never enforced name uniqueness, its
 // BUG-6 check is on the project path — and closing it belongs to a separate lot,
-// tracked. The digest protects names FUSED BY THIS FUNCTION, nothing wider.
+// tracked. Escaping protects names FUSED BY THIS FUNCTION, nothing wider.
 func SanitizeDerivedName(absProjectPath string) (string, bool) {
 	base := filepath.Base(absProjectPath)
-	out := sanitizeToken(base)
+	out := escapeToken(base)
 	if out == "" {
+		// Not reachable from a real path — filepath.Base never returns "" — but
+		// the function is total, and this is the one input for which it is not
+		// injective. Stated rather than left to be discovered.
 		out = derivedNameFallback
 	}
-	if out == base {
-		return out, false
-	}
-	return out + derivedNameReplacement + shortDigest(absProjectPath), true
+	return out, out != base
 }
 
 // SuggestAddressableName turns an EXISTING agent name into a valid one, for the
 // repair `join` offers when it meets a session named before the grammar.
 //
-// Deliberately no digest: this is not a derivation and needs no injectivity —
-// it is a readable suggestion for a human or an agent to run, and `ESC bridge`
-// should become `ESC-bridge`, not `ESC-bridge-4f21`. If that name is taken by a
-// live session, join's existing guard refuses and names the clash, which is the
-// right answer and one nobody has to build here.
+// It uses readableToken, NOT the escape, and the difference is deliberate: this
+// is a suggestion somebody reads and runs, so `ESC bridge` should be offered as
+// `ESC-bridge` and not `ESC_20bridge`. Injectivity is not needed here because
+// nothing is being derived — if the suggested name is already taken by a live
+// session, join's existing guard refuses and names the clash, which is the right
+// answer and one nobody has to build here.
 func SuggestAddressableName(name string) string {
-	if out := sanitizeToken(name); out != "" {
+	if out := readableToken(name); out != "" {
 		return out
 	}
 	return derivedNameFallback
-}
-
-// shortDigest is 16 bits of FNV-1a as four hex digits: stable across runs and
-// across versions (the algorithm is fixed), so the same directory always derives
-// the same name and an agent can re-read it from `join` instead of remembering
-// it — which is the property that matters for LL-13, since the danger is in
-// identifiers that get RETYPED, not in ones that get read.
-func shortDigest(s string) string {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(s))
-	return fmt.Sprintf("%04x", h.Sum32()&0xffff)
 }

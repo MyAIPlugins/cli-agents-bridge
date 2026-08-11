@@ -91,14 +91,15 @@ func (m *Manager) tryReuse(absProj string, opts RegisterOpts) (*Manifest, func()
 // reconnect identity, sorted most-recent first (LastHeartbeat desc, then
 // StartedAt desc, then id) for a deterministic multi-match resolution.
 //
-// Identity = effective agent-name + effective role + scope + team + PROJECT
-// PATH, where the effective agent-name/role come from the SAME FUNCTIONS
-// Register writes with — derivedAgentName, not a second copy of the rule — so a
-// resume with an empty agent-name still matches a session registered with the
-// default. It said "the same defaults" and was true until the two drifted
-// apart; naming the function is the only form of that claim that cannot go
-// stale. scopeMatch: equal non-empty scopes, OR a legacy
-// candidate (empty scope) whose projectPath is an ancestor-or-equal of absProj.
+// Identity = effective role + scope + team + PROJECT PATH, plus the agent name
+// ONLY when the caller supplied one (F-124; the long version is on wantAgent
+// below). A resume with no name matches on where it is and what it does, and
+// takes the name of whatever it finds — a derived name is a function of the
+// project path, so as a criterion it adds nothing and as a constraint it ties
+// re-entry to the version of that function.
+//
+// scopeMatch: equal non-empty scopes, OR a legacy candidate (empty scope) whose
+// projectPath is an ancestor-or-equal of absProj.
 //
 // projectPath is part of the identity (§2.2, CRI diff-gate 1c P1-4). Without it
 // two agents of the same name and role in different worktrees of ONE repo share
@@ -108,22 +109,43 @@ func (m *Manager) tryReuse(absProj string, opts RegisterOpts) (*Manifest, func()
 // scope keeps the old ancestor rule, since it has no projectPath discipline to
 // compare against.
 func (m *Manager) findIdentityMatches(absProj string, opts RegisterOpts) ([]identityMatch, error) {
-	// derivedAgentName, the SAME function Register writes with — not
-	// filepath.Base, which is what this line said until the two diverged.
+	// THE NAME IS PART OF THE IDENTITY ONLY WHEN THE CALLER SUPPLIED ONE.
 	//
-	// F-116 made Register sanitise the derived default, and this reader kept the
-	// raw basename: in a directory called `feat@2` the writer stored `feat-2` and
-	// `--resume` went looking for `feat@2`, found nothing, and registered a
-	// SECOND session. If the first held mail, the peer came back to an empty
-	// inbox with its work in the other session. Reproduced on the binary, two
-	// distinct ids.
+	// This line used to read `defaultIfEmpty(opts.AgentName, derivedAgentName(absProj))`,
+	// and the history of that expression is worth keeping, because the fix that
+	// produced it is what caused the defect that removed it.
 	//
-	// The canonical shape: a writer's semantics changed and its readers were not
-	// re-examined. The comment above claimed the two applied "the SAME defaults
-	// Register uses" — true when written, false the moment the sanitisation
-	// landed, and it is why nobody went looking. Calling the same function is the
-	// only version of that sentence that cannot go stale.
-	wantAgent := defaultIfEmpty(opts.AgentName, derivedAgentName(absProj))
+	// FIRST it was filepath.Base, while Register wrote a sanitised name: in a
+	// directory called `feat@2` the writer stored `feat-2`, `--resume` looked for
+	// `feat@2`, found nothing, and registered a SECOND session — the first one
+	// keeping the mail. A writer's semantics changed and its readers were not
+	// re-examined.
+	//
+	// The repair was to call derivedAgentName, the same function Register writes
+	// with, and the comment concluded that naming the function is "the only
+	// version of that sentence that cannot go stale". THAT IS TRUE WITHIN ONE
+	// BINARY AND FALSE ACROSS TWO. It closes the divergence between a writer and
+	// a reader compiled together, and opens the one between today's reader and
+	// YESTERDAY'S WRITER — because now the identity depends on the current
+	// definition of a function, so changing the derivation at all breaks re-entry
+	// through an upgrade. F-124 changed it, and a session registered by the
+	// previous binary was abandoned with its inbox.
+	//
+	// The same defect has a second face with no upgrade in it at all, which is
+	// what showed the real cause: `register --agent-name=ESC-explicit` followed by
+	// `register --resume` with NO name, same binary, same directory, produced two
+	// sessions and left the mail in the first. There is no historic derivation to
+	// recognise there — there is a name somebody chose. So "teach the reader the
+	// old derivations" would have fixed neither this nor the next change.
+	//
+	// The cause is that a DERIVED name was ever used as a criterion. It is a
+	// function of absProj, and absProj is already part of the identity below, so
+	// it discriminates nothing — while binding re-entry to the version of a
+	// function. When nobody asked for a name, the name is an OUTPUT of the resume,
+	// adopted from the session we find, exactly as `join` already does with the
+	// occupant it finds in a directory (join.go). Aligning register with join
+	// rather than inventing a third rule.
+	wantAgent := opts.AgentName // "" means: do not filter on the name at all
 	wantRole := defaultIfEmpty(opts.Role, RoleNeutral)
 
 	sessionsRoot := filepath.Join(m.DataDir, "sessions")
@@ -149,7 +171,10 @@ func (m *Manager) findIdentityMatches(absProj string, opts RegisterOpts) ([]iden
 			_ = security.WarnNotOurs(e.Name(), lerr)
 			continue
 		}
-		if mf.AgentName != wantAgent || mf.Role != wantRole {
+		if wantAgent != "" && mf.AgentName != wantAgent {
+			continue
+		}
+		if mf.Role != wantRole {
 			continue
 		}
 		if opts.TeamID != "" && mf.TeamID != opts.TeamID {
