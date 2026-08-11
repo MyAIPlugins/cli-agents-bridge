@@ -1,0 +1,21 @@
+internal/session/reconnect.go
+  s_ea503823ea741c::t_e15d2de68757fd 129-143,145,147
+cmd/cab-bridge/join_test.go
+  s_ea503823ea741c::t_ab6717c9596144 821-900
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "b0a087a6ede47a5581f8ecbfae942c20268cd11a",
+  "prompts": {},
+  "sessions": {
+    "s_ea503823ea741c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "446e39f2-1d7e-4224-8bb9-b841db1a013b",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
