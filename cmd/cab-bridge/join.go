@@ -324,7 +324,6 @@ func runJoin(args []string) error {
 		}
 	}
 
-	before := time.Now().UTC()
 	mf, release, err := mgr.Register(context.Background(), session.RegisterOpts{
 		ProjectPath: pp,
 		AgentName:   name,
@@ -339,8 +338,12 @@ func runJoin(args []string) error {
 	}
 	_ = release()
 
+	// The OUTCOME, not the clock. This read `mf.StartedAt.Before(before)`, and
+	// StartedAt belongs to whenever the session began — so on a manifest whose
+	// StartedAt is in the future it announced `registered-new` for a session it
+	// had just reclaimed, id and inbox included (CRI re-gate, reproduced).
 	action := "registered-new"
-	if mf.StartedAt.Before(before) {
+	if mf.WasResumed() {
 		action = "resumed"
 	}
 	if *role == session.RoleVal {

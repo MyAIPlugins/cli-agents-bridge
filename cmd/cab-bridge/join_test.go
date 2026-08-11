@@ -1033,3 +1033,74 @@ func TestRegister_NoticeDoesNotAnnounceADerivationThatWillNotHappen(t *testing.T
 	require.NoError(t, err)
 	assert.Equal(t, "ESC-custom", mf.AgentName, "and the name the surfaces must agree on")
 }
+
+// TestOutcome_IsReadFromTheResultNotTheClock — CRI re-gate, and the case my
+// previous test could not see because it left StartedAt alone.
+//
+// `register` and `join` both decided "was this a resume?" by comparing the
+// manifest's StartedAt with a clock reading taken just before the call. But
+// StartedAt was persisted in an earlier life: it says when the session BEGAN,
+// not what this call did. With a StartedAt in the future — clock rollback, a
+// restored VM, a manifest carried from another machine — both said the opposite
+// of what happened: `register` announced a derivation it had not performed, and
+// `join` reported `registered-new` for a session it had just reclaimed.
+//
+// The temporal form of "which object is this a property of": a persisted field
+// is evidence about THEN. The answer was in the same file eleven lines below —
+// LastReclaim, set in memory by this very call, already used there for the
+// reclaim notice.
+//
+// The fixture puts StartedAt in 2099 so the OLD criterion is guaranteed wrong,
+// which is the only way this test can fail for the right reason.
+func TestOutcome_IsReadFromTheResultNotTheClock(t *testing.T) {
+	dataDir := t.TempDir()
+	base := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700))
+	odd := filepath.Join(base, "a+b") // basename that would derive something else
+	require.NoError(t, os.MkdirAll(odd, 0o700))
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	require.NoError(t, runRegister([]string{"--role=esc", "--json=false", "--agent-name=ESC-custom", "--project-path=" + odd}))
+	entries, err := os.ReadDir(filepath.Join(dataDir, "sessions"))
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	sid := entries[0].Name()
+
+	mgr := newSessionManager(config.Config{DataDir: dataDir})
+	skew := func() {
+		t.Helper()
+		mf, lerr := mgr.LoadManifest(sid)
+		require.NoError(t, lerr)
+		mf.PID = 999999999                                         // abandoned, so a resume may take it
+		mf.StartedAt = time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC) // the future
+		require.NoError(t, mgr.SaveManifest(mf))
+	}
+
+	t.Run("register does not announce a derivation it did not perform", func(t *testing.T) {
+		skew()
+		stderr := captureStderr(t, func() {
+			require.NoError(t, runRegister([]string{"--role=esc", "--json=false", "--resume", "--project-path=" + odd}))
+		})
+		assert.NotContains(t, stderr, "derived", "the name was adopted, not derived — whatever the clock says")
+		assert.NotContains(t, stderr, "a_2Bb", "and the identity it did NOT take must not be printed")
+
+		mf, lerr := mgr.LoadManifest(sid)
+		require.NoError(t, lerr)
+		assert.Equal(t, "ESC-custom", mf.AgentName)
+	})
+
+	t.Run("join reports resumed, not registered-new", func(t *testing.T) {
+		skew()
+		out := captureStdout(t, func() {
+			require.NoError(t, runJoin([]string{"--role=esc", "--project-path=" + odd}))
+		})
+		assert.Contains(t, out, "resumed", "the session was reclaimed: id and inbox are the same one")
+		assert.NotContains(t, out, "registered-new")
+
+		after, rerr := os.ReadDir(filepath.Join(dataDir, "sessions"))
+		require.NoError(t, rerr)
+		assert.Len(t, after, 1, "and nothing new was created, which is what makes the label a lie")
+		assert.Equal(t, sid, after[0].Name())
+	})
+}

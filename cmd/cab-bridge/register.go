@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
@@ -78,7 +77,6 @@ func runRegister(args []string) error {
 	// stdout stays clean.
 	runAutoGC(cfg, scope, os.Stderr)
 
-	before := time.Now().UTC()
 	mf, release, err := mgr.Register(context.Background(), session.RegisterOpts{
 		ProjectPath: pp,
 		AgentName:   *agentName,
@@ -111,8 +109,7 @@ func runRegister(args []string) error {
 	// So: after the write, and only for a genuinely NEW registration. On a resume
 	// the name is adopted from the session that already exists (lot 1) — nothing
 	// is derived, so there is nothing to announce.
-	resumed := mf.StartedAt.Before(before)
-	if *agentName == "" && !resumed {
+	if *agentName == "" && !mf.WasResumed() {
 		if derived, changed := session.SanitizeDerivedName(pp); changed {
 			fmt.Fprintf(os.Stderr, "register: this directory is called %q, which cannot be used as an agent name as it stands — derived %q instead\n",
 				filepath.Base(pp), derived)
