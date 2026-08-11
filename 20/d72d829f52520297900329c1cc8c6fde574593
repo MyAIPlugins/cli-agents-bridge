@@ -1,0 +1,44 @@
+plugins/cli-agents-bridge/skills/bridge-workflow/SKILL.md
+  s_ea503823ea741c::t_b33e97cfc485e4 37
+tests/integration/skill_drift_test.go
+  s_ea503823ea741c::t_33effae5852143 1-67
+CHANGELOG.md
+  s_ea503823ea741c::t_368bd7791f8ca0 128
+cmd/cab-bridge/verbs.go
+  s_ea503823ea741c::t_d788409522556a 18,248,491,1006,1065
+cmd/cab-bridge/recipient_test.go
+  s_ea503823ea741c::t_368bd7791f8ca0 22-23,224-225
+internal/shellarg/shellarg_test.go
+  s_ea503823ea741c::t_2b4d55658476f8 1-144
+cmd/cab-bridge/next.go
+  s_ea503823ea741c::t_a06b9a41cc1e37 21,107-110,112-143,667-672
+internal/shellarg/shellarg.go
+  s_ea503823ea741c::t_8a90d6904cec0c 1-69
+cmd/cab-bridge/cleanup.go
+  s_ea503823ea741c::t_d788409522556a 87
+  s_ea503823ea741c::t_bf50ca42466acf 15
+internal/session/reconnect.go
+  s_ea503823ea741c::t_d788409522556a 7,148
+cmd/cab-bridge/peers.go
+  s_ea503823ea741c::t_50d8318fd9827b 17,160-169
+internal/session/agentname.go
+  s_ea503823ea741c::t_368bd7791f8ca0 15-31
+docs/DESIGN-v0.8-mailbox.md
+  s_ea503823ea741c::t_b33e97cfc485e4 336
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "20d72d829f52520297900329c1cc8c6fde574593",
+  "prompts": {},
+  "sessions": {
+    "s_ea503823ea741c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "446e39f2-1d7e-4224-8bb9-b841db1a013b",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
