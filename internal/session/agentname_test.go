@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -127,17 +128,13 @@ func TestApplyV1Defaults_SanitisesTheDerivedName(t *testing.T) {
 // because the property is not "no spaces" — it is that a name must reach the
 // binary as ONE argument and be read as a recipient once it does.
 //
-// Two clauses, and they are not the same clause twice:
-//   - the shell must deliver it whole. UNQUOTED, `cab-bridge tell ESC bridge`
-//     splits, and with an agent called `ESC` alive it delivered the six bytes of
-//     the second half TO THAT AGENT, exit 0. Quoted it arrives intact and is
-//     refused by policy instead — a recipient that only works when it is quoted
-//     is a recipient that will be pasted wrong. (The first version of this
-//     comment said `tell 'ESC bridge'` was the one that split, which is backwards:
-//     the quotes are what prevent it. CRI diff-gate P2-3.)
-//   - the verbs must read it as a positional. `cab-bridge tell -foo hi` is
-//     refused at verbs.go:490 before any lookup, so a name starting with `-` is
-//     unaddressable however carefully it is quoted (CRI design-gate #2).
+// SEPARATED BY CLASS, and that is the finding rather than a tidiness: the first
+// version asserted `Contains("ONE argument")` over every refusal at once, so it
+// could not tell a true sentence from a false one. Three successive versions of
+// the message claimed a MECHANISM — "the shell splits this before the tool runs"
+// — that is true for whitespace and false for `+`, `:`, a wildcard or a
+// multi-byte rune, all of which arrive intact. A single Contains over the whole
+// class is exactly the test that keeps passing while the sentence is wrong.
 func TestValidateAgentName_TheGrammar(t *testing.T) {
 	t.Parallel()
 
@@ -145,21 +142,51 @@ func TestValidateAgentName_TheGrammar(t *testing.T) {
 		assert.NoError(t, ValidateAgentName(ok), "%q is addressable", ok)
 	}
 
-	// The shell clause.
-	for _, bad := range []string{"ESC bridge", "a\tb", "a\nb", "it's", "back`tick", "a$b", "a;b", "a*b", `a\b`, "a|b"} {
+	// Class 1 — WHITESPACE. The founding repro: unquoted, the shell really does
+	// split it, and `tell ESC bridge` delivered six bytes to an agent called
+	// `ESC`, exit 0.
+	for _, bad := range []string{"ESC bridge", "a\tb", "a\nb"} {
 		err := ValidateAgentName(bad)
 		require.Error(t, err, "%q", bad)
-		assert.Contains(t, err.Error(), "ONE argument",
-			"the reason is the shell, and an error that does not say so reads as an arbitrary rule")
+		assert.Contains(t, err.Error(), "supported grammar", "%q: the rule is what the message states", bad)
 	}
 
-	// The positional clause: a leading dash survives any quoting and still loses.
+	// Class 2 — CHARACTERS THE SHELL DOES NOT TOUCH. `a+b` and `a:b` reach the
+	// tool whole, quoted or not; they are refused by POLICY, so the message must
+	// not tell the reader their input was split. This is the assertion the
+	// earlier tests could not make.
+	for _, bad := range []string{"a+b", "a:b", "a,b", "a=b"} {
+		err := ValidateAgentName(bad)
+		require.Error(t, err, "%q", bad)
+		assert.Contains(t, err.Error(), "supported grammar", "%q", bad)
+		assert.NotContains(t, err.Error(), "is split", "%q is NOT split by any shell — do not tell the reader it was", bad)
+		assert.NotContains(t, err.Error(), "before the tool", "%q reached the tool: the tool is printing this", bad)
+	}
+
+	// Class 3 — SHELL METACHARACTERS. Neither plainly split nor plainly inert:
+	// they are rewritten, expanded or eaten depending on the shell, which is
+	// precisely why the message describes the RULE and not the mechanism.
+	for _, bad := range []string{"it's", "back`tick", "a$b", "a;b", "a*b", `a\b`, "a|b"} {
+		err := ValidateAgentName(bad)
+		require.Error(t, err, "%q", bad)
+		assert.Contains(t, err.Error(), "supported grammar", "%q", bad)
+	}
+
+	// Class 4 — NON-ASCII. Arrives intact everywhere; refused because the
+	// grammar is deliberately narrow, and the message must not invent a cause.
+	for _, bad := range []string{"caffè", "日本", "naïve"} {
+		err := ValidateAgentName(bad)
+		require.Error(t, err, "%q", bad)
+		assert.NotContains(t, err.Error(), "is split", "%q is not split anywhere", bad)
+	}
+
+	// Class 5 — the POSITIONAL clause, which quoting cannot rescue.
 	err := ValidateAgentName("-dash")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "flag", "the reason here is the CLI grammar, not the shell — a different cause deserves a different sentence")
+	assert.Contains(t, err.Error(), "flag",
+		"a leading dash loses at the CLI grammar, not at the shell: a different cause, a different sentence")
 
-	// And `@` keeps the reason it already had: the addressing grammar, not the
-	// shell. Two causes, two sentences.
+	// Class 6 — `@` keeps the reason it always had: the addressing grammar.
 	err = ValidateAgentName("VAL@home")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "separates a name from its project")
@@ -331,4 +358,87 @@ func TestApplyV1Defaults_HeartbeatPersistsTheHistoricName(t *testing.T) {
 		"the heartbeat materialised the name — it must be the one the old binary showed, not a repaired one")
 	assert.Empty(t, onDisk.FormerAgentNames,
 		"and nothing was renamed, so there is no history to invent")
+}
+
+// --- the inverse, made executable (CRI re-gate P2) --------------------------
+
+// decodeToken is the inverse of escapeToken, and it exists ONLY here.
+//
+// Production has no need to decode a derived name; what production needs is the
+// GUARANTEE that an inverse exists, because that is what makes the encoding
+// injective. A comment claiming "the proof is the inverse" is a sentence with no
+// way to fail. Writing the inverse in the test turns that sentence into an
+// oracle: if escapeToken ever stops being invertible, this stops round-tripping.
+func decodeToken(s string) (string, bool) {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] != markerByte {
+			b.WriteByte(s[i])
+			continue
+		}
+		if i+2 >= len(s) {
+			return "", false
+		}
+		hi, lo := unhex(s[i+1]), unhex(s[i+2])
+		if hi < 0 || lo < 0 {
+			return "", false
+		}
+		b.WriteByte(byte(hi<<4 | lo))
+		i += 2
+	}
+	return b.String(), true
+}
+
+func unhex(c byte) int {
+	switch {
+	case c >= '0' && c <= '9':
+		return int(c - '0')
+	case c >= 'A' && c <= 'F':
+		return int(c-'A') + 10
+	}
+	return -1
+}
+
+// TestEscapeToken_IsInvertible is EXHAUSTIVE where exhaustive is possible, which
+// is the difference between this and the corpus test above.
+//
+// The corpus falsifies: it looks for a counterexample among strings someone
+// chose. This enumerates every single byte and every pair of bytes — 256 + 65536
+// inputs, the complete domain up to length two — so for that domain it does not
+// sample the property, it decides it. Beyond length two the inverse argument
+// carries the rest: escapeToken is a per-byte map, so a decoder that is correct
+// on every one-and-two-byte sequence is correct on their concatenations.
+func TestEscapeToken_IsInvertible(t *testing.T) {
+	t.Parallel()
+
+	check := func(in string) {
+		t.Helper()
+		out := escapeToken(in)
+		back, ok := decodeToken(out)
+		require.True(t, ok, "%q -> %q did not decode at all", in, out)
+		require.Equal(t, in, back, "%q -> %q -> %q: the inverse is what makes this injective", in, out, back)
+	}
+
+	for i := 0; i < 256; i++ {
+		check(string([]byte{byte(i)}))
+	}
+	for i := 0; i < 256; i++ {
+		for j := 0; j < 256; j++ {
+			check(string([]byte{byte(i), byte(j)}))
+		}
+	}
+
+	// Injectivity follows from invertibility, but assert it directly on the
+	// single-byte domain too — a reader should not have to take the implication
+	// on trust either.
+	seen := make(map[string]string, 256)
+	for i := 0; i < 256; i++ {
+		in := string([]byte{byte(i)})
+		out := escapeToken(in)
+		if prev, dup := seen[out]; dup {
+			t.Fatalf("collision on single bytes: %q and %q both -> %q", prev, in, out)
+		}
+		seen[out] = in
+	}
+	assert.Len(t, seen, 256, "256 distinct bytes, 256 distinct encodings")
 }

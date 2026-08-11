@@ -690,7 +690,10 @@ func TestJoin_LegacyUnsafeNameIsNamedAndRepairable(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tc.repaired, mf.AgentName)
 			assert.Contains(t, mf.FormerAgentNames, tc.unsafe,
-				"a peer still writing to the old name has to be told where it went")
+				"the old name stays ON RECORD, which is all the message promises — for `-dash` "+
+					"and for anything with `@` no peer can be redirected, because the verbs "+
+					"refuse those before the lookup that would do it (see "+
+					"TestRepairedSession_OldNameIsRecordedNotForwarded, which runs `tell`)")
 			assert.FileExists(t, filepath.Join(dataDir, "sessions", sid, "inbox", "msg-aaaaaaaaaaaa.json"),
 				"same inbox — checked against the session's real path, not one rebuilt from a variable")
 		})
@@ -897,4 +900,207 @@ func TestRepairCommand_IsRunnableFromAnywhere(t *testing.T) {
 	}
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, runSendVerb("tell", message.TypeNotify, []string{"dash", "hi"}, strings.NewReader(""), &stdout, &stderr))
+}
+
+// TestJoin_RelativeProjectPathIsTheSameProject — CRI re-gate P2.
+//
+// `pp` reached scope detection, the occupant lookup and the name derivation as
+// the caller typed it. With `--project-path=.` that meant: a name derived from
+// `.` (`ESC-_2E`), and findSessionHere comparing `Clean(".")` against the stored
+// ABSOLUTE path, so the occupant was invisible.
+//
+// The shape suggests "two sessions", and I assumed that. Executed, it is worse
+// in a different way: the cross-name guard then refuses the re-join with "this
+// project already has a LIVE ESC-_2E" — the session locks its own owner out,
+// permanently, which is F-110 again. Written down because the deduction was
+// wrong and only running it said so.
+func TestJoin_RelativeProjectPathIsTheSameProject(t *testing.T) {
+	dataDir := t.TempDir()
+	base := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700))
+	work := filepath.Join(base, "work")
+	require.NoError(t, os.MkdirAll(work, 0o700))
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+	t.Chdir(work)
+
+	require.NoError(t, runJoin([]string{"--role=esc", "--project-path=."}))
+	entries, err := os.ReadDir(filepath.Join(dataDir, "sessions"))
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	sid := entries[0].Name()
+
+	mgr := newSessionManager(config.Config{DataDir: dataDir})
+	mf, err := mgr.LoadManifest(sid)
+	require.NoError(t, err)
+	assert.Equal(t, "ESC-work", mf.AgentName,
+		"the name comes from the directory, not from how the flag spelled it")
+
+	// The re-arm the skill prescribes, in all three spellings of one place.
+	for _, spelling := range []string{".", work, filepath.Join(work, ".")} {
+		require.NoError(t, runJoin([]string{"--role=esc", "--project-path=" + spelling}),
+			"%q is the same project: a re-join must find the occupant, not stop on it", spelling)
+		after, rerr := os.ReadDir(filepath.Join(dataDir, "sessions"))
+		require.NoError(t, rerr)
+		assert.Len(t, after, 1, "%q must not produce a second session", spelling)
+		assert.Equal(t, sid, after[0].Name(), "%q resolves to the same session", spelling)
+	}
+}
+
+// TestRegister_SaysWhenTheNameIsNotTheDirectorys — CRI re-gate P2-5.
+//
+// SanitizeDerivedName returns `changed` so the caller can say so out loud, and
+// `join` did. `register` printed the id and nothing else, so `my repo` quietly
+// became `my_20repo`. The two commands differed for no reason anybody chose.
+func TestRegister_SaysWhenTheNameIsNotTheDirectorys(t *testing.T) {
+	dataDir := t.TempDir()
+	base := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700))
+	spaced := filepath.Join(base, "my repo")
+	plain := filepath.Join(base, "plain")
+	require.NoError(t, os.MkdirAll(spaced, 0o700))
+	require.NoError(t, os.MkdirAll(plain, 0o700))
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	stderr := captureStderr(t, func() {
+		require.NoError(t, runRegister([]string{"--role=esc", "--json=false", "--project-path=" + spaced}))
+	})
+	assert.Contains(t, stderr, "my repo", "name the directory")
+	assert.Contains(t, stderr, "my_20repo", "and the name it actually got")
+
+	// The quiet cases stay quiet: nothing to announce when nothing changed, and
+	// nothing to announce when the caller chose the name.
+	stderr = captureStderr(t, func() {
+		require.NoError(t, runRegister([]string{"--role=esc", "--json=false", "--project-path=" + plain}))
+	})
+	assert.NotContains(t, stderr, "deriving from", "an unchanged name is not news")
+
+	stderr = captureStderr(t, func() {
+		require.NoError(t, runRegister([]string{"--role=val", "--json=false", "--agent-name=VAL-chosen", "--project-path=" + spaced, "--force-new"}))
+	})
+	assert.NotContains(t, stderr, "derived", "nothing was derived: the caller said the name")
+}
+
+// TestRegister_NoticeDoesNotAnnounceADerivationThatWillNotHappen — CRI re-gate
+// P2-1, and the branch the first version of the notice did not have.
+//
+// That version ran BEFORE Manager.Register, so on `--resume` it printed
+// `deriving from "a_2Bb"` and the same command then returned `ESC-custom`: two
+// surfaces of one command stating two different identities, the printed one
+// false. Lot 1 had just established that a resume ADOPTS the existing name — so
+// the notice was describing a derivation that was not going to occur.
+//
+// Declaring an outcome before it happens is the oldest class in this project,
+// and I put it back in the lot that closes it. The test is on the resume branch
+// because that is the one that was missing, not the one that was easy.
+func TestRegister_NoticeDoesNotAnnounceADerivationThatWillNotHappen(t *testing.T) {
+	dataDir := t.TempDir()
+	base := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700))
+	odd := filepath.Join(base, "a+b") // a directory whose basename IS escaped
+	require.NoError(t, os.MkdirAll(odd, 0o700))
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	// Registered with a name the caller chose, in a directory that would derive
+	// something else entirely.
+	require.NoError(t, runRegister([]string{"--role=esc", "--json=false", "--agent-name=ESC-custom", "--project-path=" + odd}))
+	entries, err := os.ReadDir(filepath.Join(dataDir, "sessions"))
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	sid := entries[0].Name()
+
+	mgr := newSessionManager(config.Config{DataDir: dataDir})
+	mf, err := mgr.LoadManifest(sid)
+	require.NoError(t, err)
+	mf.PID = 999999999 // abandoned, so the resume may take it
+	require.NoError(t, mgr.SaveManifest(mf))
+
+	stderr := captureStderr(t, func() {
+		require.NoError(t, runRegister([]string{"--role=esc", "--json=false", "--resume", "--project-path=" + odd}))
+	})
+	assert.NotContains(t, stderr, "derived",
+		"a resume adopts the existing name — announcing a derivation states an outcome that will not happen")
+	assert.NotContains(t, stderr, "a_2Bb",
+		"and it must certainly not name the identity the session did NOT take")
+
+	after, err := os.ReadDir(filepath.Join(dataDir, "sessions"))
+	require.NoError(t, err)
+	require.Len(t, after, 1)
+	assert.Equal(t, sid, after[0].Name(), "same session")
+	mf, err = mgr.LoadManifest(sid)
+	require.NoError(t, err)
+	assert.Equal(t, "ESC-custom", mf.AgentName, "and the name the surfaces must agree on")
+}
+
+// TestOutcome_IsReadFromTheResultNotTheClock — CRI re-gate, and the case my
+// previous test could not see because it left StartedAt alone.
+//
+// `register` and `join` both decided "was this a resume?" by comparing the
+// manifest's StartedAt with a clock reading taken just before the call. But
+// StartedAt was persisted in an earlier life: it says when the session BEGAN,
+// not what this call did. With a StartedAt in the future — clock rollback, a
+// restored VM, a manifest carried from another machine — both said the opposite
+// of what happened: `register` announced a derivation it had not performed, and
+// `join` reported `registered-new` for a session it had just reclaimed.
+//
+// The temporal form of "which object is this a property of": a persisted field
+// is evidence about THEN. The answer was in the same file eleven lines below —
+// LastReclaim, set in memory by this very call, already used there for the
+// reclaim notice.
+//
+// The fixture puts StartedAt in 2099 so the OLD criterion is guaranteed wrong,
+// which is the only way this test can fail for the right reason.
+func TestOutcome_IsReadFromTheResultNotTheClock(t *testing.T) {
+	dataDir := t.TempDir()
+	base := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700))
+	odd := filepath.Join(base, "a+b") // basename that would derive something else
+	require.NoError(t, os.MkdirAll(odd, 0o700))
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	require.NoError(t, runRegister([]string{"--role=esc", "--json=false", "--agent-name=ESC-custom", "--project-path=" + odd}))
+	entries, err := os.ReadDir(filepath.Join(dataDir, "sessions"))
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	sid := entries[0].Name()
+
+	mgr := newSessionManager(config.Config{DataDir: dataDir})
+	skew := func() {
+		t.Helper()
+		mf, lerr := mgr.LoadManifest(sid)
+		require.NoError(t, lerr)
+		mf.PID = 999999999                                         // abandoned, so a resume may take it
+		mf.StartedAt = time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC) // the future
+		require.NoError(t, mgr.SaveManifest(mf))
+	}
+
+	t.Run("register does not announce a derivation it did not perform", func(t *testing.T) {
+		skew()
+		stderr := captureStderr(t, func() {
+			require.NoError(t, runRegister([]string{"--role=esc", "--json=false", "--resume", "--project-path=" + odd}))
+		})
+		assert.NotContains(t, stderr, "derived", "the name was adopted, not derived — whatever the clock says")
+		assert.NotContains(t, stderr, "a_2Bb", "and the identity it did NOT take must not be printed")
+
+		mf, lerr := mgr.LoadManifest(sid)
+		require.NoError(t, lerr)
+		assert.Equal(t, "ESC-custom", mf.AgentName)
+	})
+
+	t.Run("join reports resumed, not registered-new", func(t *testing.T) {
+		skew()
+		out := captureStdout(t, func() {
+			require.NoError(t, runJoin([]string{"--role=esc", "--project-path=" + odd}))
+		})
+		assert.Contains(t, out, "resumed", "the session was reclaimed: id and inbox are the same one")
+		assert.NotContains(t, out, "registered-new")
+
+		after, rerr := os.ReadDir(filepath.Join(dataDir, "sessions"))
+		require.NoError(t, rerr)
+		assert.Len(t, after, 1, "and nothing new was created, which is what makes the label a lie")
+		assert.Equal(t, sid, after[0].Name())
+	})
 }

@@ -206,6 +206,28 @@ type Manifest struct {
 	LastReclaim *ReclaimInfo `json:"-"`
 }
 
+// WasResumed reports whether the Register call that returned this manifest
+// RESUMED an existing session rather than creating one.
+//
+// It exists so that no caller has to infer the answer, which is how two of them
+// got it wrong: `register` and `join` both decided by comparing StartedAt with
+// the wall clock taken just before the call. StartedAt was persisted in an
+// earlier life, so it says when the session BEGAN, not what this call did — and
+// with a manifest whose StartedAt lies in the future (clock rollback, a restored
+// VM, a file from another machine) both printed the opposite of what happened:
+// a derivation that never occurred, and `registered-new` for a session that was
+// reclaimed. Reproduced on the binary (CRI re-gate).
+//
+// The distinction is the temporal form of "which object is this a property of":
+// a persisted field is evidence about THEN. LastReclaim is set in memory by
+// tryReuse on this very call and never read from disk, so it is evidence about
+// NOW — which is the question.
+//
+// A method rather than the expression at each site, so the translation from
+// "reclaimed something" to "was a resume" lives in ONE place: if the two ever
+// stop coinciding, there is a single line to change instead of a search.
+func (m *Manifest) WasResumed() bool { return m.LastReclaim != nil }
+
 // Validate checks that the manifest has the minimum required fields for
 // runtime safety. SessionID and ProjectPath are non-negotiable: missing
 // either indicates a corrupt or hand-crafted manifest we should not trust.

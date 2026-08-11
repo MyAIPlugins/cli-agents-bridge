@@ -84,13 +84,23 @@ func nameSafeLeadRune(r rune) bool {
 //	unlisted  the name is outside the portable grammar (F-124)
 //	a lead -  the verbs read it as a flag before any lookup (verbs.go:490)
 //
-// The middle one used to explain itself by saying the shell splits the name
-// "before the tool ever runs — so nothing here could catch it", which was FALSE
-// in a way that reading it out loud exposes: the tool is what prints it. Quoted,
-// `ESC bridge` and `a+b` arrive whole and are refused by POLICY; unquoted, a
-// space splits them and the tool receives the pieces. Two different facts, and
-// the error can only honestly claim the first — the second is why the policy
-// exists, not what happened to this input.
+// The middle one says WHAT THE RULE IS and stops there, and getting to that took
+// three wrong versions — each one describing a MECHANISM that was false for part
+// of the class:
+//
+//	v1  "the shell splits it before the tool runs, so nothing here could
+//	     catch it"        — printed BY the tool, false as you read it
+//	v2  "unquoted, a name like this one is split"
+//	                      — `a+b` is not split by anything; only whitespace is
+//
+// The policy is sound and the refusals are right; what kept being wrong was the
+// explanation. A rule ("this is the supported grammar") is checkable and stays
+// true; a mechanism ("here is what happens to your input") has to hold for every
+// member of the class, and this class contains a space, a `+`, a wildcard and a
+// multi-byte rune, which the shell treats four different ways.
+//
+// So: name the grammar, name the risk of pasting something outside it, and claim
+// nothing about what became of this particular string.
 //
 // The empty string is not a name: it is the sentinel asking Register to derive
 // one, and `join` validates the flag before knowing whether it was passed.
@@ -104,7 +114,7 @@ func ValidateAgentName(name string) error {
 	}
 	for _, r := range name {
 		if !nameSafeRune(r) {
-			return fmt.Errorf("agent name %q cannot contain %q: an agent name has to be ONE argument on any shell and on any platform, so the supported grammar is letters, digits, %q, %q and %q. Unquoted, a name like this one is split before the tool sees it; quoted it arrives whole and is still refused, because a recipient that only works when it is quoted is a recipient that will be pasted wrong",
+			return fmt.Errorf("agent name %q cannot contain %q: the supported grammar is letters, digits, %q, %q and %q, so that a name is ONE argument on any shell and can be pasted from `peers` without quoting. A name outside it may still be reachable if you quote it every time, and that is the part nobody does reliably",
 				name, string(r), "_", ".", "-")
 		}
 	}
@@ -223,14 +233,18 @@ func readableToken(s string) string {
 // BUG-6 check is on the project path — and closing it belongs to a separate lot,
 // tracked. Escaping protects names FUSED BY THIS FUNCTION, nothing wider.
 func SanitizeDerivedName(absProjectPath string) (string, bool) {
+	// THE DOMAIN, stated because the previous version guessed at it: filepath.Base
+	// NEVER returns an empty string — `Base("")` is `"."`, `Base("/")` is `"/"` —
+	// and escapeToken produces at least one byte for every input byte. So the
+	// result cannot be empty, and the fallback branch that used to sit here was
+	// dead code described as a fragile precondition (CRI re-gate). Removed rather
+	// than kept: an unreachable branch with a comment explaining when it fires is
+	// how a reader learns something untrue about the function.
+	//
+	// derivedNameFallback stays for SuggestAddressableName, which repairs an
+	// arbitrary NAME rather than a path and can genuinely be left with nothing.
 	base := filepath.Base(absProjectPath)
 	out := escapeToken(base)
-	if out == "" {
-		// Not reachable from a real path — filepath.Base never returns "" — but
-		// the function is total, and this is the one input for which it is not
-		// injective. Stated rather than left to be discovered.
-		out = derivedNameFallback
-	}
 	return out, out != base
 }
 

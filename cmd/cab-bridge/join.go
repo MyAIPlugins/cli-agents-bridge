@@ -61,7 +61,7 @@ func runJoin(args []string) error {
 	fs := flag.NewFlagSet("join", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	role := fs.String("role", "", "this agent's role (required): "+session.RoleNamesWithNote())
-	agentName := fs.String("agent-name", "", "this agent's name; empty = derived from the scope")
+	agentName := fs.String("agent-name", "", "this agent's name; empty derives one from the WORKING DIRECTORY basename (not the scope — deriving from the scope would give every agent of a role in one repository the same name), escaped into the supported grammar: letters, digits, `_`, `.`, `-`")
 	projectPath := fs.String("project-path", "", "project root (default: cwd) — test injection point")
 	team := fs.String("team", "", "team label isolating this group in a shared data dir; usually unneeded")
 	forceNew := fs.Bool("force-new", false, "register a second session even if one already matches this identity")
@@ -100,6 +100,27 @@ func runJoin(args []string) error {
 		if pp, err = os.Getwd(); err != nil {
 			return fmt.Errorf("join: getwd: %w", err)
 		}
+	}
+	// ABSOLUTE, once, before scope / occupant lookup / derivation — the same
+	// filepath.Abs that Manager.Register applies to what it stores, so the two
+	// stop disagreeing about which project this is.
+	//
+	// With `--project-path=.` the raw token reached all three: the name derived
+	// from `.` (`ESC-_2E`), and findSessionHere compared `Clean(".")` against the
+	// stored ABSOLUTE path and never matched — so the occupant was invisible and
+	// the cross-name guard then refused the re-join with "this project already
+	// has a LIVE ESC-_2E", i.e. the session blocked its own owner out. Not two
+	// sessions, as the shape suggests: a permanent stop on re-entry, which is
+	// F-110 all over again.
+	//
+	// Abs and NOT EvalSymlinks, deliberately: resolveScope canonicalises symlinks
+	// on the SCOPE axis, and its own comment records that ProjectPath stays
+	// lexical on a separate axis. Resolving symlinks here would make this path
+	// stop matching the ProjectPath already stored in every existing manifest.
+	if abs, aerr := filepath.Abs(pp); aerr == nil {
+		pp = abs
+	} else {
+		fmt.Fprintf(os.Stderr, "join: cannot make %q absolute (non-fatal): %v\n", pp, aerr)
 	}
 	scope := resolveScope(pp)
 
@@ -303,7 +324,6 @@ func runJoin(args []string) error {
 		}
 	}
 
-	before := time.Now().UTC()
 	mf, release, err := mgr.Register(context.Background(), session.RegisterOpts{
 		ProjectPath: pp,
 		AgentName:   name,
@@ -318,8 +338,12 @@ func runJoin(args []string) error {
 	}
 	_ = release()
 
+	// The OUTCOME, not the clock. This read `mf.StartedAt.Before(before)`, and
+	// StartedAt belongs to whenever the session began — so on a manifest whose
+	// StartedAt is in the future it announced `registered-new` for a session it
+	// had just reclaimed, id and inbox included (CRI re-gate, reproduced).
 	action := "registered-new"
-	if mf.StartedAt.Before(before) {
+	if mf.WasResumed() {
 		action = "resumed"
 	}
 	if *role == session.RoleVal {

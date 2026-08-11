@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
@@ -16,10 +17,10 @@ func runRegister(args []string) error {
 	fs := flag.NewFlagSet("register", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	role := fs.String("role", session.RoleNeutral, "session role — "+session.RoleNamesWithNote()+"; neutral is the v1-read fallback")
-	agentName := fs.String("agent-name", "", "human-readable name (default: project basename)")
+	agentName := fs.String("agent-name", "", "human-readable name; empty derives one from the project directory basename, escaped into the supported grammar (letters, digits, `_`, `.`, `-`)")
 	projectPath := fs.String("project-path", "", "project root path (default: cwd)")
 	forceNew := fs.Bool("force-new", false, "override existing live session for the same project (BUG-6)")
-	resume := fs.Bool("resume", false, "resume an existing matching session (same agent-name/role/scope/team) instead of creating a new one — the idempotent post-compact/restart bootstrap (F-27); errors if a live session with this identity already exists (use --force-new for a second instance)")
+	resume := fs.Bool("resume", false, "resume the session already registered for this project instead of creating a new one — the idempotent post-compact/restart bootstrap (F-27). Matches on project path, role, scope and team; the agent name is used as a filter ONLY if you pass --agent-name, otherwise the existing name is adopted. Refuses when several sessions here answer to different names (say which with --agent-name). A live session with this identity is RECLAIMED, not refused — use --force-new for a deliberate second instance")
 	team := fs.String("team", "", "team label isolating this pair from others in the same data dir (F-5); peers --team filters on it")
 	asJSON := fs.Bool("json", true, "emit registration manifest as JSON on stdout (default true)")
 	// A-5: register has no --session-id (the id is DERIVED, not supplied). Define
@@ -59,6 +60,13 @@ func runRegister(args []string) error {
 		}
 	}
 
+	// Absolute before anything reads it, for the reason spelled out in join.go:
+	// Register stores filepath.Abs of this, and every lookup compares against
+	// what is stored.
+	if abs, aerr := filepath.Abs(pp); aerr == nil {
+		pp = abs
+	}
+
 	scope := resolveScope(pp)
 
 	// Auto-gc orphan sessions before creating a new one (v0.2.1, F10). Sweeps
@@ -80,6 +88,32 @@ func runRegister(args []string) error {
 	})
 	if err != nil {
 		return err
+	}
+
+	// SAY IT WHEN THE NAME IS NOT THE DIRECTORY'S — AFTER the fact, and only when
+	// a derivation actually happened (F-124 P2-5, then CRI re-gate P2-1).
+	//
+	// The first version of this notice ran BEFORE Register and announced
+	// `deriving from "a_2Bb"` on a `--resume` that then returned `ESC-custom`:
+	// two surfaces of one command stating two different identities, and the
+	// printed one false. It also fired ahead of a resume that turned out
+	// ambiguous, and ahead of registrations that then failed.
+	//
+	// It is the oldest class this project keeps meeting — DECLARING AN OUTCOME
+	// BEFORE IT HAPPENS is always a defect — and I reintroduced it, in the lot
+	// that exists to close exactly this. Previously: `sent` saying `archived`,
+	// a payload saying `delivered` before the commit landed, an implicit
+	// confirmation certifying deliveries that never occurred. Here: a `register`
+	// announcing a derivation it was not going to perform.
+	//
+	// So: after the write, and only for a genuinely NEW registration. On a resume
+	// the name is adopted from the session that already exists (lot 1) — nothing
+	// is derived, so there is nothing to announce.
+	if *agentName == "" && !mf.WasResumed() {
+		if derived, changed := session.SanitizeDerivedName(pp); changed {
+			fmt.Fprintf(os.Stderr, "register: this directory is called %q, which cannot be used as an agent name as it stands — derived %q instead\n",
+				filepath.Base(pp), derived)
+		}
 	}
 	// register subcommand only writes the manifest; lock release is the
 	// caller's responsibility for short-lived "register and exit" runs.
