@@ -10,8 +10,22 @@ permissions:
   contents: read
 
 jobs:
+  # THE GATE THAT AUTHORISES MERGES, and until now it was the weaker of the two.
+  #
+  # The Makefile carries seven lines explaining why `-count=1` is not optional
+  # (LL-11, learned twice): without it Go serves untouched packages from cache,
+  # so a change to a SHARED struct or helper never re-runs the tests of the
+  # packages that use it. This job ran without it — with `cache: true` restoring
+  # Go's build/test cache BETWEEN RUNS, which is exactly the condition the flag
+  # exists for. The strict door was the one nobody used; the one that decides
+  # merges was the loose one.
+  #
+  # And the job was called "lint + race" while running only `vet`: a name that
+  # asserts more than it executes, which is the same class the code it guards
+  # spent nine rounds closing. Fixed by making the execution match the name —
+  # staticcheck now runs here too — rather than by renaming the job down.
   test:
-    name: Test (lint + race)
+    name: Test (vet + staticcheck + race)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,8 +35,20 @@ jobs:
           cache: true
       - name: go vet
         run: go vet ./...
-      - name: go test -race
-        run: go test -race ./...
+      - name: staticcheck
+        # PINNED, and pinned to the version actually verified against this tree:
+        # v0.7.0 (staticcheck 2026.1), the one that reports zero warnings here on
+        # Go 1.26. Not @latest — a lint that moves under you turns an unrelated
+        # PR red for something its author did not write.
+        #
+        # The first draft of this line said v0.5.1, a number written from memory
+        # and never run. On a file that authorises merges.
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+          "$(go env GOPATH)/bin/staticcheck" ./...
+      - name: go test -race -count=1
+        # -count=1 is load-bearing: see the note above the job.
+        run: go test -race -count=1 ./...
 
   cross-compile:
     name: Cross-compile (${{ matrix.goos }}-${{ matrix.goarch }})
