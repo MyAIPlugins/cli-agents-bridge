@@ -818,3 +818,83 @@ func TestRepairedSession_OldNameIsRecordedNotForwarded(t *testing.T) {
 	assert.NotContains(t, err.Error(), "is now",
 		"and it certainly cannot say where the name went")
 }
+
+// TestRepairCommand_IsRunnableFromAnywhere runs the command the error PRINTS,
+// instead of asserting a substring of it.
+//
+// CRI re-gate P1: `register --resume --project-path=A` works from any cwd, and
+// the repair it suggested was `join --role=... --agent-name=...` with no path —
+// so `join` fell back to the CWD, registered a NEW session there, and left the
+// legacy one with its mail untouched. The message said "SAME id, SAME inbox"
+// and delivered neither.
+//
+// The previous test asserted that the error CONTAINED `join --agent-name`. It
+// did. A substring cannot notice that the command targets a different project —
+// fourth time in this lot that a test proved a property adjacent to the one that
+// mattered, and the way out was the same each time: run the thing.
+func TestRepairCommand_IsRunnableFromAnywhere(t *testing.T) {
+	dataDir := t.TempDir()
+	base := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700))
+	projA := filepath.Join(base, "work")     // where the legacy session lives
+	cwdB := filepath.Join(base, "elsewhere") // where the operator happens to be
+	require.NoError(t, os.MkdirAll(projA, 0o700))
+	require.NoError(t, os.MkdirAll(cwdB, 0o700))
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	require.NoError(t, runJoin([]string{"--role=esc", "--agent-name=ESC-ok", "--project-path=" + projA}))
+	entries, err := os.ReadDir(filepath.Join(dataDir, "sessions"))
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	legacyID := entries[0].Name()
+	plantUnsafeName(t, dataDir, legacyID, "-dash")
+	plantMsg(t, dataDir, legacyID, "inbox", "msg-aaaaaaaaaaaa", "val00001", "VAL-x", message.TypeQuery, "brief")
+
+	// The refusal, asked for from a DIFFERENT directory — which is what
+	// --project-path is for.
+	t.Chdir(cwdB)
+	err = runRegister([]string{"--role=esc", "--resume", "--project-path=" + projA})
+	require.Error(t, err)
+
+	// Pull the command out of the message and RUN IT. Splitting on spaces is
+	// exactly what a shell does, so a path with a space would break here — that
+	// is the known debt this lot leaves to lot 2, and the fixture avoids it on
+	// purpose rather than by accident.
+	var cmd []string
+	for _, line := range strings.Split(err.Error(), "\n") {
+		if f := strings.Fields(line); len(f) > 1 && f[0] == "cab-bridge" {
+			cmd = f[1:]
+			break
+		}
+	}
+	require.NotEmpty(t, cmd, "the error has to carry a command, not a description:\n%s", err)
+	require.Equal(t, "join", cmd[0])
+
+	require.NoError(t, runJoin(cmd[1:]), "the printed command must run as printed")
+
+	// SAME id, SAME inbox, ONE manifest — the three things the message promises.
+	after, err := os.ReadDir(filepath.Join(dataDir, "sessions"))
+	require.NoError(t, err)
+	assert.Len(t, after, 1, "the repair must not register a second session in whatever cwd I was standing in")
+	assert.Equal(t, legacyID, after[0].Name(), "SAME id")
+	assert.FileExists(t, filepath.Join(dataDir, "sessions", legacyID, "inbox", "msg-aaaaaaaaaaaa.json"), "SAME inbox")
+
+	mgr := newSessionManager(config.Config{DataDir: dataDir})
+	mf, err := mgr.LoadManifest(legacyID)
+	require.NoError(t, err)
+	assert.Equal(t, "dash", mf.AgentName)
+	assert.Contains(t, mf.FormerAgentNames, "-dash")
+
+	// And the session is addressable now: the point of the whole exercise.
+	require.NoError(t, runJoin([]string{"--role=val", "--agent-name=VAL-sender", "--project-path=" + cwdB}))
+	peers, _, perr := collectPeers(mgr, dataDir, 300, 65536, true, "", resolveScope(base))
+	require.NoError(t, perr)
+	for _, p := range peers {
+		if p.AgentName == "VAL-sender" {
+			t.Setenv("CAB_SESSION_ID", p.SessionID)
+		}
+	}
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, runSendVerb("tell", message.TypeNotify, []string{"dash", "hi"}, strings.NewReader(""), &stdout, &stderr))
+}

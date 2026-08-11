@@ -126,10 +126,25 @@ func (m *Manager) tryReuse(absProj string, opts RegisterOpts) (*Manifest, func()
 	// The remediation points at `join` on purpose: the repair already exists
 	// there, in one place, and a second implementation of it here is how two
 	// doors start disagreeing again.
+	//
+	// AND IT CARRIES --project-path. `register --resume --project-path=X` runs
+	// from any cwd, but the suggested `join` without that flag falls back to the
+	// CWD (join.go), so running the printed command from somewhere else
+	// registered a NEW session there and left the legacy one — with its mail —
+	// exactly where it was. The message promised "SAME id, SAME inbox" while
+	// doing neither: a command that promises more than it performs, which is this
+	// lot's own class one level up, written inside the error that repairs it.
+	// Found by executing the printed command instead of reading it.
+	//
+	// KNOWN DEBT, deliberate: ProjectPath may contain a space, and this string is
+	// meant to be pasted into a shell. Until lot 2 gives the tool a shell-safe
+	// rendering, this command is not paste-safe for such a path — F-124's own
+	// defect reproduced inside F-124's remediation. Carrying the target is the
+	// P1; quoting it is lot 2, and it must not be quietly forgotten here.
 	if verr := ValidateAgentName(c.mf.AgentName); verr != nil {
-		return nil, nil, fmt.Errorf("%w: the session here is named %q and cannot be addressed — %v\n  repair it in place (SAME id, SAME inbox):\n    cab-bridge join --role=%s --agent-name=%s",
+		return nil, nil, fmt.Errorf("%w: the session here is named %q and cannot be addressed — %v\n  repair it in place (SAME id, SAME inbox):\n    cab-bridge join --role=%s --agent-name=%s --project-path=%s",
 			ErrUnaddressableResume, c.mf.AgentName, verr,
-			defaultIfEmpty(opts.Role, RoleNeutral), SuggestAddressableName(c.mf.AgentName))
+			defaultIfEmpty(opts.Role, RoleNeutral), SuggestAddressableName(c.mf.AgentName), c.mf.ProjectPath)
 	}
 	release, lerr := AcquireLock(filepath.Join(m.sessionDir(c.id), "lock"), false)
 	if lerr != nil {
