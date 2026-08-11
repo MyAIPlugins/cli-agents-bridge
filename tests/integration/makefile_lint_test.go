@@ -274,22 +274,7 @@ func TestMakefile_InstallDevLinksWhatItJustBuilt(t *testing.T) {
 	require.NoError(t, os.MkdirAll(repo, 0o700))
 	require.NoError(t, os.MkdirAll(home, 0o700))
 
-	// A real copy of the TRACKED WORKING TREE — not `git archive HEAD`, which
-	// ships the last commit. The first version used HEAD and went red against the
-	// Makefile as committed: the test was right and the fixture was testing the
-	// wrong tree. A regression for a change must run against the change.
-	list := exec.Command("git", "ls-files", "-z")
-	list.Dir = repoRoot
-	tracked, err := list.Output()
-	require.NoError(t, err, "git ls-files")
-	tar := exec.Command("tar", "-c", "-f", "-", "--null", "-T", "-")
-	tar.Dir = repoRoot
-	tar.Stdin = bytes.NewReader(tracked)
-	tarball, err := tar.Output()
-	require.NoError(t, err, "tar the working tree")
-	untar := exec.Command("tar", "-x", "-C", repo)
-	untar.Stdin = bytes.NewReader(tarball)
-	require.NoError(t, untar.Run(), "untar into the spaced path")
+	copyWorkingTree(t, repoRoot, repo)
 
 	// Invoked with -C from a directory that is NOT the repo: the case where
 	// $(PWD) and $(CURDIR) disagree, and the only one that tells them apart.
@@ -319,4 +304,82 @@ func TestMakefile_InstallDevLinksWhatItJustBuilt(t *testing.T) {
 	info, err := os.Stat(gotTarget)
 	require.NoError(t, err, "the symlink must not dangle")
 	assert.NotZero(t, info.Mode()&0o111, "and what it points at must be executable")
+}
+
+// copyWorkingTree copies the source tree as it is RIGHT NOW into dst.
+//
+// Not `git archive HEAD`: that ships the last commit, so a regression for an
+// uncommitted change runs against the code without the change — which is how the
+// first version of this fixture went red against the defect it was removing.
+//
+// And not `git ls-files` alone either, which is what replaced it: that made the
+// whole suite depend on a .git directory, and `Makefile:11-15` declares the
+// no-git case SUPPORTED ("dev ... when not in a git repo, e.g. source tarball
+// build"). From an extracted tarball the build worked and this test failed on
+// valid sources — the fix to a tool opening the branch next door to the tool,
+// third time on this Makefile (CRI).
+//
+// A t.Skip there would have been worse than the bug: green precisely where
+// nobody verified anything, which is the class this whole arc has been closing.
+//
+// So: git when it is available, a plain walk otherwise. The two differ in one
+// way worth stating — the walk also copies UNTRACKED files, since without git
+// there is nothing to ask. Harmless for a fixture that only has to build.
+func copyWorkingTree(t *testing.T, src, dst string) {
+	t.Helper()
+
+	if out, err := exec.Command("git", "-C", src, "rev-parse", "--is-inside-work-tree").Output(); err == nil &&
+		strings.TrimSpace(string(out)) == "true" {
+		list := exec.Command("git", "ls-files", "-z")
+		list.Dir = src
+		tracked, lerr := list.Output()
+		require.NoError(t, lerr, "git ls-files")
+		tarc := exec.Command("tar", "-c", "-f", "-", "--null", "-T", "-")
+		tarc.Dir = src
+		tarc.Stdin = bytes.NewReader(tracked)
+		tarball, terr := tarc.Output()
+		require.NoError(t, terr, "tar the working tree")
+		untar := exec.Command("tar", "-x", "-C", dst)
+		untar.Stdin = bytes.NewReader(tarball)
+		require.NoError(t, untar.Run(), "untar into %s", dst)
+		return
+	}
+
+	// No git: walk. Skips .git (absent anyway, but a bare copy may carry one),
+	// bin/ (build output, rebuilt by the target under test), and dst itself in
+	// case somebody points it inside the tree.
+	require.NoError(t, filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, rerr := filepath.Rel(src, path)
+		if rerr != nil {
+			return rerr
+		}
+		if rel == "." {
+			return nil
+		}
+		if d.IsDir() && (d.Name() == ".git" || rel == "bin" || path == dst) {
+			return filepath.SkipDir
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		info, ierr := d.Info()
+		if ierr != nil {
+			return ierr
+		}
+		if !info.Mode().IsRegular() {
+			return nil // symlinks and friends: a build fixture does not need them
+		}
+		data, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return rerr
+		}
+		if merr := os.MkdirAll(filepath.Dir(target), 0o755); merr != nil {
+			return merr
+		}
+		return os.WriteFile(target, data, info.Mode().Perm())
+	}), "copying the source tree without git")
 }

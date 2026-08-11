@@ -182,5 +182,11 @@ lint: ## Run go vet + staticcheck (required; version pinned in .staticcheck-vers
 	fi
 	"$(STATICCHECK)" ./...
 
+# Quoted, and this is the one place in the file where it is not cosmetic: a
+# RECURSIVE DELETE composing its path from a variable. With the fixed default
+# `bin` nothing can go wrong today — the critic rightly declassed it — but
+# $(BIN_DIR) is overridable exactly like $(STATICCHECK), and "unquoted plus
+# destructive" is the single combination in this family that does not forgive
+# one mistake. One line, and it stops being the exception.
 clean: ## Remove build artifacts
-	rm -rf $(BIN_DIR)
+	rm -rf "$(BIN_DIR)"
