@@ -292,10 +292,11 @@ func TestResume_NoNameGivenFindsTheSessionWhateverItIsCalled(t *testing.T) {
 // for a directory called `a+b`, and `1b09ba0` stored `a-b-<digest>`. Neither is
 // what the current code derives.
 func TestResume_FindsASessionNamedByAnEarlierDerivation(t *testing.T) {
-	for _, historic := range []struct{ label, name string }{
+	for _, historic := range []struct {
+		label, name string
+	}{
 		{"the substituting derivation (725347c)", "a-b"},
 		{"the digest derivation (1b09ba0)", "a-b-59f4"},
-		{"the raw basename (pre-F-116)", "a+b"},
 	} {
 		t.Run(historic.label, func(t *testing.T) {
 			dir := t.TempDir()
@@ -338,14 +339,20 @@ func TestResume_FindsASessionNamedByAnEarlierDerivation(t *testing.T) {
 	}
 }
 
-// The branch the val asked to cover with a TEST rather than with the argument
-// that BUG-6 refuses it — because "the defence is on one path and the defect on
-// the other" is exactly what has bitten this lot twice.
+// TestResume_TwoNamesOnOnePathIsAmbiguousNotATieBreak REPLACES a test that
+// certified the wrong property, and the replacement is the finding.
 //
-// Two sessions, one project path, one role, different names: dropping the name
-// from the identity makes both of them match. The resolution has to stay
-// deterministic (most recent heartbeat first), never a silent pick of either.
-func TestResume_TwoNamesOnOnePathResolveDeterministically(t *testing.T) {
+// The first version asserted that the pick was DETERMINISTIC — five runs, same
+// answer — and it was true. But repeatability is not correctness: the pick took
+// the most recent heartbeat, which meant an empty mailbox over one holding a
+// message, silently. "Making a choice repeatable does not make it right"
+// (CRI re-gate P1-1), and §2.2 of the mailbox design already said that where
+// duplicates exist the system fails closed instead of choosing.
+//
+// Third time in this lot that a test of mine proved a property ADJACENT to the
+// one that was needed. The shape is always the same: I assert what the code
+// does, and the question was what it should do.
+func TestResume_TwoNamesOnOnePathIsAmbiguousNotATieBreak(t *testing.T) {
 	dir := t.TempDir()
 	mgr := NewManager(dir, time.Second)
 	proj := filepath.Join(dir, "work")
@@ -378,11 +385,113 @@ func TestResume_TwoNamesOnOnePathResolveDeterministically(t *testing.T) {
 	mf.LastHeartbeat = time.Now().UTC().Add(-time.Hour)
 	require.NoError(t, mgr.SaveManifest(mf))
 
-	for i := 0; i < 5; i++ {
-		matches, merr := mgr.findIdentityMatches(proj, RegisterOpts{Role: RoleEsc, Scope: proj, Resume: true})
-		require.NoError(t, merr)
-		require.Len(t, matches, 2, "both match now that the name is not a criterion")
-		assert.Equal(t, newer.SessionID, matches[0].id,
-			"and the order is the documented one — most recent heartbeat first, never a coin toss")
+	// Mail in the OLDER one, so a silent pick has something real to lose.
+	inbox := filepath.Join(dir, "sessions", older.SessionID, "inbox")
+	require.NoError(t, os.MkdirAll(inbox, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(inbox, "msg-aaaaaaaaaaaa.json"), []byte("{}"), 0o600))
+
+	_, _, err = mgr.Register(context.Background(), RegisterOpts{
+		ProjectPath: proj, Role: RoleEsc, Scope: proj, Resume: true,
+	})
+	require.Error(t, err, "two names on one path are two identities: never a silent pick")
+	assert.ErrorIs(t, err, ErrAmbiguousResume)
+	assert.Contains(t, err.Error(), "ESC-older", "the way out needs both names to choose between")
+	assert.Contains(t, err.Error(), "ESC-newer")
+	assert.Contains(t, err.Error(), "--agent-name", "and the flag that resolves it")
+
+	// Fail-closed means nothing moved: no third session, and the mail is where
+	// it was.
+	entries, err := os.ReadDir(filepath.Join(dir, "sessions"))
+	require.NoError(t, err)
+	assert.Len(t, entries, 2, "a refused resume must not register a fresh session either")
+	assert.FileExists(t, filepath.Join(inbox, "msg-aaaaaaaaaaaa.json"))
+
+	// And naming one resumes it: the ambiguity is in the question, not in the
+	// sessions, so the way out is an answer and never a cleanup.
+	got, release3, err := mgr.Register(context.Background(), RegisterOpts{
+		ProjectPath: proj, AgentName: "ESC-older", Role: RoleEsc, Scope: proj, Resume: true,
+	})
+	require.NoError(t, err)
+	require.NoError(t, release3())
+	assert.Equal(t, older.SessionID, got.SessionID, "the one I named, not the most recent one")
+}
+
+// The complement, and it must keep working: several records under ONE name are
+// the ordinary post-compact case, not an ambiguity — most-recent-first still
+// applies there. Without this the fix above would turn a normal resume into an
+// error the moment a session had ever been reclaimed.
+func TestResume_SeveralRecordsOfOneNameAreStillOneIdentity(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewManager(dir, time.Second)
+	proj := filepath.Join(dir, "work")
+	require.NoError(t, os.MkdirAll(proj, 0o700))
+
+	first, release, err := mgr.Register(context.Background(), RegisterOpts{
+		ProjectPath: proj, AgentName: "ESC-same", Role: RoleEsc, Scope: proj,
+	})
+	require.NoError(t, err)
+	require.NoError(t, release())
+	abandon(t, mgr, first.SessionID)
+
+	second, release2, err := mgr.Register(context.Background(), RegisterOpts{
+		ProjectPath: proj, AgentName: "ESC-same", Role: RoleEsc, Scope: proj, ForceNew: true,
+	})
+	require.NoError(t, err)
+	require.NoError(t, release2())
+	abandon(t, mgr, second.SessionID)
+
+	mf, err := mgr.LoadManifest(second.SessionID)
+	require.NoError(t, err)
+	mf.LastHeartbeat = time.Now().UTC()
+	require.NoError(t, mgr.SaveManifest(mf))
+
+	got, release3, err := mgr.Register(context.Background(), RegisterOpts{
+		ProjectPath: proj, Role: RoleEsc, Scope: proj, Resume: true,
+	})
+	require.NoError(t, err, "one name, several records: that is continuity, not ambiguity")
+	require.NoError(t, release3())
+	assert.Equal(t, second.SessionID, got.SessionID, "and the most recent one is the continuation")
+}
+
+// CRI re-gate P1-2: the resume must not adopt a name the rest of the tool
+// refuses. `join` stops on such a session and offers the in-place repair;
+// `register --resume` walked past that gate and returned `resumed` with a name
+// `tell` rejects before any lookup. Two doors, opposite answers, one state.
+func TestResume_RefusesToAdoptAnUnaddressableName(t *testing.T) {
+	for _, name := range []string{"-dash", "a+b", "ESC bridge"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			mgr := NewManager(dir, time.Second)
+			proj := filepath.Join(dir, "work")
+			require.NoError(t, os.MkdirAll(proj, 0o700))
+
+			first, release, err := mgr.Register(context.Background(), RegisterOpts{
+				ProjectPath: proj, AgentName: "ESC-placeholder", Role: RoleEsc, Scope: proj,
+			})
+			require.NoError(t, err)
+			require.NoError(t, release())
+			// Left on disk the way a pre-grammar binary left it.
+			mf, err := mgr.LoadManifest(first.SessionID)
+			require.NoError(t, err)
+			mf.AgentName = name
+			require.NoError(t, mgr.SaveManifest(mf))
+			abandon(t, mgr, first.SessionID)
+
+			_, _, err = mgr.Register(context.Background(), RegisterOpts{
+				ProjectPath: proj, Role: RoleEsc, Scope: proj, Resume: true,
+			})
+			require.Error(t, err, "resuming into an unaddressable name hands back a peer nobody can write to")
+			assert.ErrorIs(t, err, ErrUnaddressableResume)
+			assert.Contains(t, err.Error(), "cab-bridge join --role=esc --agent-name=",
+				"and the remediation is the one join already implements, not a second copy of it")
+
+			// Nothing was created and nothing was renamed: fail-closed.
+			entries, rerr := os.ReadDir(filepath.Join(dir, "sessions"))
+			require.NoError(t, rerr)
+			assert.Len(t, entries, 1)
+			after, rerr := mgr.LoadManifest(first.SessionID)
+			require.NoError(t, rerr)
+			assert.Equal(t, name, after.AgentName, "a refused resume does not migrate the name behind anyone's back")
+		})
 	}
 }

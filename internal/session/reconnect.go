@@ -7,12 +7,41 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // errReuseNoMatch is the internal sentinel meaning "no session matched the
 // identity" — Register treats it as "fall through to a fresh register" (the
 // idempotent reconnect-or-register behaviour). Never surfaced to callers.
 var errReuseNoMatch = errors.New("reuse: no matching session")
+
+// ErrAmbiguousResume and ErrUnaddressableResume are EXPORTED because they are
+// the two states a resume refuses to guess its way out of, and a caller has to
+// be able to tell them from a plain failure — they mean "say which one" and
+// "repair it first", which are different answers.
+//
+// Both are deliberately NOT errReuseNoMatch: falling through to a fresh
+// registration is exactly the behaviour that abandoned a mailbox.
+var (
+	ErrAmbiguousResume     = errors.New("reuse: several identities here")
+	ErrUnaddressableResume = errors.New("reuse: the session here has a name that cannot be addressed")
+)
+
+// distinctNames lists the agent names among candidates, once each, in a stable
+// order so the error message does not shuffle between runs.
+func distinctNames(matches []identityMatch) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, c := range matches {
+		if seen[c.mf.AgentName] {
+			continue
+		}
+		seen[c.mf.AgentName] = true
+		out = append(out, c.mf.AgentName)
+	}
+	sort.Strings(out)
+	return out
+}
 
 // identityMatch is a candidate session whose manifest matches the reconnect
 // identity, kept with its directory name (the safe single-component id) for the
@@ -53,10 +82,55 @@ func (m *Manager) tryReuse(absProj string, opts RegisterOpts) (*Manifest, func()
 		return nil, nil, errReuseNoMatch
 	}
 
+	// AMBIGUITY IS NOT A TIE TO BREAK. Dropping the name from the SEARCH was
+	// right — a derived name is a function of the project path and discriminates
+	// nothing — but it does not follow that the name stops meaning anything:
+	//
+	//	the name is not a search CRITERION      <- true, and why the filter went
+	//	the name is still an IDENTITY marker    <- and this was lost with it
+	//
+	// Two sessions on one path with DIFFERENT names are two identities, created
+	// through the supported path for exactly that (--force-new). Fusing them and
+	// taking the most recent heartbeat picked an empty mailbox over one holding a
+	// message — silently, and repeatably, which is the trap: an order that is
+	// deterministic looks decided. Making a choice repeatable does not make it
+	// right, and §2.2 of the mailbox design says that where duplicates exist the
+	// system fails closed instead of choosing (CRI re-gate P1-1).
+	//
+	// Several records under ONE name are still one identity — that is the
+	// ordinary post-compact case — so most-recent-first keeps applying there.
+	if opts.AgentName == "" {
+		if names := distinctNames(matches); len(names) > 1 {
+			return nil, nil, fmt.Errorf("%w: %d sessions here answer to different names, so nothing was resumed — they are separate identities, not one: %s\n  say which one you are: --agent-name=<name>",
+				ErrAmbiguousResume, len(matches), strings.Join(names, ", "))
+		}
+	}
+
 	// The most-recent match is my identity's continuity (findIdentityMatches
 	// sorts most-recent first). Reclaim it whether its PID is alive (orphan) or
 	// dead (post-compact).
 	c := matches[0]
+
+	// THE NAME WE ARE ABOUT TO ADOPT HAS TO BE ONE THE REST OF THE TOOL ACCEPTS.
+	//
+	// Register validates opts.AgentName, which is empty on this path, so a
+	// candidate carrying a pre-grammar name went straight through and came back
+	// as `resumed` — and `tell` on that name then failed with "takes no flags",
+	// because it never reaches a lookup (CRI re-gate P1-2).
+	//
+	// The part that makes it a defect rather than a gap: `join` REFUSES the same
+	// session and offers the in-place repair. Two doors, opposite answers, one
+	// state. This is the door I fixed second — the branch nobody named while the
+	// other one was being closed.
+	//
+	// The remediation points at `join` on purpose: the repair already exists
+	// there, in one place, and a second implementation of it here is how two
+	// doors start disagreeing again.
+	if verr := ValidateAgentName(c.mf.AgentName); verr != nil {
+		return nil, nil, fmt.Errorf("%w: the session here is named %q and cannot be addressed — %v\n  repair it in place (SAME id, SAME inbox):\n    cab-bridge join --role=%s --agent-name=%s",
+			ErrUnaddressableResume, c.mf.AgentName, verr,
+			defaultIfEmpty(opts.Role, RoleNeutral), SuggestAddressableName(c.mf.AgentName))
+	}
 	release, lerr := AcquireLock(filepath.Join(m.sessionDir(c.id), "lock"), false)
 	if lerr != nil {
 		if errors.Is(lerr, ErrLockHeld) {
