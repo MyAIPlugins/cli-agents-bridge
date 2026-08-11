@@ -44,8 +44,14 @@ jobs:
         # The first draft of this line said v0.5.1, a number written from memory
         # and never run. On a file that authorises merges.
         run: |
-          go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
-          "$(go env GOPATH)/bin/staticcheck" ./...
+          # Version from .staticcheck-version, the same file the Makefile reads,
+          # so the local gate and this one cannot drift onto two linters.
+          # GOBIN when set, GOPATH/bin otherwise — the same resolution `go
+          # install` uses (CRI: the Makefile knew only GOPATH/bin).
+          version="$(cat .staticcheck-version)"
+          go install "honnef.co/go/tools/cmd/staticcheck@${version}"
+          bindir="$(go env GOBIN)"; [ -n "$bindir" ] || bindir="$(go env GOPATH)/bin"
+          "${bindir}/staticcheck" ./...
       - name: go test -race -count=1
         # -count=1 is load-bearing: see the note above the job.
         run: go test -race -count=1 ./...

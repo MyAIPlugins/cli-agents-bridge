@@ -108,13 +108,27 @@ install-plugin: build ## Copy binary into plugins/cli-agents-bridge/bin/ for mar
 # So: resolve the binary in PATH *and* in GOPATH/bin, fail loudly when it is
 # missing instead of narrating the skip, and let its exit code through. A gate
 # that skips a check and mentions it in an echo nobody reads is not a gate.
-STATICCHECK ?= $(shell command -v staticcheck 2>/dev/null || echo $(shell go env GOPATH)/bin/staticcheck)
+# WHERE `go install` ACTUALLY PUTS IT: $GOBIN when set, $GOPATH/bin otherwise.
+# The first version of this line only knew about GOPATH/bin, so with GOBIN set
+# the gate looked where the binary is NOT — and then printed an install command
+# that would put it there again. A refusal with a remediation that cannot fix it
+# is worse than a refusal: it sends the reader in a loop (CRI, third instance of
+# this class today).
+STATICCHECK_DIR := $(shell go env GOBIN)
+ifeq ($(STATICCHECK_DIR),)
+STATICCHECK_DIR := $(shell go env GOPATH)/bin
+endif
+# Single source for the pinned version, shared with .github/workflows/ci.yml, so
+# the local gate and the gate that authorises merges cannot drift onto two
+# different linters.
+STATICCHECK_VERSION := $(shell cat .staticcheck-version)
+STATICCHECK ?= $(shell command -v staticcheck 2>/dev/null || echo $(STATICCHECK_DIR)/staticcheck)
 
-lint: ## Run go vet + staticcheck (required; install with: go install honnef.co/go/tools/cmd/staticcheck@latest)
+lint: ## Run go vet + staticcheck (required; version pinned in .staticcheck-version)
 	go vet ./...
 	@if [ ! -x "$(STATICCHECK)" ]; then \
-		echo "make lint: staticcheck not found (looked in \$$PATH and $(shell go env GOPATH)/bin)"; \
-		echo "  install it:  go install honnef.co/go/tools/cmd/staticcheck@latest"; \
+		echo "make lint: staticcheck not found (looked in \$$PATH and $(STATICCHECK_DIR))"; \
+		echo "  install it:  go install honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION)"; \
 		echo "  this is a hard failure on purpose: a lint that silently skips is not a lint"; \
 		exit 1; \
 	fi
