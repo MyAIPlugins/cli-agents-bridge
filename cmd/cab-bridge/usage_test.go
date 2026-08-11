@@ -90,8 +90,11 @@ func TestPrintUsage_MentionsTheStdinRule(t *testing.T) {
 // caught being wrong — so the next semantic change trips over the help instead
 // of leaving it behind.
 func TestFlagHelp_MatchesTheBehaviourItDescribes(t *testing.T) {
-	t.Parallel()
-
+	// NOT t.Parallel(): this test captures os.Stderr, and I put a t.Parallel()
+	// here when I wrote it — which is what opened the race. The guard in the
+	// capture helpers now refuses it outright, so this line cannot come back by
+	// accident; it is spelled out anyway, because the next person to add
+	// t.Parallel() to a fast test should meet the reason before the panic.
 	joinHelp := flagHelp(t, runJoin, "join")
 	registerHelp := flagHelp(t, runRegister, "register")
 
