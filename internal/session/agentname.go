@@ -2,6 +2,7 @@ package session
 
 import (
 	"fmt"
+	"hash/fnv"
 	"path/filepath"
 	"strings"
 )
@@ -77,8 +78,16 @@ func nameSafeLeadRune(r rune) bool {
 // already quoted, and the actual problem was a space in the recipient's name.
 //
 //	@         the addressing grammar is not invertible (F-116)
-//	a space   the shell does not deliver the name as one argument (F-124)
+//	unlisted  the name is outside the portable grammar (F-124)
 //	a lead -  the verbs read it as a flag before any lookup (verbs.go:490)
+//
+// The middle one used to explain itself by saying the shell splits the name
+// "before the tool ever runs — so nothing here could catch it", which was FALSE
+// in a way that reading it out loud exposes: the tool is what prints it. Quoted,
+// `ESC bridge` and `a+b` arrive whole and are refused by POLICY; unquoted, a
+// space splits them and the tool receives the pieces. Two different facts, and
+// the error can only honestly claim the first — the second is why the policy
+// exists, not what happened to this input.
 //
 // The empty string is not a name: it is the sentinel asking Register to derive
 // one, and `join` validates the flag before knowing whether it was passed.
@@ -92,7 +101,7 @@ func ValidateAgentName(name string) error {
 	}
 	for _, r := range name {
 		if !nameSafeRune(r) {
-			return fmt.Errorf("agent name %q cannot contain %q: a recipient has to reach the tool as ONE argument, and a shell splits or rewrites this one before the tool ever runs — so nothing here could catch it. Letters, digits, %q, %q and %q only",
+			return fmt.Errorf("agent name %q cannot contain %q: an agent name has to be ONE argument on any shell and on any platform, so the supported grammar is letters, digits, %q, %q and %q. Unquoted, a name like this one is split before the tool sees it; quoted it arrives whole and is still refused, because a recipient that only works when it is quoted is a recipient that will be pasted wrong",
 				name, string(r), "_", ".", "-")
 		}
 	}
@@ -110,32 +119,23 @@ func ValidateAgentName(name string) error {
 // derivedAgentName is the default agent name for a project path: its basename,
 // made addressable. Used by Register when the caller passes no name.
 func derivedAgentName(absProj string) string {
-	name, _ := SanitizeDerivedName(filepath.Base(absProj))
+	name, _ := SanitizeDerivedName(absProj)
 	return name
 }
 
-// SanitizeDerivedName makes a directory-derived name addressable, reporting
-// whether it had to change so the caller can say so out loud.
+// sanitizeToken is the repair itself, with no policy attached: substitute,
+// collapse, strip. It returns "" when nothing usable is left, and the two
+// callers below decide what that means for them.
 //
-// The default agent name is filepath.Base of the project path (manager.go), so a
-// directory called `foo@bar` or `my repo` would produce an unaddressable name
-// with nobody having typed it — and a hard refusal there would fail a `join` for
-// a choice the user never made.
-//
-// Four rules, written down because not one of them can be read off the code:
+// Three rules, written down because not one can be read off the code:
 //
 //	every rune outside nameSafeRune becomes `-`
 //	a RUN of them collapses to a single `-`   (`a   b` -> `a-b`, not `a---b`)
 //	leading and trailing `-` and `.` are stripped, so the result can lead
-//	nothing usable left -> derivedNameFallback, never the empty string
-//
-// The collapse costs injectivity — `my repo` and `my  repo` land on one name —
-// and that is affordable here: two sessions in one directory are already refused
-// (F-90), and join's cross-scope guard catches a name already taken elsewhere.
-func SanitizeDerivedName(base string) (string, bool) {
+func sanitizeToken(s string) string {
 	var b strings.Builder
 	replacing := false
-	for _, r := range base {
+	for _, r := range s {
 		if nameSafeRune(r) {
 			b.WriteRune(r)
 			replacing = false
@@ -146,9 +146,73 @@ func SanitizeDerivedName(base string) (string, bool) {
 			replacing = true
 		}
 	}
-	out := strings.Trim(b.String(), derivedNameReplacement+".")
+	return strings.Trim(b.String(), derivedNameReplacement+".")
+}
+
+// SanitizeDerivedName makes a directory-derived name addressable, reporting
+// whether it had to change so the caller can say so out loud.
+//
+// The default agent name is the basename of the project path (manager.go), so a
+// directory called `foo@bar` or `my repo` would produce an unaddressable name
+// with nobody having typed it — and a hard refusal there would fail a `join` for
+// a choice the user never made.
+//
+// It takes the ABSOLUTE PATH, not the basename, and that is the whole of the
+// injectivity fix. Substitution is many-to-one by construction: `a+b` and `a:b`
+// both reduce to `a-b`, with a single replacement each — so the collapse is an
+// aggravator, not the cause, and dropping it would fix nothing. Two directories
+// that reduce to one name got two live sessions answering to it and `tell a-b`
+// exiting 1 with "2 live agents are named a-b" (CRI diff-gate P1-2, reproduced).
+//
+// So when a substitution actually happened, the name carries a short digest OF
+// THE PATH. Distinct directories have distinct paths by definition, which makes
+// the result injective in the directory rather than merely unlikely to clash —
+// the residual case needs a real 16-bit digest collision between two paths, and
+// that one fails closed with the message above.
+//
+// A basename that is already addressable is returned untouched, no digest: the
+// ordinary case stays readable, and the cost lands only where the repair does.
+//
+// WHAT THIS DOES NOT FIX, and it must be said here or it becomes the defect
+// nobody looks for: two DIFFERENT projects whose basenames are already identical
+// (`alpha/work` and `beta/work`) still derive one name. That collided before
+// this change too — Manager.Register has never enforced name uniqueness, its
+// BUG-6 check is on the project path — and closing it belongs to a separate lot,
+// tracked. The digest protects names FUSED BY THIS FUNCTION, nothing wider.
+func SanitizeDerivedName(absProjectPath string) (string, bool) {
+	base := filepath.Base(absProjectPath)
+	out := sanitizeToken(base)
 	if out == "" {
 		out = derivedNameFallback
 	}
-	return out, out != base
+	if out == base {
+		return out, false
+	}
+	return out + derivedNameReplacement + shortDigest(absProjectPath), true
+}
+
+// SuggestAddressableName turns an EXISTING agent name into a valid one, for the
+// repair `join` offers when it meets a session named before the grammar.
+//
+// Deliberately no digest: this is not a derivation and needs no injectivity —
+// it is a readable suggestion for a human or an agent to run, and `ESC bridge`
+// should become `ESC-bridge`, not `ESC-bridge-4f21`. If that name is taken by a
+// live session, join's existing guard refuses and names the clash, which is the
+// right answer and one nobody has to build here.
+func SuggestAddressableName(name string) string {
+	if out := sanitizeToken(name); out != "" {
+		return out
+	}
+	return derivedNameFallback
+}
+
+// shortDigest is 16 bits of FNV-1a as four hex digits: stable across runs and
+// across versions (the algorithm is fixed), so the same directory always derives
+// the same name and an agent can re-read it from `join` instead of remembering
+// it — which is the property that matters for LL-13, since the danger is in
+// identifiers that get RETYPED, not in ones that get read.
+func shortDigest(s string) string {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(s))
+	return fmt.Sprintf("%04x", h.Sum32()&0xffff)
 }

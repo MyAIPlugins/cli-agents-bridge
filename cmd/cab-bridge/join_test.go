@@ -696,3 +696,125 @@ func TestJoin_LegacyUnsafeNameIsNamedAndRepairable(t *testing.T) {
 		})
 	}
 }
+
+// TestRegister_FusedBasenamesStayAddressable is the consumer end of CRI
+// diff-gate P1-2, through the PUBLIC command rather than through the helper.
+//
+// The unit test in internal/session says two fused basenames get different
+// names. This one says the thing that actually matters: that `tell` can still
+// reach one of them. Before the digest, `a+b` and `a:b` both derived `a-b`, two
+// live sessions answered to it, and `tell a-b` exited 1 with "2 live agents are
+// named a-b" — a recipient made unreachable by the fix meant to make names
+// reachable.
+//
+// Through `register`, not `join`, deliberately: the guard the first plan leaned
+// on lives in join, and Manager.Register — the surface of the public command —
+// has no name-uniqueness check at all. The defence was on one path and the
+// defect on the other.
+func TestRegister_FusedBasenamesStayAddressable(t *testing.T) {
+	dataDir := t.TempDir()
+	base := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700)) // one scope
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	plus := filepath.Join(base, "a+b")
+	colon := filepath.Join(base, "a:b")
+	for _, d := range []string{plus, colon} {
+		require.NoError(t, os.MkdirAll(d, 0o700))
+		require.NoError(t, runRegister([]string{"--role=esc", "--project-path=" + d}))
+	}
+
+	mgr := newSessionManager(config.Config{DataDir: dataDir})
+	peers, _, err := collectPeers(mgr, dataDir, 300, 65536, true, "", resolveScope(base))
+	require.NoError(t, err)
+
+	names := map[string]string{} // agent name -> project it came from
+	for _, p := range peers {
+		if prev, dup := names[p.AgentName]; dup {
+			t.Fatalf("two projects derived one name %q: %s and %s", p.AgentName, prev, p.ProjectName)
+		}
+		names[p.AgentName] = p.ProjectName
+	}
+	require.Len(t, names, 2, "two directories, two agents")
+
+	// And the names are not merely distinct on disk: one of them can be written
+	// to. A sender in the same scope, addressing by the derived name.
+	sender := filepath.Join(base, "sender")
+	require.NoError(t, os.MkdirAll(sender, 0o700))
+	require.NoError(t, runJoin([]string{"--role=val", "--agent-name=VAL-sender", "--project-path=" + sender}))
+	sid := ""
+	peers, _, err = collectPeers(mgr, dataDir, 300, 65536, true, "", resolveScope(base))
+	require.NoError(t, err)
+	for _, p := range peers {
+		if p.AgentName == "VAL-sender" {
+			sid = p.SessionID
+		}
+	}
+	require.NotEmpty(t, sid)
+	t.Setenv("CAB_SESSION_ID", sid)
+
+	for name := range names {
+		var stdout, stderr bytes.Buffer
+		require.NoError(t,
+			runSendVerb("tell", message.TypeNotify, []string{name, "hi"}, strings.NewReader(""), &stdout, &stderr),
+			"the derived name %q must be reachable, which is the whole point of deriving one", name)
+	}
+}
+
+// TestRepairedSession_OldNameIsRecordedNotForwarded is CRI diff-gate P2-4: the
+// repair message used to promise that peers writing to the old name would be
+// told where it went, and the test "proved" it by looking at FormerAgentNames
+// instead of calling the consumer.
+//
+// Executed here: for `-dash` the forward CANNOT fire, because runSendVerb
+// refuses a leading dash as a flag before any resolution. So the promise is
+// reduced to what is true — the old name stays on record — and this test is what
+// keeps the two from drifting apart again.
+func TestRepairedSession_OldNameIsRecordedNotForwarded(t *testing.T) {
+	dataDir := t.TempDir()
+	base := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700))
+	proj := filepath.Join(base, "work")
+	sender := filepath.Join(base, "sender")
+	require.NoError(t, os.MkdirAll(proj, 0o700))
+	require.NoError(t, os.MkdirAll(sender, 0o700))
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	require.NoError(t, runJoin([]string{"--role=esc", "--agent-name=ESC-safe", "--project-path=" + proj}))
+	mgr := newSessionManager(config.Config{DataDir: dataDir})
+	peers, _, err := collectPeers(mgr, dataDir, 300, 65536, true, "", resolveScope(base))
+	require.NoError(t, err)
+	require.Len(t, peers, 1)
+	sid := peers[0].SessionID
+
+	plantUnsafeName(t, dataDir, sid, "-dash")
+	require.NoError(t, runJoin([]string{"--role=esc", "--agent-name=dash", "--project-path=" + proj}))
+
+	mf, err := mgr.LoadManifest(sid)
+	require.NoError(t, err)
+	require.Contains(t, mf.FormerAgentNames, "-dash", "the old label is on record")
+
+	require.NoError(t, runJoin([]string{"--role=val", "--agent-name=VAL-sender", "--project-path=" + sender}))
+	peers, _, err = collectPeers(mgr, dataDir, 300, 65536, true, "", resolveScope(base))
+	require.NoError(t, err)
+	for _, p := range peers {
+		if p.AgentName == "VAL-sender" {
+			t.Setenv("CAB_SESSION_ID", p.SessionID)
+		}
+	}
+
+	// The new name works.
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, runSendVerb("tell", message.TypeNotify, []string{"dash", "hi"}, strings.NewReader(""), &stdout, &stderr))
+
+	// The OLD one does not, and not for the reason the message used to imply:
+	// it never reaches the lookup that would have redirected it.
+	err = runSendVerb("tell", message.TypeNotify, []string{"-dash", "hi"}, strings.NewReader(""), &stdout, &stderr)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "takes no flags",
+		"refused as a flag before resolution — so no redirect is possible, and the repair message must not promise one")
+	assert.NotContains(t, err.Error(), "is now",
+		"and it certainly cannot say where the name went")
+}

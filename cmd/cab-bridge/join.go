@@ -163,11 +163,14 @@ func runJoin(args []string) error {
 		// work today. It would be a copyable command that keeps the shape we are
 		// removing, and how to quote a token is the next lot's subject.
 		if verr := session.ValidateAgentName(name); verr != nil {
-			repaired, _ := session.SanitizeDerivedName(name)
+			// SuggestAddressableName, not SanitizeDerivedName: this is a name
+			// being cleaned up, not a directory being derived from, so it wants
+			// no digest — `ESC bridge` should be offered as `ESC-bridge`.
+			repaired := session.SuggestAddressableName(name)
 			return fmt.Errorf("join: this session is named %q and cannot be addressed as it is — %w\n"+
 				"  It was registered when that name was allowed, so nothing is wrong with the session:\n"+
-				"  only the label. Repair it in place — SAME id, SAME inbox, and the old name is kept\n"+
-				"  on record so peers still writing to it are told where it went:\n"+
+				"  only the label. Repair it in place — SAME id, SAME inbox, and the old name stays on\n"+
+				"  record (FormerAgentNames), so it remains visible in `inspect`:\n"+
 				"    cab-bridge join --role=%s --agent-name=%s",
 				name, verr, *role, repaired)
 		}
@@ -179,7 +182,9 @@ func runJoin(args []string) error {
 		// and failing here would be an error for a choice the caller never made.
 		// Said out loud, because a silent rename of one's own identity is exactly
 		// the kind of quiet substitution this project keeps removing.
-		base, changed := session.SanitizeDerivedName(filepath.Base(pp))
+		// The ABSOLUTE path, not the basename: the digest that keeps two repaired
+		// names apart is computed from it (SanitizeDerivedName).
+		base, changed := session.SanitizeDerivedName(pp)
 		if changed {
 			// Name the RESULT, not the cause. This used to announce that the
 			// directory "contains @" — true when `@` was the only rune we

@@ -2,8 +2,11 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,14 +29,16 @@ func TestAgentName_TypedIsRefusedDerivedIsSanitised(t *testing.T) {
 	assert.Contains(t, err.Error(), "separates a name from its project",
 		"the error has to say WHY, or it reads as an arbitrary rule")
 
-	got, changed := SanitizeDerivedName("feat@2")
+	// F-124: the argument is the absolute PATH now, and a repaired name carries a
+	// digest of it, so the assertion is on the shape rather than on a literal.
+	got, changed := SanitizeDerivedName("/work/feat@2")
 	assert.True(t, changed, "the caller must be able to say it happened")
-	assert.Equal(t, "feat-2", got)
+	assert.True(t, strings.HasPrefix(got, "feat-2-"), "got %q", got)
 	assert.NoError(t, ValidateAgentName(got), "and what comes out must be addressable")
 
-	got, changed = SanitizeDerivedName("esc-v08")
+	got, changed = SanitizeDerivedName("/work/esc-v08")
 	assert.False(t, changed)
-	assert.Equal(t, "esc-v08", got)
+	assert.Equal(t, "esc-v08", got, "an already-safe basename takes no digest")
 }
 
 // The invariant lives at the ONE place every registration passes through, plus
@@ -70,7 +75,8 @@ func TestRegisterAndRename_HoldTheInvariantAtThePoint(t *testing.T) {
 	mf2, release2, err := mgr.Register(context.Background(), RegisterOpts{ProjectPath: odd, Role: RoleEsc})
 	require.NoError(t, err, "nobody typed the directory's name")
 	require.NoError(t, release2())
-	assert.Equal(t, "feat-2", mf2.AgentName)
+	assert.True(t, strings.HasPrefix(mf2.AgentName, "feat-2-"), "got %q", mf2.AgentName)
+	assert.NoError(t, ValidateAgentName(mf2.AgentName))
 }
 
 // P1-1 of the diff gate: the writer sanitised the derived name and the READER
@@ -91,7 +97,7 @@ func TestResume_FindsTheSessionRegisteredWithASanitisedName(t *testing.T) {
 	first, release, err := mgr.Register(context.Background(), RegisterOpts{ProjectPath: proj, Role: RoleEsc, Scope: proj})
 	require.NoError(t, err)
 	require.NoError(t, release())
-	assert.Equal(t, "feat-2", first.AgentName)
+	require.True(t, strings.HasPrefix(first.AgentName, "feat-2-"), "got %q", first.AgentName)
 
 	again, release2, err := mgr.Register(context.Background(), RegisterOpts{ProjectPath: proj, Role: RoleEsc, Scope: proj, Resume: true})
 	require.NoError(t, err)
@@ -124,9 +130,13 @@ func TestApplyV1Defaults_SanitisesTheDerivedName(t *testing.T) {
 // binary as ONE argument and be read as a recipient once it does.
 //
 // Two clauses, and they are not the same clause twice:
-//   - the shell must deliver it whole. A space split `tell 'ESC bridge'` into
-//     two arguments and, with an agent called `ESC` alive, delivered the six
-//     bytes of the second half TO THAT AGENT, exit 0.
+//   - the shell must deliver it whole. UNQUOTED, `cab-bridge tell ESC bridge`
+//     splits, and with an agent called `ESC` alive it delivered the six bytes of
+//     the second half TO THAT AGENT, exit 0. Quoted it arrives intact and is
+//     refused by policy instead — a recipient that only works when it is quoted
+//     is a recipient that will be pasted wrong. (The first version of this
+//     comment said `tell 'ESC bridge'` was the one that split, which is backwards:
+//     the quotes are what prevent it. CRI diff-gate P2-3.)
 //   - the verbs must read it as a positional. `cab-bridge tell -foo hi` is
 //     refused at verbs.go:490 before any lookup, so a name starting with `-` is
 //     unaddressable however carefully it is quoted (CRI design-gate #2).
@@ -163,50 +173,140 @@ func TestValidateAgentName_TheGrammar(t *testing.T) {
 func TestSanitizeDerivedName_EveryRuleIsDecided(t *testing.T) {
 	t.Parallel()
 
+	// A repaired name carries a digest of the PATH, so the rows pin the stem and
+	// the shape; the digest itself has its own test below.
 	for _, tc := range []struct {
-		in, want string
-		changed  bool
-		why      string
+		path, stem string
+		changed    bool
+		why        string
 	}{
-		{"esc-v08", "esc-v08", false, "an already-safe base is returned untouched"},
-		{"my repo", "my-repo", true, "the ordinary case: a directory with a space"},
-		{"feat@2", "feat-2", true, "the separator keeps working exactly as before"},
-		{"a   b", "a-b", true, "a RUN of unsafe runes collapses to one dash, not three"},
-		{"-dash-", "dash", true, "leading and trailing separators are stripped: the first character cannot be a dash"},
-		{".hidden", "hidden", true, "and a leading dot is stripped for the same reason it cannot lead"},
-		{"caffè", "caff", true, "a replaced rune at the end leaves a trailing dash, which the strip then removes"},
-		{"---", "session", true, "a base with nothing usable left must not become the empty string"},
-		{"", "session", true, "nor may an empty one"},
+		{"/w/esc-v08", "esc-v08", false, "an already-safe base is returned untouched, and takes no digest"},
+		{"/w/my repo", "my-repo", true, "the ordinary case: a directory with a space"},
+		{"/w/feat@2", "feat-2", true, "the separator keeps working exactly as before"},
+		{"/w/a   b", "a-b", true, "a RUN of unsafe runes collapses to one dash, not three"},
+		{"/w/-dash-", "dash", true, "leading and trailing separators are stripped: the first character cannot be a dash"},
+		{"/w/.hidden", "hidden", true, "and a leading dot is stripped for the same reason it cannot lead"},
+		{"/w/caffè", "caff", true, "a replaced rune at the end leaves a trailing dash, which the strip then removes"},
+		{"/w/---", "session", true, "a base with nothing usable left must not become the empty string"},
+		{"/w/日本", "session", true, "every rune replaced, then stripped to nothing: the fallback carries it"},
 	} {
-		got, changed := SanitizeDerivedName(tc.in)
-		assert.Equal(t, tc.want, got, "%q: %s", tc.in, tc.why)
-		assert.Equal(t, tc.changed, changed, "%q: the caller can only say it happened if we tell it", tc.in)
-		assert.NoError(t, ValidateAgentName(got), "%q: whatever comes out must be addressable", tc.in)
+		got, changed := SanitizeDerivedName(tc.path)
+		assert.Equal(t, tc.changed, changed, "%q: the caller can only say it happened if we tell it", tc.path)
+		assert.NoError(t, ValidateAgentName(got), "%q: whatever comes out must be addressable", tc.path)
+		if !tc.changed {
+			assert.Equal(t, tc.stem, got, "%q: %s", tc.path, tc.why)
+			continue
+		}
+		assert.Regexp(t, "^"+regexp.QuoteMeta(tc.stem)+"-[0-9a-f]{4}$", got, "%q: %s", tc.path, tc.why)
 	}
+}
 
-	// Multi-byte input, and NOT a proof of rune-awareness: with runs collapsing,
-	// a byte-wise loop would produce the same string here. Iterating on runes is
-	// how the code is written; this only pins that the OUTPUT is safe and
-	// non-empty, which is the part a caller can depend on.
-	got, _ := SanitizeDerivedName("日本")
-	assert.Equal(t, "session", got, "every rune replaced, then stripped to nothing: the fallback carries it")
-	assert.NoError(t, ValidateAgentName(got))
+// P1-2 of the diff gate, and it is the regression this lot introduced: `a+b` and
+// `a:b` were DISTINCT before the grammar and both reduce to `a-b` after it —
+// one substitution each, so the run-collapse was never the cause. Reproduced
+// through the public `register` at the time: two live sessions answering to one
+// name, and `tell a-b` exiting 1 with "2 live agents are named a-b".
+//
+// The digest is taken from the PATH rather than the basename, so two directories
+// are distinguished by the thing that actually differs between them. That makes
+// it injective in the directory instead of merely unlikely to clash.
+func TestSanitizeDerivedName_FusedBasenamesStayDistinct(t *testing.T) {
+	t.Parallel()
+	plus, _ := SanitizeDerivedName("/repo/a+b")
+	colon, _ := SanitizeDerivedName("/repo/a:b")
+	assert.NotEqual(t, plus, colon, "two directories the grammar fuses must not become one agent")
+	assert.NoError(t, ValidateAgentName(plus))
+	assert.NoError(t, ValidateAgentName(colon))
+
+	// Stable across calls: the agent re-reads the name from `join`, so it must
+	// not move under it.
+	again, _ := SanitizeDerivedName("/repo/a+b")
+	assert.Equal(t, plus, again, "the same directory always derives the same name")
+
+	// And the degenerate ones do not all pile onto `session` either.
+	d1, _ := SanitizeDerivedName("/repo/---")
+	d2, _ := SanitizeDerivedName("/repo/日本")
+	assert.NotEqual(t, d1, d2, "the fallback is a stem, not a shared name")
+
+	// WHAT IS NOT FIXED, pinned so the limit is a decision and not a surprise:
+	// two different projects whose basenames are ALREADY identical still derive
+	// one name. That collided before this change (Manager.Register has never
+	// enforced name uniqueness) and closing it is a separate lot.
+	w1, _ := SanitizeDerivedName("/repo/alpha/work")
+	w2, _ := SanitizeDerivedName("/repo/beta/work")
+	assert.Equal(t, w1, w2, "unchanged from before: identical basenames still share a name")
 }
 
 // The fallback has to live INSIDE SanitizeDerivedName, not in one caller.
 //
 // deriveAgentName (naming.go) already guards against an empty base, but it
-// guards its own call site only: derivedAgentName here and ApplyV1Defaults in
-// manifest.go would each have taken the empty string. Three pens, one of them on
-// a READ path, and a guard that covered one of the three.
+// guards its own call site only: derivedAgentName here would have taken the
+// empty string.
 func TestSanitizeDerivedName_FallbackCoversEveryCaller(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, "session", derivedAgentName("/tmp/---"),
+	assert.Regexp(t, `^session-[0-9a-f]{4}$`, derivedAgentName("/tmp/---"),
 		"the derived default must never be an empty name")
+}
+
+// P1-1 of the diff gate: the v1 read-default is FROZEN on the @-only algorithm.
+//
+// LoadManifest applies it on every read and touchHeartbeat is load-modify-save,
+// so anything computed here is persisted at the first heartbeat with no
+// FormerAgentNames. Widening it would have changed a name that `peers` was
+// already showing and the resolver was already matching — once, silently, and
+// irreversibly at the next write.
+func TestApplyV1Defaults_IsFrozenOnTheHistoricAlgorithm(t *testing.T) {
+	t.Parallel()
 
 	mf := &Manifest{ProjectName: "my repo"}
 	mf.ApplyV1Defaults()
-	assert.Equal(t, "my-repo", mf.AgentName,
-		"the read path derives a name too, and it is the only pen that writes one without anybody joining")
-	assert.NoError(t, ValidateAgentName(mf.AgentName))
+	assert.Equal(t, "my repo", mf.AgentName,
+		"a v1 name stays exactly as addressable, or unaddressable, as it has always been")
+
+	// The one repair it has always done is still done.
+	sep := &Manifest{ProjectName: "feat@2"}
+	sep.ApplyV1Defaults()
+	assert.Equal(t, "feat-2", sep.AgentName, "the @-only rule is the one this pen was given")
+
+	// And no digest: this is not a derivation from a path, it is a read-default.
+	assert.NotRegexp(t, `-[0-9a-f]{4}$`, sep.AgentName)
+}
+
+// The consumer test the diff gate asked for: v1 load -> heartbeat -> disk.
+//
+// The unit assertion above says ApplyV1Defaults computes the historic name. This
+// one says what happens to it, which is the part that made the widened version a
+// P1: LoadManifest applies the default, touchHeartbeat is load-modify-save, so
+// the computed value is WRITTEN — and if the algorithm had widened, that write
+// would have replaced a name peers were already using, with no FormerAgentNames
+// and no way back.
+func TestApplyV1Defaults_HeartbeatPersistsTheHistoricName(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewManager(dir, time.Second)
+
+	const sid = "v1sess01"
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "sessions", sid), 0o700))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "sessions", sid, "manifest.json"),
+		[]byte(`{"sessionId":"`+sid+`","schemaVersion":1,"projectName":"my repo","projectPath":"/w/my repo"}`),
+		0o600))
+
+	loaded, err := mgr.LoadManifest(sid)
+	require.NoError(t, err)
+	require.Equal(t, "my repo", loaded.AgentName, "the read-default is the historic one")
+
+	// The write that made this a P1 rather than a curiosity.
+	require.NoError(t, mgr.Touch(sid))
+
+	raw, err := os.ReadFile(filepath.Join(dir, "sessions", sid, "manifest.json"))
+	require.NoError(t, err)
+	// Parsed, not substring-matched: the encoder indents, so a literal
+	// `"agentName":"my repo"` would fail on formatting and say nothing about the
+	// value — a red that means the wrong thing is as useless as a green that does.
+	var onDisk Manifest
+	require.NoError(t, json.Unmarshal(raw, &onDisk))
+	assert.Equal(t, "my repo", onDisk.AgentName,
+		"the heartbeat materialised the name — it must be the one the old binary showed, not a repaired one")
+	assert.Empty(t, onDisk.FormerAgentNames,
+		"and nothing was renamed, so there is no history to invent")
 }
