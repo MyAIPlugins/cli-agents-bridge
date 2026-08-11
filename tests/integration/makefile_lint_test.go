@@ -328,8 +328,19 @@ func TestMakefile_InstallDevLinksWhatItJustBuilt(t *testing.T) {
 func copyWorkingTree(t *testing.T, src, dst string) {
 	t.Helper()
 
-	if out, err := exec.Command("git", "-C", src, "rev-parse", "--is-inside-work-tree").Output(); err == nil &&
-		strings.TrimSpace(string(out)) == "true" {
+	// THE QUESTION IS "is src the ROOT of a repository", not "is src somewhere
+	// inside one" — and --is-inside-work-tree answers the second.
+	//
+	// A source archive without .git, extracted inside another repository (vendor
+	// source, a monorepo, a fixture in a workspace) IS inside a work tree, via
+	// the parent. `git ls-files` there lists zero files, because the directory is
+	// untracked in that parent — so the fixture came out EMPTY and make failed
+	// with "No rule to make target `install-dev'". The test then failed on how
+	// its container was classified, not on the thing it tests (CRI).
+	//
+	// --show-toplevel is the property that was meant: compare it with src, both
+	// resolved, and take the Git branch only when they are the same directory.
+	if isRepoRoot(src) {
 		list := exec.Command("git", "ls-files", "-z")
 		list.Dir = src
 		tracked, lerr := list.Output()
@@ -382,4 +393,77 @@ func copyWorkingTree(t *testing.T, src, dst string) {
 		}
 		return os.WriteFile(target, data, info.Mode().Perm())
 	}), "copying the source tree without git")
+}
+
+// isRepoRoot reports whether dir is the top level of a Git work tree — not
+// merely a directory somewhere beneath one.
+//
+// Both sides are symlink-resolved: git answers canonically, and on macOS a path
+// under /var arrives as a link to /private/var, so a raw string comparison would
+// say "not the root" about the root.
+func isRepoRoot(dir string) bool {
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return false
+	}
+	top, err := filepath.EvalSymlinks(strings.TrimSpace(string(out)))
+	if err != nil {
+		return false
+	}
+	self, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return false
+	}
+	return top == self
+}
+
+// TestCopyWorkingTree_PicksTheBranchByROOTNotByContainment pins the
+// discriminator, which is the part the previous two checks could not see.
+//
+// Both of them — mine and the val's — used a source tree in /tmp, outside any
+// repository, so "is this a work tree?" and "is this THE root?" gave the same
+// answer and the difference between them was invisible. A source archive dropped
+// inside another repo separates the two: it is inside a work tree (the parent's)
+// while being the root of nothing, `git ls-files` lists zero files there, and
+// the fixture came out empty — make then failed with "No rule to make target",
+// i.e. the test failing on how its container was classified.
+func TestCopyWorkingTree_PicksTheBranchByROOTNotByContainment(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	repoRoot, err := filepath.Abs("../..")
+	require.NoError(t, err)
+
+	// A parent repository, and inside it a source tree that is NOT tracked and
+	// has no .git of its own.
+	parent := t.TempDir()
+	init := exec.Command("git", "init", "-q")
+	init.Dir = parent
+	require.NoError(t, init.Run())
+
+	nested := filepath.Join(parent, "source")
+	require.NoError(t, os.MkdirAll(nested, 0o700))
+	copyWorkingTree(t, repoRoot, nested)
+
+	// The discriminator itself.
+	assert.True(t, isRepoRoot(repoRoot), "the real checkout is a root")
+	assert.False(t, isRepoRoot(nested),
+		"a source tree inside another repo is INSIDE a work tree but is not its root — "+
+			"telling those apart is the whole fix")
+
+	// And the consequence that matters: the copy is usable. Empty is what the
+	// broken guard produced, and `make` reported it as a missing target rather
+	// than as a missing tree.
+	for _, must := range []string{"Makefile", "go.mod", filepath.Join("cmd", "cab-bridge", "main.go")} {
+		assert.FileExists(t, filepath.Join(nested, must),
+			"%s must be in the copy — an empty fixture fails as 'No rule to make target'", must)
+	}
+
+	// Copying OUT of that nested tree must work too: it is the path the fallback
+	// takes, and the one the previous version never reached.
+	again := filepath.Join(t.TempDir(), "from nested")
+	require.NoError(t, os.MkdirAll(again, 0o700))
+	copyWorkingTree(t, nested, again)
+	assert.FileExists(t, filepath.Join(again, "Makefile"),
+		"the walk must carry the tree even when git would answer about somebody else's repository")
 }
