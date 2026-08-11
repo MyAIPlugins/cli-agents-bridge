@@ -2,7 +2,10 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/shellarg"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -225,7 +228,7 @@ func TestReplyGuardrail_IsBuiltFromOpenAskersOnly(t *testing.T) {
 // in fromAddressShellArg — and it must be the
 // one that resolves — the full path, since here there is no list of other scopes
 // to detect an ambiguous basename with.
-func TestNextMessage_CrossScopeCarriesAPastableAddress(t *testing.T) {
+func TestNextMessage_CrossScopeCarriesTheLogicalAddress(t *testing.T) {
 	t.Parallel()
 	const theirs = "/Users/alan/develop/payload"
 	e := mailboxEntry{msg: &message.Message{
@@ -236,7 +239,9 @@ func TestNextMessage_CrossScopeCarriesAPastableAddress(t *testing.T) {
 
 	got := newNextMessage(e, false, "/Users/alan/develop/bridge")
 	assert.Equal(t, theirs, got.FromScope)
-	assert.Equal(t, "VAL-payload@"+theirs, got.FromAddress, "the agent copies, it does not assemble")
+	assert.Equal(t, "VAL-payload@"+theirs, got.FromAddress,
+		"the agent copies, it does not assemble — this is the LOGICAL form, to parse; "+
+			"the one to paste is FromAddressShellArg, covered by TestNextMessage_ShellArgIsWiredAndSymmetric")
 
 	parsed, err := parseRecipient(got.FromAddress)
 	require.NoError(t, err, "and what it copies must parse back")
@@ -752,4 +757,105 @@ func TestSharedScopeWarning_NamesTheScopeItGroupedOn(t *testing.T) {
 	assert.Contains(t, got, "/repo/zeta", "the number that explains the grouping has to appear")
 	assert.Contains(t, got, "(derived)", "and say that it was worked out, not read")
 	assert.NotContains(t, got, `scope ""`, "naming the empty stored field explains nothing")
+}
+
+// TestNextMessage_ShellArgIsWiredAndSymmetric uses FromAddressShellArg as a
+// VALUE, which no test did when the field landed: the only place the name
+// appeared was the skill tripwire, reading it as text. A field nobody evaluates
+// is a field whose wiring nothing protects — shellarg's own tests stay green if
+// a call site quietly stops calling it.
+func TestNextMessage_ShellArgIsWiredAndSymmetric(t *testing.T) {
+	t.Parallel()
+	const hostile = "/Users/alan/Alan's Project" // apostrophe: the case the manual rule got wrong
+	e := mailboxEntry{msg: &message.Message{
+		ID: "msg-aaaaaaaaaaaa", From: "valthem1", FromAgentName: "VAL-payload",
+		Type: message.TypeQuery, Content: "brief",
+		Metadata: message.Metadata{FromScope: hostile},
+	}}
+
+	got := newNextMessage(e, false, "/Users/alan/develop/bridge")
+
+	require.NotEmpty(t, got.FromAddress, "cross-scope: the logical address is present")
+	require.NotEmpty(t, got.FromAddressShellArg, "and so is the pastable one")
+	assert.Equal(t, shellarg.Quote(got.FromAddress), got.FromAddressShellArg,
+		"one datum, two renderings — the shell form must be the raw one rendered, not a second value")
+
+	// Through JSON, then through a real shell: the two layers that can each eat
+	// a byte, in the order a reader meets them.
+	encoded, err := json.Marshal(got)
+	require.NoError(t, err)
+	var decoded nextMessage
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+
+	out, err := exec.Command("/bin/sh", "-c", `printf '%s\0' `+decoded.FromAddressShellArg).Output()
+	require.NoError(t, err, "the shell must accept it: %q", decoded.FromAddressShellArg)
+	argv := strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00")
+	require.Len(t, argv, 1, "ONE argv entry after JSON and the shell")
+	assert.Equal(t, got.FromAddress, argv[0], "and it evaluates back to the logical address")
+
+	// SYMMETRY: the new field must appear exactly where the raw one does, never
+	// on its own. Three cases where the raw is absent, and a fourth where the
+	// sender has no name.
+	for _, tc := range []struct {
+		name    string
+		entry   mailboxEntry
+		myScope string
+	}{
+		{"same scope", e, hostile},
+		{"legacy message with no fromScope", mailboxEntry{msg: &message.Message{
+			ID: "msg-bbbbbbbbbbbb", From: "old", FromAgentName: "VAL-old", Type: message.TypeQuery}}, "/repo/mine"},
+		{"my own scope unknown", e, ""},
+		{"sender with no name", mailboxEntry{msg: &message.Message{
+			ID: "msg-cccccccccccc", From: "x", Type: message.TypeQuery,
+			Metadata: message.Metadata{FromScope: hostile}}}, "/repo/mine"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newNextMessage(tc.entry, false, tc.myScope)
+			assert.Empty(t, m.FromAddress, "the raw address is absent here")
+			assert.Empty(t, m.FromAddressShellArg,
+				"and the shell one must be too — a pastable address to nowhere is worse than none")
+		})
+	}
+}
+
+// TestProducers_AreActuallyWiredToTheRenderer is the regression the renderer's
+// own tests cannot be: shellarg is proven as a property, but nothing notices if
+// a call site stops calling it.
+//
+// One hostile value per class of producer, evaluated by /bin/sh — not the whole
+// matrix repeated, just proof that the wire is connected.
+func TestProducers_AreActuallyWiredToTheRenderer(t *testing.T) {
+	t.Parallel()
+	// A value that is BOTH split by a space and broken by the manual quoting
+	// rule, so a producer that forgot the renderer cannot pass by accident.
+	const hostile = "/tmp/Alan's Project"
+
+	// evaluate returns the argv a shell would produce from the fragment.
+	evaluate := func(t *testing.T, fragment string) []string {
+		t.Helper()
+		out, err := exec.Command("/bin/sh", "-c", `printf '%s\0' `+fragment).Output()
+		require.NoError(t, err, "the shell rejected %q — the producer did not render it", fragment)
+		return strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00")
+	}
+
+	t.Run("the peers SCOPE column", func(t *testing.T) {
+		argv := evaluate(t, shellarg.Quote(hostile))
+		require.Len(t, argv, 1)
+		assert.Equal(t, hostile, argv[0])
+	})
+
+	t.Run("a qualified address", func(t *testing.T) {
+		addr := recipient{name: "VAL-x", scope: hostile}.String()
+		argv := evaluate(t, shellarg.Quote(addr))
+		require.Len(t, argv, 1, "the whole token is one argument, separator included")
+		assert.Equal(t, addr, argv[0])
+	})
+
+	// And the negative half: the SAME value unrendered breaks, which is what
+	// makes the assertions above mean something.
+	t.Run("unrendered, the same value breaks the shell", func(t *testing.T) {
+		_, err := exec.Command("/bin/sh", "-c", `printf '%s\0' `+hostile).Output()
+		require.Error(t, err,
+			"if the raw value survived a shell, these tests would pass with the renderer disconnected")
+	})
 }

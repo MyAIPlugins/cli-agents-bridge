@@ -124,10 +124,19 @@ func TestQuote_TabAndNewlineRoundTripButBreakTheLine(t *testing.T) {
 			require.Len(t, argv, 1, "the VALUE is still one argument")
 			assert.Equal(t, tc.raw, argv[0], "and byte-identical")
 
-			if strings.Contains(tc.raw, "\n") {
+			// BOTH halves, separately — the name of this test promises two and
+			// the first version checked one: it asserted the newline case and
+			// let the tab through, while a tab does not wrap a line at all. It
+			// destroys COLUMNS, which is a different way of breaking the same
+			// surface (tabwriter). Promising two things and verifying one is the
+			// class this arc has chased thirteen times (CRI, P3).
+			switch {
+			case strings.Contains(tc.raw, "\n"):
 				assert.Contains(t, rendered, "\n",
-					"but the RENDERING spans lines — which is why a newline is out of contract "+
-						"for any surface printed as rows, even though the value itself is fine")
+					"a newline survives quoting and still spans lines: out of contract for any surface printed as rows")
+			case strings.Contains(tc.raw, "\t"):
+				assert.Contains(t, rendered, "\t",
+					"a tab survives quoting and still breaks tabwriter columns: same limit, different mechanism")
 			}
 		})
 	}

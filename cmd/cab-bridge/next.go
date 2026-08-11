@@ -91,7 +91,7 @@ type nextMessage struct {
 	// the gap by looking the sender up now. That would answer a different
 	// question (where it is NOW) under the label of this one.
 	FromScope string `json:"fromScope,omitempty"`
-	// FromAddress is the token that writes BACK to this sender, ready to paste —
+	// FromAddress is the token that writes BACK to this sender —
 	// `VAL-payload@/Users/alan/develop/payload`. Present only when FromScope is,
 	// i.e. only when the plain name would not reach them.
 	//

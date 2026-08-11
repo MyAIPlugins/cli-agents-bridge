@@ -844,7 +844,7 @@ func resolveReplyTarget(args []string, asks []openAsk, known []string, stdin io.
 						"If %q is your message to whoever DID ask, pipe it on stdin instead", args[0], args[0])
 				}
 				return "", "", fmt.Errorf("%q is not one of the agents with an open ask, but it looks like %q — if you meant to answer them use `reply %s \"...\"`; if %q really is your message, pipe it on stdin instead",
-					args[0], match, match, args[0])
+					args[0], match, shellarg.Quote(match), args[0])
 			}
 		}
 		target, err = soleSender(senders)
