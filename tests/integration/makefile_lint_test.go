@@ -150,6 +150,12 @@ func TestMakefile_LintLooksWhereGoInstallPuts(t *testing.T) {
 				out, err := cmd.CombinedOutput()
 
 				if tc.wantRun {
+					// BOTH, and the exit code is not decoration: today the marker is
+					// printed by the last recipe line, so a failure after it cannot
+					// exist — add one recipe below staticcheck and this case would go
+					// green on a failing `make lint`, with its own name saying the
+					// opposite (CRI, P3).
+					require.NoError(t, err, "the pinned version must run AND the target must succeed: %s", out)
 					assert.Contains(t, string(out), "FAKE_LINT_RAN", "the pinned version must be executed")
 					return
 				}
@@ -160,6 +166,50 @@ func TestMakefile_LintLooksWhereGoInstallPuts(t *testing.T) {
 			})
 		}
 	})
+}
+
+// TestMakefile_LintRunsFromAPathWithSpaces is F-124's own defect, found inside
+// the Makefile written to verify F-124's fix.
+//
+// The existence guard quoted "$(STATICCHECK)"; the version probe and the
+// invocation did not. So a GOBIN whose basename contains a space split the path:
+// the correct binary — reporting exactly the pinned version — was never invoked,
+// the gate read "unknown", refused it, and then advised reinstalling it in the
+// same directory. The remediation loop, on another component of the path, two
+// hours after closing it elsewhere.
+//
+// The assertion is EXIT 0 PLUS THE MARKER, not that `make -n` prints the path:
+// choosing a binary is not running it, which is the distinction this whole lot
+// keeps turning on.
+func TestMakefile_LintRunsFromAPathWithSpaces(t *testing.T) {
+	if _, err := exec.LookPath("make"); err != nil {
+		t.Skip("make not available")
+	}
+	repoRoot, err := filepath.Abs("../..")
+	require.NoError(t, err)
+	pin := pinnedVersion(t, repoRoot)
+
+	// A space in the DIRECTORY, which is the half a quoted $(STATICCHECK) in one
+	// place out of three did not survive.
+	gobin := filepath.Join(t.TempDir(), "cri staticcheck space")
+	require.NoError(t, os.MkdirAll(gobin, 0o700))
+	fake := filepath.Join(gobin, "staticcheck")
+	script := "#!/bin/sh\n" +
+		"if [ \"$1\" = \"--version\" ]; then echo 'staticcheck 2026.1 (" + pin + ")'; exit 0; fi\n" +
+		"echo MARKER_LINT_RAN\n"
+	require.NoError(t, os.WriteFile(fake, []byte(script), 0o700))
+
+	cmd := exec.Command("make", "lint")
+	cmd.Dir = repoRoot
+	cmd.Env = append(os.Environ(), "GOBIN="+gobin, "PATH=/usr/bin:/bin:"+os.Getenv("PATH"))
+	out, err := cmd.CombinedOutput()
+
+	require.NoError(t, err, "a correct staticcheck under a path with a space must not be refused: %s", out)
+	assert.Contains(t, string(out), "MARKER_LINT_RAN", "and it must actually be RUN, not merely resolved")
+	assert.NotContains(t, string(out), "unknown",
+		"the version probe must reach the binary too — reading 'unknown' here is the path having been split")
+	assert.NotContains(t, string(out), "version mismatch",
+		"refusing the right binary and then advising to reinstall it in the same place is the loop we keep closing")
 }
 
 func pinnedVersion(t *testing.T, repoRoot string) string {

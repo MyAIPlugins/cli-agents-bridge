@@ -132,13 +132,24 @@ lint: ## Run go vet + staticcheck (required; version pinned in .staticcheck-vers
 		echo "  this is a hard failure on purpose: a lint that silently skips is not a lint"; \
 		exit 1; \
 	fi
+	@# EVERY EXPANSION OF $(STATICCHECK) IS QUOTED, including this probe and the
+	@# invocation below. The existence guard was quoted and these two were not, so
+	@# a GOBIN whose basename contains a space split the path: the correct binary,
+	@# reporting exactly the pinned version, was never invoked — the gate read
+	@# "unknown", refused it, and advised reinstalling it in the same place.
+	@#
+	@# That is F-124's own defect, in the Makefile written to verify F-124's fix.
+	@# Found by a critic applying the method to our tooling, which was the one
+	@# place none of us had pointed it at. The class does not close by knowing it;
+	@# it closes where somebody runs it.
+	@#
 	@# AND IT HAS TO BE THE PINNED ONE. Resolving a path is not the same as
 	@# running the version the project pinned: whatever sits first in $$PATH was
 	@# executed regardless, so an old binary gave a false green and a new one a
 	@# false red — while the commit that introduced .staticcheck-version claimed
 	@# a single source. It governed the CI install and this help text, not the
 	@# binary that actually ran (CRI).
-	@got="$$($(STATICCHECK) --version 2>/dev/null | sed -E 's/.*\((v[0-9.]+)\).*/\1/')"; \
+	@got="$$("$(STATICCHECK)" --version 2>/dev/null | sed -E 's/.*\((v[0-9.]+)\).*/\1/')"; \
 	if [ "$$got" != "$(STATICCHECK_VERSION)" ]; then \
 		echo "make lint: staticcheck version mismatch"; \
 		echo "  pinned  (.staticcheck-version): $(STATICCHECK_VERSION)"; \
@@ -146,7 +157,7 @@ lint: ## Run go vet + staticcheck (required; version pinned in .staticcheck-vers
 		echo "  install the pinned one:  go install honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION)"; \
 		exit 1; \
 	fi
-	$(STATICCHECK) ./...
+	"$(STATICCHECK)" ./...
 
 clean: ## Remove build artifacts
 	rm -rf $(BIN_DIR)
