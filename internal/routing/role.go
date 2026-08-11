@@ -37,7 +37,8 @@
 // declared anywhere — the wall a fresh critic hit was never in the routing, it
 // was in the list of roles it was OFFERED.
 //
-// The override is explicit by design (CLAUDE.md "no fallback impliciti"):
+// The override is explicit by design (docs/dev-conventions.md "No implicit
+// fallbacks"):
 // callers wanting mesh peer-to-peer must pass --allow-mesh and accept the
 // routing chaos risk Alan reported empirically.
 package routing

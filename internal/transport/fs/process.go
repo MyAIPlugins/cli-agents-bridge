@@ -22,8 +22,8 @@ import (
 // Atomicity: rename(2) is atomic when src and dst are on the same
 // filesystem (POSIX). processedDir is computed as a sibling of inbox/ so
 // they always share the filesystem in any realistic config. EXDEV is
-// surfaced as an explicit error — no silent copy-fallback (CLAUDE.md "no
-// fallback impliciti").
+// surfaced as an explicit error — no silent copy-fallback
+// (docs/dev-conventions.md "No implicit fallbacks").
 //
 // Creates processedDir with mode 0o700 (SC-2) if it does not yet exist.
 func MoveToProcessed(srcInboxPath, processedDir string) error {

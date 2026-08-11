@@ -7,8 +7,8 @@
 // live on the same filesystem. We enforce same-fs by creating the temp file
 // in the target directory (os.CreateTemp(filepath.Dir(target), ...)).
 // Cross-filesystem rename returns EXDEV explicitly — we surface it as an
-// error rather than silent non-atomic fallback (no fallback impliciti per
-// CLAUDE.md).
+// error rather than silent non-atomic fallback (docs/dev-conventions.md
+// "No implicit fallbacks").
 //
 // Durability: f.Sync() flushes data + minimal metadata before rename, so a
 // kernel crash mid-write cannot leave a zero-byte file (Linux ext4 historic
