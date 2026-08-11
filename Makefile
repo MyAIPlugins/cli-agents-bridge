@@ -44,8 +44,8 @@ help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-22s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 build: ## Build binary for host platform (darwin-arm64 on Alan's machine)
-	@mkdir -p $(BIN_DIR)
-	go build $(GO_FLAGS) -o $(BIN_DIR)/$(BINARY) $(PKG)
+	@mkdir -p "$(BIN_DIR)"
+	go build $(GO_FLAGS) -o "$(BIN_DIR)/$(BINARY)" $(PKG)
 	@echo "built: $(BIN_DIR)/$(BINARY) ($(VERSION))"
 
 # -count=1 disables the test cache, and it is not optional here (LL-11, twice):
@@ -61,30 +61,53 @@ test-race: ## Run tests with race detector (CI gate)
 	go test -race -count=1 -p $(GO_TEST_PARALLEL) ./...
 
 cross-compile-all: ## Cross-compile darwin-{arm64,amd64} + linux-{amd64,arm64} (no cgo) — matches .goreleaser.yml + ci.yml
-	@mkdir -p $(BIN_DIR)
-	CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build $(GO_FLAGS) -o $(BIN_DIR)/$(BINARY)-darwin-arm64 $(PKG)
-	CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build $(GO_FLAGS) -o $(BIN_DIR)/$(BINARY)-darwin-amd64 $(PKG)
-	CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build $(GO_FLAGS) -o $(BIN_DIR)/$(BINARY)-linux-amd64  $(PKG)
-	CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build $(GO_FLAGS) -o $(BIN_DIR)/$(BINARY)-linux-arm64  $(PKG)
+	@mkdir -p "$(BIN_DIR)"
+	CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build $(GO_FLAGS) -o "$(BIN_DIR)/$(BINARY)-darwin-arm64" $(PKG)
+	CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build $(GO_FLAGS) -o "$(BIN_DIR)/$(BINARY)-darwin-amd64" $(PKG)
+	CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build $(GO_FLAGS) -o "$(BIN_DIR)/$(BINARY)-linux-amd64"  $(PKG)
+	CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build $(GO_FLAGS) -o "$(BIN_DIR)/$(BINARY)-linux-arm64"  $(PKG)
 	@echo "cross-compile artifacts:"
-	@ls -lh $(BIN_DIR)/$(BINARY)-*
+	@ls -lh "$(BIN_DIR)"/$(BINARY)-*
 
+# $(CURDIR), NOT $(PWD), and every path quoted.
+#
+# This is the command that puts cab-bridge on PATH — the only build artefact the
+# agents actually use — so "merged is not installed" ends here, and what it links
+# had better be what it just built.
+#
+# $(PWD) is the CALLER's working directory, inherited from the environment; Make
+# does not maintain it. With `make -C <repo>` from anywhere else, this target
+# built inside <repo> and then linked to <caller-cwd>/bin/cab-bridge — a path
+# that need not even exist. Reproduced: run from `docs/` against a copy, it
+# installed a DANGLING symlink into ~/.local/bin and exited 0. Not a false red: a
+# command declaring success while installing something other than what it
+# compiled — the fourth instance today of "acts on the wrong object", after the
+# repair command that repaired a different project.
+#
+# $(CURDIR) is Make's own answer and it tracks -C. The quoting is the other half:
+# under a checkout whose path contains a space, `ln` failed with "No such file or
+# directory" AFTER the build had succeeded.
 install-dev: build ## Symlink local binary into ~/.local/bin for --plugin-dir development
-	@mkdir -p $$HOME/.local/bin
-	@ln -sf $(PWD)/$(BIN_DIR)/$(BINARY) $$HOME/.local/bin/$(BINARY)
-	@echo "symlinked: $$HOME/.local/bin/$(BINARY) -> $(PWD)/$(BIN_DIR)/$(BINARY)"
+	@mkdir -p "$$HOME/.local/bin"
+	@ln -sf "$(CURDIR)/$(BIN_DIR)/$(BINARY)" "$$HOME/.local/bin/$(BINARY)"
+	@echo "symlinked: $$HOME/.local/bin/$(BINARY)"
+	@echo "        -> $(CURDIR)/$(BIN_DIR)/$(BINARY)"
 	@echo "ensure \$$HOME/.local/bin is in your PATH"
 
 # NOTE: VERSION now derives from `git describe`. To ship the committed plugin
 # binary with a clean release version, run install-plugin from a checkout of the
 # tag (e.g. after `git checkout v0.2.3`); off-tag it embeds a <ver>-<n>-g<sha>.
 install-plugin: build ## Copy binary into plugins/cli-agents-bridge/bin/ for marketplace install (cp, NOT symlink — Claude Code cache install copies files, symlink targets would dangle)
-	@mkdir -p $(PLUGIN_DIR)/bin
-	@cp -f $(BIN_DIR)/$(BINARY) $(PLUGIN_DIR)/bin/$(BINARY)
-	@chmod +x $(PLUGIN_DIR)/bin/$(BINARY)
+	@mkdir -p "$(PLUGIN_DIR)/bin"
+	@cp -f "$(BIN_DIR)/$(BINARY)" "$(PLUGIN_DIR)/bin/$(BINARY)"
+	@chmod +x "$(PLUGIN_DIR)/bin/$(BINARY)"
 	@echo "installed: $(PLUGIN_DIR)/bin/$(BINARY) ($(VERSION))"
 	@echo "next: from a fresh Claude Code session, run:"
-	@echo "  /plugin marketplace add $(PWD)"
+	@# $(CURDIR) here too — the branch next door. With `make -C` this line printed
+	@# the CALLER's directory, so the marketplace command named a repository the
+	@# user was not installing from. install-dev was the one that was reported;
+	@# this is the same mistake in the other command that reaches the agents.
+	@echo "  /plugin marketplace add $(CURDIR)"
 	@echo "  /plugin install cli-agents-bridge@cli-agents-bridge-marketplace"
 
 # STATICCHECK IS REQUIRED, and looked for where `go install` actually puts it.

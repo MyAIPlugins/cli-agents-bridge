@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -239,4 +240,83 @@ func stepNamed(t *testing.T, yaml, name string) string {
 		}
 	}
 	return strings.Join(lines[start:], "\n")
+}
+
+// TestMakefile_InstallDevLinksWhatItJustBuilt covers the command that puts
+// cab-bridge on PATH — the only build artefact the agents actually use.
+//
+// Two defects in four lines, and the second is the worse one:
+//
+//   - the paths were unquoted, so a checkout under a directory with a space made
+//     `ln` fail AFTER the build had succeeded;
+//   - it used $(PWD), the CALLER's working directory, which Make does not
+//     maintain. With `make -C <repo>` from elsewhere it built inside <repo> and
+//     linked to <caller-cwd>/bin/cab-bridge — reproduced as a DANGLING symlink
+//     installed into ~/.local/bin, with exit 0.
+//
+// "Merged is not installed" is a rule this project repeats; here the command
+// that closes that distance could install the wrong binary and say nothing.
+//
+// One scenario catches both, and it has to: a repo whose path contains a space,
+// invoked with `make -C` from a different directory. Asserting exit 0 would not
+// be enough — the broken version exited 0 too — so the assertion is on where the
+// symlink POINTS and whether that target runs.
+func TestMakefile_InstallDevLinksWhatItJustBuilt(t *testing.T) {
+	if _, err := exec.LookPath("make"); err != nil {
+		t.Skip("make not available")
+	}
+	repoRoot, err := filepath.Abs("../..")
+	require.NoError(t, err)
+
+	tmp := t.TempDir()
+	repo := filepath.Join(tmp, "a repo with spaces")
+	home := filepath.Join(tmp, "home")
+	require.NoError(t, os.MkdirAll(repo, 0o700))
+	require.NoError(t, os.MkdirAll(home, 0o700))
+
+	// A real copy of the TRACKED WORKING TREE — not `git archive HEAD`, which
+	// ships the last commit. The first version used HEAD and went red against the
+	// Makefile as committed: the test was right and the fixture was testing the
+	// wrong tree. A regression for a change must run against the change.
+	list := exec.Command("git", "ls-files", "-z")
+	list.Dir = repoRoot
+	tracked, err := list.Output()
+	require.NoError(t, err, "git ls-files")
+	tar := exec.Command("tar", "-c", "-f", "-", "--null", "-T", "-")
+	tar.Dir = repoRoot
+	tar.Stdin = bytes.NewReader(tracked)
+	tarball, err := tar.Output()
+	require.NoError(t, err, "tar the working tree")
+	untar := exec.Command("tar", "-x", "-C", repo)
+	untar.Stdin = bytes.NewReader(tarball)
+	require.NoError(t, untar.Run(), "untar into the spaced path")
+
+	// Invoked with -C from a directory that is NOT the repo: the case where
+	// $(PWD) and $(CURDIR) disagree, and the only one that tells them apart.
+	cmd := exec.Command("make", "-C", repo, "install-dev")
+	cmd.Dir = filepath.Join(repoRoot, "docs")
+	cmd.Env = append(os.Environ(), "HOME="+home)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "install-dev must survive a path with spaces: %s", out)
+
+	link := filepath.Join(home, ".local", "bin", "cab-bridge")
+	target, err := os.Readlink(link)
+	require.NoError(t, err, "the symlink must exist: %s", out)
+
+	// SYMLINK-RESOLVED on both sides: $(CURDIR) is canonical, while t.TempDir()
+	// hands back /var/... which on macOS is a link to /private/var/.... Comparing
+	// the raw strings would fail for a reason that has nothing to do with the
+	// defect — the same care the scope tests already take.
+	wantTarget, err := filepath.EvalSymlinks(filepath.Join(repo, "bin", "cab-bridge"))
+	require.NoError(t, err, "the built binary must exist to be resolved")
+	gotTarget, err := filepath.EvalSymlinks(target)
+	require.NoError(t, err, "the symlink must not dangle: %s", target)
+	assert.Equal(t, wantTarget, gotTarget,
+		"it must point at the binary THIS invocation built, not at one under the caller's cwd")
+
+	// And the target must actually be there: the broken version produced a link
+	// to a path that did not exist, which no exit code revealed.
+	info, err := os.Stat(gotTarget)
+	require.NoError(t, err, "the symlink must not dangle")
+	assert.NotZero(t, info.Mode()&0o111, "and what it points at must be executable")
 }
