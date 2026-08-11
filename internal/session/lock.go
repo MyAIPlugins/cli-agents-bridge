@@ -11,8 +11,24 @@ import (
 )
 
 // ErrLockHeld is returned by AcquireLock when the lock file exists and is
-// held by a live process (verified via kill(pid, 0)). Callers should surface
-// this with the hint "use --force-new to override".
+// held by a live process (verified via kill(pid, 0)).
+//
+// IT CARRIES NO REMEDY, and that is the fix for F-126. This line used to say
+// «callers should surface this with the hint "use --force-new to override"»,
+// and AcquireLock put that hint in the message itself — so it travelled to all
+// eleven call sites. It is true at exactly one of them: Register, the only
+// caller whose forceNew argument comes from a flag. The other ten pass a hard
+// -coded false, and five of them are reached from the five loop verbs, which
+// v0.8 gave NO FLAGS AT ALL: `cab-bridge ask --force-new` answers "takes no
+// flags". v0.8 removed the flags from the loop and this message did not hear
+// about it.
+//
+// An error with no remedy leaves the reader stopped; an error with a remedy
+// that does not exist sends them down a closed road while making them believe
+// there is one. So the remedy belongs to whoever knows the command — and the
+// two remedies are opposites: at Register the holder is a LIVE SESSION and
+// retrying never helps (hence --force-new), everywhere else the hold lasts one
+// short operation and retrying is exactly right.
 var ErrLockHeld = errors.New("session lock held by live process")
 
 // AcquireLock attempts to atomically create lockPath with the current PID.
@@ -63,7 +79,9 @@ func AcquireLock(lockPath string, forceNew bool) (release func() error, err erro
 	}
 
 	if IsProcessAlive(existingPID) {
-		return nil, fmt.Errorf("%w: lockPath=%q holder pid=%d (use --force-new to override)",
+		// Facts only: the primitive does not know which command is calling it,
+		// and any remedy it names is wrong for most of them (see ErrLockHeld).
+		return nil, fmt.Errorf("%w: lockPath=%q holder pid=%d",
 			ErrLockHeld, lockPath, existingPID)
 	}
 

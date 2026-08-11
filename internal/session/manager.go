@@ -171,6 +171,15 @@ func (m *Manager) Register(ctx context.Context, opts RegisterOpts) (*Manifest, f
 		// Failed lock: rollback the session dir we just created to avoid
 		// leaving an orphan. Best-effort.
 		_ = os.RemoveAll(sessionDir)
+		// NO --force-new advice here, and the reason is worth the line because
+		// it is not the obvious one. This IS the only AcquireLock caller whose
+		// forceNew comes from the flag, so by signature it looks like the place
+		// for the remedy — but sessionID is 32 random bits and this sessionDir
+		// was created three lines up, so reaching ErrLockHeld needs an ID
+		// COLLISION with a live holder. No test can get here, which makes any
+		// sentence written here a sentence nobody will ever read: the class
+		// F-126 is about. The advice the user actually meets lives at the two
+		// reachable refusals — ErrSessionExistsForProject above, and tryReuse.
 		return nil, nil, fmt.Errorf("register: %w", err)
 	}
 
