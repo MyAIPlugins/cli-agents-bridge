@@ -139,6 +139,37 @@ Arco v0.8 (design-gate a 4 giri, CRI Codex + CRI2 Fable). **Sei P0 nei gate, qua
 
 **La terza forma del "verde che non dimostra niente" (2026-08-09)** — completa LL-11 e LL-12. LL-11: *verde dichiarato ≠ verde reale*. LL-12: *gate verde su una premessa sbagliata **nel piano***. Terza: **premessa sbagliata nel SETUP DEL TEST**, che è la variante che nessuno guarda perché il verde non si interroga. Caso: `TestNext_ConcurrentRuns_DoNotOverlap` asseriva che due `next` concorrenti non si sovrappongono, simulando i due processi con due **goroutine** — ma `AcquireLock` è **deliberatamente re-entrant per PID** (`lock.go:57-62`, ritorna un release no-op), quindi due goroutine dello stesso binario di test **non erano separate affatto** e la mutua esclusione su cui poggiava la garanzia era disabilitata per costruzione. Passava sui millisecondi di due scritture di manifest che con la consegna non c'entravano nulla; toglierle l'ha reso rosso 8 volte su 8, sembrando una regressione. **La garanzia era vera, il test non poteva dimostrarla** — verificata poi con due processi reali. Regola (ESC): *un test che afferma un'esclusione deve girare dove l'esclusione esiste*; e tenerlo con un commento che ne dichiara la dipendenza dallo scheduling sarebbe **documentare il difetto invece di toglierlo**. Osservazione del VAL da fuori: in tutti e tre i casi il gate ha funzionato **come procedura** e ha certificato una premessa falsa — non serve un gate più severo, serve chiedersi *cosa dimostra questo verde*, che è una domanda diversa da *è verde?*. Corollario operativo già in uso: **un fix di liveness si consegna con il difetto riprodotto, la causa nel codice, il fix, la prova che il test di regressione FALLISCE senza il fix, e lo smoke con processi reali** — e il gate ripete quella prova invece di crederla.
 
+**LL-20 (2026-08-11)** — In un arco di ventiquattro gate, **quasi nessun difetto stava nel prodotto: stavano negli strumenti che ci dicevano se il prodotto andasse bene** — e nessuno l'ha trovato chi l'aveva scritto
+Arco F-124 (triade VAL/ESC Claude + CRI Codex, tre superfici: il fix, gli strumenti, il wire format). **Cinque P1 in decisioni del VAL**, tutti trovati dal critico, **ogni volta con un'esecuzione invece che con un argomento**. Il catalogo delle forme in cui uno **strumento di misura** mente, tutte incontrate in una giornata e tutte reali:
+
+    tronca            `| head -13` su una suite che stampa 11 righe: due package rossi e la 14a sparisce
+    conta i successi  `grep -cE "^ok"`: un gate che non stampa cio' che non e' passato
+    salta e lo dice   `cmd && x || echo "skipping"`: ESEGUE, fallisce, e dichiara di non aver eseguito — exit 0
+    misura altro      l'exit code letto in fondo a una pipeline: misuri `head`
+    misura il passato `StartedAt` per dedurre un esito appena avvenuto: un timestamp di un'altra vita
+    non esiste        `timeout` su macOS: exit 127, e **l'assenza di output sembra un risultato**
+    stato sporco      il secondo probe misura cio' che il primo ha gia' riparato
+    conta i commenti  il grep della verifica trova la stringa **nel commento appena scritto**
+    cerca il nome     `grep "--role=%s"`: il format string resta identico anche quando l'argomento e' quotato
+    l'albero sbagliato la fixture copia `git archive HEAD` — il file **committato** — per provare un fix non committato
+    l'errore parziale uno script si ferma a meta': la causa nominata viene corretta, **il resto del batch dato per fatto**
+    il test adiacente `resolveScope` canonicalizza `/var`: il test nomina un ramo ed esercita il suo vicino
+    l'operatore bravo  l'apostrofo quotato **correttamente da chi prova**: misuri la tua competenza, non l'istruzione
+    chiama il componente il test si chiama "i producer sono cablati" e chiama il renderer: verde con tutto scollegato
+    **il filtro che non discrimina** `git log --author=Alan` su un range dove **tutti firmano Alan**: risponde 31 su 31
+
+**L'ultima e' la piu' silenziosa e chiude la serie** (ESC, a valle del push): non tronca, non conta male, non misura l'oggetto sbagliato — **filtra su un campo che non separa niente**. Il comando gira, esce un numero pulito e ripetibile, e **nessuno vede che il setaccio ha i buchi larghi quanto il materiale**. E' stata scartata solo perche' il totale coincideva sospettosamente; con proporzioni diverse sarebbe finita in un report come dato.
+
+**Le quattro formulazioni operative che l'arco ha prodotto, tutte nate da un errore concreto:**
+- **Conoscere una classe non la chiude in nessun posto in particolare: si chiude dove qualcuno la esegue.** Sapevamo tutti e tre che un path con spazi si spezza — l'avevamo scritto in cinque commit — e l'abbiamo introdotto **nel Makefile scritto per verificare quel fix**.
+- **Un contenitore non e' un posto: e' tutto cio' che il processo eredita** — directory, variabili, `PATH`, `HOME`, cwd. Ogni volta che se ne isola una dimensione, il difetto compare in quella accanto: data dir isolato / PATH no, filesystem enumerato / ambiente no. **Quattro difetti degli strumenti li ha trovati il critico eseguendo in un contenitore che noi non avevamo scelto.**
+- **Un'affermazione che decide una forma del codice va misurata anche quando arriva da chi tiene il gate: il gate non e' una fonte, e' un ruolo.** Nata dal peggiore dei miei P1 — ESC aveva **dichiarato onestamente** il limite del suo hash (*"improbabile, non impossibile"*), io l'ho "corretto" sostenendo che il path assoluto rendesse la funzione iniettiva, e gli ho fatto scrivere `injective` nel codice. *Cambiare l'input non cambia il codominio.* Il critico ha **costruito** la collisione invece di argomentarla. **Una dichiarazione onesta di un limite e' un DATO, il pezzo di qualita' di un piano — non un'ammissione da correggere.**
+- **`[DEDOTTO]` non significa "da eseguire": e' il punto in cui potresti stare esaminando la REGOLA SBAGLIATA** — e li' l'esecuzione non serve a confermare la tua ipotesi, serve a farti trovare quella vera.
+
+**E il corollario sul criterio, che vale piu' di ogni elenco**: un censimento ha **due** liste, e si verifica solo quella a rischio. `--role=%s` stava fra i *"safe per costruzione, enum validato"* — e `role.go:74` dice *"Validation is structural, NOT enumerated"*, il README pure. **Anche i sicuri vanno letti sul codice, e piu' suonano ovvi piu' vale la pena.**
+
+**Come si prova che una fonte e' unica** (metodo del CRI, adottato): non verificando che il meccanismo **esista** — errore commesso da me e da ESC in due punti diversi della stessa catena — ma **cambiando il valore nella fonte dichiarata e guardando cosa resta indietro**.
+
 **LL-19 (2026-08-09)** — Il difetto piu' costoso del VAL non e' verificare poco: e' **dichiarare verificato un argomento plausibile**, e attribuire un dato vero all'oggetto sbagliato
 Dieci errori del VAL in una giornata di arco v0.8, tutti riconducibili a due forme che la doppia verifica **non prende**, perche' in entrambe il dato regge a ogni controllo.
 
