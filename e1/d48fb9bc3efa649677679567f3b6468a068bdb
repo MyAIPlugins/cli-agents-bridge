@@ -1,0 +1,26 @@
+tests/integration/makefile_lint_test.go
+  s_ea503823ea741c::t_00df82f0016a33 306-314,319
+  s_ea503823ea741c::t_9a4d947429f35d 4,244-276,290-305,315-318,320-321
+  s_ea503823ea741c::t_c7ca8cb4dba3b9 277-289
+  s_ea503823ea741c::t_b1eac054a6f300 322
+Makefile
+  s_ea503823ea741c::t_54174df71acb53 47-48,64-68,70
+  s_ea503823ea741c::t_a4d92e7dabbfac 72-89,91-94
+  s_ea503823ea741c::t_8e9a64e5b226c6 101-103,106-110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e1d48fb9bc3efa649677679567f3b6468a068bdb",
+  "prompts": {},
+  "sessions": {
+    "s_ea503823ea741c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "446e39f2-1d7e-4224-8bb9-b841db1a013b",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
