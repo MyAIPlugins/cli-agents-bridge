@@ -1,0 +1,39 @@
+cmd/cab-bridge/join_test.go
+  s_ea503823ea741c::t_2fd94fbcb55d3a 1107-1164
+cmd/cab-bridge/recipient_test.go
+  s_ea503823ea741c::t_a5dfc747ff65f5 821-825
+cmd/cab-bridge/naming.go
+  s_ea503823ea741c::t_7b7d2f4df4b727 97
+  s_ea503823ea741c::t_8b697a886165ee 110-128
+  s_ea503823ea741c::t_0e3f26ffb64b14 129-130
+cmd/cab-bridge/join.go
+  s_ea503823ea741c::t_0f327cb885f4b1 220-227
+cmd/cab-bridge/next_test.go
+  s_ea503823ea741c::t_87c42784cc437b 897-990
+internal/session/reconnect_test.go
+  s_ea503823ea741c::t_2613ef28a906a0 537-540,542
+  s_ea503823ea741c::t_4f4e02321df077 6,8,500-536,541,543-563
+cmd/cab-bridge/shellarg_wiring_test.go
+  s_ea503823ea741c::t_7e35c2522a5f33 228
+  s_ea503823ea741c::t_f54bd00c7a730e 118-132
+  s_ea503823ea741c::t_721ca8480e4224 233
+  s_ea503823ea741c::t_0deaef79705d05 1-117,133-227,229-232,234-249,251-260,262-269,272-351
+  s_ea503823ea741c::t_7ebb45c81a16af 250
+  s_ea503823ea741c::t_a5307fe1212298 261,270-271
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "f5db1cb0fe9a1acd7b900c6217dad3992cb685f8",
+  "prompts": {},
+  "sessions": {
+    "s_ea503823ea741c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "446e39f2-1d7e-4224-8bb9-b841db1a013b",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
