@@ -48,7 +48,7 @@ func ValidateMessageID(id string) error {
 // Validate is the write/audit gateway check: it is called by EncodeStrict
 // (pre-write) and DecodeStrict (audit read). An unknown type here is a hard
 // error — it surfaces protocol drift or a typo before it reaches the wire
-// (no silent fallback per CLAUDE.md "no fallback impliciti").
+// (no silent fallback — docs/dev-conventions.md "No implicit fallbacks").
 //
 // Runtime read paths use validateCommon via DecodeLenient instead, which
 // tolerates an unknown type for forward-compat (F-12) — see validateCommon.
