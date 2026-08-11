@@ -1,0 +1,25 @@
+internal/transport/fs/process.go
+  s_ea503823ea741c::t_d1dfc0ee796cd0 25-26
+internal/transport/fs/atomic.go
+  s_ea503823ea741c::t_da95d4bd413d89 10-11
+internal/routing/role.go
+  s_ea503823ea741c::t_6f1764e2cc7ba2 40-41
+internal/message/validate.go
+  s_ea503823ea741c::t_c64a7427140852 51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "ef36c8deda59e19c370a793868cd3ac4ff7f3b28",
+  "prompts": {},
+  "sessions": {
+    "s_ea503823ea741c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "446e39f2-1d7e-4224-8bb9-b841db1a013b",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
