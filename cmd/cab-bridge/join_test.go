@@ -979,5 +979,57 @@ func TestRegister_SaysWhenTheNameIsNotTheDirectorys(t *testing.T) {
 	stderr = captureStderr(t, func() {
 		require.NoError(t, runRegister([]string{"--role=val", "--json=false", "--agent-name=VAL-chosen", "--project-path=" + spaced, "--force-new"}))
 	})
-	assert.NotContains(t, stderr, "deriving from", "nothing was derived: the caller said the name")
+	assert.NotContains(t, stderr, "derived", "nothing was derived: the caller said the name")
+}
+
+// TestRegister_NoticeDoesNotAnnounceADerivationThatWillNotHappen — CRI re-gate
+// P2-1, and the branch the first version of the notice did not have.
+//
+// That version ran BEFORE Manager.Register, so on `--resume` it printed
+// `deriving from "a_2Bb"` and the same command then returned `ESC-custom`: two
+// surfaces of one command stating two different identities, the printed one
+// false. Lot 1 had just established that a resume ADOPTS the existing name — so
+// the notice was describing a derivation that was not going to occur.
+//
+// Declaring an outcome before it happens is the oldest class in this project,
+// and I put it back in the lot that closes it. The test is on the resume branch
+// because that is the one that was missing, not the one that was easy.
+func TestRegister_NoticeDoesNotAnnounceADerivationThatWillNotHappen(t *testing.T) {
+	dataDir := t.TempDir()
+	base := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700))
+	odd := filepath.Join(base, "a+b") // a directory whose basename IS escaped
+	require.NoError(t, os.MkdirAll(odd, 0o700))
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	t.Setenv("CAB_AUTO_GC_HOURS", "0")
+
+	// Registered with a name the caller chose, in a directory that would derive
+	// something else entirely.
+	require.NoError(t, runRegister([]string{"--role=esc", "--json=false", "--agent-name=ESC-custom", "--project-path=" + odd}))
+	entries, err := os.ReadDir(filepath.Join(dataDir, "sessions"))
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	sid := entries[0].Name()
+
+	mgr := newSessionManager(config.Config{DataDir: dataDir})
+	mf, err := mgr.LoadManifest(sid)
+	require.NoError(t, err)
+	mf.PID = 999999999 // abandoned, so the resume may take it
+	require.NoError(t, mgr.SaveManifest(mf))
+
+	stderr := captureStderr(t, func() {
+		require.NoError(t, runRegister([]string{"--role=esc", "--json=false", "--resume", "--project-path=" + odd}))
+	})
+	assert.NotContains(t, stderr, "derived",
+		"a resume adopts the existing name — announcing a derivation states an outcome that will not happen")
+	assert.NotContains(t, stderr, "a_2Bb",
+		"and it must certainly not name the identity the session did NOT take")
+
+	after, err := os.ReadDir(filepath.Join(dataDir, "sessions"))
+	require.NoError(t, err)
+	require.Len(t, after, 1)
+	assert.Equal(t, sid, after[0].Name(), "same session")
+	mf, err = mgr.LoadManifest(sid)
+	require.NoError(t, err)
+	assert.Equal(t, "ESC-custom", mf.AgentName, "and the name the surfaces must agree on")
 }

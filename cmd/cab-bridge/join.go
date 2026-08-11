@@ -61,7 +61,7 @@ func runJoin(args []string) error {
 	fs := flag.NewFlagSet("join", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	role := fs.String("role", "", "this agent's role (required): "+session.RoleNamesWithNote())
-	agentName := fs.String("agent-name", "", "this agent's name; empty = derived from the scope")
+	agentName := fs.String("agent-name", "", "this agent's name; empty derives one from the WORKING DIRECTORY basename (not the scope — deriving from the scope would give every agent of a role in one repository the same name), escaped into the supported grammar: letters, digits, `_`, `.`, `-`")
 	projectPath := fs.String("project-path", "", "project root (default: cwd) — test injection point")
 	team := fs.String("team", "", "team label isolating this group in a shared data dir; usually unneeded")
 	forceNew := fs.Bool("force-new", false, "register a second session even if one already matches this identity")
