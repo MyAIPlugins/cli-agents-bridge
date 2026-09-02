@@ -1,0 +1,30 @@
+.claude-plugin/marketplace.json
+  s_d92bfabdf9f81b::t_dcaf37cf54b7a2 12
+README.md
+  s_d92bfabdf9f81b::t_dcaf37cf54b7a2 28
+  s_d92bfabdf9f81b::t_7e4a3e92fb2bf4 245-246
+SECURITY.md
+  s_d92bfabdf9f81b::t_642ec5eec9d799 3,62
+plugins/cli-agents-bridge/.claude-plugin/plugin.json
+  s_d92bfabdf9f81b::t_dcaf37cf54b7a2 4
+ROADMAP.md
+  s_d92bfabdf9f81b::t_dddea5449beea7 8-14
+CHANGELOG.md
+  s_d92bfabdf9f81b::t_dcaf37cf54b7a2 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "801e6c6440e89fe0a4ecf252be8823be12db28fc",
+  "prompts": {},
+  "sessions": {
+    "s_d92bfabdf9f81b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9c089bf3-33a8-4170-89b4-f223462957a5",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
