@@ -57,19 +57,19 @@ func TestRegister_HappyPath(t *testing.T) {
 	info, err := os.Stat(sessionDir)
 	require.NoError(t, err)
 	assert.True(t, info.IsDir())
-	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm())
+	assertPOSIXPerm(t, info.Mode().Perm(), 0o700, "the session dir")
 
 	for _, sub := range []string{"inbox", "outbox"} {
 		subInfo, err := os.Stat(filepath.Join(sessionDir, sub))
 		require.NoError(t, err)
 		assert.True(t, subInfo.IsDir())
-		assert.Equal(t, os.FileMode(0o700), subInfo.Mode().Perm())
+		assertPOSIXPerm(t, subInfo.Mode().Perm(), 0o700, sub+"/")
 	}
 
 	manifestPath := filepath.Join(sessionDir, "manifest.json")
 	mfInfo, err := os.Stat(manifestPath)
 	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o600), mfInfo.Mode().Perm())
+	assertPOSIXPerm(t, mfInfo.Mode().Perm(), 0o600, "manifest.json")
 
 	// LoadManifest roundtrips
 	loaded, err := mgr.LoadManifest(mf.SessionID)

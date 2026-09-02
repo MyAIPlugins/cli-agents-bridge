@@ -22,7 +22,7 @@ func TestAcquireLock_Fresh(t *testing.T) {
 
 	info, err := os.Stat(lockPath)
 	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	assertPOSIXPerm(t, info.Mode().Perm(), 0o600, "the lock file")
 
 	// Content is our PID
 	got, err := readPIDFromLock(lockPath)

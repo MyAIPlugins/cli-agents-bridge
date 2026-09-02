@@ -39,5 +39,5 @@ func TestSC7_FirstRunCreatesDataDir(t *testing.T) {
 	info, err := os.Lstat(base)
 	require.NoError(t, err, "data dir must be created on first run")
 	assert.True(t, info.IsDir())
-	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm(), "first-run data dir must be 0700")
+	assertPOSIXPerm(t, info.Mode().Perm(), 0o700, "first-run data dir")
 }

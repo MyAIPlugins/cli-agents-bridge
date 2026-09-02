@@ -91,9 +91,7 @@ func TestBootstrapDataDir_FirstRunCreates0700(t *testing.T) {
 	if !info.IsDir() {
 		t.Fatalf("expected a directory at %q", base)
 	}
-	if perm := info.Mode().Perm(); perm != 0o700 {
-		t.Errorf("first-run dir perms = %04o, want 0700", perm)
-	}
+	assertPOSIXPerm(t, info.Mode().Perm(), 0o700, "first-run dir perms")
 }
 
 func TestBootstrapDataDir_SymlinkIsFatal(t *testing.T) {
@@ -136,9 +134,7 @@ func TestBootstrapDataDir_LoosePermsAutoTightened(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o700 {
-		t.Errorf("perms after auto-repair = %04o, want 0700", perm)
-	}
+	assertPOSIXPerm(t, info.Mode().Perm(), 0o700, "perms after auto-repair")
 }
 
 func TestBootstrapDataDir_HappyPath700(t *testing.T) {
