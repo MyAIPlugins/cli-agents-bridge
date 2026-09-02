@@ -1,0 +1,28 @@
+cmd/cab-bridge/shellarg_wiring_test.go
+  s_949f601b0c1b53::t_947a17e59c1ebc 28,57,79,90,155,352-364
+  s_949f601b0c1b53::t_6601bcb3c89f7d 365
+cmd/cab-bridge/recipient_test.go
+  s_949f601b0c1b53::t_947a17e59c1ebc 790
+internal/shellarg/shellarg_test.go
+  s_949f601b0c1b53::t_947a17e59c1ebc 13,22,105,154-166
+  s_949f601b0c1b53::t_9e47ca4ce2843b 167
+internal/session/reconnect_test.go
+  s_949f601b0c1b53::t_947a17e59c1ebc 516,564-576
+  s_949f601b0c1b53::t_bfd64673e4b964 577
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "86bd964abd0f848a3c2b98d51990d84c26c6ff8c",
+  "prompts": {},
+  "sessions": {
+    "s_949f601b0c1b53": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9803d2b-3d10-491d-a1e9-e35fdcb0e962",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan Curtis <info@myaiplugins.com>"
+    }
+  }
+}
