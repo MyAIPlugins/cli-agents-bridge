@@ -5,7 +5,13 @@
 
 ---
 
-## Status corrente — 2026-08-08
+## Status corrente — 2026-09-02
+
+**Fase**: 🚀 **v0.9.0 TAGGATA** (i 47 commit dopo `v0.8.0`: F-124 nei tre lotti, F-126, F-127, README riscritto, Makefile/CI severi) — CHANGELOG `[0.9.0]` in `5095a3e` + commit di release; gate indipendente su `main` prima del tag: `go test -race -count=1 -p 2 ./...` **EXIT=0, 12/12, 0 FAIL, 0 cached, 12 righe** (2 set). `internal/security` e `SECURITY.md` byte-identici a `v0.8.0` (diff vuoto). Minor e non patch, decisione di Alan: la grammatica dei nomi rifiuta input prima accettati, la derivazione cambia per le directory fuori grammatica, il resume ambiguo e' un errore.
+
+**Arco aperto — Windows (2 set)**: richiesta di VAL-payload (Alan sposta i lavori su un PC Windows always-on; il suo team va di **WSL2**). Risposta VAL-bridge, eseguita non dedotta: **Windows nativo NON ORA** (`GOOS=windows go build` → EXIT=1 su `internal/security`; piu' `Umask`/`Kill`/`Setpgid` che il compilatore non raggiunge; i pericoli silenziosi sono liveness PID, modello SC-1..SC-7 senza traduzione ACL, rename su NTFS, segnali) · **WSL2 + `linux-amd64` SI'** (CI su ubuntu, VPS a maggio; mai eseguito su WSL2 da noi) · `dcg`/`git-ai` non sono nostri. Tre documenti in `.handover/` (gitignored, viaggiano con la copia del folder): `WINDOWS-PORT-BRIEF-2026-09-02.md` (4 lotti, decisioni da escalare, criteri), `WSL2-SETUP-2026-09-02.md`, `reply-val-payload-windows-2026-09-02.md`. **Lotto 0 in corso**: ESC-bridge in `.worktrees/esc-windows`, branch `feat/windows-lotto0` — compile-green con file per-OS, zero cambi su darwin/linux; tre [D] del brief smentite da ESC compilando un probe (`STILL_ACTIVE` non esiste → 259 locale; un processo elevato crea file con owner `Administrators` → il solo confronto TokenUser avrebbe bloccato ogni comando). I lotti 1-4 si fanno **sul PC**, con un VAL-win e un ESC-win in VS Code.
+
+## Status al 2026-08-08 (storico)
 
 **Fase**: ✅ **v0.8 — arco "KISS per AI" MERGIATO in `main`, binario installato, `origin/main` pushato. NON taggato: il tag `v0.8.0` e la Release aspettano l'uso reale** (decisione di Alan, 8 ago — è la rottura più grande del progetto e ogni release precedente è stata taggata dopo il testing sul campo).
 

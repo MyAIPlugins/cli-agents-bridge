@@ -25,7 +25,7 @@ Designed for an orchestrator ↔ executor workflow across separate windows, scal
 Download the archive for your OS/arch from the latest [Release](https://github.com/myAIPlugins/cli-agents-bridge/releases/latest):
 
 ```
-VERSION=0.8.0     # the tag of the release you downloaded
+VERSION=0.9.0     # the tag of the release you downloaded
 OS=darwin         # darwin | linux
 ARCH=arm64        # arm64 | amd64
 
@@ -242,7 +242,8 @@ For threat model + security controls see [SECURITY.md](./SECURITY.md). For GDPR 
 - **v0.2.1 → v0.2.4**: auto-gc of orphan sessions; observability + delivery receipts; prebuilt multi-OS binaries (GoReleaser) + public `bridge-workflow` skill; **automatic per-project isolation** (scope derived from the project root)
 - **v0.5.x**: zero-config onboarding (`bootstrap`, scope = git repository, `overview`); id-free wake; symbolic references instead of raw message ids
 - **v0.7.0**: feedback-driven hardening from real multi-agent runs
-- **v0.8.0** (current): **the mailbox model** — five commands with no flags (`join`/`next`/`ask`/`tell`/`reply`); `next` never consumes and only `reply` archives, one delivery at a time, requeueing whatever arrived later; four explicit message states; cross-repository addressing `<name>@<project>` between orchestrators; agent names guaranteed to survive the shell that carries them
+- **v0.8.0**: **the mailbox model** — five commands with no flags (`join`/`next`/`ask`/`tell`/`reply`); `next` never consumes and only `reply` archives, one delivery at a time, requeueing whatever arrived later; four explicit message states; cross-repository addressing `<name>@<project>` between orchestrators
+- **v0.9.0** (current): **the token surface** — an agent-name grammar (one shell word, rejected otherwise, derived reversibly from a directory name); every path and address the bridge prints is rendered as one shell argument by the tool (`peers` `SCOPE` column, `next`'s `fromAddressShellArg`, every remediation) instead of asking the reader to quote it; `register --resume` resumes by identity, not by name; lock errors state facts and no remedy; this README rewritten around the binary and validated black-box; Makefile and CI made as strict as the local gate
 
 **Next**: attestation of the installed copy against the versioned source, and a black-box check that a fresh agent following this README ends up with a working bridge.
 

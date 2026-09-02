@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.9.0] — 2026-09-02
 
 Everything below landed on 2026-08-10 and 2026-08-11, in the two days after the v0.8.0 tag, and was gated the same way (independent `-race` gate per commit, cross-vendor critic on the delicate lots, black-box readers on the README). **The delivery model is untouched**: `next`, `reply`, the mailbox states of 0.8.0 are exactly what they were. The theme is the **token surface** — every name, address and path the bridge prints for an agent to paste into a shell — and the **tools that decide whether the product is good** (Makefile, CI, README), where most of the defects turned out to live.
 

@@ -1,6 +1,6 @@
 # Security — cli-agents-bridge
 
-Threat model, implemented controls, reporting policy, and known limitations for cli-agents-bridge (current through **v0.8.0**).
+Threat model, implemented controls, reporting policy, and known limitations for cli-agents-bridge (current through **v0.9.0**).
 
 ---
 
@@ -59,7 +59,7 @@ _Only SC-8 remains deferred. SC-3 moved to the active list above when the code l
 
 - **SC-8 PII detection**: explicitly NOT implemented. Regex on content for "looks like credit card / email" is false-positive prone and adds runtime cost without addressing the actual threat (same-UID malware reading plaintext). PRIVACY.md warns users not to send secrets.
 
-> **Honesty note (through v0.8.0)**: this document describes controls as actually wired in the shipped binary, verified against the code at each release rather than assumed. SC-3 sat under "deferred" from v0.2.0 to v0.7 — seven releases — precisely because the primitive existed and nothing called it; it moved to the active list only when the call-sites landed. SC-8 stays deferred for the same reason. We would rather under-claim than assert a control that is not on the live code path.
+> **Honesty note (through v0.9.0)**: this document describes controls as actually wired in the shipped binary, verified against the code at each release rather than assumed. v0.9.0 changed no control: `internal/security` and this file are byte-identical to v0.8.0, verified by diff at release time. SC-3 sat under "deferred" from v0.2.0 to v0.7 — seven releases — precisely because the primitive existed and nothing called it; it moved to the active list only when the call-sites landed. SC-8 stays deferred for the same reason. We would rather under-claim than assert a control that is not on the live code path.
 
 ---
 
