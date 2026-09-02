@@ -1,0 +1,23 @@
+internal/session/alive_unix.go
+  s_6b2258ee2ef829::t_1b518fcb00d986 1-48
+internal/session/lock.go
+  s_6b2258ee2ef829::t_6892537481e26f 13-14
+internal/session/alive_windows.go
+  s_6b2258ee2ef829::t_748fb758834d55 1-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "fa01ddab0e831068b7af814e8c349c7d21a76c34",
+  "prompts": {},
+  "sessions": {
+    "s_6b2258ee2ef829": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "17b0dee8-a1c0-43f9-8c24-a620fa3601af",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}

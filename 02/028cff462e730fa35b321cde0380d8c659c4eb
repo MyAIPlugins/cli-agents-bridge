@@ -1,0 +1,26 @@
+cmd/cab-bridge/main.go
+  s_6b2258ee2ef829::t_d40f50db05dd48 3-5
+cmd/cab-bridge/common.go
+  s_6b2258ee2ef829::t_bedabc15e219aa 92-94,97-98,101-104
+  s_6b2258ee2ef829::t_1f6bc04a8027d8 64-70
+cmd/cab-bridge/umask_unix.go
+  s_6b2258ee2ef829::t_7274cf776a7209 1-17
+cmd/cab-bridge/umask_windows.go
+  s_6b2258ee2ef829::t_8b4ed32ab07750 1-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "02028cff462e730fa35b321cde0380d8c659c4eb",
+  "prompts": {},
+  "sessions": {
+    "s_6b2258ee2ef829": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "17b0dee8-a1c0-43f9-8c24-a620fa3601af",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}

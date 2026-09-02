@@ -1,0 +1,19 @@
+internal/security/perms.go
+  s_6b2258ee2ef829::t_0ab40ee32440d8 15-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "6bc601a073313f637c74ce701b27f58f26a5e0ac",
+  "prompts": {},
+  "sessions": {
+    "s_6b2258ee2ef829": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "17b0dee8-a1c0-43f9-8c24-a620fa3601af",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
