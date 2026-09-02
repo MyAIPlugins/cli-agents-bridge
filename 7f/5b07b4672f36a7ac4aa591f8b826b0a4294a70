@@ -1,0 +1,40 @@
+internal/security/perms.go
+  s_6b2258ee2ef829::t_9ac38e3662a573 215-216,218,220
+  s_6b2258ee2ef829::t_46eae7bd1b5392 119-127
+  s_6b2258ee2ef829::t_3cb63d70ad8c3a 142-144,153
+  s_6b2258ee2ef829::t_86718c34984fa2 186-192,194-198
+  s_6b2258ee2ef829::t_f3d1efb1cf5b03 99-100,102-105,116
+  s_6b2258ee2ef829::t_c7a97d6982b870 17-22
+  s_6b2258ee2ef829::t_6300d6d75562e5 318-320
+  s_6b2258ee2ef829::t_d440f9981394a3 117
+go.mod
+  s_6b2258ee2ef829::t_7e5d9ccb4862e4 5-8
+internal/security/perms_test.go
+  s_6b2258ee2ef829::t_6f5b699ceff72e 137-140
+  s_6b2258ee2ef829::t_a78dceb5926733 116-118
+  s_6b2258ee2ef829::t_063a4e3a6de60e 3-6
+internal/security/perms_unix.go
+  s_6b2258ee2ef829::t_0e0a6fa4f8f095 1-87
+internal/security/perms_windows.go
+  s_6b2258ee2ef829::t_3108caf9c65016 1-240
+internal/security/perms_unix_test.go
+  s_6b2258ee2ef829::t_709525e629516a 1-170
+go.sum
+  s_6b2258ee2ef829::t_4f89534078e8dd 7-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7f5b07b4672f36a7ac4aa591f8b826b0a4294a70",
+  "prompts": {},
+  "sessions": {
+    "s_6b2258ee2ef829": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "17b0dee8-a1c0-43f9-8c24-a620fa3601af",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
