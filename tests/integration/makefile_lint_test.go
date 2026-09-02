@@ -394,7 +394,26 @@ func copyWorkingTree(t *testing.T, src, dst string) {
 	// --show-toplevel is the property that was meant: compare it with src, both
 	// resolved, and take the Git branch only when they are the same directory.
 	if isRepoRoot(src) {
-		list := gitCommand(src, "ls-files", "-z")
+		// --cached --others --exclude-standard: TRACKED plus UNTRACKED-not-ignored,
+		// because "as it is RIGHT NOW" was the promise and --cached alone is "as it
+		// was at the last `git add`".
+		//
+		// Found the way these are always found: by using it. A lot that adds new
+		// files went red with `undefined: ownerCheckPath` — the fixture had copied
+		// the MODIFIED perms.go, which was tracked, and not the new perms_unix.go
+		// next to it, which was not. The build failed on a tree that has never
+		// existed anywhere, and nothing in the output said so.
+		//
+		// It is the same class the comment above says it closed twice, and the
+		// branch next door to both: `git archive HEAD` was the last COMMIT, this
+		// was the last STAGE, and the walk below — the no-git path — has been
+		// copying untracked files all along. Three ways to answer "what is in this
+		// tree", and two of them were answering about a different moment.
+		//
+		// --exclude-standard keeps .gitignore honoured, so bin/ and the developer's
+		// own scratch files stay out; a fixture that only has to build does not
+		// want them.
+		list := gitCommand(src, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
 		tracked, lerr := list.Output()
 		require.NoError(t, lerr, "git ls-files")
 		tarc := exec.Command("tar", "-c", "-f", "-", "--null", "-T", "-")
@@ -518,6 +537,56 @@ func TestCopyWorkingTree_PicksTheBranchByROOTNotByContainment(t *testing.T) {
 	copyWorkingTree(t, nested, again)
 	assert.FileExists(t, filepath.Join(again, "Makefile"),
 		"the walk must carry the tree even when git would answer about somebody else's repository")
+}
+
+// TestCopyWorkingTree_CarriesUncommittedFiles is the regression for the fixture
+// copying the wrong TREE — not the wrong directory, the wrong moment.
+//
+// `git ls-files` alone lists what is in the INDEX, so a file created and not yet
+// committed was left out while its already-tracked neighbours came along. The
+// copy then contained half a change: a modified file calling a function whose
+// new file was missing, and `make build` failing inside the fixture on a state
+// that exists nowhere. Nothing in the output points at the fixture, so the
+// reader looks for the defect in their own code.
+//
+// The three cases are the contract in full: committed comes, uncommitted comes,
+// ignored stays out. The middle one is the regression; the third is the branch
+// next door — --others without --exclude-standard would have dragged in bin/ and
+// every scratch file the developer has lying around.
+func TestCopyWorkingTree_CarriesUncommittedFiles(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	src := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "-q"},
+		{"config", "user.email", "test@example.invalid"},
+		{"config", "user.name", "fixture"},
+	} {
+		require.NoError(t, gitCommand(src, args...).Run(), "git %v", args)
+	}
+
+	require.NoError(t, os.WriteFile(filepath.Join(src, ".gitignore"), []byte("ignored.txt\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(src, "committed.txt"), []byte("in the index"), 0o600))
+	require.NoError(t, gitCommand(src, "add", ".").Run())
+	require.NoError(t, gitCommand(src, "commit", "-q", "-m", "fixture").Run())
+
+	// The two that are NOT in the index, one of each kind.
+	require.NoError(t, os.WriteFile(filepath.Join(src, "uncommitted.txt"), []byte("written just now"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(src, "ignored.txt"), []byte("build output"), 0o600))
+
+	require.True(t, isRepoRoot(src), "the fixture must take the git branch, or this measures the walk instead")
+
+	dst := t.TempDir()
+	copyWorkingTree(t, src, dst)
+
+	assert.FileExists(t, filepath.Join(dst, "committed.txt"), "tracked files must still be copied")
+	assert.FileExists(t, filepath.Join(dst, "uncommitted.txt"),
+		"a file written and not yet committed IS part of the tree as it is right now — "+
+			"leaving it out builds a state that has never existed")
+	assert.NoFileExists(t, filepath.Join(dst, "ignored.txt"),
+		"and .gitignore is still honoured: --others without --exclude-standard would drag in bin/ too")
 }
 
 // gitCommand runs git in dir with the INHERITED GIT ENVIRONMENT STRIPPED.
