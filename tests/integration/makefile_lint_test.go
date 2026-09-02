@@ -47,12 +47,38 @@ func TestMakefile_LintLooksWhereGoInstallPuts(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(gopath, "bin"), 0o700))
 	fake := filepath.Join(gobin, "staticcheck")
 	require.NoError(t, os.WriteFile(fake, []byte("#!/bin/sh\necho FAKE_STATICCHECK\n"), 0o700))
+	// One under GOPATH/bin too. It used to be enough to leave that directory
+	// empty and assert that the Makefile NAMED it, because with PATH consulted
+	// last the name is only reached when a binary is actually there — asserting
+	// on the name no longer separates "chose GOPATH/bin" from "found nothing
+	// anywhere and printed the install hint".
+	gopathFake := filepath.Join(gopath, "bin", "staticcheck")
+	require.NoError(t, os.WriteFile(gopathFake, []byte("#!/bin/sh\necho GOPATH_STATICCHECK\n"), 0o700))
+
+	// A THIRD staticcheck, at the head of PATH, and it is the whole reason this
+	// test was green on a Mac while red in CI for three weeks.
+	//
+	// The Makefile resolved $PATH FIRST and GOBIN second, contradicting both its
+	// own comment and the two subtests below. On a developer machine staticcheck
+	// is not in PATH, so the two orders give the same answer and nothing shows.
+	// On the runner `setup-go` puts /home/runner/go/bin in PATH and the CI step
+	// installs staticcheck into it — so `command -v` won the race, the planted
+	// fakes were never consulted, and the assertions failed on an environment the
+	// test never created for itself.
+	//
+	// Planting one here reproduces the runner on any machine: the test is now red
+	// without the Makefile fix, which is the only way it can be a regression.
+	pathDir := filepath.Join(tmp, "pathbin")
+	require.NoError(t, os.MkdirAll(pathDir, 0o700))
+	inPath := filepath.Join(pathDir, "staticcheck")
+	require.NoError(t, os.WriteFile(inPath, []byte("#!/bin/sh\necho PATH_STATICCHECK\n"), 0o700))
 
 	run := func(env ...string) string {
 		t.Helper()
 		cmd := exec.Command("make", "-n", "lint")
 		cmd.Dir = repoRoot
 		cmd.Env = append(os.Environ(), env...)
+		cmd.Env = append(cmd.Env, "PATH="+pathDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 		out, _ := cmd.CombinedOutput() // -n prints, it does not run: exit code is not the subject
 		return string(out)
 	}
@@ -61,14 +87,30 @@ func TestMakefile_LintLooksWhereGoInstallPuts(t *testing.T) {
 		out := run("GOBIN="+gobin, "GOPATH="+gopath)
 		assert.Contains(t, out, fake,
 			"with GOBIN set the gate must look there — otherwise its own install command cannot fix it")
-		assert.NotContains(t, out, filepath.Join(gopath, "bin", "staticcheck"),
-			"and must not fall back to GOPATH/bin, which is empty on such a machine")
+		assert.NotContains(t, out, gopathFake,
+			"and must not fall back to GOPATH/bin, which is not where go install wrote on such a machine")
+		assert.NotContains(t, out, inPath,
+			"nor to a staticcheck that merely happens to be in PATH: the pin governs the binary that RUNS "+
+				"only if the Makefile runs the one `go install` wrote")
 	})
 
 	t.Run("GOBIN empty falls back to GOPATH/bin", func(t *testing.T) {
 		out := run("GOBIN=", "GOPATH="+gopath)
-		assert.Contains(t, out, filepath.Join(gopath, "bin", "staticcheck"),
+		assert.Contains(t, out, gopathFake,
 			"the ordinary machine, and the behaviour that must not regress")
+		assert.NotContains(t, out, inPath, "PATH is the fallback, not the first choice")
+	})
+
+	// And the branch next door, which the reordering must NOT break: a machine
+	// where staticcheck exists only in PATH — installed by a package manager, or
+	// by a CI step into a directory that is not this GOBIN — must still find it.
+	// Demoting PATH from first to last is not the same as removing it.
+	t.Run("PATH is still the fallback when go install put one nowhere", func(t *testing.T) {
+		bare := filepath.Join(tmp, "bare")
+		require.NoError(t, os.MkdirAll(filepath.Join(bare, "bin"), 0o700))
+		out := run("GOBIN=", "GOPATH="+bare)
+		assert.Contains(t, out, inPath,
+			"with neither GOBIN nor GOPATH/bin holding one, the gate must still use what is in PATH")
 	})
 
 	t.Run("the pinned version is one file, and NOTHING repeats the number", func(t *testing.T) {
@@ -200,9 +242,20 @@ func TestMakefile_LintRunsFromAPathWithSpaces(t *testing.T) {
 		"echo MARKER_LINT_RAN\n"
 	require.NoError(t, os.WriteFile(fake, []byte(script), 0o700))
 
+	// A decoy in PATH, reporting a version that is NOT the pin, for the same
+	// reason as in the test above: on a developer machine staticcheck is absent
+	// from PATH, so a Makefile that consulted PATH first would still pick the
+	// GOBIN one here and this test would pass while CI failed. With the decoy the
+	// wrong order produces "version mismatch" instead of MARKER_LINT_RAN, and the
+	// test can fail for the reason it is named after.
+	decoyDir := filepath.Join(t.TempDir(), "decoy")
+	require.NoError(t, os.MkdirAll(decoyDir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(decoyDir, "staticcheck"),
+		[]byte("#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'staticcheck 1999.1 (v0.0.1)'; exit 0; fi\necho DECOY_LINT_RAN\n"), 0o700))
+
 	cmd := exec.Command("make", "lint")
 	cmd.Dir = repoRoot
-	cmd.Env = append(os.Environ(), "GOBIN="+gobin, "PATH=/usr/bin:/bin:"+os.Getenv("PATH"))
+	cmd.Env = append(os.Environ(), "GOBIN="+gobin, "PATH="+decoyDir+":/usr/bin:/bin:"+os.Getenv("PATH"))
 	out, err := cmd.CombinedOutput()
 
 	require.NoError(t, err, "a correct staticcheck under a path with a space must not be refused: %s", out)
