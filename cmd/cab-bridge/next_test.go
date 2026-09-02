@@ -927,13 +927,37 @@ func plantCrossScopeInbox(t *testing.T, dataDir, sid, id string, ts time.Time) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, id+".json"), data, 0o600))
 }
 
+// budgetTestInstant is the timestamp every message in the page-budget test
+// carries, measurement included, and both halves of that matter.
+//
+// FIXED NANOSECONDS, because RFC3339Nano DROPS TRAILING ZEROS: the serialized
+// timestamp is 25, 26 or 27 characters long depending on what time.Now() happens
+// to return (measured: 225/23/2 out of 250 calls on this machine). The budget
+// below is exact to the byte, so one character of difference decides the test.
+//
+// THE SAME INSTANT for the measurement and for the planted messages, because the
+// two used to call time.Now() separately: the cost was measured on one timestamp
+// and applied to another. That was 25 failures in 250 runs — 10%, and exactly the
+// 25 runs where the measured timestamp was the shorter one. Reported as "Go 1.27
+// broke it" and it was neither Go nor 1.27: it failed on 1.26 too, at a different
+// rate, which is what a coin looks like when you flip it once per version.
+//
+// Truncate+Add rather than a literal date: the test keeps meaning "now", it just
+// stops meaning "now, to whatever precision the clock felt like".
+func budgetTestInstant() time.Time {
+	return time.Now().UTC().Truncate(time.Second).Add(123456789 * time.Nanosecond)
+}
+
 // crossScopeMessageCost measures, on a REAL emitted page, what one cross-scope
 // message costs with the shell field and what the same message cost before the
 // field existed.
-func crossScopeMessageCost(t *testing.T) (withField, withoutField int) {
+//
+// at MUST be the same instant the caller plants its own messages at — see
+// budgetTestInstant.
+func crossScopeMessageCost(t *testing.T, at time.Time) (withField, withoutField int) {
 	t.Helper()
 	mgr, cfg, sid, dataDir := newNextSession(t)
-	plantCrossScopeInbox(t, dataDir, sid, "msg-000000000000", time.Now().UTC())
+	plantCrossScopeInbox(t, dataDir, sid, "msg-000000000000", at)
 
 	p := runNextOnce(t, mgr, cfg, sid, 2*time.Second)
 	require.Len(t, p.Messages, 1)
@@ -955,12 +979,12 @@ func crossScopeMessageCost(t *testing.T) (withField, withoutField int) {
 // message no longer fits and is declared in hasMore instead of quietly
 // inflating a limit that exists to protect the reader's context.
 func TestNext_TheShellArgIsInsideThePageBudget(t *testing.T) {
-	withField, withoutField := crossScopeMessageCost(t)
+	base := budgetTestInstant()
+	withField, withoutField := crossScopeMessageCost(t, base)
 	require.Greater(t, withField, withoutField, "the field must cost something")
 	require.LessOrEqual(t, withField, 2*withoutField,
 		"one message must still fit in the tight budget, or this exercises the oversize path instead")
 
-	base := time.Now().UTC()
 	ids := []string{"msg-aaaaaaaaaaaa", "msg-bbbbbbbbbbbb"}
 
 	t.Run("at the pre-field budget the second message no longer fits", func(t *testing.T) {
