@@ -145,12 +145,23 @@ endif
 # the local gate and the gate that authorises merges cannot drift onto two
 # different linters.
 STATICCHECK_VERSION := $(shell cat .staticcheck-version)
-STATICCHECK ?= $(shell command -v staticcheck 2>/dev/null || echo $(STATICCHECK_DIR)/staticcheck)
+# GOBIN/GOPATH-bin FIRST, $PATH only as a fallback — and the order is the whole
+# point, not a preference.
+#
+# It used to be the other way round, contradicting the comment right above it and
+# the three tests that assert it. On a developer machine the two orders agree,
+# because staticcheck is not in PATH there: nothing to see. On the CI runner
+# `setup-go` puts /home/runner/go/bin in PATH and the lint step installs
+# staticcheck into it, so `command -v` won and the pin governed the INSTALL while
+# something else governed the RUN — which is the distinction .staticcheck-version
+# exists to remove. Three tests had been red for three weeks saying exactly that,
+# on the gate that authorises merges, while the local gate stayed green.
+STATICCHECK ?= $(shell if [ -x "$(STATICCHECK_DIR)/staticcheck" ]; then echo "$(STATICCHECK_DIR)/staticcheck"; else command -v staticcheck 2>/dev/null || echo "$(STATICCHECK_DIR)/staticcheck"; fi)
 
 lint: ## Run go vet + staticcheck (required; version pinned in .staticcheck-version)
 	go vet ./...
 	@if [ ! -x "$(STATICCHECK)" ]; then \
-		echo "make lint: staticcheck not found (looked in \$$PATH and $(STATICCHECK_DIR))"; \
+		echo "make lint: staticcheck not found (looked in $(STATICCHECK_DIR), then \$$PATH)"; \
 		echo "  install it:  go install honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION)"; \
 		echo "  this is a hard failure on purpose: a lint that silently skips is not a lint"; \
 		exit 1; \
@@ -172,7 +183,22 @@ lint: ## Run go vet + staticcheck (required; version pinned in .staticcheck-vers
 	@# false red — while the commit that introduced .staticcheck-version claimed
 	@# a single source. It governed the CI install and this help text, not the
 	@# binary that actually ran (CRI).
-	@got="$$("$(STATICCHECK)" --version 2>/dev/null | sed -E 's/.*\((v[0-9.]+)\).*/\1/')"; \
+	@# `v?` and the `v` put back by hand, because staticcheck CHANGED THIS FORMAT
+	@# between the two versions this project has pinned: the older one printed the
+	@# leading `v` inside the parens, the current one does not. No numbers here —
+	@# the subtest below forbids them on any line mentioning staticcheck, and it
+	@# caught this comment when it did have them, which is the rule working.
+	@#
+	@# The old expression required the `v`, so on the newer one it matched nothing, sed
+	@# passed the WHOLE LINE through, and the gate refused the correct binary
+	@# while advising to reinstall the very version already installed — the
+	@# remediation loop again, this time triggered by a bump rather than by a path.
+	@#
+	@# The four version subtests were green throughout, because every fake they
+	@# plant prints the `v` form. A test that builds its own input can only ever
+	@# check the shapes it thought of; the shape that got us is the one the real
+	@# binary prints. There is a fifth case now, and it is that line verbatim.
+	@got="$$("$(STATICCHECK)" --version 2>/dev/null | sed -E 's/.*\(v?([0-9][0-9.]*)\).*/v\1/')"; \
 	if [ "$$got" != "$(STATICCHECK_VERSION)" ]; then \
 		echo "make lint: staticcheck version mismatch"; \
 		echo "  pinned  (.staticcheck-version): $(STATICCHECK_VERSION)"; \

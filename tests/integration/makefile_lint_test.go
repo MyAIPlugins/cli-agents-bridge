@@ -47,12 +47,38 @@ func TestMakefile_LintLooksWhereGoInstallPuts(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(gopath, "bin"), 0o700))
 	fake := filepath.Join(gobin, "staticcheck")
 	require.NoError(t, os.WriteFile(fake, []byte("#!/bin/sh\necho FAKE_STATICCHECK\n"), 0o700))
+	// One under GOPATH/bin too. It used to be enough to leave that directory
+	// empty and assert that the Makefile NAMED it, because with PATH consulted
+	// last the name is only reached when a binary is actually there — asserting
+	// on the name no longer separates "chose GOPATH/bin" from "found nothing
+	// anywhere and printed the install hint".
+	gopathFake := filepath.Join(gopath, "bin", "staticcheck")
+	require.NoError(t, os.WriteFile(gopathFake, []byte("#!/bin/sh\necho GOPATH_STATICCHECK\n"), 0o700))
+
+	// A THIRD staticcheck, at the head of PATH, and it is the whole reason this
+	// test was green on a Mac while red in CI for three weeks.
+	//
+	// The Makefile resolved $PATH FIRST and GOBIN second, contradicting both its
+	// own comment and the two subtests below. On a developer machine staticcheck
+	// is not in PATH, so the two orders give the same answer and nothing shows.
+	// On the runner `setup-go` puts /home/runner/go/bin in PATH and the CI step
+	// installs staticcheck into it — so `command -v` won the race, the planted
+	// fakes were never consulted, and the assertions failed on an environment the
+	// test never created for itself.
+	//
+	// Planting one here reproduces the runner on any machine: the test is now red
+	// without the Makefile fix, which is the only way it can be a regression.
+	pathDir := filepath.Join(tmp, "pathbin")
+	require.NoError(t, os.MkdirAll(pathDir, 0o700))
+	inPath := filepath.Join(pathDir, "staticcheck")
+	require.NoError(t, os.WriteFile(inPath, []byte("#!/bin/sh\necho PATH_STATICCHECK\n"), 0o700))
 
 	run := func(env ...string) string {
 		t.Helper()
 		cmd := exec.Command("make", "-n", "lint")
 		cmd.Dir = repoRoot
 		cmd.Env = append(os.Environ(), env...)
+		cmd.Env = append(cmd.Env, "PATH="+pathDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 		out, _ := cmd.CombinedOutput() // -n prints, it does not run: exit code is not the subject
 		return string(out)
 	}
@@ -61,14 +87,30 @@ func TestMakefile_LintLooksWhereGoInstallPuts(t *testing.T) {
 		out := run("GOBIN="+gobin, "GOPATH="+gopath)
 		assert.Contains(t, out, fake,
 			"with GOBIN set the gate must look there — otherwise its own install command cannot fix it")
-		assert.NotContains(t, out, filepath.Join(gopath, "bin", "staticcheck"),
-			"and must not fall back to GOPATH/bin, which is empty on such a machine")
+		assert.NotContains(t, out, gopathFake,
+			"and must not fall back to GOPATH/bin, which is not where go install wrote on such a machine")
+		assert.NotContains(t, out, inPath,
+			"nor to a staticcheck that merely happens to be in PATH: the pin governs the binary that RUNS "+
+				"only if the Makefile runs the one `go install` wrote")
 	})
 
 	t.Run("GOBIN empty falls back to GOPATH/bin", func(t *testing.T) {
 		out := run("GOBIN=", "GOPATH="+gopath)
-		assert.Contains(t, out, filepath.Join(gopath, "bin", "staticcheck"),
+		assert.Contains(t, out, gopathFake,
 			"the ordinary machine, and the behaviour that must not regress")
+		assert.NotContains(t, out, inPath, "PATH is the fallback, not the first choice")
+	})
+
+	// And the branch next door, which the reordering must NOT break: a machine
+	// where staticcheck exists only in PATH — installed by a package manager, or
+	// by a CI step into a directory that is not this GOBIN — must still find it.
+	// Demoting PATH from first to last is not the same as removing it.
+	t.Run("PATH is still the fallback when go install put one nowhere", func(t *testing.T) {
+		bare := filepath.Join(tmp, "bare")
+		require.NoError(t, os.MkdirAll(filepath.Join(bare, "bin"), 0o700))
+		out := run("GOBIN=", "GOPATH="+bare)
+		assert.Contains(t, out, inPath,
+			"with neither GOBIN nor GOPATH/bin holding one, the gate must still use what is in PATH")
 	})
 
 	t.Run("the pinned version is one file, and NOTHING repeats the number", func(t *testing.T) {
@@ -136,7 +178,15 @@ func TestMakefile_LintLooksWhereGoInstallPuts(t *testing.T) {
 			wantRun       bool
 		}{
 			{"the pinned version runs", "staticcheck 2026.1 (" + pin + ")", true},
+			// THE FORM THE REAL BINARY PRINTS SINCE 2026.2, and it is a case these
+			// four could not have: staticcheck dropped the `v` inside the parens
+			// (v0.7.0 said "(v0.7.0)", 0.8.1 says "(0.8.1)"). Every fake here
+			// printed the `v`, so the whole set stayed green while `make lint`
+			// refused the correct binary and told the reader to install it again.
+			// A test that builds its own input only checks the shapes it thought of.
+			{"the pinned version without the v runs too", "staticcheck 2026.2.1 (" + strings.TrimPrefix(pin, "v") + ")", true},
 			{"a different one is refused", "staticcheck 2024.1 (" + notThePin + ")", false},
+			{"a different one without the v is refused too", "staticcheck 2024.1 (" + strings.TrimPrefix(notThePin, "v") + ")", false},
 			{"one that cannot say is refused", "", false},
 			{"one that answers nonsense is refused", "not a version at all", false},
 		} {
@@ -200,9 +250,20 @@ func TestMakefile_LintRunsFromAPathWithSpaces(t *testing.T) {
 		"echo MARKER_LINT_RAN\n"
 	require.NoError(t, os.WriteFile(fake, []byte(script), 0o700))
 
+	// A decoy in PATH, reporting a version that is NOT the pin, for the same
+	// reason as in the test above: on a developer machine staticcheck is absent
+	// from PATH, so a Makefile that consulted PATH first would still pick the
+	// GOBIN one here and this test would pass while CI failed. With the decoy the
+	// wrong order produces "version mismatch" instead of MARKER_LINT_RAN, and the
+	// test can fail for the reason it is named after.
+	decoyDir := filepath.Join(t.TempDir(), "decoy")
+	require.NoError(t, os.MkdirAll(decoyDir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(decoyDir, "staticcheck"),
+		[]byte("#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'staticcheck 1999.1 (v0.0.1)'; exit 0; fi\necho DECOY_LINT_RAN\n"), 0o700))
+
 	cmd := exec.Command("make", "lint")
 	cmd.Dir = repoRoot
-	cmd.Env = append(os.Environ(), "GOBIN="+gobin, "PATH=/usr/bin:/bin:"+os.Getenv("PATH"))
+	cmd.Env = append(os.Environ(), "GOBIN="+gobin, "PATH="+decoyDir+":/usr/bin:/bin:"+os.Getenv("PATH"))
 	out, err := cmd.CombinedOutput()
 
 	require.NoError(t, err, "a correct staticcheck under a path with a space must not be refused: %s", out)
@@ -341,7 +402,26 @@ func copyWorkingTree(t *testing.T, src, dst string) {
 	// --show-toplevel is the property that was meant: compare it with src, both
 	// resolved, and take the Git branch only when they are the same directory.
 	if isRepoRoot(src) {
-		list := gitCommand(src, "ls-files", "-z")
+		// --cached --others --exclude-standard: TRACKED plus UNTRACKED-not-ignored,
+		// because "as it is RIGHT NOW" was the promise and --cached alone is "as it
+		// was at the last `git add`".
+		//
+		// Found the way these are always found: by using it. A lot that adds new
+		// files went red with `undefined: ownerCheckPath` — the fixture had copied
+		// the MODIFIED perms.go, which was tracked, and not the new perms_unix.go
+		// next to it, which was not. The build failed on a tree that has never
+		// existed anywhere, and nothing in the output said so.
+		//
+		// It is the same class the comment above says it closed twice, and the
+		// branch next door to both: `git archive HEAD` was the last COMMIT, this
+		// was the last STAGE, and the walk below — the no-git path — has been
+		// copying untracked files all along. Three ways to answer "what is in this
+		// tree", and two of them were answering about a different moment.
+		//
+		// --exclude-standard keeps .gitignore honoured, so bin/ and the developer's
+		// own scratch files stay out; a fixture that only has to build does not
+		// want them.
+		list := gitCommand(src, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
 		tracked, lerr := list.Output()
 		require.NoError(t, lerr, "git ls-files")
 		tarc := exec.Command("tar", "-c", "-f", "-", "--null", "-T", "-")
@@ -465,6 +545,56 @@ func TestCopyWorkingTree_PicksTheBranchByROOTNotByContainment(t *testing.T) {
 	copyWorkingTree(t, nested, again)
 	assert.FileExists(t, filepath.Join(again, "Makefile"),
 		"the walk must carry the tree even when git would answer about somebody else's repository")
+}
+
+// TestCopyWorkingTree_CarriesUncommittedFiles is the regression for the fixture
+// copying the wrong TREE — not the wrong directory, the wrong moment.
+//
+// `git ls-files` alone lists what is in the INDEX, so a file created and not yet
+// committed was left out while its already-tracked neighbours came along. The
+// copy then contained half a change: a modified file calling a function whose
+// new file was missing, and `make build` failing inside the fixture on a state
+// that exists nowhere. Nothing in the output points at the fixture, so the
+// reader looks for the defect in their own code.
+//
+// The three cases are the contract in full: committed comes, uncommitted comes,
+// ignored stays out. The middle one is the regression; the third is the branch
+// next door — --others without --exclude-standard would have dragged in bin/ and
+// every scratch file the developer has lying around.
+func TestCopyWorkingTree_CarriesUncommittedFiles(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	src := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "-q"},
+		{"config", "user.email", "test@example.invalid"},
+		{"config", "user.name", "fixture"},
+	} {
+		require.NoError(t, gitCommand(src, args...).Run(), "git %v", args)
+	}
+
+	require.NoError(t, os.WriteFile(filepath.Join(src, ".gitignore"), []byte("ignored.txt\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(src, "committed.txt"), []byte("in the index"), 0o600))
+	require.NoError(t, gitCommand(src, "add", ".").Run())
+	require.NoError(t, gitCommand(src, "commit", "-q", "-m", "fixture").Run())
+
+	// The two that are NOT in the index, one of each kind.
+	require.NoError(t, os.WriteFile(filepath.Join(src, "uncommitted.txt"), []byte("written just now"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(src, "ignored.txt"), []byte("build output"), 0o600))
+
+	require.True(t, isRepoRoot(src), "the fixture must take the git branch, or this measures the walk instead")
+
+	dst := t.TempDir()
+	copyWorkingTree(t, src, dst)
+
+	assert.FileExists(t, filepath.Join(dst, "committed.txt"), "tracked files must still be copied")
+	assert.FileExists(t, filepath.Join(dst, "uncommitted.txt"),
+		"a file written and not yet committed IS part of the tree as it is right now — "+
+			"leaving it out builds a state that has never existed")
+	assert.NoFileExists(t, filepath.Join(dst, "ignored.txt"),
+		"and .gitignore is still honoured: --others without --exclude-standard would drag in bin/ too")
 }
 
 // gitCommand runs git in dir with the INHERITED GIT ENVIRONMENT STRIPPED.
