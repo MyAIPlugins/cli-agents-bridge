@@ -72,6 +72,10 @@ func TestLockRemedyDrift_ForceNewIsNamedOnlyWhereTheFlagExists(t *testing.T) {
 		if rerr != nil {
 			return rerr
 		}
+		// The allowlist below is written with forward slashes because that is how a
+		// Go import path reads. filepath.Rel answers in the host separator, so on
+		// Windows every key misses and every file looks like an offender.
+		rel = filepath.ToSlash(rel)
 
 		file, perr := parser.ParseFile(token.NewFileSet(), path, nil, 0)
 		if perr != nil {

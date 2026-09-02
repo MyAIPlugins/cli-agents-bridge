@@ -184,7 +184,11 @@ func TestAcquireLock_TheMessageNamesNoRemedy(t *testing.T) {
 
 	// And the other half, which is what keeps the assertion above from being
 	// satisfied by an empty message: the facts a caller needs are still there.
-	assert.Contains(t, msg, lockPath, "the lock path is a fact and must survive")
+	// %q is how the message renders it, and on Windows that doubles every
+	// backslash: comparing against the raw path would fail on a message that is
+	// exactly right. Quoting the expectation the same way keeps one assertion
+	// meaning one thing on both hosts.
+	assert.Contains(t, msg, strconv.Quote(lockPath), "the lock path is a fact and must survive")
 	assert.Contains(t, msg, "pid="+strconv.Itoa(livePID), "so is the holder")
 }
 

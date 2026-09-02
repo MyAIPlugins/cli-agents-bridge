@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
@@ -184,13 +185,32 @@ func TestWiring_PeersScopeColumn(t *testing.T) {
 	require.Len(t, argv, 1, "one argument, separator and all")
 	assert.Equal(t, hostile, argv[0])
 
-	assert.NotContains(t, rowFor(t, table, "plainaaa"), "'",
-		"an ordinary path must come out untouched — the table reads as it always did")
+	// Whether an ordinary path needs rendering is a property of the HOST, not of
+	// this producer: on Windows every absolute path carries backslashes, which a
+	// shell eats, so the column is rendered for everybody. Asserting "untouched"
+	// there would be asserting that the table is unsafe to copy from.
+	plainRow := rowFor(t, table, "plainaaa")
+	if ordinaryPathIsShellSafe {
+		assert.NotContains(t, plainRow, "'",
+			"an ordinary path must come out untouched — the table reads as it always did")
+	} else {
+		qp := strings.Index(plainRow, "'")
+		require.GreaterOrEqual(t, qp, 0,
+			"on this host an ordinary path is not shell-safe either, so it must be rendered:\n%s", plainRow)
+		assert.Equal(t, []string{plain}, evalWord(t, plainRow[qp:]),
+			"and rendered it must still evaluate back to the path itself")
+	}
 
 	// And the machine-readable side must NOT be rendered: quoting is display and
 	// remediation, never data.
 	jsonOut := captureStdout(t, func() { require.NoError(t, runPeers([]string{"--all-scopes", "--json"})) })
-	assert.Contains(t, jsonOut, hostile, "--json carries the scope raw")
+	// Compared JSON-ENCODED: the payload escapes a backslash, so on Windows the
+	// raw path is not a substring of correct JSON. Encoding the expectation the
+	// same way asks the real question — is the value there, unrendered — and asks
+	// it identically on both hosts.
+	encodedScope, merr := json.Marshal(hostile)
+	require.NoError(t, merr)
+	assert.Contains(t, jsonOut, string(encodedScope), "--json carries the scope raw")
 	assert.NotContains(t, jsonOut, `'\''`, "--json must never carry the shell rendering")
 }
 

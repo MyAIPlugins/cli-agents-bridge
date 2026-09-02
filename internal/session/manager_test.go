@@ -189,9 +189,9 @@ func plantManifestDetails(t *testing.T, mgr *Manager, id, projectPath, scope, ag
 func TestLookupByCWDDetails_SingleAndNested(t *testing.T) {
 	t.Parallel()
 	mgr := NewManager(t.TempDir(), time.Second)
-	plantManifestDetails(t, mgr, "lkupsing", "/repo/p1", "/repo/p1", "ESC-x", RoleEsc)
+	plantManifestDetails(t, mgr, "lkupsing", hostPath(t, "/repo/p1"), hostPath(t, "/repo/p1"), "ESC-x", RoleEsc)
 
-	for _, cwd := range []string{"/repo/p1", "/repo/p1/sub/nested"} {
+	for _, cwd := range []string{hostPath(t, "/repo/p1"), hostPath(t, "/repo/p1/sub/nested")} {
 		res, err := mgr.LookupByCWDDetails(cwd)
 		require.NoError(t, err)
 		assert.Equal(t, "lkupsing", res.SelectedID, "cwd %q", cwd)
@@ -207,10 +207,10 @@ func TestLookupByCWDDetails_SingleAndNested(t *testing.T) {
 func TestLookupByCWDDetails_NestedLongestPrefixWins(t *testing.T) {
 	t.Parallel()
 	mgr := NewManager(t.TempDir(), time.Second)
-	plantManifestDetails(t, mgr, "lkupp1aa", "/repo/p1", "", "VAL-x", RoleVal)
-	plantManifestDetails(t, mgr, "lkupp1sb", "/repo/p1/sub", "", "ESC-x", RoleEsc)
+	plantManifestDetails(t, mgr, "lkupp1aa", hostPath(t, "/repo/p1"), "", "VAL-x", RoleVal)
+	plantManifestDetails(t, mgr, "lkupp1sb", hostPath(t, "/repo/p1/sub"), "", "ESC-x", RoleEsc)
 
-	res, err := mgr.LookupByCWDDetails("/repo/p1/sub/deeper")
+	res, err := mgr.LookupByCWDDetails(hostPath(t, "/repo/p1/sub/deeper"))
 	require.NoError(t, err)
 	assert.Equal(t, "lkupp1sb", res.SelectedID, "longest prefix wins")
 	assert.False(t, res.HardAmbiguous, "different prefix lengths are not a tie")
@@ -223,10 +223,10 @@ func TestLookupByCWDDetails_NestedLongestPrefixWins(t *testing.T) {
 func TestLookupByCWDDetails_HardAmbiguity(t *testing.T) {
 	t.Parallel()
 	mgr := NewManager(t.TempDir(), time.Second)
-	plantManifestDetails(t, mgr, "lkupamb1", "/repo/shared", "", "VAL-x", RoleVal)
-	plantManifestDetails(t, mgr, "lkupamb2", "/repo/shared", "", "ESC-x", RoleEsc)
+	plantManifestDetails(t, mgr, "lkupamb1", hostPath(t, "/repo/shared"), "", "VAL-x", RoleVal)
+	plantManifestDetails(t, mgr, "lkupamb2", hostPath(t, "/repo/shared"), "", "ESC-x", RoleEsc)
 
-	res, err := mgr.LookupByCWDDetails("/repo/shared")
+	res, err := mgr.LookupByCWDDetails(hostPath(t, "/repo/shared"))
 	require.NoError(t, err)
 	assert.True(t, res.HardAmbiguous)
 	assert.Len(t, res.Candidates, 2, "both equal-length matches are contenders")
@@ -239,18 +239,18 @@ func TestLookupByCWDDetails_HardAmbiguity(t *testing.T) {
 func TestLookupByCWDDetails_SharedScopeSiblings(t *testing.T) {
 	t.Parallel()
 	mgr := NewManager(t.TempDir(), time.Second)
-	scope := "/repo/main"
-	plantManifestDetails(t, mgr, "lkupval0", "/repo/main", scope, "VAL-x", RoleVal)
-	plantManifestDetails(t, mgr, "lkupesc0", "/repo/main-wt", scope, "ESC-x", RoleEsc)
+	scope := hostPath(t, "/repo/main")
+	plantManifestDetails(t, mgr, "lkupval0", hostPath(t, "/repo/main"), scope, "VAL-x", RoleVal)
+	plantManifestDetails(t, mgr, "lkupesc0", hostPath(t, "/repo/main-wt"), scope, "ESC-x", RoleEsc)
 
-	res, err := mgr.LookupByCWDDetails("/repo/main-wt/internal")
+	res, err := mgr.LookupByCWDDetails(hostPath(t, "/repo/main-wt/internal"))
 	require.NoError(t, err)
 	assert.Equal(t, "lkupesc0", res.SelectedID)
 	assert.False(t, res.HardAmbiguous)
 	require.Len(t, res.ScopeSiblings, 1)
 	assert.Equal(t, "lkupval0", res.ScopeSiblings[0].ID)
 
-	res2, err := mgr.LookupByCWDDetails("/repo/main")
+	res2, err := mgr.LookupByCWDDetails(hostPath(t, "/repo/main"))
 	require.NoError(t, err)
 	assert.Equal(t, "lkupval0", res2.SelectedID)
 	require.Len(t, res2.ScopeSiblings, 1)
@@ -273,13 +273,13 @@ func TestLookupByCWDDetails_SharedScopeSiblings(t *testing.T) {
 func TestLookupByCWDDetails_DifferentDerivedProjectsAreNotSiblings(t *testing.T) {
 	t.Parallel()
 	mgr := NewManager(t.TempDir(), time.Second)
-	plantManifestDetails(t, mgr, "lkupemp1", "/repo/a", "", "VAL-x", RoleVal)
-	plantManifestDetails(t, mgr, "lkupemp2", "/repo/b", "", "ESC-x", RoleEsc)
+	plantManifestDetails(t, mgr, "lkupemp1", hostPath(t, "/repo/a"), "", "VAL-x", RoleVal)
+	plantManifestDetails(t, mgr, "lkupemp2", hostPath(t, "/repo/b"), "", "ESC-x", RoleEsc)
 
-	res, err := mgr.LookupByCWDDetails("/repo/a")
+	res, err := mgr.LookupByCWDDetails(hostPath(t, "/repo/a"))
 	require.NoError(t, err)
 	assert.Equal(t, "lkupemp1", res.SelectedID)
-	assert.Equal(t, "/repo/a", res.Candidates[0].Scope, "derived from the project path")
+	assert.Equal(t, hostPath(t, "/repo/a"), res.Candidates[0].Scope, "derived from the project path")
 	assert.Empty(t, res.Candidates[0].StoredScope, "and the record still says nothing")
 	assert.Empty(t, res.ScopeSiblings, "/repo/a and /repo/b are two projects, not one missing scope")
 }
@@ -289,7 +289,7 @@ func TestLookupByCWDDetails_DifferentDerivedProjectsAreNotSiblings(t *testing.T)
 func TestLookupByCWDDetails_NoMatch(t *testing.T) {
 	t.Parallel()
 	mgr := NewManager(t.TempDir(), time.Second)
-	plantManifestDetails(t, mgr, "lkupnom1", "/repo/a", "/repo/a", "VAL-x", RoleVal)
+	plantManifestDetails(t, mgr, "lkupnom1", hostPath(t, "/repo/a"), hostPath(t, "/repo/a"), "VAL-x", RoleVal)
 	_, err := mgr.LookupByCWDDetails("/totally/unrelated")
 	assert.ErrorIs(t, err, ErrNoSessionForCwd)
 }
@@ -563,4 +563,17 @@ func TestManifestRMW_ConcurrentHeartbeatAndConsume_NoLostUpdate(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("msg-%012d", n-1), loaded.LastConsumedMsgID,
 		"last consumed id must survive concurrent heartbeat writes (no lost update)")
 	assert.False(t, loaded.LastHeartbeat.IsZero(), "heartbeat must also have run")
+}
+
+// hostPath turns the POSIX path literals these tables are written in into an
+// absolute path of THIS host. LookupByCWDDetails resolves its argument through
+// filepath.Abs, so on Windows a drive-less "/repo/p1" becomes "C:\repo\p1"
+// while the planted manifest still says "/repo/p1": the fixture would be
+// comparing two different paths and calling the mismatch a defect. On Unix it
+// is the identity, and the tables read exactly as before.
+func hostPath(t *testing.T, p string) string {
+	t.Helper()
+	abs, err := filepath.Abs(filepath.FromSlash(p))
+	require.NoError(t, err)
+	return abs
 }
