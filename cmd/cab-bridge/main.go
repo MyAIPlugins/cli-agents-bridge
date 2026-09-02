@@ -1,10 +1,8 @@
 // Package main is the cab-bridge CLI multiplexer entry-point.
 //
-// SC-1 (Security Control P0): syscall.Umask(0o077) is set in init() before any
-// file or directory creation. This ensures every file created by cab-bridge
-// has mode 0o600 and every directory has mode 0o700 by default, protecting
-// session manifests, inbox/outbox messages, and lock files from other-UID
-// readers (threat model TM-1).
+// SC-1 (Security Control P0) is set in init() before any file or directory
+// creation — see umask_unix.go, where it is a umask, and umask_windows.go, where
+// there is no such thing and the file says what stands in for it.
 package main
 
 import (
@@ -12,17 +10,12 @@ import (
 	"fmt"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 	"os"
-	"syscall"
 )
 
 // version is injected at build time via -ldflags "-X main.version=<tag>"
 // (GoReleaser from the git tag, Makefile from `git describe`). The "dev"
 // default applies only to builds without ldflags (e.g. plain `go build`).
 var version = "dev"
-
-func init() {
-	syscall.Umask(0o077)
-}
 
 // TODO Sprint 1: if any code path needs self-detection of the binary install
 // location, use os.Executable() — NOT filepath.Abs(os.Args[0]) which resolves

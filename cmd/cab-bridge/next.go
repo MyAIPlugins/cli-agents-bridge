@@ -304,6 +304,27 @@ func nextRun(parent context.Context, mgr *session.Manager, cfg config.Config, si
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 
+	// These two constants exist on Windows and this compiles there, but WHAT
+	// ARRIVES is not the same, and the difference decides whether the record
+	// below ever gets written.
+	//
+	// On Unix the harness stopping a background next sends SIGTERM, we catch it,
+	// and the run ends with an `interrupted` record carrying the open outbound —
+	// the observability of the recovery, which is the part we have twice found
+	// defects in.
+	//
+	// On Windows SIGINT arrives from Ctrl+C and SIGTERM only on console
+	// close/logoff/shutdown. A harness that stops the process with
+	// TerminateProcess delivers NEITHER: the process is killed outright, no
+	// handler runs, nothing is written. So every stop looks like a `kill -9`, and
+	// a caller reading the output cannot distinguish "interrupted" from "died".
+	//
+	// The design tolerates it — there is no cleanup on exit, deliberately (see
+	// the contract note above) — and the next `join` replays whatever was open.
+	// What is LOST is the announcement, not the state. [DEDUCED from the Go
+	// runtime's documented signal behaviour on Windows; nobody has run this
+	// there. LL-18 says recoveries have to be declared: here the declaration is
+	// that on this platform we cannot make one.]
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)
 	defer signal.Stop(sigs)

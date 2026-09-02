@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/cleanup"
@@ -62,6 +61,13 @@ func loadConfigOrFail() (config.Config, error) {
 //
 // Running as root (Getuid()==0): the owner check is skipped with a stderr
 // warning, consistent with security.CheckOwnership.
+//
+// On Windows two of those five lines mean something different, and pretending
+// otherwise here is how a security document starts describing a defence that is
+// not there: "owner" is a SID comparison (internal/security/perms_windows.go),
+// and the perms line NEVER fires — the mode carries no meaning, so the sequence
+// is symlink, directory, owner, and the inherited ACL of %USERPROFILE% is what
+// the auto-repair would otherwise have stood for.
 func bootstrapDataDir(dataDir string) error {
 	info, err := os.Lstat(dataDir)
 	if err != nil {
@@ -83,19 +89,19 @@ func bootstrapDataDir(dataDir string) error {
 		return fmt.Errorf("data dir %q exists but is not a directory", dataDir)
 	}
 
+	// One comparison, one place: the owner test lives in internal/security and
+	// nowhere else. It used to be repeated here as a second raw Stat_t, and a
+	// second copy of a rule is a second copy to keep true.
 	if os.Getuid() == 0 {
 		fmt.Fprintf(os.Stderr, "cab-bridge: running as root, data dir ownership check skipped for %q\n", dataDir)
-	} else {
-		sys, ok := info.Sys().(*syscall.Stat_t)
-		if !ok {
-			return fmt.Errorf("data dir %q: ownership check unsupported on this platform", dataDir)
-		}
-		if int(sys.Uid) != os.Getuid() {
-			return fmt.Errorf("data dir %q owned by uid %d, expected current uid %d: refusing to operate", dataDir, sys.Uid, os.Getuid())
-		}
+	} else if err := security.CheckOwnedInfo(dataDir, info); err != nil {
+		return fmt.Errorf("data dir %q: refusing to operate: %w", dataDir, err)
 	}
 
-	if info.Mode().Perm()&0o077 != 0 {
+	// Not a bare `&0o077`, for the same reason: on Windows Perm() is pinned at
+	// 0777, so the mask would fire on every command and announce a repair of
+	// something that carries no meaning there. security owns the predicate.
+	if security.DirPermsAreLoose(info.Mode().Perm()) {
 		fmt.Fprintf(os.Stderr, "cab-bridge: data dir %q has loose perms %04o, tightening to 0700\n", dataDir, info.Mode().Perm())
 		if err := os.Chmod(dataDir, 0o700); err != nil {
 			return fmt.Errorf("tighten data dir %q perms to 0700: %w", dataDir, err)

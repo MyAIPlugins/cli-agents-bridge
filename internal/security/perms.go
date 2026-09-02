@@ -12,9 +12,15 @@
 //   - EnforceDirPerms: idempotent chmod to enforce required directory mode.
 //     Backs SC-2 (mkdir 700) when a directory pre-exists with wrong perms.
 //
-// SC-1 (umask 077) lives in cmd/cab-bridge/main.go init(), not here.
+// SC-1 (umask 077) lives in cmd/cab-bridge/umask_unix.go init(), not here — and
+// has no counterpart on Windows, which umask_windows.go explains.
 //
-// Platform: Unix-only (darwin, linux). Windows is out of scope.
+// Platform: darwin, linux and windows. Everything that cannot be said the same
+// way on both models — an owner is a uid here and a SID there, O_NOFOLLOW does
+// not exist there, a Unix mode means nothing there — is in perms_unix.go and
+// perms_windows.go behind one set of signatures. This file holds the policy;
+// those two hold the platform. Read perms_windows.go before trusting a
+// Windows-side guarantee: two of them are weaker there, and it says which.
 package security
 
 import (
@@ -24,7 +30,6 @@ import (
 	"io/fs"
 	"os"
 	"regexp"
-	"syscall"
 )
 
 // sessionIDPattern is the strict regex applied to every session ID before it
@@ -92,9 +97,13 @@ func ValidateTeamID(id string) error {
 //     read everything anyway. A warning is logged to stderr. Not an error.
 //   - NFS mounts: stat() over NFS can return synthetic UIDs that do not match
 //     local Getuid(). Documented limitation, no MVP fix.
-//   - Non-Unix filesystem (Windows, Plan9): returns an error. The plugin is
-//     Unix-only.
+//   - Windows: the comparison is on the owner SID instead. See perms_windows.go
+//     — the verdict has the same meaning, the two edges around it do not.
 func CheckOwnership(path string) error {
+	// Getuid() returns -1 on Windows, so this branch is unreachable there — and
+	// deliberately so: there is no root to skip for. An elevated process is not
+	// the equivalent (it does not read past an ACL that denies it), and it gets
+	// no exemption.
 	if os.Getuid() == 0 {
 		fmt.Fprintf(os.Stderr, "cab-bridge: running as root, ownership check skipped for %q\n", path)
 		return nil
@@ -105,16 +114,18 @@ func CheckOwnership(path string) error {
 		return fmt.Errorf("stat %q: %w", path, err)
 	}
 
-	sys, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return fmt.Errorf("ownership check unsupported on this platform (path %q)", path)
-	}
+	return ownerCheckPath(path, info)
+}
 
-	if int(sys.Uid) != os.Getuid() {
-		return fmt.Errorf("%w: path=%q file_uid=%d current_uid=%d",
-			ErrOwnershipMismatch, path, sys.Uid, os.Getuid())
-	}
-	return nil
+// CheckOwnedInfo is CheckOwnership for a caller that already holds the FileInfo.
+// The boot check (SC-7) does its own Lstat because it needs the symlink verdict
+// from it, and re-statting inside CheckOwnership would ask about the path a
+// second time — which is the shape this package exists to avoid.
+//
+// info MUST come from a Stat or Lstat OF path. The root skip belongs to the
+// caller here, not to this function: the boot check words its own warning.
+func CheckOwnedInfo(path string, info fs.FileInfo) error {
+	return ownerCheckPath(path, info)
 }
 
 // EnforceDirPerms ensures path is a directory with exactly mode. If path does
@@ -129,6 +140,9 @@ func CheckOwnership(path string) error {
 //
 // The double call covers the case where sessionDir pre-existed with wrong
 // perms (e.g. user manually chmodded it to 755).
+//
+// On Windows the mode half is a documented no-op — the existence and the
+// directory-ness are still checked. perms_windows.go says what stands in for it.
 func EnforceDirPerms(path string, mode fs.FileMode) error {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -137,14 +151,7 @@ func EnforceDirPerms(path string, mode fs.FileMode) error {
 	if !info.IsDir() {
 		return fmt.Errorf("not a directory: %q", path)
 	}
-	currentMode := info.Mode().Perm()
-	if currentMode == mode.Perm() {
-		return nil
-	}
-	if err := os.Chmod(path, mode); err != nil {
-		return fmt.Errorf("chmod %q to %o: %w", path, mode, err)
-	}
-	return nil
+	return enforceMode(path, info.Mode().Perm(), mode)
 }
 
 // ReadOwnedFile opens path, verifies that the OPEN DESCRIPTOR belongs to the
@@ -177,25 +184,20 @@ func EnforceDirPerms(path string, mode fs.FileMode) error {
 // Skipped for root, like every other ownership check here: root can read
 // anything regardless, so refusing would cost without protecting.
 func openOwned(path string) (*os.File, error) {
-	// O_NOFOLLOW, and it is not decoration. `os.Open` FOLLOWS symlinks, so the
-	// fstat that follows would report the owner of the TARGET: another uid who
-	// planted a symlink of their own — during the same loose-perms window this
-	// check exists to clean up after — points it at a file of ours, and the
-	// ownership test passes on the victim's own uid. The content check was sound
-	// and the identity of the path was not: we closed "is this still the same
-	// file?" and left open "is this the file it claims to be?".
+	// A symlink is refused here, and it is not decoration. `os.Open` FOLLOWS
+	// symlinks, so the fstat that follows would report the owner of the TARGET:
+	// another uid who planted a symlink of their own — during the same
+	// loose-perms window this check exists to clean up after — points it at a
+	// file of ours, and the ownership test passes on the victim's own uid. The
+	// content check was sound and the identity of the path was not: we closed "is
+	// this still the same file?" and left open "is this the file it claims to be?".
 	//
-	// Refusing at OPEN rather than with an Lstat beforehand is what makes it
-	// atomic: an Lstat-then-open pair is the very TOCTOU shape being avoided.
-	// O_NONBLOCK alongside it, and this one was learned from a failing test: on a
-	// FIFO the OPEN itself blocks until a writer shows up, so the "regular file"
-	// check below never gets to run. The refusal has to be reachable, not just
-	// written.
-	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	// HOW it is refused is per-platform, and the guarantee is NOT the same on
+	// both: Unix refuses inside the open syscall (O_NOFOLLOW, atomic), Windows
+	// has to Lstat first and then open, which is the very TOCTOU shape being
+	// avoided. openNoFollow in perms_windows.go says so where it happens.
+	f, err := openNoFollow(path)
 	if err != nil {
-		if isSymlinkRefusal(err) {
-			return nil, fmt.Errorf("%w: path=%q is a symlink", ErrOwnershipMismatch, path)
-		}
 		return nil, err
 	}
 	info, serr := f.Stat()
@@ -211,16 +213,12 @@ func openOwned(path string) (*os.File, error) {
 		return nil, fmt.Errorf("%w: path=%q is not a regular file (mode %s)", ErrOwnershipMismatch, path, info.Mode())
 	}
 
+	// The check is on the OPEN DESCRIPTOR, not on the path — see the doc above.
+	// Skipped for root on Unix; unreachable on Windows, where Getuid() is -1.
 	if os.Getuid() != 0 {
-		sys, ok := info.Sys().(*syscall.Stat_t)
-		if !ok {
+		if oerr := ownerCheckFile(f, info); oerr != nil {
 			_ = f.Close()
-			return nil, fmt.Errorf("ownership check unsupported on this platform (path %q)", path)
-		}
-		if int(sys.Uid) != os.Getuid() {
-			_ = f.Close()
-			return nil, fmt.Errorf("%w: path=%q file_uid=%d current_uid=%d",
-				ErrOwnershipMismatch, path, sys.Uid, os.Getuid())
+			return nil, oerr
 		}
 	}
 
@@ -276,13 +274,6 @@ func WarnNotOurs(subject string, err error) bool {
 	return true
 }
 
-// isSymlinkRefusal reports whether err is the kernel refusing O_NOFOLLOW on a
-// symlink. Linux answers ELOOP, macOS/BSD answer EMLINK for this specific case;
-// both are reported rather than guessed at.
-func isSymlinkRefusal(err error) bool {
-	return errors.Is(err, syscall.ELOOP) || errors.Is(err, syscall.EMLINK)
-}
-
 // Scope of this primitive: the LEAF only. The directories above it are proved
 // separately, once per command, by CheckOwnedDir on the fixed components (see
 // bootstrapDataDir) — a leaf check cannot see a redirected tree, and walking the
@@ -325,13 +316,7 @@ func CheckOwnedDir(path string) error {
 	if os.Getuid() == 0 {
 		return nil
 	}
-	sys, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return fmt.Errorf("ownership check unsupported on this platform (path %q)", path)
-	}
-	if int(sys.Uid) != os.Getuid() {
-		return fmt.Errorf("%w: path=%q dir_uid=%d current_uid=%d",
-			ErrOwnershipMismatch, path, sys.Uid, os.Getuid())
-	}
-	return nil
+	// The symlink was refused above, so asking by name is safe here even on
+	// Windows, where the owner lookup follows reparse points.
+	return ownerCheckPath(path, info)
 }
