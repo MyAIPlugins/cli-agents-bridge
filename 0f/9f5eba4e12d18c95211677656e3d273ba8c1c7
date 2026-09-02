@@ -1,0 +1,24 @@
+tests/integration/binname_unix_test.go
+  s_949f601b0c1b53::t_f44ee23e824c4d 1-7
+tests/integration/helpers_test.go
+  s_949f601b0c1b53::t_4a4fea174c4a0e 18,107-120,124-128
+  s_949f601b0c1b53::t_4d47cc6dd6e079 49
+tests/integration/binname_windows_test.go
+  s_949f601b0c1b53::t_6fc59cdc62aa08 1-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "0f9f5eba4e12d18c95211677656e3d273ba8c1c7",
+  "prompts": {},
+  "sessions": {
+    "s_949f601b0c1b53": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9803d2b-3d10-491d-a1e9-e35fdcb0e962",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan Curtis <info@myaiplugins.com>"
+    }
+  }
+}
