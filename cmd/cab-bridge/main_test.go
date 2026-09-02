@@ -82,7 +82,7 @@ func TestBootstrapDataDir_RefusesARedirectedTree(t *testing.T) {
 			base := t.TempDir()
 			elsewhere := t.TempDir()
 			require.NoError(t, os.MkdirAll(filepath.Join(elsewhere, "victim"), 0o700))
-			require.NoError(t, os.Symlink(elsewhere, filepath.Join(base, sub)))
+			mustSymlink(t, elsewhere, filepath.Join(base, sub))
 
 			err := bootstrapDataDir(base)
 			require.Error(t, err, "a redirected %s must stop the command", sub)

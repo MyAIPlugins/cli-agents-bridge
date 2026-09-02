@@ -19,7 +19,7 @@ func TestSC7_SymlinkDataDirRejected(t *testing.T) {
 	realDir := filepath.Join(tmp, "real")
 	require.NoError(t, os.Mkdir(realDir, 0o700))
 	linkDir := filepath.Join(tmp, "link")
-	require.NoError(t, os.Symlink(realDir, linkDir))
+	mustSymlink(t, realDir, linkDir)
 
 	_, errOut, exit := run(t, []string{"peers"}, dataDirEnv(linkDir))
 	assert.NotEqual(t, 0, exit, "a subcommand on a symlinked data dir must fail")

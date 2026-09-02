@@ -875,7 +875,7 @@ func TestNext_RefusesToDeliverFromAnInboxHoldingAPlantedFile(t *testing.T) {
 	inbox := filepath.Join(dataDir, "sessions", sid, "inbox")
 	target := filepath.Join(dataDir, "elsewhere.json")
 	require.NoError(t, os.WriteFile(target, []byte(`{"id":"msg-bbbbbbbbbbbb"}`), 0o600))
-	require.NoError(t, os.Symlink(target, filepath.Join(inbox, "msg-bbbbbbbbbbbb.json")))
+	mustSymlink(t, target, filepath.Join(inbox, "msg-bbbbbbbbbbbb.json"))
 
 	// The scanner REPORTS: three buckets, and the foreign file lands in its own
 	// rather than being called corrupt or deciding the policy for every caller.

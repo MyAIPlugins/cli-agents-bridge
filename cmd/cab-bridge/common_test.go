@@ -101,9 +101,7 @@ func TestBootstrapDataDir_SymlinkIsFatal(t *testing.T) {
 		t.Fatal(err)
 	}
 	link := filepath.Join(tmp, "link")
-	if err := os.Symlink(target, link); err != nil {
-		t.Fatal(err)
-	}
+	mustSymlink(t, target, link)
 	if err := bootstrapDataDir(link); err == nil {
 		t.Fatal("expected FATAL error for a symlinked base dir, got nil")
 	}
@@ -156,7 +154,7 @@ func TestResolveScope_SymlinkedPath_CanonicalAndStable(t *testing.T) {
 	repo := filepath.Join(real, "repo")
 	require.NoError(t, os.MkdirAll(filepath.Join(repo, ".git"), 0o700))
 	link := filepath.Join(t.TempDir(), "link")
-	require.NoError(t, os.Symlink(real, link))
+	mustSymlink(t, real, link)
 
 	viaReal := resolveScope(repo)
 	viaLink := resolveScope(filepath.Join(link, "repo"))
@@ -186,7 +184,7 @@ func TestResolveScope_WorktreeUnderSymlink_MatchesMainRepo(t *testing.T) {
 
 	// reach both through a symlink to the base (the /tmp -> /private/tmp case)
 	link := filepath.Join(t.TempDir(), "link")
-	require.NoError(t, os.Symlink(realBase, link))
+	mustSymlink(t, realBase, link)
 
 	mainScope := resolveScope(filepath.Join(link, "repo"))
 	wtScope := resolveScope(filepath.Join(link, "repo-wt"))
