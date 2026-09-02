@@ -178,7 +178,15 @@ func TestMakefile_LintLooksWhereGoInstallPuts(t *testing.T) {
 			wantRun       bool
 		}{
 			{"the pinned version runs", "staticcheck 2026.1 (" + pin + ")", true},
+			// THE FORM THE REAL BINARY PRINTS SINCE 2026.2, and it is a case these
+			// four could not have: staticcheck dropped the `v` inside the parens
+			// (v0.7.0 said "(v0.7.0)", 0.8.1 says "(0.8.1)"). Every fake here
+			// printed the `v`, so the whole set stayed green while `make lint`
+			// refused the correct binary and told the reader to install it again.
+			// A test that builds its own input only checks the shapes it thought of.
+			{"the pinned version without the v runs too", "staticcheck 2026.2.1 (" + strings.TrimPrefix(pin, "v") + ")", true},
 			{"a different one is refused", "staticcheck 2024.1 (" + notThePin + ")", false},
+			{"a different one without the v is refused too", "staticcheck 2024.1 (" + strings.TrimPrefix(notThePin, "v") + ")", false},
 			{"one that cannot say is refused", "", false},
 			{"one that answers nonsense is refused", "not a version at all", false},
 		} {

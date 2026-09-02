@@ -24,6 +24,20 @@ jobs:
   # asserts more than it executes, which is the same class the code it guards
   # spent nine rounds closing. Fixed by making the execution match the name —
   # staticcheck now runs here too — rather than by renaming the job down.
+  #
+  # `go-version-file: go.mod`, NOT `go-version: stable`, and this is the line
+  # that broke the gate on 11 August without anybody touching the repository.
+  # `stable` moves: it became Go 1.27, the pinned staticcheck could not read its
+  # export data, and the job that authorises merges went red on its own while
+  # every local gate stayed green. A version that changes underneath you turns
+  # somebody's unrelated PR red for something they did not write.
+  #
+  # Now the number lives in go.mod's `toolchain` line — one source for this job,
+  # the release workflow, the Mac, WSL2 and the Windows PC. `go 1.25.0` above it
+  # stays the LANGUAGE minimum: what the module needs to compile, not what builds
+  # it. When setup-go honours only the `go` line, GOTOOLCHAIN=auto downloads the
+  # toolchain anyway — either way the `go version` printed by this job is the
+  # proof, which is why it is worth reading.
   test:
     name: Test (vet + staticcheck + race)
     runs-on: ubuntu-latest
@@ -31,7 +45,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: stable
+          go-version-file: go.mod
           cache: true
       - name: go vet
         run: go vet ./...
@@ -76,7 +90,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: stable
+          go-version-file: go.mod
           cache: true
       - name: Build static binary (CGO_ENABLED=0)
         env:
