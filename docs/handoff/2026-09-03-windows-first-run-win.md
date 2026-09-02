@@ -19,9 +19,12 @@ Le `[D]` del brief §1.f e §2 su data dir, scope walk, puntatore del worktree e
 virgolette singole compaiono su ogni path Windows, perche' `\` e `:` non sono byte "safe")
 sono confermate. Il caso ③ (PID riciclato) NON e' misurato: resta il lotto 2.
 
-## La suite su Windows, prima esecuzione — SENZA `-race` (gcc assente sul PC)
+## La suite su Windows, prima esecuzione
 
-    go test -count=1 -p 4 ./...    EXIT=1 · ok 7/12 package · 60 test rossi · cached 0
+    go test -count=1 -p 4 ./...          EXIT=1 · ok 7/12 package · 60 test rossi · cached 0   (gcc assente)
+    go test -race -count=1 -p 4 ./...    EXIT=1 · ok 7/12 · 55 rossi · 0 DATA RACE · cached 0   (un'ora dopo:
+                                         MinGW-w64 16.1.0 installato, Developer Mode ON → i 5 test sui
+                                         symlink passano: il rifiuto dei symlink VALE su Windows)
 
 Sei famiglie, **tutte negli strumenti di test, nessuna nel prodotto**:
 
@@ -41,9 +44,9 @@ include `git diff --stat -- ':!*_test.go'` vuoto.
   vedrai in PR o pushato: il tuo gate e' `go test -race -count=1 -p 4 ./...` su darwin, 12/12
   come prima, 0 cached — e il diff deve essere di soli `_test.go`. Se non lo e', il lotto ha
   sconfinato: fermalo.
-- **Il gate sul PC e' meno forte del tuo**: niente `-race` finche' non c'e' un gcc sul PC.
-  La copertura race su Windows arrivera' dalla CI `windows-latest` (lotto 4). Fino ad allora
-  ogni "verde su Windows" e' un verde senza race, e va letto cosi'.
+- **Il gate sul PC e' ora quello vero**: gcc (MinGW-w64 16.1.0) c'e' dalle 01:20 del 3 set e
+  `-race` gira; il primo giro senza race e' storia. La CI `windows-latest` (lotto 4) resta la
+  seconda porta, come `ubuntu-latest` lo e' per il Mac.
 - Se riprendi il port dal Mac, il binario Windows si cross-compila come nel lotto 0; quello
   che NON puoi fare dal Mac e' eseguire i test (F4 e F5 sono proprio la prova che serve la
   macchina).
