@@ -1,0 +1,34 @@
+internal/session/manager_test.go
+  s_949f601b0c1b53::t_4dd9a2c1c958cb 192,194,210-211,213,226-227,229,242-244,246,253,276-277,279,282,292,567-578
+  s_949f601b0c1b53::t_38c6a04f6080c3 579
+cmd/cab-bridge/shellarg_wiring_test.go
+  s_949f601b0c1b53::t_e3fc23fc5642aa 4,188-202,207-213
+tests/integration/lock_remedy_drift_test.go
+  s_949f601b0c1b53::t_4dd9a2c1c958cb 75-78
+cmd/cab-bridge/join_test.go
+  s_949f601b0c1b53::t_e3fc23fc5642aa 708,724-728,730-731,868-875
+cmd/cab-bridge/pathsafe_unix_test.go
+  s_949f601b0c1b53::t_e3fc23fc5642aa 1-10
+internal/session/lock_test.go
+  s_949f601b0c1b53::t_e3fc23fc5642aa 187-191
+cmd/cab-bridge/pathsafe_windows_test.go
+  s_949f601b0c1b53::t_e3fc23fc5642aa 1-11
+tests/integration/makefile_lint_test.go
+  s_949f601b0c1b53::t_4dd9a2c1c958cb 432-436
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d54a322a4bcbf3af5edba803aac4310934d2bf92",
+  "prompts": {},
+  "sessions": {
+    "s_949f601b0c1b53": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9803d2b-3d10-491d-a1e9-e35fdcb0e962",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan Curtis <info@myaiplugins.com>"
+    }
+  }
+}
