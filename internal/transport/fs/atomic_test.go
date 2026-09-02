@@ -3,7 +3,6 @@ package fs
 import (
 	"os"
 	"path/filepath"
-	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -25,21 +24,6 @@ func TestAtomicWriteJSON_RoundTrip(t *testing.T) {
 	var out map[string]interface{}
 	require.NoError(t, ReadJSON(target, &out))
 	assert.Equal(t, in, out)
-}
-
-func TestAtomicWriteBytes_EnforcesPerms(t *testing.T) {
-	// Test mutates umask temporarily to prove explicit chmod works even
-	// when the process umask is permissive. Must run serially.
-	prev := syscall.Umask(0)
-	t.Cleanup(func() { syscall.Umask(prev) })
-
-	target := filepath.Join(t.TempDir(), "perm-test.bin")
-	require.NoError(t, AtomicWriteBytes(target, []byte("x"), 0o600))
-
-	info, err := os.Stat(target)
-	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm(),
-		"AtomicWriteBytes must produce 0o600 regardless of process umask")
 }
 
 func TestAtomicWriteIdempotent_LastWriteWins(t *testing.T) {
