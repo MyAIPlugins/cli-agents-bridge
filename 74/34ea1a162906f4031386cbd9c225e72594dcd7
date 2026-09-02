@@ -1,0 +1,20 @@
+ROADMAP.md
+  s_0bee6f27b5d10f::t_558e740f312e9c 33-34
+  s_0bee6f27b5d10f::t_f5c30b7a55ff05 27-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7434ea1a162906f4031386cbd9c225e72594dcd7",
+  "prompts": {},
+  "sessions": {
+    "s_0bee6f27b5d10f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c5436fe9-8fc3-4798-94ce-34a990a2fcba",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Alan Curtis <info@myaiplugins.com>"
+    }
+  }
+}
