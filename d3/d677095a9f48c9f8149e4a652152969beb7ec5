@@ -1,0 +1,29 @@
+cmd/cab-bridge/notify_watch_test.go
+  s_6b2258ee2ef829::t_7a9a792138de3c 1-2
+cmd/cab-bridge/notify_watch.go
+  s_6b2258ee2ef829::t_7a9a792138de3c 1-6
+cmd/cab-bridge/notify_watch_state.go
+  s_6b2258ee2ef829::t_7a9a792138de3c 1-4
+cmd/cab-bridge/next.go
+  s_6b2258ee2ef829::t_23d79846eea75b 307-327
+cmd/cab-bridge/notify_watch_windows.go
+  s_6b2258ee2ef829::t_acf701fc263dfb 1-27
+cmd/cab-bridge/notify_watch_state_test.go
+  s_6b2258ee2ef829::t_7a9a792138de3c 1-2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d3d677095a9f48c9f8149e4a652152969beb7ec5",
+  "prompts": {},
+  "sessions": {
+    "s_6b2258ee2ef829": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "17b0dee8-a1c0-43f9-8c24-a620fa3601af",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
