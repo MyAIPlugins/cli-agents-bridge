@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -34,11 +35,9 @@ func TestAcquireLock_HeldByLiveProcess_ReturnsErrLockHeld(t *testing.T) {
 
 	lockPath := filepath.Join(t.TempDir(), "session.lock")
 
-	// Plant a lock owned by a process we know is alive: our own PID
-	// (but not via AcquireLock so the test path is not "re-entrant").
-	// Simulate "other live process" by writing a different live PID:
-	// init (PID 1) is alive on every Unix system.
-	require.NoError(t, os.WriteFile(lockPath, []byte("1\n"), 0o600))
+	// A lock held by a process that is alive and is NOT us: both halves are
+	// load-bearing, and aLiveForeignPID says why.
+	require.NoError(t, os.WriteFile(lockPath, []byte(strconv.Itoa(aLiveForeignPID(t))+"\n"), 0o600))
 
 	release, err := AcquireLock(lockPath, false)
 	require.Error(t, err)
@@ -139,8 +138,10 @@ func TestIsProcessAlive(t *testing.T) {
 	// Self is always alive
 	assert.True(t, IsProcessAlive(os.Getpid()))
 
-	// PID 1 (init) is always alive on Unix
-	assert.True(t, IsProcessAlive(1))
+	// A live process that is not us. PID 1 would be the obvious pick and is
+	// wrong: it is init on Unix and nothing at all on Windows, where this
+	// function correctly reports it dead.
+	assert.True(t, IsProcessAlive(os.Getppid()))
 
 	// PID 0 / negative are invalid
 	assert.False(t, IsProcessAlive(0))
@@ -171,7 +172,8 @@ func TestIsProcessAlive(t *testing.T) {
 func TestAcquireLock_TheMessageNamesNoRemedy(t *testing.T) {
 	t.Parallel()
 	lockPath := filepath.Join(t.TempDir(), "session.lock")
-	require.NoError(t, os.WriteFile(lockPath, []byte("1\n"), 0o600)) // PID 1: alive everywhere
+	livePID := aLiveForeignPID(t)
+	require.NoError(t, os.WriteFile(lockPath, []byte(strconv.Itoa(livePID)+"\n"), 0o600))
 
 	_, err := AcquireLock(lockPath, false)
 	require.Error(t, err)
@@ -183,5 +185,25 @@ func TestAcquireLock_TheMessageNamesNoRemedy(t *testing.T) {
 	// And the other half, which is what keeps the assertion above from being
 	// satisfied by an empty message: the facts a caller needs are still there.
 	assert.Contains(t, msg, lockPath, "the lock path is a fact and must survive")
-	assert.Contains(t, msg, "pid=1", "so is the holder")
+	assert.Contains(t, msg, "pid="+strconv.Itoa(livePID), "so is the holder")
+}
+
+// aLiveForeignPID is the PID of a process that is alive and is NOT this one,
+// for tests that plant a lock file. Both halves carry weight.
+//
+// Not our own PID: AcquireLock treats a lock whose holder is us as re-entrant
+// and returns success (lock.go), so a fixture planted with os.Getpid() would
+// never reach ErrLockHeld and the assertion below would pass while testing the
+// opposite branch.
+//
+// Not PID 1 either, which is what this fixture used to be: init is alive on
+// every Unix and does not exist on Windows, where IsProcessAlive reports it
+// dead — correctly. The parent process is the portable answer: for a test
+// binary it is whatever launched it, and it outlives the run.
+func aLiveForeignPID(t *testing.T) int {
+	t.Helper()
+	ppid := os.Getppid()
+	require.True(t, IsProcessAlive(ppid),
+		"the parent (pid %d) must be alive, or this fixture asserts nothing", ppid)
+	return ppid
 }
