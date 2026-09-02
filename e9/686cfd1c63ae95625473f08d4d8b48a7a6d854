@@ -1,0 +1,33 @@
+cmd/cab-bridge/common_test.go
+  s_949f601b0c1b53::t_09e08559c489cb 104,157,187
+cmd/cab-bridge/next_test.go
+  s_949f601b0c1b53::t_09e08559c489cb 878
+cmd/cab-bridge/symlink_unix_test.go
+  s_949f601b0c1b53::t_37cd103b453934 1-18
+cmd/cab-bridge/symlink_windows_test.go
+  s_949f601b0c1b53::t_09e08559c489cb 1-40
+tests/integration/symlink_windows_test.go
+  s_949f601b0c1b53::t_09e08559c489cb 1-40
+cmd/cab-bridge/main_test.go
+  s_949f601b0c1b53::t_09e08559c489cb 85
+tests/integration/symlink_unix_test.go
+  s_949f601b0c1b53::t_09e08559c489cb 1-18
+tests/integration/scenario_sc7_test.go
+  s_949f601b0c1b53::t_09e08559c489cb 22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "e9686cfd1c63ae95625473f08d4d8b48a7a6d854",
+  "prompts": {},
+  "sessions": {
+    "s_949f601b0c1b53": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9803d2b-3d10-491d-a1e9-e35fdcb0e962",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan Curtis <info@myaiplugins.com>"
+    }
+  }
+}
