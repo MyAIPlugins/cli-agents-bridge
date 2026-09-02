@@ -787,7 +787,7 @@ func TestNextMessage_ShellArgIsWiredAndSymmetric(t *testing.T) {
 	var decoded nextMessage
 	require.NoError(t, json.Unmarshal(encoded, &decoded))
 
-	out, err := exec.Command("/bin/sh", "-c", `printf '%s\0' `+decoded.FromAddressShellArg).Output()
+	out, err := exec.Command(posixShell(t), "-c", `printf '%s\0' `+decoded.FromAddressShellArg).Output()
 	require.NoError(t, err, "the shell must accept it: %q", decoded.FromAddressShellArg)
 	argv := strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00")
 	require.Len(t, argv, 1, "ONE argv entry after JSON and the shell")

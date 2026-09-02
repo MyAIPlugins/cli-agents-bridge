@@ -25,7 +25,7 @@ import (
 // is precisely the inference it existed to forbid (CRI re-gate, P2).
 //
 // So nothing here calls shellarg. Each test runs a REAL producer, takes the text
-// it emitted, and hands that text to /bin/sh. If a call site drops the renderer,
+// it emitted, and hands that text to a POSIX sh. If a call site drops the renderer,
 // the shell splits the token or refuses the line, and the test goes red without
 // knowing anything about how the rendering is done.
 //
@@ -54,7 +54,7 @@ func emittedCommand(t *testing.T, text, start string) string {
 	}
 	// Placeholders are for a human to fill in. The known ones are substituted;
 	// an unknown one is refused rather than passed through, because `<foo>` is a
-	// REDIRECTION to a shell — letting it reach /bin/sh would turn a new
+	// REDIRECTION to a shell — letting it reach the shell would turn a new
 	// placeholder into a puzzling failure instead of this sentence.
 	for _, p := range []struct{ from, to string }{{"<name>", "NEWNAME"}, {"<id>", "abcd1234"}} {
 		cmd = strings.ReplaceAll(cmd, p.from, p.to)
@@ -76,7 +76,7 @@ func runEmitted(t *testing.T, text, start string) []string {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, word0),
 		[]byte("#!/bin/sh\nprintf '%s\\0' \"$@\"\n"), 0o700))
 
-	c := exec.Command("/bin/sh", "-c", cmd)
+	c := exec.Command(posixShell(t), "-c", cmd)
 	c.Env = []string{"PATH=" + dir} // nothing from the ambient environment participates
 	out, err := c.Output()
 	require.NoError(t, err, "the shell refused the emitted command — the producer did not render it: %s", cmd)
@@ -87,7 +87,7 @@ func runEmitted(t *testing.T, text, start string) []string {
 // column offer words to copy, not commands to run.
 func evalWord(t *testing.T, word string) []string {
 	t.Helper()
-	out, err := exec.Command("/bin/sh", "-c", `printf '%s\0' `+word).Output()
+	out, err := exec.Command(posixShell(t), "-c", `printf '%s\0' `+word).Output()
 	require.NoError(t, err, "the shell refused the emitted token %q", word)
 	return splitNUL(string(out))
 }
@@ -152,7 +152,7 @@ func TestWiring_TheFixturesWouldBreakAnUnrenderedProducer(t *testing.T) {
 		"VAL-x" + session.ScopeSeparator + "/tmp/" + wiringHostileDir,
 		"--role=" + wiringHostileRole,
 	} {
-		out, err := exec.Command("/bin/sh", "-c", `printf '%s\0' `+raw).Output()
+		out, err := exec.Command(posixShell(t), "-c", `printf '%s\0' `+raw).Output()
 		if err != nil {
 			continue // the shell refused it outright: hostile enough
 		}
@@ -348,4 +348,18 @@ func TestWiring_ReplyLookalikeOffersALegacyName(t *testing.T) {
 	argv := runEmitted(t, err.Error(), "reply ")
 	assert.Equal(t, []string{legacy, "..."}, argv,
 		"the suggested name must arrive whole, not as two words")
+}
+
+// posixShell resolves the shell these round-trips evaluate with. It is not
+// /bin/sh everywhere: on Windows the shell a reader pastes these commands into
+// is Git Bash's sh, which lives on PATH and nowhere near /bin. A host with no
+// sh at all skips BY NAME — the assertion is about what a shell does to a
+// rendered word, and without a shell there is nothing to assert.
+func posixShell(t *testing.T) string {
+	t.Helper()
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skipf("no POSIX sh on PATH (%v): this test asserts what a shell does to a rendered word", err)
+	}
+	return sh
 }

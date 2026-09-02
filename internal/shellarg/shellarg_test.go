@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// evalInShell asks a REAL /bin/sh what the rendered word becomes, and reports
+// evalInShell asks a REAL POSIX sh what the rendered word becomes, and reports
 // the resulting argv NUL-separated.
 //
 // Counting argv, not lines: a value containing a newline yields one argument and
@@ -19,7 +19,7 @@ import (
 func evalInShell(t *testing.T, rendered string) []string {
 	t.Helper()
 	// printf writes each argument followed by NUL; nothing else touches the data.
-	out, err := exec.Command("/bin/sh", "-c", `printf '%s\0' `+rendered).Output()
+	out, err := exec.Command(posixShell(t), "-c", `printf '%s\0' `+rendered).Output()
 	require.NoError(t, err, "the shell refused to evaluate %s", rendered)
 	s := string(out)
 	if s == "" {
@@ -102,7 +102,7 @@ func TestQuote_NoSideEffects(t *testing.T) {
 		require.Len(t, argv, 1, "%q", raw)
 		assert.Equal(t, raw, argv[0])
 
-		_, err := exec.Command("/bin/sh", "-c", "test -e "+marker).Output()
+		_, err := exec.Command(posixShell(t), "-c", "test -e "+marker).Output()
 		assert.Error(t, err,
 			"%q must be DATA: if the marker exists, the shell executed the payload", raw)
 	}
@@ -150,4 +150,18 @@ func TestQuote_EmptyStringStaysAnArgument(t *testing.T) {
 	argv := evalInShell(t, Quote(""))
 	require.Len(t, argv, 1, "an empty value must still be ONE argument, not none")
 	assert.Equal(t, "", argv[0])
+}
+
+// posixShell resolves the shell these round-trips evaluate with. It is not
+// /bin/sh everywhere: on Windows the shell a reader pastes these commands into
+// is Git Bash's sh, which lives on PATH and nowhere near /bin. A host with no
+// sh at all skips BY NAME — the assertion is about what a shell does to a
+// rendered word, and without a shell there is nothing to assert.
+func posixShell(t *testing.T) string {
+	t.Helper()
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skipf("no POSIX sh on PATH (%v): this test asserts what a shell does to a rendered word", err)
+	}
+	return sh
 }
