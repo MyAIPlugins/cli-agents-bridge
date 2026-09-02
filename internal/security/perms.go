@@ -12,7 +12,8 @@
 //   - EnforceDirPerms: idempotent chmod to enforce required directory mode.
 //     Backs SC-2 (mkdir 700) when a directory pre-exists with wrong perms.
 //
-// SC-1 (umask 077) lives in cmd/cab-bridge/main.go init(), not here.
+// SC-1 (umask 077) lives in cmd/cab-bridge/umask_unix.go init(), not here — and
+// has no counterpart on Windows, which umask_windows.go explains.
 //
 // Platform: darwin, linux and windows. Everything that cannot be said the same
 // way on both models — an owner is a uid here and a SID there, O_NOFOLLOW does
