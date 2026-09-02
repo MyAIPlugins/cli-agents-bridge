@@ -1,0 +1,19 @@
+ROADMAP.md
+  s_d92bfabdf9f81b::t_7b605e02c1049e 10-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "4499627ea83661a50e13f142994617427c6a87b3",
+  "prompts": {},
+  "sessions": {
+    "s_d92bfabdf9f81b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9c089bf3-33a8-4170-89b4-f223462957a5",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
