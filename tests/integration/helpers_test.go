@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -45,7 +46,7 @@ func buildBinary(t *testing.T) string {
 			binBuildErr = err
 			return
 		}
-		binPath = filepath.Join(dir, "cab-bridge")
+		binPath = filepath.Join(dir, "cab-bridge"+binExeSuffix)
 		cmd := exec.Command("go", "build", "-o", binPath, "./cmd/cab-bridge")
 		cmd.Dir = repoRoot
 		var stderr bytes.Buffer
@@ -103,11 +104,28 @@ func mustJSONField(t *testing.T, jsonOut, fieldName string) string {
 	tail := strings.TrimSpace(jsonOut[idx+len(needle):])
 	// Strip leading quote if string-typed
 	if strings.HasPrefix(tail, `"`) {
-		end := strings.Index(tail[1:], `"`)
+		// Walk to the closing quote honouring backslash escapes, then unquote:
+		// a Windows path travels as "C:\\Users\\..." and the raw substring is
+		// the encoded form, not the value.
+		end := -1
+		for i := 1; i < len(tail); i++ {
+			if tail[i] == '\\' {
+				i++
+				continue
+			}
+			if tail[i] == '"' {
+				end = i
+				break
+			}
+		}
 		if end < 0 {
 			t.Fatalf("malformed string field %q in JSON: %s", fieldName, jsonOut)
 		}
-		return tail[1 : 1+end]
+		val, err := strconv.Unquote(tail[:end+1])
+		if err != nil {
+			t.Fatalf("field %q is not a valid JSON string (%v): %s", fieldName, err, jsonOut)
+		}
+		return val
 	}
 	// Numeric / boolean — read up to comma or newline
 	for i, r := range tail {
