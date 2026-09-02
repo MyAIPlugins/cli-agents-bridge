@@ -1,3 +1,7 @@
+//go:build !windows
+
+// Tagged with notify_watch.go: this state file only exists to serve it, and a
+// dedup ledger for a command that cannot run is dead weight on Windows.
 package main
 
 import (

@@ -1,3 +1,9 @@
+//go:build !windows
+
+// notify-watch is Unix-only by design: it runs a hook in its own process
+// group so a timeout can tear down the whole tree (screen/tmux), which has no
+// portable equivalent. notify_watch_windows.go refuses the command there
+// rather than letting it vanish from the binary.
 package main
 
 import (
