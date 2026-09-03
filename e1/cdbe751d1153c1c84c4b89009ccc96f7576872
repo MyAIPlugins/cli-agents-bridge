@@ -1,0 +1,28 @@
+cmd/cab-bridge/recipient_windows_test.go
+  s_949f601b0c1b53::t_bcaca71dd4eace 43-46
+internal/session/pathsem_windows.go
+  s_949f601b0c1b53::t_e917a98e8272aa 24-33,41-50,52-55,58
+  s_949f601b0c1b53::t_bcaca71dd4eace 16-18
+cmd/cab-bridge/recipient.go
+  s_949f601b0c1b53::t_e917a98e8272aa 85,114
+internal/session/pathid.go
+  s_949f601b0c1b53::t_e917a98e8272aa 63-80
+internal/session/pathid_windows_test.go
+  s_949f601b0c1b53::t_bcaca71dd4eace 73-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "e1cdbe751d1153c1c84c4b89009ccc96f7576872",
+  "prompts": {},
+  "sessions": {
+    "s_949f601b0c1b53": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9803d2b-3d10-491d-a1e9-e35fdcb0e962",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan Curtis <info@myaiplugins.com>"
+    }
+  }
+}
