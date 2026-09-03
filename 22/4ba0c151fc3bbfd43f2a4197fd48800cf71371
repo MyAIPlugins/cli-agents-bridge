@@ -1,0 +1,53 @@
+cmd/cab-bridge/recipient_windows_test.go
+  s_949f601b0c1b53::t_805bb294245677 13,20-23,51-61,63-71,73-82
+  s_949f601b0c1b53::t_318b6579c5302f 1-12,14-19,24-50,62,72,83
+internal/session/manager.go
+  s_949f601b0c1b53::t_a1fb902bfeaf79 142,419,455,462,464
+  s_949f601b0c1b53::t_044b5b276ac2f5 293
+internal/session/reconnect.go
+  s_949f601b0c1b53::t_a1fb902bfeaf79 276,302,304
+cmd/cab-bridge/recipient_test.go
+  s_949f601b0c1b53::t_88b64d54421abf 149-159,164-165,169,251-252,259,277,298-304,307-308,313-314,318-319
+  s_949f601b0c1b53::t_6cb52864e71442 76-86,90
+cmd/cab-bridge/join.go
+  s_949f601b0c1b53::t_a1fb902bfeaf79 445,488,548
+internal/session/scopevalue.go
+  s_949f601b0c1b53::t_a1fb902bfeaf79 60,99,122
+  s_949f601b0c1b53::t_044b5b276ac2f5 3,89-98
+internal/session/pathsem_unix.go
+  s_949f601b0c1b53::t_831e6ef91c0e78 1-20
+cmd/cab-bridge/recipient.go
+  s_949f601b0c1b53::t_a1fb902bfeaf79 68-77,82-83
+  s_949f601b0c1b53::t_b7ecae7e311a1a 87-115
+  s_949f601b0c1b53::t_96ac12daea9fba 116
+cmd/cab-bridge/common.go
+  s_949f601b0c1b53::t_a1fb902bfeaf79 232
+cmd/cab-bridge/verbs.go
+  s_949f601b0c1b53::t_b7ecae7e311a1a 201-202
+internal/session/pathid.go
+  s_949f601b0c1b53::t_ea2b32fcc41c19 1-83
+internal/session/pathid_windows_test.go
+  s_949f601b0c1b53::t_6bff058e6f8ddc 1-81
+internal/session/scope.go
+  s_949f601b0c1b53::t_15bb03937f157f 47
+internal/cleanup/gc.go
+  s_949f601b0c1b53::t_a1fb902bfeaf79 135
+internal/session/pathsem_windows.go
+  s_949f601b0c1b53::t_f86fbd025aabdf 1-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "224ba0c151fc3bbfd43f2a4197fd48800cf71371",
+  "prompts": {},
+  "sessions": {
+    "s_949f601b0c1b53": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9803d2b-3d10-491d-a1e9-e35fdcb0e962",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan Curtis <info@myaiplugins.com>"
+    }
+  }
+}
