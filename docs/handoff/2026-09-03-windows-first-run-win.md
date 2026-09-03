@@ -38,6 +38,23 @@ Sei famiglie, **tutte negli strumenti di test, nessuna nel prodotto**:
 Il lotto 1 e' in mano all'ESC-win sul branch `feat/windows-lotto1`: SOLO test, il gate ESC
 include `git diff --stat -- ':!*_test.go'` vuoto.
 
+## Aggiornamento 02:50 — lotto 1 completo sul PC, branch `feat/windows-lotto1` (a1f3fe1..e9686cf)
+
+Sei commit, SOLO file di test, accettati dal VAL-win con gate indipendente: 72 dei 74 rossi
+recuperati, 0 nuovi, SKIP 0, 0 data race, `-race` su Windows con MinGW. Restano rossi di
+proposito `TestLegacyEndToEnd` (F-135, difetto di prodotto: `recipient.go:72` chiede "e' un
+path assoluto?" in POSIX) e, a intermittenza, `TestStartHeartbeatOwned` (F-133: `os.Rename`
+su Windows fallisce se un lettore tiene aperto il target, Go apre senza `FILE_SHARE_DELETE`).
+Terzo difetto di prodotto: F-134, `join` nella cwd di una sessione VIVA di un altro agente la
+sequestra. Design-gate fatto da un CRI Codex via bridge; decisioni in `.handover/` del PC.
+
+**Cosa devi fare tu, se il branch arriva prima di me**: `go test -race -count=1 -p 4 ./...`
+su darwin deve dare 12/12 come prima, 0 cached — su Unix ogni helper introdotto e' l'identita'
+per costruzione (`binExeSuffix` vuoto, `hostPath` = Abs, `ToSlash` no-op, `assertPOSIXPerm`
+e `mustSymlink` invariati), ma e' DEDOTTO finche' non lo esegui. `git diff --stat
+a1f3fe1..e9686cf -- ':!*_test.go'` deve essere vuoto. Se entrambe reggono, il lotto 1 e'
+mergiabile; se no, fermalo e scrivi qui il rosso.
+
 ## Cosa cambia per te sul Mac
 
 - **In `main` non cambia niente** finche' `feat/windows-lotto1` non viene mergiato. Quando lo
