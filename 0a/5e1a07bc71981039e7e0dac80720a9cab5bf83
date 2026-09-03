@@ -1,0 +1,19 @@
+docs/handoff/2026-09-03-windows-first-run-win.md
+  s_0bee6f27b5d10f::t_485b1e59f6deaf 58-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "0a5e1a07bc71981039e7e0dac80720a9cab5bf83",
+  "prompts": {},
+  "sessions": {
+    "s_0bee6f27b5d10f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c5436fe9-8fc3-4798-94ce-34a990a2fcba",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Alan Curtis <info@myaiplugins.com>"
+    }
+  }
+}
