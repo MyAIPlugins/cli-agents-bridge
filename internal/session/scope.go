@@ -44,7 +44,7 @@ import (
 // (VAL ratification H1). An empty home disables the exclusion (no $HOME known).
 //
 // Resolution in THIS walk is lexical (filepath.Abs + Clean), matching
-// LongestPrefixLookup and isPathDescendantOrEqual. Symlinks are NOT resolved here;
+// LongestPrefixLookup and IsDescendantLexical. Symlinks are NOT resolved here;
 // the sole caller (cmd resolveScope) symlink-canonicalizes the returned scope so
 // the `.git` DIR branch (lexical cwd) and the `.git` FILE branch (git writes the
 // gitdir already symlink-resolved) converge on one form under a symlinked path

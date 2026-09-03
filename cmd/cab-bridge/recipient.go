@@ -65,12 +65,52 @@ func parseRecipient(token string) (recipient, error) {
 //
 // An absolute hint is compared whole; anything else is compared against the
 // basename — which is what `peers` prints, and the reason the two forms exist.
+//
+// "Absolute" is filepath.IsAbs, not a leading "/" (F-135): on Windows an
+// absolute path starts with a drive letter, so the old test sent EVERY
+// qualified address down the basename branch, where a full path can never
+// match. The error it produced named the project it had just refused to find.
+//
+// And IsAbs alone is not enough. The stored scope carries the casing the
+// resolver read off the disk; the hint carries the casing a human typed. So
+// the hint goes through the SAME canonicalisation as the scope, and the
+// comparison is the one this OS uses for file names.
 func scopeMatchesHint(sessionScope, hint string) bool {
 	if sessionScope == "" {
 		return false // legacy session with no scope: never matched by an address
 	}
-	if strings.HasPrefix(hint, "/") {
-		return filepath.Clean(sessionScope) == filepath.Clean(hint)
+	if filepath.IsAbs(hint) {
+		return session.SamePathLexical(session.CanonicalizePath(hint), sessionScope)
 	}
 	return filepath.Base(sessionScope) == hint
+}
+
+// volumeHint explains a failure whose cause the plain message cannot show: a
+// hint that is ROOTED BUT NAMES NO VOLUME — `/foo` typed literally on Windows.
+//
+// It resolves against whichever drive the process happens to be on, so it is not
+// a full path; and it is not a basename either, because it carries a separator.
+// Without this line the reader gets "no agent named X in project /foo" and has
+// no way to see that the shape of the address is the problem.
+//
+// It ADDS to the message, never replaces it: the project list is still the
+// answer to "wrong name or wrong project?".
+//
+// Deliberately here and NOT in parseRecipient, where the CRI design put it.
+// parseRecipient is pure syntax and is used for two things: what a human types,
+// and the round-trip of what the product itself printed. Refusing there would
+// have meant refusing a token `peers` had just offered — the same defect as
+// F-135, upside down — and four tests defend that invariant by name
+// (TestRecipient_RoundTrip, TestNextMessage_CrossScopeCarriesTheLogicalAddress,
+// TestResolveRecipient_AmbiguousBasenameFailsClosed,
+// TestSoleSessionNamed_AmbiguousBasenamesGetDistinctWorkingTokens).
+//
+// On Unix session.PathNeedsVolume is always false, so this returns "" and no
+// message changes: a leading "/" IS the root there, and nothing is ambiguous.
+func volumeHint(scope string) string {
+	if !session.PathNeedsVolume(scope) {
+		return ""
+	}
+	return fmt.Sprintf(" — note: %q is rooted but names no drive, so on this host it is not a full path: "+
+		"use the form `peers --all-scopes` prints (a drive path or a UNC path), or just the project folder name", scope)
 }

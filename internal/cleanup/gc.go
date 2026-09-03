@@ -132,5 +132,5 @@ func gcOwns(callerScope, sessionScope string) bool {
 	if sessionScope == "" {
 		return true // unowned: nobody else will ever collect it
 	}
-	return sessionScope == callerScope
+	return session.SamePathLexical(sessionScope, callerScope)
 }

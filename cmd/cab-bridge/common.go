@@ -229,10 +229,7 @@ func resolveScope(path string) string {
 		fmt.Fprintf(os.Stderr, "cab-bridge: scope detection failed for %q (non-fatal): %v — proceeding without scope\n", path, serr)
 		return ""
 	}
-	if resolved, rerr := filepath.EvalSymlinks(scope); rerr == nil {
-		return resolved
-	}
-	return scope
+	return session.CanonicalizePath(scope)
 }
 
 // resolveEnvSessionID reads CAB_SESSION_ID, the middle rung of the precedence

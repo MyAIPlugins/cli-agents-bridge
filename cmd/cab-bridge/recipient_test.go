@@ -73,11 +73,21 @@ func TestParseRecipient(t *testing.T) {
 
 func TestScopeMatchesHint(t *testing.T) {
 	t.Parallel()
-	const scope = "/Users/alan/develop/cli-agents-bridge"
+	// The scope is stored CANONICALISED, because that is how the product stores
+	// it (resolveScope ends in CanonicalizePath) and the hint is now canonicalised
+	// the same way before the comparison. A raw fixture would be a scope no
+	// resolver ever produced — and on macOS it would differ from the canonical
+	// form by the /var -> /private/var symlink, so the test would be asserting
+	// something about the fixture instead of about the code.
+	base := t.TempDir()
+	projDir := filepath.Join(base, "develop", "cli-agents-bridge")
+	require.NoError(t, os.MkdirAll(projDir, 0o700))
+	scope := session.CanonicalizePath(projDir)
+
 	assert.True(t, scopeMatchesHint(scope, "cli-agents-bridge"), "the basename is what peers prints")
 	assert.True(t, scopeMatchesHint(scope, scope), "and the full path is what it prints when ambiguous")
 	assert.False(t, scopeMatchesHint(scope, "other"))
-	assert.False(t, scopeMatchesHint(scope, "/elsewhere/cli-agents-bridge"),
+	assert.False(t, scopeMatchesHint(scope, filepath.Join(base, "elsewhere", "cli-agents-bridge")),
 		"a path is compared whole: same basename, different place")
 	assert.False(t, scopeMatchesHint("", "anything"), "a legacy session with no scope is never addressed")
 }
@@ -136,19 +146,27 @@ func TestResolveRecipient_AmbiguousBasenameFailsClosed(t *testing.T) {
 	cfg.DataDir = dataDir
 	mgr := newSessionManager(cfg)
 
-	planted(t, dataDir, "valmine1", session.RoleVal, "VAL-bridge", "/repo/mine")
-	planted(t, dataDir, "valone01", session.RoleVal, "VAL-twin", "/a/twin")
-	planted(t, dataDir, "valtwo02", session.RoleVal, "VAL-twin", "/b/twin")
+	// HOST-absolute fixtures, not POSIX literals: what this case is about is a
+	// shared BASENAME, which needs two real absolute paths and nothing else. A
+	// "/a/twin" is not an absolute path on Windows — it is rooted with no volume —
+	// so the fixture, not the property, was what failed there.
+	base := t.TempDir()
+	twinA := filepath.Join(base, "a", "twin")
+	twinB := filepath.Join(base, "b", "twin")
+
+	planted(t, dataDir, "valmine1", session.RoleVal, "VAL-bridge", filepath.Join(base, "repo", "mine"))
+	planted(t, dataDir, "valone01", session.RoleVal, "VAL-twin", twinA)
+	planted(t, dataDir, "valtwo02", session.RoleVal, "VAL-twin", twinB)
 
 	_, err := resolveRecipientByName(cfg, mgr, "VAL-twin@twin", "valmine1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "matches 2 projects")
-	assert.Contains(t, err.Error(), "/a/twin")
-	assert.Contains(t, err.Error(), "/b/twin")
+	assert.Contains(t, err.Error(), twinA)
+	assert.Contains(t, err.Error(), twinB)
 	assert.NotContains(t, err.Error(), "cleanup",
 		"the ambiguity is in the address, not in the sessions: never advise destroying a live one")
 
-	got, err := resolveRecipientByName(cfg, mgr, "VAL-twin@/b/twin", "valmine1")
+	got, err := resolveRecipientByName(cfg, mgr, "VAL-twin@"+twinB, "valmine1")
 	require.NoError(t, err, "the full path is the way out, and peers prints it on these rows")
 	assert.Equal(t, "valtwo02", got)
 }
@@ -230,14 +248,15 @@ func TestReplyGuardrail_IsBuiltFromOpenAskersOnly(t *testing.T) {
 // to detect an ambiguous basename with.
 func TestNextMessage_CrossScopeCarriesTheLogicalAddress(t *testing.T) {
 	t.Parallel()
-	const theirs = "/Users/alan/develop/payload"
+	theirs := filepath.Join(t.TempDir(), "develop", "payload")
+	mine := filepath.Join(t.TempDir(), "develop", "bridge")
 	e := mailboxEntry{msg: &message.Message{
 		ID: "msg-aaaaaaaaaaaa", From: "valthem1", FromAgentName: "VAL-payload",
 		Type: message.TypeQuery, Content: "brief",
 		Metadata: message.Metadata{FromScope: theirs},
 	}}
 
-	got := newNextMessage(e, false, "/Users/alan/develop/bridge")
+	got := newNextMessage(e, false, mine)
 	assert.Equal(t, theirs, got.FromScope)
 	assert.Equal(t, "VAL-payload@"+theirs, got.FromAddress,
 		"the agent copies, it does not assemble — this is the LOGICAL form, to parse; "+
@@ -255,7 +274,7 @@ func TestNextMessage_CrossScopeCarriesTheLogicalAddress(t *testing.T) {
 
 	// Legacy message with no fromScope: nothing invented, nothing looked up.
 	legacy := mailboxEntry{msg: &message.Message{ID: "msg-bbbbbbbbbbbb", From: "old", FromAgentName: "VAL-old", Type: message.TypeQuery}}
-	old := newNextMessage(legacy, false, "/Users/alan/develop/bridge")
+	old := newNextMessage(legacy, false, mine)
 	assert.Empty(t, old.FromScope, "absent means not stated, never 'same project as you'")
 	assert.Empty(t, old.FromAddress)
 
@@ -276,21 +295,28 @@ func TestNextMessage_CrossScopeCarriesTheLogicalAddress(t *testing.T) {
 // saying it must not be.
 func TestSoleSessionNamed_AmbiguousBasenamesGetDistinctWorkingTokens(t *testing.T) {
 	t.Parallel()
+	// HOST-absolute fixtures, not POSIX literals: what this case is about is a
+	// shared BASENAME, which needs two real absolute paths and nothing else. A
+	// "/a/twin" is not an absolute path on Windows — it is rooted with no volume —
+	// so the fixture, not the property, was what failed there.
+	sBase := t.TempDir()
+	sTwinA := filepath.Join(sBase, "a", "twin")
+	sTwinB := filepath.Join(sBase, "b", "twin")
 	senders := map[string]string{"aaaaaaa1": "VAL-same", "bbbbbbb2": "VAL-same"}
 	asks := []openAsk{
-		{id: "msg-aaaaaaaaaaaa", from: "aaaaaaa1", fromName: "VAL-same", scope: "/a/twin"},
-		{id: "msg-bbbbbbbbbbbb", from: "bbbbbbb2", fromName: "VAL-same", scope: "/b/twin"},
+		{id: "msg-aaaaaaaaaaaa", from: "aaaaaaa1", fromName: "VAL-same", scope: sTwinA},
+		{id: "msg-bbbbbbbbbbbb", from: "bbbbbbb2", fromName: "VAL-same", scope: sTwinB},
 	}
 
 	_, err := soleSessionNamed("VAL-same", asks, senders)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "VAL-same@/a/twin", "the basename is shared, so only the path resolves")
-	assert.Contains(t, err.Error(), "VAL-same@/b/twin")
+	assert.Contains(t, err.Error(), "VAL-same@"+sTwinA, "the basename is shared, so only the path resolves")
+	assert.Contains(t, err.Error(), "VAL-same@"+sTwinB)
 
 	// And both tokens the message offered actually work.
 	for _, token := range []struct{ addr, want string }{
-		{"VAL-same@/a/twin", "aaaaaaa1"},
-		{"VAL-same@/b/twin", "bbbbbbb2"},
+		{"VAL-same@" + sTwinA, "aaaaaaa1"},
+		{"VAL-same@" + sTwinB, "bbbbbbb2"},
 	} {
 		got, err := soleSessionNamed(token.addr, asks, senders)
 		require.NoError(t, err, "%q was offered as the way out and must work", token.addr)

@@ -442,7 +442,7 @@ func findSessionHere(mgr *session.Manager, peers []peerSummary, projectPath stri
 		if err != nil {
 			continue
 		}
-		if filepath.Clean(mf.ProjectPath) != filepath.Clean(projectPath) {
+		if !session.SamePathLexical(mf.ProjectPath, projectPath) {
 			continue
 		}
 		if !found || betterOccupant(p, best) {
@@ -485,7 +485,7 @@ func findStaleNamesake(mgr *session.Manager, peers []peerSummary, projectPath, w
 		if err != nil {
 			continue
 		}
-		if filepath.Clean(mf.ProjectPath) == filepath.Clean(projectPath) {
+		if session.SamePathLexical(mf.ProjectPath, projectPath) {
 			continue // my own directory: that is the rename case, not a takeover
 		}
 		return p, mf.ProjectPath, true
@@ -545,7 +545,7 @@ func findNameElsewhere(mgr *session.Manager, peers []peerSummary, projectPath, w
 		if err != nil {
 			continue
 		}
-		if filepath.Clean(mf.ProjectPath) != filepath.Clean(projectPath) {
+		if !session.SamePathLexical(mf.ProjectPath, projectPath) {
 			// Return the path too: the caller needs somewhere the reader can
 			// actually go, and it is already loaded here.
 			return p, mf.ProjectPath, true
