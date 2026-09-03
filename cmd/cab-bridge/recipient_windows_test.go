@@ -40,6 +40,10 @@ func TestScopeMatchesHint_AbsoluteWindowsPathResolves(t *testing.T) {
 		"the disk's casing and the human's casing name one directory")
 	assert.True(t, scopeMatchesHint(scope, "project"),
 		"the basename form still works — it is what peers prints when it is unambiguous")
+	assert.True(t, scopeMatchesHint(scope, "PROJECT"),
+		"a basename is a file name too: casing must not decide who is reachable")
+	assert.True(t, scopeMatchesHint(scope, "Project"),
+		"the branch nobody had converted — the same defect as F-135, one level down")
 
 	assert.False(t, scopeMatchesHint(scope, filepath.Join(base, "MiXeD", "other")),
 		"a different project must not match")

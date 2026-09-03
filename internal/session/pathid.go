@@ -60,6 +60,24 @@ func IsDescendantLexical(child, parent string) bool {
 	return pathHasPrefixOS(c, p+string(filepath.Separator))
 }
 
+// SamePathComponent compares ONE path component — a basename — with this
+// host's file-name rules.
+//
+// Separate from SamePathLexical because a component must NOT be made
+// absolute: "project" is a name, not a relative path waiting to be resolved
+// against the current directory.
+//
+// It exists because the short address form is a basename, and leaving that
+// one comparison byte-for-byte on Windows meant `VAL-x@PROJECT` could not
+// reach a session in `Project` — the same defect as F-135, on the branch
+// nobody had converted (CRI diff-gate).
+func SamePathComponent(a, b string) bool {
+	if a == "" || b == "" {
+		return a == b
+	}
+	return pathsEqualOS(a, b)
+}
+
 // CanonicalizePath is the symlink canonicalisation the SCOPE axis is built on,
 // in one place instead of two.
 //

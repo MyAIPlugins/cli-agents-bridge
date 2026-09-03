@@ -70,6 +70,8 @@ func TestPathNeedsVolume_OnlyRootedWithoutAVolume(t *testing.T) {
 		{"/foo", true, "rooted, no drive: resolves against whichever volume we are on"},
 		{`\foo`, true, "same shape written the Windows way"},
 		{`/foo/bar`, true, "depth changes nothing"},
+		{"foo/bar", true, "relative WITH a separator: resolves against the cwd, same failure"},
+		{`foo\bar`, true, "and the same shape with the Windows separator"},
 		{`C:\foo`, false, "a real absolute path"},
 		{`c:/foo`, false, "forward slashes and lowercase drive are still a drive"},
 		{`\\server\share`, false, "UNC is absolute — refusing it would break a real address"},

@@ -82,7 +82,7 @@ func scopeMatchesHint(sessionScope, hint string) bool {
 	if filepath.IsAbs(hint) {
 		return session.SamePathLexical(session.CanonicalizePath(hint), sessionScope)
 	}
-	return filepath.Base(sessionScope) == hint
+	return session.SamePathComponent(filepath.Base(sessionScope), hint)
 }
 
 // volumeHint explains a failure whose cause the plain message cannot show: a
@@ -111,6 +111,6 @@ func volumeHint(scope string) string {
 	if !session.PathNeedsVolume(scope) {
 		return ""
 	}
-	return fmt.Sprintf(" — note: %q is rooted but names no drive, so on this host it is not a full path: "+
+	return fmt.Sprintf(" — note: %q contains a path separator but names no drive, so on this host it is not a full path: "+
 		"use the form `peers --all-scopes` prints (a drive path or a UNC path), or just the project folder name", scope)
 }
