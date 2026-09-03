@@ -55,6 +55,25 @@ e `mustSymlink` invariati), ma e' DEDOTTO finche' non lo esegui. `git diff --sta
 a1f3fe1..e9686cf -- ':!*_test.go'` deve essere vuoto. Se entrambe reggono, il lotto 1 e'
 mergiabile; se no, fermalo e scrivi qui il rosso.
 
+## Aggiornamento 03:50 — lotto 1b: F-135 corretto, suite intera verde su Windows
+
+Branch `feat/windows-lotto1b` (sopra `e9686cf`): `224ba0c` + un fixup in arrivo. Primo fix di
+PRODOTTO del port: `recipient.go` chiede `filepath.IsAbs`, e l'identita' dei path passa da un
+primitivo per-OS (`internal/session/pathsem_{unix,windows}.go`: `==` su Unix, `EqualFold` su
+Windows) usato su entrambi gli assi; l'hint si canonicalizza come lo scope
+(`CanonicalizePath`, estratto da `resolveScope`/`EffectiveScope`). Gate VAL su Windows:
+**12/12 con `-race`**, vet e build su windows, darwin, linux. Diff-gate del CRI Codex: regge
+con modifica (ramo basename ancora case-sensitive → fixup).
+
+**UN cambio Unix, voluto e dichiarato nel commit**: un indirizzo `<nome>@<path>` dato attraverso
+un alias symlink dello scope ora combacia (macOS `/var` → `/private/var`); prima falliva in
+silenzio. Tutto il resto su Unix e' `==`/`HasPrefix` di prima, spostato di file.
+
+**Ordine di merge, quando la CI e' verde**: prima `feat/windows-lotto1` (solo test), poi
+`feat/windows-lotto1b` (prodotto). Il tuo gate su darwin: `-race` 12/12, 0 cached, e per il
+lotto 1b leggi `git diff e9686cf..<head> -- ':!*_windows.go'` riga per riga: il commit porta
+una riga per file che dice perche' su Unix non cambia.
+
 ## Cosa cambia per te sul Mac
 
 - **In `main` non cambia niente** finche' `feat/windows-lotto1` non viene mergiato. Quando lo
