@@ -192,18 +192,76 @@ func warnNoSecurityInfo(path string) {
 	})
 }
 
-// openNoFollow opens path for reading and refuses a symlink.
+// fileAttributeTagInfo mirrors FILE_ATTRIBUTE_TAG_INFO. x/sys/windows carries
+// the info class constant but no struct for it — the same gap tokenOwner above
+// fills for TOKEN_OWNER, filled the same way.
+type fileAttributeTagInfo struct {
+	FileAttributes uint32
+	ReparseTag     uint32
+}
+
+// isLinkByHandle asks the HANDLE, not the path, whether it refers to a symlink
+// or a junction.
 //
-// AND IT IS A TOCTOU, deliberately, because Windows has no O_NOFOLLOW: the check
-// and the open are two operations, so a link planted between them is opened. The
-// Unix version refuses inside the open syscall itself and that gap does not
-// exist there — this is the one place where the two platforms do NOT give the
-// same guarantee, and pretending otherwise is what a silent port would do.
+// The TAG is what decides, and the attribute alone would not: plenty of things
+// that are not links carry FILE_ATTRIBUTE_REPARSE_POINT, and a OneDrive cloud
+// placeholder is one of them — under %USERPROFILE%, which is exactly where the
+// data dir lives. Refusing on the attribute would turn "this file is synced"
+// into "this file is a symlink", on the machine of anybody whose profile is
+// backed by OneDrive.
 //
-// No O_NONBLOCK counterpart either: it exists on Unix because opening a FIFO
-// blocks. Windows named pipes do not live in the filesystem namespace, so the
-// hazard it guards against is not reachable by path here. openOwned's IsRegular()
-// check still runs and still refuses anything that is not a plain file.
+// These two tags are the ones os.Lstat itself reports as ModeSymlink, so this
+// check and the Lstat above cannot disagree about what a link is.
+func isLinkByHandle(h windows.Handle) (bool, error) {
+	var info fileAttributeTagInfo
+	if err := windows.GetFileInformationByHandleEx(
+		h,
+		windows.FileAttributeTagInfo,
+		(*byte)(unsafe.Pointer(&info)),
+		uint32(unsafe.Sizeof(info)),
+	); err != nil {
+		return false, err
+	}
+	if info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT == 0 {
+		return false, nil
+	}
+	return info.ReparseTag == windows.IO_REPARSE_TAG_SYMLINK ||
+		info.ReparseTag == windows.IO_REPARSE_TAG_MOUNT_POINT, nil
+}
+
+// openNoFollow opens path for reading, refuses a symlink, and — this is F-133 —
+// opens it in a way that does not freeze the file in place while we hold it.
+//
+// WHY THE SHARE MODE IS THE FIX. `os.Open` goes through Go's syscall layer,
+// which asks for FILE_SHARE_READ|FILE_SHARE_WRITE and NOT FILE_SHARE_DELETE
+// ($GOROOT/src/syscall/syscall_windows.go). On Windows a rename onto a target
+// is a delete-class operation on that target, so while any bridge reader held a
+// file open, every `os.Rename` onto it failed with "Access is denied" — the
+// atomic write primitive this project is built on, defeated by its own reader.
+// Measured, not reasoned: a second `next` died in `adopt: savemanifest` roughly
+// one run in seven, and a reader opened outside the repository reproduced it on
+// demand — open, denied; closed, fine. It was never the antivirus.
+//
+// What share-delete buys, and what it does not: the rename succeeds, and the
+// handle we are holding keeps pointing at the OLD file object. We read the old
+// contents, whole and consistent — never a mixture — and a fresh open sees the
+// new ones. That is the semantics the atomic-write pattern always assumed and
+// Windows was silently refusing to provide.
+//
+// It covers OUR readers. A handle held by somebody else — an antivirus, an
+// editor, `type` — still blocks the rename, and that is the other half of F-133.
+//
+// AND IT IS STILL A TOCTOU, though a narrower one than before. Windows has no
+// O_NOFOLLOW: the Lstat and the open are two operations, so a link planted
+// between them is opened. What is new is that we no longer take the Lstat's word
+// for it afterwards — the handle is interrogated too, so a swap in that window
+// is refused instead of read. The Unix version refuses inside the open syscall
+// and has no window at all; that difference is real and stays declared.
+//
+// FILE_FLAG_BACKUP_SEMANTICS is what os.Open passes as well, and it is here for
+// the same reason: without it CreateFile refuses a directory outright, and
+// openOwned's IsRegular() check — which answers "not a regular file" rather than
+// "access denied" — would never get to run.
 func openNoFollow(path string) (*os.File, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -212,7 +270,36 @@ func openNoFollow(path string) (*os.File, error) {
 	if info.Mode()&os.ModeSymlink != 0 {
 		return nil, fmt.Errorf("%w: path=%q is a symlink", ErrOwnershipMismatch, path)
 	}
-	return os.Open(path)
+
+	p, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+	}
+	// The error shape is os.Open's on purpose: callers all over the tree ask
+	// errors.Is(err, fs.ErrNotExist) / os.IsNotExist about what comes back from
+	// ReadOwnedFile, and a bare Errno would answer a different question.
+	h, err := windows.CreateFile(
+		p,
+		windows.GENERIC_READ,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil,
+		windows.OPEN_EXISTING,
+		windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT,
+		0,
+	)
+	if err != nil {
+		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+	}
+	isLink, terr := isLinkByHandle(h)
+	if terr != nil {
+		_ = windows.CloseHandle(h)
+		return nil, fmt.Errorf("GetFileInformationByHandleEx(FileAttributeTagInfo) %q: %w", path, terr)
+	}
+	if isLink {
+		_ = windows.CloseHandle(h)
+		return nil, fmt.Errorf("%w: path=%q is a symlink", ErrOwnershipMismatch, path)
+	}
+	return os.NewFile(uintptr(h), path), nil
 }
 
 // enforceMode is a NO-OP on Windows, and this is not laziness.

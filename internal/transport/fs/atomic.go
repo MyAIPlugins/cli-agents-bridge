@@ -84,7 +84,7 @@ func AtomicWriteBytes(path string, data []byte, mode os.FileMode) error {
 		return fmt.Errorf("chmod tmp %q to %o: %w", tmpPath, mode, err)
 	}
 
-	if err := os.Rename(tmpPath, path); err != nil {
+	if err := renameAtomic(tmpPath, path); err != nil {
 		if errors.Is(err, syscall.EXDEV) {
 			return fmt.Errorf("rename %q -> %q: EXDEV cross-filesystem rename is not atomic — temp dir and target must share filesystem (this is a config bug, not a transient failure): %w", tmpPath, path, err)
 		}
