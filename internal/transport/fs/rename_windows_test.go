@@ -346,8 +346,8 @@ func TestMoveToProcessed_RetriesWhileTheSourceIsBrieflyLocked(t *testing.T) {
 // TestRenameAtomic_CrossVolumeIsRefusedWithoutRetrying covers the classifier.
 //
 // A different volume is a CONFIGURATION problem, permanent by nature: retrying
-// it six times would turn an instant verdict into a 630ms one and teach nobody
-// anything. The timing is one assertion — the only way to tell "refused" from
+// it six times would spend the whole backoff allowance to reach the same verdict
+// and teach nobody anything. The timing is one assertion — the only way to tell "refused" from
 // "refused after exhausting the retries".
 //
 // But timing alone left the test green for ANY quick failure: a bad path, a
@@ -365,7 +365,8 @@ func TestRenameAtomic_CrossVolumeIsRefusedWithoutRetrying(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Less(t, elapsed, 300*time.Millisecond,
-		"a cross-volume rename is permanent and must not be retried; it took %s, and the full retry budget is 630ms", elapsed)
+		"a cross-volume rename is permanent and must not be retried; it took %s, which must stay well under "+
+			"the time a full round of retries would take", elapsed)
 
 	// ERROR_NOT_SAME_DEVICE, by name. This is also the executable footnote to
 	// F-137: it is the constant Windows actually returns, and the one

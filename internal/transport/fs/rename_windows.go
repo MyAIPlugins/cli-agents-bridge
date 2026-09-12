@@ -77,9 +77,15 @@ const (
 	// two constants rather than repeating it, so neither can drift alone.
 	//
 	// The budget is SHARED by the whole operation — opening the source and
-	// replacing the target are retried together inside ONE loop, so this is the
-	// worst case of the function, not of a stage. That is the sort of figure
-	// somebody builds a timeout on.
+	// replacing the target are retried together inside ONE loop, so the two
+	// stages share at most 310ms of REQUESTED BACKOFF.
+	//
+	// Syscall time and scheduling add to elapsed time; THIS IS NOT AN EXECUTION
+	// DEADLINE. The distinction is not pedantry: an earlier draft of this comment
+	// called it "the worst case of the function", which is the sort of figure
+	// somebody builds a timeout on — and it would have been a timeout on a
+	// promise neither the code nor its test can make. What the oracle proves is
+	// the backoff this loop asks for, not how long the call takes.
 	//
 	// Chosen so an antivirus scan of a small file passes under it while a real
 	// permissions error — an ACL that will never yield — costs that much delay
@@ -247,8 +253,8 @@ func tryReplace(oldpath string, info []byte) (renameStage, error) {
 //
 // ONLY these two, and the restriction is the point: ERROR_NOT_SAME_DEVICE is
 // permanent (a config that put temp and target on different volumes),
-// ERROR_FILE_NOT_FOUND is permanent, and repeating either would turn an instant
-// verdict into a 630ms one for no gain.
+// ERROR_FILE_NOT_FOUND is permanent, and repeating either would spend the whole
+// backoff allowance to reach the same verdict.
 func isTransientReplaceError(err error) bool {
 	return errors.Is(err, windows.ERROR_ACCESS_DENIED) ||
 		errors.Is(err, windows.ERROR_SHARING_VIOLATION)
