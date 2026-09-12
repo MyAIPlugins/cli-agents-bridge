@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -464,6 +465,82 @@ func TestMakefile_InstallDevLinksWhatItJustBuilt(t *testing.T) {
 // So: git when it is available, a plain walk otherwise. The two differ in one
 // way worth stating — the walk also copies UNTRACKED files, since without git
 // there is nothing to ask. Harmless for a fixture that only has to build.
+// Patience for a directory somebody else is briefly holding open. NOT an
+// oracle: it defines nothing and asserts nothing, it only bounds how long we
+// wait before giving up — the distinction the heartbeat test had to learn the
+// same afternoon.
+//
+// Two seconds against 11ms measured is two orders of magnitude, and the 11ms is
+// the number that justifies the budget: without it this is one more arbitrary
+// figure for the next reader to wonder about.
+const (
+	treeRemovalPatience = 2 * time.Second
+	treeRemovalPoll     = 10 * time.Millisecond
+)
+
+// newTempGitRepo makes a throwaway git repository and takes responsibility for
+// removing it.
+//
+// WHY IT EXISTS (F-136). `t.TempDir()` cleans up with os.RemoveAll, and on
+// Windows that fails when anything still holds a handle inside — measured at 2
+// failures in 15 rounds, with "The process cannot access the file because it is
+// being used by another process" naming `.git\config` once and the DIRECTORY
+// ITSELF another time, which is a process whose working directory is still
+// there. It clears in about 11ms: the handle is released asynchronously after
+// the git process exits, or a scanner opened the file a moment after it
+// appeared.
+//
+// It is NOT the read-only attribute, which was the first hypothesis and the
+// obvious one — `.git/objects` is read-only on Windows always. Two things
+// refute it: os.Remove already strips FILE_ATTRIBUTE_READONLY and retries
+// ($GOROOT/src/os/file_windows.go), and 20 rounds without the copy step failed
+// zero times. A constant cause cannot produce an intermittent failure.
+//
+// So the cleanup registered here retries, and it is registered AFTER t.TempDir()
+// on purpose: cleanups run last-in-first-out, so this one runs BEFORE Go's own
+// removal and leaves it nothing to trip over.
+//
+// AND IT CREATES ITS OWN DIRECTORY RATHER THAN ACCEPTING ONE. That is the whole
+// reason this is a fixture constructor and not a cleanup inside
+// copyWorkingTree: three of that helper's five call-sites pass repoRoot — the
+// REAL repository — so a patient RemoveAll in there would have deleted the
+// checkout three times per suite run. A destructive step must be aimed by an
+// isolation it created, never by a path somebody handed it.
+//
+// LIMIT, so nobody has to discover it: the patience lives HERE, not in
+// copyWorkingTree. A future fixture that plants a .git some other way gets no
+// protection from this — it should use this constructor, or carry its own.
+func newTempGitRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Cleanup(func() { removeTreeWithPatience(t, dir) })
+	require.NoError(t, gitCommand(dir, "init", "-q").Run(), "git init in the fixture repo")
+	return dir
+}
+
+// removeTreeWithPatience removes dir, waiting out a transient handle.
+//
+// It LOGS rather than fails when the wait runs out: a cleanup that cannot
+// finish is not what any of these tests measure, and failing here would put
+// back exactly the kind of red this lot removes. Go's own TempDir cleanup still
+// runs afterwards, so a genuine leak is still reported — by the same message as
+// before, with nothing hidden.
+func removeTreeWithPatience(t *testing.T, dir string) {
+	t.Helper()
+	deadline := time.Now().Add(treeRemovalPatience)
+	for {
+		err := os.RemoveAll(dir)
+		if err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Logf("cleanup: %s was still held after %v, leaving it to TempDir: %v", dir, treeRemovalPatience, err)
+			return
+		}
+		time.Sleep(treeRemovalPoll)
+	}
+}
+
 func copyWorkingTree(t *testing.T, src, dst string) {
 	t.Helper()
 
@@ -597,10 +674,7 @@ func TestCopyWorkingTree_PicksTheBranchByROOTNotByContainment(t *testing.T) {
 
 	// A parent repository, and inside it a source tree that is NOT tracked and
 	// has no .git of its own.
-	parent := t.TempDir()
-	init := exec.Command("git", "init", "-q")
-	init.Dir = parent
-	require.NoError(t, init.Run())
+	parent := newTempGitRepo(t)
 
 	nested := filepath.Join(parent, "source")
 	require.NoError(t, os.MkdirAll(nested, 0o700))
@@ -648,9 +722,8 @@ func TestCopyWorkingTree_CarriesUncommittedFiles(t *testing.T) {
 		t.Skip("git not available")
 	}
 
-	src := t.TempDir()
+	src := newTempGitRepo(t)
 	for _, args := range [][]string{
-		{"init", "-q"},
 		{"config", "user.email", "test@example.invalid"},
 		{"config", "user.name", "fixture"},
 	} {
@@ -739,10 +812,7 @@ func TestCopyWorkingTree_IgnoresAnInheritedGitEnvironment(t *testing.T) {
 	require.NoError(t, err)
 
 	// An unrelated repository, with an index of its own that has nothing in it.
-	alien := t.TempDir()
-	initCmd := exec.Command("git", "init", "-q")
-	initCmd.Dir = alien
-	require.NoError(t, initCmd.Run())
+	alien := newTempGitRepo(t)
 
 	// The three do NOT behave alike, and saying they did was a generalisation
 	// this test previously carried in an assertion message. Measured, on the
