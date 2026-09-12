@@ -1,11 +1,9 @@
 package fs
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
 	"time"
 )
 
@@ -21,9 +19,16 @@ import (
 //
 // Atomicity: rename(2) is atomic when src and dst are on the same
 // filesystem (POSIX). processedDir is computed as a sibling of inbox/ so
-// they always share the filesystem in any realistic config. EXDEV is
+// they always share the filesystem in any realistic config — but it ARRIVES AS
+// A PARAMETER, so unlike AtomicWriteBytes this branch is genuinely reachable:
+// a caller can name a directory on another volume. A cross-device move is
 // surfaced as an explicit error — no silent copy-fallback
 // (docs/dev-conventions.md "No implicit fallbacks").
+//
+// The condition is recognised by isCrossDevice, which is PER-OS and had to
+// become so: this line used to say EXDEV and the code used to test for it,
+// which on Windows is a constant the system never returns (F-137). The branch
+// was dead there while this comment announced it was covered.
 //
 // Creates processedDir with mode 0o700 (SC-2) if it does not yet exist.
 func MoveToProcessed(srcInboxPath, processedDir string) error {
@@ -37,8 +42,8 @@ func MoveToProcessed(srcInboxPath, processedDir string) error {
 	dstPath := filepath.Join(processedDir, dstName)
 
 	if err := renameAtomic(srcInboxPath, dstPath); err != nil {
-		if errors.Is(err, syscall.EXDEV) {
-			return fmt.Errorf("move %q -> %q: EXDEV cross-filesystem rename is not atomic — inbox and processed dirs must share filesystem (config bug, not transient): %w",
+		if isCrossDevice(err) {
+			return fmt.Errorf("move %q -> %q: cross-device rename is not atomic — inbox and processed dirs must share filesystem (config bug, not transient): %w",
 				srcInboxPath, dstPath, err)
 		}
 		return fmt.Errorf("move %q -> %q: %w", srcInboxPath, dstPath, err)

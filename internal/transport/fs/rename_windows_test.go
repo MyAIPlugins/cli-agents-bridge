@@ -475,3 +475,41 @@ func TestMoveToProcessed_SucceedsWhileAReaderHoldsTheSource(t *testing.T) {
 	require.NoError(t, MoveToProcessed(msg, filepath.Join(dir, "processed")))
 	assert.NoFileExists(t, msg, "the message must have left the inbox")
 }
+
+// TestMoveToProcessed_CrossVolumeIsNamedAsSuch is F-137's oracle.
+//
+// The branch it covers was DEAD on Windows: the call-site asked
+// errors.Is(err, syscall.EXDEV), and a real cross-volume move returns
+// ERROR_NOT_SAME_DEVICE, which is a different constant that does not match it.
+// So the explicit "this is a config bug, not a transient failure" message never
+// arrived here — while the comment above the branch announced that it did.
+//
+// MoveToProcessed is the reachable call-site of the pair: its destination comes
+// from the caller, so a directory on another volume is a configuration somebody
+// can actually produce. AtomicWriteBytes cannot reach it — its temp file is
+// created in the target's own directory — which is why there is no twin of this
+// test for it, and why that is said out loud there rather than left as a gap.
+func TestMoveToProcessed_CrossVolumeIsNamedAsSuch(t *testing.T) {
+	other := crossVolumeDir(t)
+	dir := t.TempDir()
+	inbox := filepath.Join(dir, "inbox")
+	require.NoError(t, os.MkdirAll(inbox, 0o700))
+	msg := plant(t, inbox, "msg-abc.json", "BODY")
+
+	err := MoveToProcessed(msg, other)
+	require.Error(t, err, "a move onto another volume cannot be atomic and must fail")
+
+	// The MESSAGE, because the whole point of the branch is which sentence the
+	// reader gets: the generic one sends them looking for a transient fault.
+	assert.Contains(t, err.Error(), "cross-device",
+		"it must be named as a cross-device failure, not reported generically: %v", err)
+	assert.Contains(t, err.Error(), "config bug",
+		"and told apart from a transient error, which is the distinction the branch exists to draw: %v", err)
+
+	// And nothing was consumed: a refused move must leave the message where it
+	// was, or the branch would be worse than the generic error it replaces.
+	assert.FileExists(t, msg, "the message must survive a refused cross-device move")
+	got, rerr := os.ReadFile(msg)
+	require.NoError(t, rerr)
+	assert.Equal(t, "BODY", string(got), "and survive intact")
+}
