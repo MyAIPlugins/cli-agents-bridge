@@ -91,16 +91,17 @@ const (
 // fileRenameInfo mirrors the fixed part of FILE_RENAME_INFO. The FileName array
 // is variable-length and follows in the buffer, so only the header is declared.
 //
-// It exists to DERIVE the header size rather than to be written through: the
-// first version hardcoded 20, which is the right answer on x64 and the wrong one
-// on a 32-bit ABI, where the pointer is four bytes and the padding after Flags
-// is not there at all. Go lays this out by the same rules the C ABI uses, so
-// offsetof gives the correct answer on both without either being promised.
+// It exists to DERIVE the header size rather than to be written through. The
+// first version hardcoded 20, which bakes in a 64-bit pointer and the padding
+// that follows Flags because of it; offsetof removes that assumption from the
+// source.
 //
-// The x64 layout was checked against the real SDK header with a native probe
-// (sizeof 24, align 8, fields at 8/16/20) — the online documentation renders an
-// ambiguous structure with the union field duplicated, so it is not a source.
-// That check covers amd64 only: it is the only ABI this project has measured.
+// WHAT IS AND IS NOT ATTESTED HERE. The x64 layout was checked against the real
+// SDK header with a native probe (sizeof 24, align 8, fields at 8/16/20) — the
+// online documentation renders an ambiguous structure with the union field
+// duplicated, so it is not a source. **amd64 is the only ABI anybody has run
+// this on.** Removing a hardcoded assumption is not the same as verifying the
+// other case, and this comment does not claim the second.
 type fileRenameInfo struct {
 	Flags         uint32
 	RootDirectory windows.Handle
@@ -130,24 +131,56 @@ const (
 // the message, and a drop-in replacement that answers a different question is
 // not a drop-in replacement.
 func renameAtomic(oldpath, newpath string) error {
+	_, err := renameAtomicTraced(oldpath, newpath)
+	return err
+}
+
+// renameSleep is time.Sleep, and it is a variable so a test can DRIVE the retry
+// loop instead of waiting on it.
+//
+// The budget test used to assert wall-clock time with a second of slack, and a
+// critic showed what that bought: doubling the backoff constant left it green.
+// It could tell "there is a retry" from "there is none", which is not the
+// property its name promised. Taking the clock out of the oracle entirely is the
+// same move F-138 made on the heartbeat test the same afternoon — from measuring
+// time to observing the property.
+var renameSleep = time.Sleep
+
+// renameTrace is what the operation DID, for a test that needs to observe the
+// budget rather than time it. Production reads none of it.
+type renameTrace struct {
+	attempts     int
+	waits        int
+	openFails    int
+	replaceFails int
+}
+
+func renameAtomicTraced(oldpath, newpath string) (renameTrace, error) {
+	var trace renameTrace
 	fail := func(err error) error {
 		return &os.LinkError{Op: "rename", Old: oldpath, New: newpath, Err: err}
 	}
 
 	info, err := renameInfo(newpath)
 	if err != nil {
-		return fail(err)
+		return trace, fail(err)
 	}
 
 	started := time.Now()
 	delay := renameFirstDelay
 	var last error
 	for attempt := 1; attempt <= renameAttempts; attempt++ {
+		trace.attempts = attempt
 		stage, err := tryReplace(oldpath, info)
 		if err == nil {
-			return nil
+			return trace, nil
 		}
 		last = err
+		if stage == stageOpen {
+			trace.openFails++
+		} else {
+			trace.replaceFails++
+		}
 
 		if stage == stageReplace && errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
 			// The info class was refused. WHAT THAT MEANS IS NOT KNOWN HERE, and
@@ -162,21 +195,37 @@ func renameAtomic(oldpath, newpath string) error {
 			// It is still refused rather than retried or worked around: falling
 			// back to MoveFileEx would reintroduce this very defect, with the
 			// aggravation of code claiming to have fixed it.
-			return fail(fmt.Errorf("atomic replace refused by SetFileInformationByHandle(FileRenameInfoEx): "+
+			return trace, fail(fmt.Errorf("atomic replace refused by SetFileInformationByHandle(FileRenameInfoEx): "+
 				"POSIX rename semantics are a precondition of this bridge and something here does not provide them — "+
 				"they need Windows 10 1709 / Server 2019 or later AND a filesystem that implements them "+
 				"(NTFS does; SMB shares and FAT typically do not). Not a transient failure: %w", err))
 		}
 		if !isTransientReplaceError(err) {
-			return fail(err)
+			return trace, fail(err)
 		}
 		if attempt < renameAttempts {
-			time.Sleep(delay)
+			trace.waits++
+			renameSleep(delay)
 			delay *= 2
 		}
 	}
-	return fail(fmt.Errorf("still blocked after %d attempts over %s — another process is holding one of the two "+
-		"files open without sharing deletion (antivirus, editor, an open shell): %w",
+	// WHAT THIS DOES NOT KNOW, and the previous version of this sentence claimed
+	// to: it said another process was holding one of the files open. A critic's
+	// probe produced this exact error with NOBODY else involved — a read-only
+	// attribute on the target, reported as ACCESS_DENIED after the full budget,
+	// under a message accusing a process that did not exist.
+	//
+	// It is the same defect as the INVALID_PARAMETER message one branch up,
+	// which had already been corrected: a cause DEDUCED from an error code.
+	// Fixing one and leaving its sibling is the branch next door in the narrowest
+	// possible form — the same function, twenty lines apart.
+	//
+	// So the possibilities are listed, none is asserted, and the platform errno
+	// is carried through for whoever can tell them apart.
+	return trace, fail(fmt.Errorf("still refused after %d attempts over %s, and the cause is NOT established here: "+
+		"another process may be holding one of the two files open without sharing deletion "+
+		"(antivirus, editor, an open shell), or it may be permissions or a file attribute — "+
+		"a read-only target produces this same error with nobody else involved: %w",
 		renameAttempts, time.Since(started).Round(time.Millisecond), last))
 }
 

@@ -191,12 +191,93 @@ func TestRenameAtomic_ASourceLockedByAnotherOpenIsRetriedUntilItIsReleased(t *te
 	assert.Equal(t, "NEW", string(got))
 }
 
-// TestRenameAtomic_ASourceLockedForeverFailsWithinOneBudget pins the number the
-// comment promises.
+// TestRenameAtomic_TheBudgetIsONEAndCoversBothStages is the oracle for the
+// single budget, and it does not look at the clock at all.
 //
-// Opening the source and replacing the target share ONE budget, so the worst
-// case of this function is 630ms — not 630 per stage. That is the sort of figure
-// somebody builds a timeout on, so it gets an assertion rather than a sentence.
+// THE TEST BELOW IS NOT THIS ORACLE, which is why both exist. It asserts wall
+// time with a second of slack, and a critic showed exactly what that buys:
+// doubling the backoff constant — real pauses of 620ms instead of 310 — left it
+// GREEN. It can tell "there is a retry" from "there is none"; it cannot tell one
+// budget from two, which is the property its name promised. And it could not,
+// even with a tighter bound: with the source locked forever the replace stage is
+// never reached, so there is no second stage for a second budget to show up in.
+//
+// So the sleeper is driven from here instead. No time passes, nothing is timed,
+// and the scenario consumes attempts in BOTH stages of one operation: the source
+// is locked first, then released while the target is locked in its place. The
+// property is then plainly countable — the two stages together must fit in ONE
+// allowance of waits, not one allowance each.
+//
+// Stubbing a package variable is safe here because this test does not call
+// t.Parallel(): Go runs the parallel tests of a package only after the
+// sequential ones finish, and the cleanup restores the sleeper before then.
+func TestRenameAtomic_TheBudgetIsONEAndCoversBothStages(t *testing.T) {
+	dir := t.TempDir()
+	staged := plant(t, dir, ".tmp.staged", "NEW")
+	target := plant(t, dir, "manifest.json", "OLD")
+
+	// os.Open grants no FILE_SHARE_DELETE, so it blocks whichever file it holds:
+	// the source against the open stage, the target against the replace.
+	srcHold, err := os.Open(staged)
+	require.NoError(t, err)
+	defer func() { _ = srcHold.Close() }()
+	var tgtHold *os.File
+	defer func() {
+		if tgtHold != nil {
+			_ = tgtHold.Close()
+		}
+	}()
+
+	original := renameSleep
+	t.Cleanup(func() { renameSleep = original })
+
+	waits := 0
+	var slept time.Duration
+	renameSleep = func(d time.Duration) {
+		waits++
+		slept += d
+		if waits == 2 {
+			// Hand the lock over: from here on the open succeeds and the replace
+			// is the one being refused.
+			_ = srcHold.Close()
+			var oerr error
+			tgtHold, oerr = os.Open(target)
+			require.NoError(t, oerr)
+		}
+	}
+
+	trace, err := renameAtomicTraced(staged, target)
+
+	require.Error(t, err, "both files are locked in turn, so the operation cannot succeed")
+	assert.Positive(t, trace.openFails, "the source lock must have consumed attempts")
+	assert.Positive(t, trace.replaceFails, "and the target lock must have consumed some of the SAME ones")
+	assert.Equal(t, renameAttempts, trace.attempts,
+		"the two stages together must fit in ONE allowance of %d attempts", renameAttempts)
+	assert.Equal(t, renameAttempts-1, trace.waits,
+		"and in ONE allowance of waits: %d attempts have %d gaps between them, and a second budget "+
+			"would show up here as more", renameAttempts, renameAttempts-1)
+
+	// AND THE DURATIONS IT ASKED FOR, summed, must be the backoff the constants
+	// describe. This is what catches a backoff that quietly changes scale: the
+	// critic's mutation multiplied the starting delay inside the function, so the
+	// real pauses doubled while the constants — and therefore the comment that
+	// quotes them — stayed put. Nothing timed anything: the expected figure is
+	// derived here and the actual one is what the loop handed the sleeper.
+	expected := time.Duration(0)
+	for i, d := 1, renameFirstDelay; i < renameAttempts; i, d = i+1, d*2 {
+		expected += d
+	}
+	assert.Equal(t, expected, slept,
+		"the loop must ask for exactly the backoff its constants describe, or the number in the comment "+
+			"is about a function that no longer exists")
+}
+
+// TestRenameAtomic_ASourceLockedForeverFailsWithinOneBudget is the SMOKE that
+// sits next to the oracle above: it uses the real sleeper and a real lock, so it
+// shows the thing works end to end rather than only under a stub.
+//
+// Its bound is deliberately loose and it is NOT the budget oracle — see above
+// for why a wall-clock assertion cannot be one.
 func TestRenameAtomic_ASourceLockedForeverFailsWithinOneBudget(t *testing.T) {
 	dir := t.TempDir()
 	staged := plant(t, dir, ".tmp.staged", "NEW")
@@ -300,6 +381,12 @@ func TestRenameAtomic_CrossVolumeIsRefusedWithoutRetrying(t *testing.T) {
 	got, rerr := os.ReadFile(staged)
 	require.NoError(t, rerr)
 	assert.Equal(t, "NEW", string(got), "and survive intact, not truncated")
+
+	// The other half of the non-consumption contract: a refusal must not have
+	// created a partial destination either. "Nothing moved" is two claims, and
+	// only one of them was being checked.
+	assert.NoFileExists(t, filepath.Join(other, "target.json"),
+		"and the destination must not exist at all after a refused replace")
 }
 
 // crossVolumeDir finds a directory on a DIFFERENT volume, or skips by name.
