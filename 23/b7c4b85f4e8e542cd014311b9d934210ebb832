@@ -1,0 +1,19 @@
+tests/regression/bug1_test.go
+  s_dffedfddc1b2a5::t_6bc3d7508e26b7 16-28,37-69,73,89-111,113-115,117-125
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "23b7c4b85f4e8e542cd014311b9d934210ebb832",
+  "prompts": {},
+  "sessions": {
+    "s_dffedfddc1b2a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d695b731-33f9-4339-a83a-7ee970efa167",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan Curtis <info@myaiplugins.com>"
+    }
+  }
+}
