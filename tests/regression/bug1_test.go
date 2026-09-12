@@ -8,10 +8,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
+)
+
+// heartbeatTick is the accelerated interval this test runs the goroutine at —
+// 30ms against a 30s production default.
+//
+// heartbeatPatience is DERIVED from it rather than chosen. The number this test
+// used to carry was 100ms, picked once for one machine, and picking another
+// literal would only move the arbitrariness somewhere else: a hundred ticks of
+// slack means the same thing whatever the tick becomes.
+const (
+	heartbeatTick     = 30 * time.Millisecond
+	heartbeatPatience = 100 * heartbeatTick
+	heartbeatPoll     = heartbeatTick / 3
 )
 
 // TestBUG1_HeartbeatPersistsDuringListen reproduces BUG-1 (Patil
@@ -22,15 +34,43 @@ import (
 // cli-agents-bridge fix: Manager.StartHeartbeat() launches a goroutine that
 // updates lastHeartbeat at every tick (config.HeartbeatTickMs).
 //
-// Test acceleration: HeartbeatInterval is set to 30ms (vs 30s production
-// default) and we sample lastHeartbeat across 300ms (~10 ticks). PLAN §10
-// metric M1 specifies <90s in production; the test asserts <100ms freshness
-// at the compressed scale to validate the structural property, not the
-// absolute timing.
+// IT ASSERTS PROGRESS, NOT FRESHNESS, and that is a correction to this very
+// test rather than a style preference.
+//
+// The previous version sampled lastHeartbeat five times and required each to be
+// less than 100ms old against the wall clock — three and a bit ticks of
+// tolerance, under -race, in parallel with the rest of the suite, on a
+// two-core shared runner. Five CI runs out of six went red in one morning,
+// including two on commits that touched only ROADMAP.md: a documentation change
+// cannot slow a goroutine down, so what the assertion measured was the runner's
+// scheduling, not the property in its own name.
+//
+// THE TWO KINDS OF TIME LIMIT, because this file still contains one and the
+// difference is the whole point: the old threshold DEFINED the property — "fresh
+// within 100ms" — so a slow machine violated it while everything was healthy.
+// heartbeatPatience below DEFINES NOTHING. It only bounds how long we wait
+// before calling something dead that is not moving. A slow runner takes longer
+// and still passes; a goroutine that has stopped never advances and fails every
+// time, on any hardware. A timeout that is part of the oracle is a flake waiting
+// to happen; a timeout that is only patience is not.
+//
+// THREE ADVANCES, not one. One would only prove the goroutine STARTED, and
+// BUG-1 is not a failure to start — it is freezing AFTER registration. Three
+// prove it keeps going, which also covers "starts and then dies" without a
+// second test.
+//
+// STRICTLY LATER, not merely different: a timestamp that went backwards would be
+// a defect, and an inequality would have accepted it.
+//
+// THE ASSUMPTION, stated rather than left to be discovered: this cannot tell
+// "the goroutine updates the manifest" from "somebody else updates it". Nothing
+// else touches this session inside the test, so it does not bite here — but that
+// is the ground the oracle stands on, and an implicit assumption is the thing
+// somebody violates in a year without knowing they did.
 func TestBUG1_HeartbeatPersistsDuringListen(t *testing.T) {
 	t.Parallel()
 
-	mgr := session.NewManager(t.TempDir(), 30*time.Millisecond)
+	mgr := session.NewManager(t.TempDir(), heartbeatTick)
 	projDir := t.TempDir()
 
 	mf, release, err := mgr.Register(context.Background(), session.RegisterOpts{
@@ -46,20 +86,42 @@ func TestBUG1_HeartbeatPersistsDuringListen(t *testing.T) {
 	done := mgr.StartHeartbeat(ctx, mf.SessionID)
 	t.Cleanup(func() { cancel(); <-done })
 
-	// Sample lastHeartbeat 5 times across 300ms. After the first tick
-	// each sample must be at most 100ms old. The first sample (taken
-	// immediately) is exempt because the goroutine may not have ticked yet.
-	time.Sleep(50 * time.Millisecond) // let first tick land
+	// The starting point is the value written at REGISTER time — which is
+	// exactly the value BUG-1 leaves frozen there forever.
+	registered, err := mgr.LoadManifest(mf.SessionID)
+	require.NoError(t, err)
 
-	const samples = 5
-	const maxAge = 100 * time.Millisecond
-	for i := 0; i < samples; i++ {
-		updated, err := mgr.LoadManifest(mf.SessionID)
+	const advances = 3
+	prev := registered.LastHeartbeat
+	for i := 1; i <= advances; i++ {
+		prev = awaitHeartbeatAdvance(t, mgr, mf.SessionID, prev, i)
+	}
+}
+
+// awaitHeartbeatAdvance blocks until lastHeartbeat is strictly later than prev,
+// and fails by name when it never is.
+//
+// Two ticks 30ms apart are always distinguishable because the manifest stores a
+// time.Time and the default JSON marshalling keeps nanoseconds (manifest.go) —
+// checked before this shape was written, because a progress test on a coarser
+// timestamp would hang until the deadline on a perfectly healthy system, which
+// would have been one flake traded for another inside the lot that exists to
+// remove flakes.
+func awaitHeartbeatAdvance(t *testing.T, mgr *session.Manager, sessionID string, prev time.Time, n int) time.Time {
+	t.Helper()
+
+	deadline := time.Now().Add(heartbeatPatience)
+	for {
+		current, err := mgr.LoadManifest(sessionID)
 		require.NoError(t, err)
-		age := time.Since(updated.LastHeartbeat)
-		assert.Less(t, age, maxAge,
-			"sample %d: lastHeartbeat must be <%v old (got %v) — BUG-1 regression: heartbeat goroutine not updating manifest",
-			i, maxAge, age)
-		time.Sleep(60 * time.Millisecond)
+		if current.LastHeartbeat.After(prev) {
+			return current.LastHeartbeat
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("advance %d/%d: lastHeartbeat never moved past %v within %v (%d ticks of slack) — "+
+				"BUG-1 regression: the heartbeat goroutine is not updating the manifest",
+				n, 3, prev, heartbeatPatience, heartbeatPatience/heartbeatTick)
+		}
+		time.Sleep(heartbeatPoll)
 	}
 }
