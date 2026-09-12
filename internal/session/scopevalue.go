@@ -1,9 +1,6 @@
 package session
 
-import (
-	"os"
-	"path/filepath"
-)
+import "os"
 
 // The project a session belongs to, and everything that decides on it.
 //
@@ -60,10 +57,7 @@ func EffectiveScope(mf *Manifest) string {
 	if err != nil || root == "" {
 		return ""
 	}
-	if resolved, rerr := filepath.EvalSymlinks(root); rerr == nil {
-		return resolved
-	}
-	return root
+	return CanonicalizePath(root)
 }
 
 // ScopeIsDerived reports whether this session's project had to be worked out
@@ -92,12 +86,17 @@ func (m *Manager) EffectiveScopeCache() func(sessionID string) string {
 
 // SameProject compares two EFFECTIVE scopes, with "" meaning UNKNOWN.
 //
-// It is a plain equality, and that is the point: once the value carries its own
-// meaning, unknown==unknown is one group — sessions that cannot say where they
-// are reach each other and no real repository — and every other case falls out.
-// The comparisons that needed special-casing needed it because the VALUE was
-// ambiguous, not because comparing was hard.
-func SameProject(a, b string) bool { return a == b }
+// It is a plain comparison, and that is the point: once the value carries its
+// own meaning, unknown==unknown is one group — sessions that cannot say where
+// they are reach each other and no real repository — and every other case falls
+// out. The comparisons that needed special-casing needed it because the VALUE
+// was ambiguous, not because comparing was hard.
+//
+// Plain, but not byte-for-byte since F-135: both sides are PATHS, and on
+// Windows two casings of one directory are one project. SamePathLexical is
+// where that lives, and it leaves "" meaning UNKNOWN instead of resolving an
+// empty string against the current directory.
+func SameProject(a, b string) bool { return SamePathLexical(a, b) }
 
 // CrossesScopes reports whether a message between these two scopes leaves its
 // project — the question the val→val restriction is asked.
@@ -120,5 +119,5 @@ func CrossesScopes(a, b string) bool {
 	if a == "" || b == "" {
 		return false
 	}
-	return a != b
+	return !SamePathLexical(a, b)
 }

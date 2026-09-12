@@ -19,7 +19,7 @@ func TestSC7_SymlinkDataDirRejected(t *testing.T) {
 	realDir := filepath.Join(tmp, "real")
 	require.NoError(t, os.Mkdir(realDir, 0o700))
 	linkDir := filepath.Join(tmp, "link")
-	require.NoError(t, os.Symlink(realDir, linkDir))
+	mustSymlink(t, realDir, linkDir)
 
 	_, errOut, exit := run(t, []string{"peers"}, dataDirEnv(linkDir))
 	assert.NotEqual(t, 0, exit, "a subcommand on a symlinked data dir must fail")
@@ -39,5 +39,5 @@ func TestSC7_FirstRunCreatesDataDir(t *testing.T) {
 	info, err := os.Lstat(base)
 	require.NoError(t, err, "data dir must be created on first run")
 	assert.True(t, info.IsDir())
-	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm(), "first-run data dir must be 0700")
+	assertPOSIXPerm(t, info.Mode().Perm(), 0o700, "first-run data dir")
 }

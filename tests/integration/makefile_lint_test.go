@@ -429,7 +429,11 @@ func copyWorkingTree(t *testing.T, src, dst string) {
 		tarc.Stdin = bytes.NewReader(tracked)
 		tarball, terr := tarc.Output()
 		require.NoError(t, terr, "tar the working tree")
-		untar := exec.Command("tar", "-x", "-C", dst)
+		// Forward slashes for the destination: this is MSYS GNU tar on Windows, and
+		// a backslash path handed to it comes back mangled ("C\\:\\\\Users..."), which
+		// is its own argument conversion and not tar parsing host:path — --force-local
+		// does NOT help, measured. filepath.ToSlash is a no-op on Unix.
+		untar := exec.Command("tar", "-x", "-C", filepath.ToSlash(dst))
 		untar.Stdin = bytes.NewReader(tarball)
 		require.NoError(t, untar.Run(), "untar into %s", dst)
 		return

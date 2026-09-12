@@ -705,7 +705,7 @@ func TestJoin_LegacyUnsafeNameIsNamedAndRepairable(t *testing.T) {
 //
 // The unit test in internal/session says two fused basenames get different
 // names. This one says the thing that actually matters: that `tell` can still
-// reach one of them. Before the digest, `a+b` and `a:b` both derived `a-b`, two
+// reach one of them. Before the digest, `a+b` and `a b` both derived `a-b`, two
 // live sessions answered to it, and `tell a-b` exited 1 with "2 live agents are
 // named a-b" — a recipient made unreachable by the fix meant to make names
 // reachable.
@@ -721,9 +721,14 @@ func TestRegister_FusedBasenamesStayAddressable(t *testing.T) {
 	t.Setenv("CAB_DATA_DIR", dataDir)
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 
+	// The second name was `a:b` and is now `a b`: NTFS refuses a colon outright
+	// (it opens an alternate data stream), so the directory could not even be
+	// created. A space is the same case for this test — a byte outside the name
+	// grammar, fused to `-` by the old sanitizer — and is legal on every host we
+	// target.
 	plus := filepath.Join(base, "a+b")
-	colon := filepath.Join(base, "a:b")
-	for _, d := range []string{plus, colon} {
+	spaced := filepath.Join(base, "a b")
+	for _, d := range []string{plus, spaced} {
 		require.NoError(t, os.MkdirAll(d, 0o700))
 		require.NoError(t, runRegister([]string{"--role=esc", "--project-path=" + d}))
 	}
@@ -860,17 +865,14 @@ func TestRepairCommand_IsRunnableFromAnywhere(t *testing.T) {
 	err = runRegister([]string{"--role=esc", "--resume", "--project-path=" + projA})
 	require.Error(t, err)
 
-	// Pull the command out of the message and RUN IT. Splitting on spaces is
-	// exactly what a shell does, so a path with a space would break here — that
-	// is the known debt this lot leaves to lot 2, and the fixture avoids it on
-	// purpose rather than by accident.
-	var cmd []string
-	for _, line := range strings.Split(err.Error(), "\n") {
-		if f := strings.Fields(line); len(f) > 1 && f[0] == "cab-bridge" {
-			cmd = f[1:]
-			break
-		}
-	}
+	// Pull the command out of the message and RUN IT, split by a REAL shell.
+	// Splitting on whitespace is NOT what a shell does: a shell also removes the
+	// quoting. On Windows every path in the command is quoted — backslashes are
+	// shell-special — so strings.Fields handed runJoin a --project-path with the
+	// apostrophes still attached: a different path, a different scope, and a
+	// second session registered. Asking a shell also retires the debt the old
+	// comment left to lot 2: a path with a space now goes through the same way.
+	cmd := runEmitted(t, err.Error(), "cab-bridge join")
 	require.NotEmpty(t, cmd, "the error has to carry a command, not a description:\n%s", err)
 	require.Equal(t, "join", cmd[0])
 

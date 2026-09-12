@@ -58,8 +58,7 @@ func TestMoveToProcessed_CreatesProcessedDirOnDemand(t *testing.T) {
 	info, err := os.Stat(processed)
 	require.NoError(t, err)
 	assert.True(t, info.IsDir())
-	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm(),
-		"processed/ must be created with 0o700 (SC-2)")
+	assertPOSIXPerm(t, info.Mode().Perm(), 0o700, "processed/ (SC-2)")
 }
 
 func TestMoveToProcessed_PreservesOrderViaTimestampPrefix(t *testing.T) {

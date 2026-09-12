@@ -198,8 +198,8 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, token, self
 			// The question here is "wrong name, or wrong project?", and it is not
 			// answerable without the list of projects. Naming only the agents would
 			// answer half of it.
-			return "", fmt.Errorf("no agent named %q in project %q — projects with agents: %s",
-				name, rcpt.scope, strings.Join(knownScopes(peers), ", "))
+			return "", fmt.Errorf("no agent named %q in project %q — projects with agents: %s%s",
+				name, rcpt.scope, strings.Join(knownScopes(peers), ", "), volumeHint(rcpt.scope))
 		}
 		known := knownAgentNames(inScope, selfSID)
 		if len(known) == 0 {

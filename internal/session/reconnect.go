@@ -273,7 +273,7 @@ func (m *Manager) findIdentityMatches(absProj string, opts RegisterOpts) ([]iden
 		if !scopeMatches(mf, opts.Scope, absProj) {
 			continue
 		}
-		if mf.Scope != "" && filepath.Clean(mf.ProjectPath) != filepath.Clean(absProj) {
+		if mf.Scope != "" && !SamePathLexical(mf.ProjectPath, absProj) {
 			continue
 		}
 		out = append(out, identityMatch{id: e.Name(), mf: mf})
@@ -299,9 +299,9 @@ func (m *Manager) findIdentityMatches(absProj string, opts RegisterOpts) ([]iden
 // project (retro-compat).
 func scopeMatches(mf *Manifest, wantScope, absProj string) bool {
 	if mf.Scope != "" {
-		return mf.Scope == wantScope
+		return SamePathLexical(mf.Scope, wantScope)
 	}
-	return isPathDescendantOrEqual(absProj, mf.ProjectPath)
+	return IsDescendantLexical(absProj, mf.ProjectPath)
 }
 
 // adoptAndBackfill claims sessionID for the current process (PID + fresh

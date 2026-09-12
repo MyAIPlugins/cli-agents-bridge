@@ -9,7 +9,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -140,7 +139,7 @@ func (m *Manager) Register(ctx context.Context, opts RegisterOpts) (*Manifest, f
 	if !opts.ForceNew {
 		if existingID, lerr := m.LongestPrefixLookup(absProj); lerr == nil {
 			if existing, merr := m.LoadManifest(existingID); merr == nil &&
-				filepath.Clean(existing.ProjectPath) == absProj &&
+				SamePathLexical(existing.ProjectPath, absProj) &&
 				IsProcessAlive(existing.PID) {
 				return nil, nil, fmt.Errorf("%w: project %q already has active session %s (pid %d), use --force-new to override",
 					ErrSessionExistsForProject, absProj, existingID, existing.PID)
@@ -291,7 +290,7 @@ func (m *Manager) LongestPrefixLookup(cwd string) (string, error) {
 			_ = security.WarnNotOurs(e.Name(), err)
 			continue
 		}
-		if !isPathDescendantOrEqual(absCwd, mf.ProjectPath) {
+		if !IsDescendantLexical(absCwd, mf.ProjectPath) {
 			continue
 		}
 		if len(mf.ProjectPath) > bestLen {
@@ -417,7 +416,7 @@ func (m *Manager) LookupByCWDDetails(cwd string) (Resolution, error) {
 			continue
 		}
 		matchLen := -1
-		if isPathDescendantOrEqual(absCwd, mf.ProjectPath) {
+		if IsDescendantLexical(absCwd, mf.ProjectPath) {
 			matchLen = len(mf.ProjectPath)
 			if matchLen > bestLen {
 				bestLen = matchLen
@@ -453,16 +452,16 @@ func (m *Manager) LookupByCWDDetails(cwd string) (Resolution, error) {
 	res.HardAmbiguous = len(res.Candidates) > 1
 	res.SelectedID = res.Candidates[0].ID // ReadDir order makes this deterministic
 	selected := res.Candidates[0]
-	res.ExactMatch = filepath.Clean(absCwd) == filepath.Clean(selected.ProjectPath)
+	res.ExactMatch = SamePathLexical(absCwd, selected.ProjectPath)
 
 	// Shared-scope siblings: other sessions in the selected session's NON-empty
 	// scope with a DIFFERENT ProjectPath. Lexical Clean compare (constraint #6,
 	// no symlink resolution). A session with the SAME ProjectPath is a hard-tie
 	// contender, not a sibling, so the path inequality excludes it.
 	if selected.Scope != "" {
-		selProj := filepath.Clean(selected.ProjectPath)
+		selProj := selected.ProjectPath
 		for _, s := range all {
-			if SameProject(s.cand.Scope, selected.Scope) && filepath.Clean(s.cand.ProjectPath) != selProj {
+			if SameProject(s.cand.Scope, selected.Scope) && !SamePathLexical(s.cand.ProjectPath, selProj) {
 				res.ScopeSiblings = append(res.ScopeSiblings, s.cand)
 			}
 		}
@@ -772,19 +771,6 @@ func generateSessionID() (string, error) {
 		return "", fmt.Errorf("generate session id: %w", err)
 	}
 	return hex.EncodeToString(b[:]), nil
-}
-
-// isPathDescendantOrEqual returns true if child is the same path as parent,
-// or is a directory descendant of parent. Both are expected to be absolute
-// and Clean()-ed. We compare with a trailing-separator suffix to avoid the
-// classic /foo/barbaz matching /foo/bar bug.
-func isPathDescendantOrEqual(child, parent string) bool {
-	child = filepath.Clean(child)
-	parent = filepath.Clean(parent)
-	if child == parent {
-		return true
-	}
-	return strings.HasPrefix(child, parent+string(filepath.Separator))
 }
 
 // defaultIfEmpty returns fallback when s is empty, otherwise s.

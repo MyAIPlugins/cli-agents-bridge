@@ -513,7 +513,7 @@ func shellArgvOf(t *testing.T, text, start string) []string {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, strings.Fields(cmd)[0]),
 		[]byte("#!/bin/sh\nprintf '%s\\0' \"$@\"\n"), 0o700))
-	c := exec.Command("/bin/sh", "-c", cmd)
+	c := exec.Command(posixShell(t), "-c", cmd)
 	c.Env = []string{"PATH=" + dir}
 	out, err := c.Output()
 	require.NoError(t, err, "the shell refused the emitted command — it was not rendered: %s", cmd)
@@ -560,4 +560,18 @@ func TestResume_TheRepairCommandSurvivesAPaste(t *testing.T) {
 	assert.Contains(t, argv, "--role=browser tester", "the role must arrive as ONE argument")
 	assert.Contains(t, argv, "--project-path="+proj, "and so must the path — this is the pair that was half-rendered")
 	assert.Contains(t, argv, "--agent-name=ESC-bridge")
+}
+
+// posixShell resolves the shell these round-trips evaluate with. It is not
+// /bin/sh everywhere: on Windows the shell a reader pastes these commands into
+// is Git Bash's sh, which lives on PATH and nowhere near /bin. A host with no
+// sh at all skips BY NAME — the assertion is about what a shell does to a
+// rendered word, and without a shell there is nothing to assert.
+func posixShell(t *testing.T) string {
+	t.Helper()
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skipf("no POSIX sh on PATH (%v): this test asserts what a shell does to a rendered word", err)
+	}
+	return sh
 }
