@@ -6,9 +6,14 @@
 // Atomicity guarantee: rename(2) is atomic on POSIX when source and target
 // live on the same filesystem. We enforce same-fs by creating the temp file
 // in the target directory (os.CreateTemp(filepath.Dir(target), ...)).
-// Cross-filesystem rename returns EXDEV explicitly — we surface it as an
-// error rather than silent non-atomic fallback (docs/dev-conventions.md
-// "No implicit fallbacks").
+// A cross-device rename is surfaced as an explicit error rather than a silent
+// non-atomic fallback (docs/dev-conventions.md "No implicit fallbacks"), and
+// the condition is recognised by isCrossDevice, which is PER-OS.
+//
+// It has to be: the sentence above used to say EXDEV and the code used to test
+// for it, which on Windows is a constant the system never returns there
+// (F-137). The branch was dead and the comment said it was alive — the second
+// half being the part that costs somebody an afternoon.
 //
 // Durability: f.Sync() flushes data + minimal metadata before rename, so a
 // kernel crash mid-write cannot leave a zero-byte file (Linux ext4 historic
@@ -24,7 +29,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"syscall"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 )
@@ -43,10 +47,17 @@ func AtomicWriteJSON(path string, v interface{}) error {
 // rename, ending with the requested mode. Same-filesystem guarantee: the
 // temp file is created in filepath.Dir(path).
 //
-// Returns a wrapped EXDEV error if rename crosses filesystems — this would
-// indicate a misconfigured data dir (target on different mount than parent
-// dir we resolved), not a runtime issue. No silent copy-fallback (no
-// fallback impliciti).
+// The cross-device branch is DEFENCE IN DEPTH, and it says so rather than
+// implying more: the temp file is created in filepath.Dir(path), so source and
+// target are in the SAME DIRECTORY and therefore on the same volume by
+// construction. There is no configuration that reaches it from here. It stays
+// because the guarantee it states is the one the whole function rests on, and
+// because a rename that ever did cross devices must fail loudly rather than be
+// mistaken for a transient error — but nobody should go looking for the case
+// that triggers it, because there is not one.
+//
+// MoveToProcessed is the call-site where the same branch IS reachable: its
+// destination comes from the caller.
 func AtomicWriteBytes(path string, data []byte, mode os.FileMode) error {
 	dir := filepath.Dir(path)
 
@@ -85,8 +96,8 @@ func AtomicWriteBytes(path string, data []byte, mode os.FileMode) error {
 	}
 
 	if err := renameAtomic(tmpPath, path); err != nil {
-		if errors.Is(err, syscall.EXDEV) {
-			return fmt.Errorf("rename %q -> %q: EXDEV cross-filesystem rename is not atomic — temp dir and target must share filesystem (this is a config bug, not a transient failure): %w", tmpPath, path, err)
+		if isCrossDevice(err) {
+			return fmt.Errorf("rename %q -> %q: cross-device rename is not atomic — temp dir and target must share filesystem (this is a config bug, not a transient failure): %w", tmpPath, path, err)
 		}
 		return fmt.Errorf("rename %q -> %q: %w", tmpPath, path, err)
 	}
