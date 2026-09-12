@@ -1,0 +1,32 @@
+internal/security/perms_windows.go
+  s_dffedfddc1b2a5::t_45838e37c8c56c 195-264,273-302
+internal/transport/fs/rename_windows_test.go
+  s_dffedfddc1b2a5::t_5719130ffffe55 1-236
+internal/transport/fs/process.go
+  s_dffedfddc1b2a5::t_d030978aad6022 39
+internal/transport/fs/rename_windows.go
+  s_dffedfddc1b2a5::t_f9bddae5d88119 1-173
+internal/security/sharedelete_windows_test.go
+  s_dffedfddc1b2a5::t_3a37019b838faa 16,18-26,36-37,39-43,51-53,56-57,59-63,71-72,75,81-83
+  s_dffedfddc1b2a5::t_ca0027d1542bdd 1-15,17,27-35,38,44-50,54-55,58,64-70,73-74,76-80,84-124
+internal/transport/fs/atomic.go
+  s_dffedfddc1b2a5::t_d030978aad6022 87
+internal/transport/fs/rename_unix.go
+  s_dffedfddc1b2a5::t_10e49c553126c9 1-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b73619c00ad7b65c61d98cb815f35cf4faa9c253",
+  "prompts": {},
+  "sessions": {
+    "s_dffedfddc1b2a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d695b731-33f9-4339-a83a-7ee970efa167",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan Curtis <info@myaiplugins.com>"
+    }
+  }
+}
