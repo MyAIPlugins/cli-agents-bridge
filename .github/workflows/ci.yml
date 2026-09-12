@@ -145,14 +145,16 @@ jobs:
   # artifact that never runs anywhere. We would rather ship one fewer binary
   # than one nobody has ever started.
   #
-  # HONEST NOTE ON WHAT THIS MIRRORS, because the previous version of this
-  # comment claimed a symmetry that this very job is about to break: today
-  # `Makefile: cross-compile-all` and `.goreleaser.yml` build darwin+linux ONLY.
-  # So from here on CI VERIFIES MORE THAN THE RELEASE SHIPS — a Windows user
-  # still builds from source. That is a deliberate, temporary asymmetry pending
-  # the decision on whether releases carry Windows binaries; it is written down
-  # rather than left for somebody to discover, because a comment asserting more
-  # than it executes is the defect class this repository keeps closing.
+  # WHAT THIS MIRRORS, and it is true again: `Makefile: cross-compile-all` and
+  # `.goreleaser.yml` now build the same five combinations, windows/amd64
+  # included.
+  #
+  # It was not true for a while, and the note is kept rather than deleted
+  # because the gap is the interesting part: this job shipped first and the
+  # release followed, so for a few hours CI verified a platform the release did
+  # not carry — a Windows user could watch the build go green and still have
+  # nothing to download. Written down at the time instead of left for somebody
+  # to discover, and closed here.
   cross-compile:
     name: Cross-compile (${{ matrix.goos }}-${{ matrix.goarch }})
     needs: [lint, test]
