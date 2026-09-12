@@ -22,7 +22,9 @@ Designed for an orchestrator ↔ executor workflow across separate windows, scal
 
 ### 1. Get the binary
 
-Download the archive for your OS/arch from the latest [Release](https://github.com/myAIPlugins/cli-agents-bridge/releases/latest):
+Download the archive for your OS/arch from the latest [Release](https://github.com/myAIPlugins/cli-agents-bridge/releases/latest).
+
+#### macOS and Linux
 
 ```
 VERSION=0.9.0     # the tag of the release you downloaded
@@ -37,6 +39,47 @@ install -m 755 cab-bridge ~/.local/bin/
 `mkdir -p` is not optional: `install` does not create its destination, and a fresh machine often has no `~/.local/bin` — without it the command fails with an error naming a temporary file you have never seen.
 
 `~/.local/bin` must also be on your `PATH`.
+
+
+#### Windows
+
+The Windows archive is a **zip**, and everything below is built into PowerShell — nothing to install
+first.
+
+```powershell
+$Version = '0.9.0'          # the tag of the release you downloaded, exactly as it appears on it
+$Zip     = "cab-bridge_${Version}_windows_amd64.zip"
+
+# Same check, same limit as above: this proves the file arrived intact, not that it is genuine.
+Get-FileHash $Zip -Algorithm SHA256
+
+Expand-Archive $Zip -DestinationPath .\cab-bridge -Force
+New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\Programs\cab-bridge" | Out-Null
+Copy-Item .\cab-bridge\cab-bridge.exe "$env:LOCALAPPDATA\Programs\cab-bridge\" -Force
+```
+
+Then put that directory on your **user** PATH — and the first line matters more than the second:
+
+```powershell
+# Read the CURRENT user PATH and append. Do NOT write a bare value here: `setx PATH "...new..."`
+# replaces everything the user already had, and that loss is silent and permanent.
+$dir = "$env:LOCALAPPDATA\Programs\cab-bridge"
+$current = [Environment]::GetEnvironmentVariable('Path', 'User')
+if ($current -notlike "*$dir*") {
+  [Environment]::SetEnvironmentVariable('Path', "$current;$dir", 'User')
+}
+```
+
+**Open a new terminal** — a running one keeps the environment it started with, so the command will
+look missing in the window you just typed that in. Then:
+
+```powershell
+cab-bridge version
+```
+
+Only `amd64` is published for Windows. There is no `arm64` build: Go would produce one, but nobody
+here has a machine to run it on, and an untested binary is worse than an absent one — build from
+source if you need it.
 
 Verify the download against `checksums.txt`, published alongside the archives. Be clear about what that proves: the archive reached you **intact** — no truncated download, no corrupted mirror. It does **not** prove the release is **genuine**, because `checksums.txt` ships from the same place as the archive, so a tampered release would carry matching sums. There is no signature yet.
 

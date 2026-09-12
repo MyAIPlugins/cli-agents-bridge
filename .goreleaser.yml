@@ -1,9 +1,16 @@
 # GoReleaser config (v2) — prebuilt multi-OS binaries for GitHub Releases.
 #
 # Local gate (no install): builds dist/ without publishing —
-#   go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean
+#   go run github.com/goreleaser/goreleaser/v2@v2.18.1 release --snapshot --clean
 # Validate config:
-#   go run github.com/goreleaser/goreleaser/v2@latest check
+#   go run github.com/goreleaser/goreleaser/v2@v2.18.1 check
+#
+# THE SAME VERSION release.yml PUBLISHES WITH, and these two lines said @latest
+# until somebody noticed: a maintainer following the instructions would have
+# verified with one version and published with another, which is the very defect
+# the pin was added to close — surviving in the text beside the corrected code.
+# When a pinned value changes, the place to look next is everywhere else it is
+# written.
 #
 # Matrix darwin/linux x amd64/arm64 PLUS windows/amd64, mirroring Makefile
 # cross-compile-all and .github/workflows/ci.yml (CGO_ENABLED=0, -trimpath).
@@ -57,9 +64,18 @@ archives:
   - id: cab-bridge
     formats:
       - tar.gz
-    # zip for Windows, tar.gz untouched everywhere else. Not a preference: a
-    # .tar.gz is a file a stock Windows cannot open by double-clicking, and an
-    # archive the recipient cannot open is a binary that did not ship.
+    # zip for Windows, tar.gz untouched everywhere else.
+    #
+    # The reason is compatibility and the path we document, NOT an inability:
+    # `Expand-Archive` is built into PowerShell and takes zip, which is what the
+    # README tells a Windows user to run, and zip is the format Windows tooling
+    # has handled for the longest — including machines older than whatever is
+    # current.
+    #
+    # It is emphatically NOT "Windows cannot open a tar.gz", which is what an
+    # earlier version of this comment said and is false: Windows 11 24H2 handles
+    # tar. A right decision resting on a wrong reason is a decision somebody
+    # reverses the day they check the reason.
     format_overrides:
       - goos: windows
         formats:
