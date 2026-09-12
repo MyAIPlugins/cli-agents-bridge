@@ -1,0 +1,19 @@
+.goreleaser.yml
+  s_dffedfddc1b2a5::t_008c71d57c0251 95-109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "47513aa0e4079e91d01620a33fa5e49a36bd97b7",
+  "prompts": {},
+  "sessions": {
+    "s_dffedfddc1b2a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d695b731-33f9-4339-a83a-7ee970efa167",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan Curtis <info@myaiplugins.com>"
+    }
+  }
+}
