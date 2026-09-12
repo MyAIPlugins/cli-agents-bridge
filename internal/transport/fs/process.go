@@ -36,7 +36,7 @@ func MoveToProcessed(srcInboxPath, processedDir string) error {
 	dstName := stamp + "-" + base
 	dstPath := filepath.Join(processedDir, dstName)
 
-	if err := os.Rename(srcInboxPath, dstPath); err != nil {
+	if err := renameAtomic(srcInboxPath, dstPath); err != nil {
 		if errors.Is(err, syscall.EXDEV) {
 			return fmt.Errorf("move %q -> %q: EXDEV cross-filesystem rename is not atomic — inbox and processed dirs must share filesystem (config bug, not transient): %w",
 				srcInboxPath, dstPath, err)
