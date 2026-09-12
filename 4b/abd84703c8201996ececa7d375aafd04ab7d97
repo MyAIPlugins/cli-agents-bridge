@@ -1,0 +1,19 @@
+.github/workflows/ci.yml
+  s_dffedfddc1b2a5::t_0607d0adb9d50d 13,15-18,20-24,26-29,31-34,36-38,43-57,60-67,83-135,139-155,158,172-174,189,195
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4babd84703c8201996ececa7d375aafd04ab7d97",
+  "prompts": {},
+  "sessions": {
+    "s_dffedfddc1b2a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d695b731-33f9-4339-a83a-7ee970efa167",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan Curtis <info@myaiplugins.com>"
+    }
+  }
+}
