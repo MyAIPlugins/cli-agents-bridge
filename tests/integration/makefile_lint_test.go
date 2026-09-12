@@ -73,6 +73,31 @@ func TestMakefile_LintLooksWhereGoInstallPuts(t *testing.T) {
 	inPath := filepath.Join(pathDir, "staticcheck")
 	require.NoError(t, os.WriteFile(inPath, []byte("#!/bin/sh\necho PATH_STATICCHECK\n"), 0o700))
 
+	// WHAT THE ASSERTIONS BELOW COMPARE, and why it is not the whole path.
+	//
+	// The question each subtest asks is WHICH of the three planted directories
+	// the gate chose, so the discriminator is the path RELATIVE to the fixture
+	// root — the part this test planted and controls.
+	//
+	// The absolute prefix cannot be compared, and not merely because Windows
+	// spells the separator differently: under Git Bash `command -v` answers
+	// "/tmp/...", because MSYS maps the user's Temp directory onto /tmp. Those
+	// are two genuinely different strings naming the same file, so normalising
+	// separators alone would not have rescued the PATH subtest.
+	//
+	// LIMIT, declared rather than left to be discovered: a tail is weaker than a
+	// full path — it would also match some OTHER directory ending the same way.
+	// It holds because these three names are DISTINCT and because each subtest
+	// asserts the other two are ABSENT. Whoever adds a fourth fixture has to keep
+	// that true: "bin" on its own, for instance, is a substring of "gobin", and
+	// the NotContains assertions would start firing on the right answer.
+	tailOf := func(abs string) string {
+		rel, rerr := filepath.Rel(tmp, abs)
+		require.NoError(t, rerr)
+		return filepath.ToSlash(rel)
+	}
+	fakeTail, gopathFakeTail, inPathTail := tailOf(fake), tailOf(gopathFake), tailOf(inPath)
+
 	run := func(env ...string) string {
 		t.Helper()
 		cmd := exec.Command("make", "-n", "lint")
@@ -80,25 +105,32 @@ func TestMakefile_LintLooksWhereGoInstallPuts(t *testing.T) {
 		cmd.Env = append(os.Environ(), env...)
 		cmd.Env = append(cmd.Env, "PATH="+pathDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 		out, _ := cmd.CombinedOutput() // -n prints, it does not run: exit code is not the subject
-		return string(out)
+		// ToSlash because the SEPARATOR is not the subject. The Makefile joins
+		// its paths with a literal forward slash — it is a POSIX script and runs
+		// under a POSIX shell on every platform — while the fixtures above are
+		// built with filepath.Join, which on Windows gives the backslash. Both
+		// spellings name the same file; comparing them raw made the assertion
+		// measure the spelling instead of the choice, and three subtests went
+		// red on Windows for a difference that means nothing.
+		return filepath.ToSlash(string(out))
 	}
 
 	t.Run("GOBIN set wins, because that is where go install writes", func(t *testing.T) {
 		out := run("GOBIN="+gobin, "GOPATH="+gopath)
-		assert.Contains(t, out, fake,
+		assert.Contains(t, out, fakeTail,
 			"with GOBIN set the gate must look there — otherwise its own install command cannot fix it")
-		assert.NotContains(t, out, gopathFake,
+		assert.NotContains(t, out, gopathFakeTail,
 			"and must not fall back to GOPATH/bin, which is not where go install wrote on such a machine")
-		assert.NotContains(t, out, inPath,
+		assert.NotContains(t, out, inPathTail,
 			"nor to a staticcheck that merely happens to be in PATH: the pin governs the binary that RUNS "+
 				"only if the Makefile runs the one `go install` wrote")
 	})
 
 	t.Run("GOBIN empty falls back to GOPATH/bin", func(t *testing.T) {
 		out := run("GOBIN=", "GOPATH="+gopath)
-		assert.Contains(t, out, gopathFake,
+		assert.Contains(t, out, gopathFakeTail,
 			"the ordinary machine, and the behaviour that must not regress")
-		assert.NotContains(t, out, inPath, "PATH is the fallback, not the first choice")
+		assert.NotContains(t, out, inPathTail, "PATH is the fallback, not the first choice")
 	})
 
 	// And the branch next door, which the reordering must NOT break: a machine
@@ -109,7 +141,7 @@ func TestMakefile_LintLooksWhereGoInstallPuts(t *testing.T) {
 		bare := filepath.Join(tmp, "bare")
 		require.NoError(t, os.MkdirAll(filepath.Join(bare, "bin"), 0o700))
 		out := run("GOBIN=", "GOPATH="+bare)
-		assert.Contains(t, out, inPath,
+		assert.Contains(t, out, inPathTail,
 			"with neither GOBIN nor GOPATH/bin holding one, the gate must still use what is in PATH")
 	})
 
@@ -345,26 +377,72 @@ func TestMakefile_InstallDevLinksWhatItJustBuilt(t *testing.T) {
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "install-dev must survive a path with spaces: %s", out)
 
-	link := filepath.Join(home, ".local", "bin", "cab-bridge")
-	target, err := os.Readlink(link)
-	require.NoError(t, err, "the symlink must exist: %s", out)
+	// THE PROMISE, NOT THE MECHANISM — and the difference is what this lot is about.
+	//
+	// `ln -s` under Git Bash without SeCreateSymbolicLinkPrivilege does not fail:
+	// it COPIES and returns 0, so requiring os.Readlink to succeed asserted the
+	// mechanism and went red on a host where the target had done its job as well
+	// as that host allows. What install-dev actually promises is that the thing
+	// on PATH IS the binary this invocation just built — link or copy.
+	//
+	// So both shapes are accepted, and each is held to the word the target
+	// PRINTED. That is the part the test must not let slide: the old recipe
+	// announced "symlinked:" over a copy, and a test that accepted the outcome
+	// without checking the claim would have left the lie in place.
+	installed := filepath.Join(home, ".local", "bin", "cab-bridge"+binExeSuffix)
+	built := filepath.Join(repo, "bin", "cab-bridge"+binExeSuffix)
 
-	// SYMLINK-RESOLVED on both sides: $(CURDIR) is canonical, while t.TempDir()
-	// hands back /var/... which on macOS is a link to /private/var/.... Comparing
-	// the raw strings would fail for a reason that has nothing to do with the
-	// defect — the same care the scope tests already take.
-	wantTarget, err := filepath.EvalSymlinks(filepath.Join(repo, "bin", "cab-bridge"))
-	require.NoError(t, err, "the built binary must exist to be resolved")
-	gotTarget, err := filepath.EvalSymlinks(target)
-	require.NoError(t, err, "the symlink must not dangle: %s", target)
-	assert.Equal(t, wantTarget, gotTarget,
-		"it must point at the binary THIS invocation built, not at one under the caller's cwd")
+	lst, err := os.Lstat(installed)
+	require.NoError(t, err, "install-dev must leave something at %s: %s", installed, out)
 
-	// And the target must actually be there: the broken version produced a link
-	// to a path that did not exist, which no exit code revealed.
-	info, err := os.Stat(gotTarget)
-	require.NoError(t, err, "the symlink must not dangle")
-	assert.NotZero(t, info.Mode()&0o111, "and what it points at must be executable")
+	if lst.Mode()&os.ModeSymlink != 0 {
+		assert.Contains(t, string(out), "symlinked:",
+			"it made a link, so it must say so: %s", out)
+
+		target, rerr := os.Readlink(installed)
+		require.NoError(t, rerr)
+
+		// SYMLINK-RESOLVED on both sides: $(CURDIR) is canonical, while
+		// t.TempDir() hands back /var/... which on macOS is a link to
+		// /private/var/.... Comparing the raw strings would fail for a reason
+		// that has nothing to do with the defect — the same care the scope tests
+		// already take.
+		wantTarget, werr := filepath.EvalSymlinks(built)
+		require.NoError(t, werr, "the built binary must exist to be resolved")
+		gotTarget, gerr := filepath.EvalSymlinks(target)
+		require.NoError(t, gerr, "the symlink must not dangle: %s", target)
+		assert.Equal(t, wantTarget, gotTarget,
+			"it must point at the binary THIS invocation built, not at one under the caller's cwd")
+
+		// And the target must actually be there: the broken version produced a
+		// link to a path that did not exist, which no exit code revealed.
+		info, serr := os.Stat(gotTarget)
+		require.NoError(t, serr, "the symlink must not dangle")
+		if binExeSuffix == "" {
+			// Unix only. Perm() reports 0666/0777 for every file on Windows, so
+			// the bit carries no meaning there — see internal/security's
+			// enforceMode, which is a no-op for the same reason. What makes a
+			// file runnable on that platform is the extension, and it is in the
+			// name above.
+			assert.NotZero(t, info.Mode()&0o111, "and what it points at must be executable")
+		}
+		return
+	}
+
+	assert.Contains(t, string(out), "COPIED, not symlinked:",
+		"it made a copy, so it must NOT claim a symlink: %s", out)
+	assert.Contains(t, string(out), "A COPY GOES STALE",
+		"and it must say what that costs, because a copy silently stops tracking the next build: %s", out)
+
+	wantBytes, werr := os.ReadFile(built)
+	require.NoError(t, werr, "the built binary must exist")
+	gotBytes, gerr := os.ReadFile(installed)
+	require.NoError(t, gerr)
+	// bytes.Equal rather than assert.Equal: these are megabytes, and a failure
+	// report that dumps two binaries is a failure report nobody reads.
+	assert.True(t, bytes.Equal(wantBytes, gotBytes),
+		"the copy must BE the binary this invocation built (%d bytes installed vs %d built)",
+		len(gotBytes), len(wantBytes))
 }
 
 // copyWorkingTree copies the source tree as it is RIGHT NOW into dst.

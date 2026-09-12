@@ -4,7 +4,22 @@
 # Cross-compile targets produce static (CGO_ENABLED=0) binaries portable
 # across macOS arm64 and Linux amd64/arm64.
 
-BINARY      := cab-bridge
+BINARY_BASE := cab-bridge
+# The extension is the platform's answer, not ours: Windows will not execute a
+# file whose name carries no PATHEXT extension, so `bin/cab-bridge` built there
+# is a file nothing can run — and `install-plugin` copied exactly that into the
+# tree the plugin system puts on PATH.
+#
+# `go env GOEXE` rather than `$(OS)`: ONE source, and it is Go itself answering
+# the question about Go's own output. `$(OS)` is an environment variable that
+# happens to say Windows_NT on Windows — true today, unexported in some shells,
+# and silently empty when it is.
+#
+# BINARY_BASE stays suffix-free because cross-compile-all names its outputs per
+# GOOS: `cab-bridge.exe-darwin-arm64` would be the one-line fix producing four
+# nonsense filenames, which is the branch next door to this one.
+EXE         := $(shell go env GOEXE)
+BINARY      := $(BINARY_BASE)$(EXE)
 PKG         := github.com/myAIPlugins/cli-agents-bridge/cmd/cab-bridge
 BIN_DIR     := bin
 PLUGIN_DIR  := plugins/cli-agents-bridge
@@ -62,12 +77,12 @@ test-race: ## Run tests with race detector (CI gate)
 
 cross-compile-all: ## Cross-compile darwin-{arm64,amd64} + linux-{amd64,arm64} (no cgo) — matches .goreleaser.yml + ci.yml
 	@mkdir -p "$(BIN_DIR)"
-	CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build $(GO_FLAGS) -o "$(BIN_DIR)/$(BINARY)-darwin-arm64" $(PKG)
-	CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build $(GO_FLAGS) -o "$(BIN_DIR)/$(BINARY)-darwin-amd64" $(PKG)
-	CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build $(GO_FLAGS) -o "$(BIN_DIR)/$(BINARY)-linux-amd64"  $(PKG)
-	CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build $(GO_FLAGS) -o "$(BIN_DIR)/$(BINARY)-linux-arm64"  $(PKG)
+	CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build $(GO_FLAGS) -o "$(BIN_DIR)/$(BINARY_BASE)-darwin-arm64" $(PKG)
+	CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build $(GO_FLAGS) -o "$(BIN_DIR)/$(BINARY_BASE)-darwin-amd64" $(PKG)
+	CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build $(GO_FLAGS) -o "$(BIN_DIR)/$(BINARY_BASE)-linux-amd64"  $(PKG)
+	CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build $(GO_FLAGS) -o "$(BIN_DIR)/$(BINARY_BASE)-linux-arm64"  $(PKG)
 	@echo "cross-compile artifacts:"
-	@ls -lh "$(BIN_DIR)"/$(BINARY)-*
+	@ls -lh "$(BIN_DIR)"/$(BINARY_BASE)-*
 
 # $(CURDIR), NOT $(PWD), and every path quoted.
 #
@@ -87,11 +102,41 @@ cross-compile-all: ## Cross-compile darwin-{arm64,amd64} + linux-{amd64,arm64} (
 # $(CURDIR) is Make's own answer and it tracks -C. The quoting is the other half:
 # under a checkout whose path contains a space, `ln` failed with "No such file or
 # directory" AFTER the build had succeeded.
+#
+# AND IT SAYS WHAT IT DID, not what it meant to do.
+#
+# `ln -s` under Git Bash without SeCreateSymbolicLinkPrivilege does not fail: it
+# COPIES, and returns 0. The target then printed "symlinked:" about a copy — a
+# command declaring something it had not done, which is the class this Makefile
+# has spent three rounds closing, in the Makefile written to close it.
+#
+# So the word comes from the FILESYSTEM (`[ -L ]`) rather than from the command
+# we intended to run. That is the same rule we read reports by: the disk wins
+# over the account of what happened.
+#
+# And the copy is not merely a different mechanism, it is a DEGRADED one. This
+# target exists so that "merged is not installed" ends here; a copy reintroduces
+# exactly that gap one build later, silently. Naming it honestly without saying
+# so would have replaced a lie with a useless truth — so the message says what
+# breaks and what to do about it.
 install-dev: build ## Symlink local binary into ~/.local/bin for --plugin-dir development
 	@mkdir -p "$$HOME/.local/bin"
 	@ln -sf "$(CURDIR)/$(BIN_DIR)/$(BINARY)" "$$HOME/.local/bin/$(BINARY)"
-	@echo "symlinked: $$HOME/.local/bin/$(BINARY)"
-	@echo "        -> $(CURDIR)/$(BIN_DIR)/$(BINARY)"
+	@if [ -L "$$HOME/.local/bin/$(BINARY)" ]; then \
+		echo "symlinked: $$HOME/.local/bin/$(BINARY)"; \
+		echo "        -> $(CURDIR)/$(BIN_DIR)/$(BINARY)"; \
+	else \
+		echo "COPIED, not symlinked: $$HOME/.local/bin/$(BINARY)"; \
+		echo "        <- $(CURDIR)/$(BIN_DIR)/$(BINARY)"; \
+		echo ""; \
+		echo "  This host would not create a symlink, so ln fell back to a copy."; \
+		echo "  On Windows that means Developer Mode is off and this shell is not elevated."; \
+		echo ""; \
+		echo "  A COPY GOES STALE. The next 'make build' will NOT update it, and the"; \
+		echo "  binary on your PATH will quietly stay behind while everything keeps"; \
+		echo "  reporting success. Re-run 'make install-dev' after every build, or turn"; \
+		echo "  Developer Mode on and run this once more to get a real link."; \
+	fi
 	@echo "ensure \$$HOME/.local/bin is in your PATH"
 
 # NOTE: VERSION now derives from `git describe`. To ship the committed plugin
@@ -100,6 +145,12 @@ install-dev: build ## Symlink local binary into ~/.local/bin for --plugin-dir de
 install-plugin: build ## Copy binary into plugins/cli-agents-bridge/bin/ for marketplace install (cp, NOT symlink — Claude Code cache install copies files, symlink targets would dangle)
 	@mkdir -p "$(PLUGIN_DIR)/bin"
 	@cp -f "$(BIN_DIR)/$(BINARY)" "$(PLUGIN_DIR)/bin/$(BINARY)"
+	# chmod is a NO-OP on Windows and that is fine, not a gap: there the file is
+	# executable because it ends in .exe, which is what BINARY now carries.
+	# Verified rather than assumed — it exits 0 and leaves the mode untouched.
+	# What WAS broken there is the name, and it is the EXE suffix that fixes it:
+	# this target used to copy an extensionless file into the directory the
+	# plugin system puts on PATH, where Windows could not run it.
 	@chmod +x "$(PLUGIN_DIR)/bin/$(BINARY)"
 	@echo "installed: $(PLUGIN_DIR)/bin/$(BINARY) ($(VERSION))"
 	@echo "next: from a fresh Claude Code session, run:"
