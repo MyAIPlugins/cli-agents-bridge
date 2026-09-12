@@ -154,12 +154,125 @@ func TestRenameAtomic_AMissingSourceStillAnswersNotExist(t *testing.T) {
 	assert.True(t, errors.As(err, &le), "and keep os.Rename's error shape: %T", err)
 }
 
+// TestRenameAtomic_ASourceLockedByAnotherOpenIsRetriedUntilItIsReleased is the
+// half of the retry the first version did not have, and it is the worse half.
+//
+// A critic's native probe moved the same transient lock from one file to the
+// other and got opposite outcomes: held TARGET, success after 73ms; held
+// SOURCE, sharing violation at 0ms. The source open sat outside the retry loop,
+// so a lock there was fatal while a lock on the target was survivable.
+//
+// And the source is the file more likely to be locked, not less: at
+// AtomicWriteBytes' call-site it is the temp file THIS process has just finished
+// writing — precisely what an antivirus is reading at that moment.
+//
+// os.Open is the right holder here because it grants no FILE_SHARE_DELETE, which
+// is exactly what a scanner or an editor looks like from our side.
+func TestRenameAtomic_ASourceLockedByAnotherOpenIsRetriedUntilItIsReleased(t *testing.T) {
+	dir := t.TempDir()
+	staged := plant(t, dir, ".tmp.staged", "NEW")
+	target := plant(t, dir, "manifest.json", "OLD")
+
+	holder, err := os.Open(staged)
+	require.NoError(t, err)
+	released := make(chan struct{})
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		_ = holder.Close()
+		close(released)
+	}()
+
+	require.NoError(t, renameAtomic(staged, target),
+		"a transient lock on the SOURCE must be waited out like one on the target")
+	<-released
+
+	got, rerr := os.ReadFile(target)
+	require.NoError(t, rerr)
+	assert.Equal(t, "NEW", string(got))
+}
+
+// TestRenameAtomic_ASourceLockedForeverFailsWithinOneBudget pins the number the
+// comment promises.
+//
+// Opening the source and replacing the target share ONE budget, so the worst
+// case of this function is 630ms — not 630 per stage. That is the sort of figure
+// somebody builds a timeout on, so it gets an assertion rather than a sentence.
+func TestRenameAtomic_ASourceLockedForeverFailsWithinOneBudget(t *testing.T) {
+	dir := t.TempDir()
+	staged := plant(t, dir, ".tmp.staged", "NEW")
+	target := plant(t, dir, "manifest.json", "OLD")
+
+	holder, err := os.Open(staged)
+	require.NoError(t, err)
+	defer func() { _ = holder.Close() }()
+
+	started := time.Now()
+	err = renameAtomic(staged, target)
+	elapsed := time.Since(started)
+
+	require.Error(t, err, "a lock that never lifts must be reported, not waited on forever")
+	assert.Contains(t, err.Error(), "attempts", "and the error must say how long it tried: %v", err)
+
+	// The budget is COMPUTED from the two constants, never written down twice.
+	// Writing "630ms" here is what the production comment did, and it was wrong:
+	// six attempts have five gaps between them, so the sixth delay is never
+	// spent. A literal in the test would have agreed with the mistaken comment
+	// instead of catching it.
+	budget := time.Duration(0)
+	for i, d := 1, renameFirstDelay; i < renameAttempts; i, d = i+1, d*2 {
+		budget += d
+	}
+	assert.Greater(t, elapsed, budget/2,
+		"it must actually have used the budget (%s) rather than giving up at once", budget)
+	assert.Less(t, elapsed, budget+time.Second,
+		"and ONE budget, not one per stage: %s against a budget of %s", elapsed, budget)
+
+	// Nothing was consumed and nothing was half-done: the refusal is safe.
+	assert.FileExists(t, staged, "the source must survive a refused replace")
+	got, rerr := os.ReadFile(target)
+	require.NoError(t, rerr)
+	assert.Equal(t, "OLD", string(got), "and the target must be untouched")
+}
+
+// TestMoveToProcessed_RetriesWhileTheSourceIsBrieflyLocked exists because the
+// OTHER MoveToProcessed test does not discriminate the fix.
+//
+// Mutation testing showed it: with renameAtomic reduced to os.Rename, the
+// held-target test and the AtomicWriteBytes test both go red, while
+// MoveToProcessed_SucceedsWhileAReaderHoldsTheSource stays GREEN — os.Rename is
+// enough when the source grants share-delete and the destination does not exist.
+// It asserts something true and nothing new.
+//
+// This one does: a source locked WITHOUT share-delete defeats os.Rename and the
+// unretried open alike, and is survived only by the loop.
+func TestMoveToProcessed_RetriesWhileTheSourceIsBrieflyLocked(t *testing.T) {
+	dir := t.TempDir()
+	inbox := filepath.Join(dir, "inbox")
+	require.NoError(t, os.MkdirAll(inbox, 0o700))
+	msg := plant(t, inbox, "msg-abc.json", "BODY")
+
+	holder, err := os.Open(msg)
+	require.NoError(t, err)
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		_ = holder.Close()
+	}()
+
+	require.NoError(t, MoveToProcessed(msg, filepath.Join(dir, "processed")))
+	assert.NoFileExists(t, msg, "the message must have left the inbox")
+}
+
 // TestRenameAtomic_CrossVolumeIsRefusedWithoutRetrying covers the classifier.
 //
 // A different volume is a CONFIGURATION problem, permanent by nature: retrying
 // it six times would turn an instant verdict into a 630ms one and teach nobody
-// anything. The timing is the assertion — it is the only way to tell "refused"
-// from "refused after exhausting the retries".
+// anything. The timing is one assertion — the only way to tell "refused" from
+// "refused after exhausting the retries".
+//
+// But timing alone left the test green for ANY quick failure: a bad path, a
+// permission, a broken fixture would all have read as "the cross-volume branch
+// is handled". So it also names the error and checks what the refusal left
+// behind.
 func TestRenameAtomic_CrossVolumeIsRefusedWithoutRetrying(t *testing.T) {
 	other := crossVolumeDir(t)
 	dir := t.TempDir()
@@ -172,6 +285,21 @@ func TestRenameAtomic_CrossVolumeIsRefusedWithoutRetrying(t *testing.T) {
 	require.Error(t, err)
 	assert.Less(t, elapsed, 300*time.Millisecond,
 		"a cross-volume rename is permanent and must not be retried; it took %s, and the full retry budget is 630ms", elapsed)
+
+	// ERROR_NOT_SAME_DEVICE, by name. This is also the executable footnote to
+	// F-137: it is the constant Windows actually returns, and the one
+	// errors.Is(err, syscall.EXDEV) does NOT recognise — which is why the EXDEV
+	// branches in atomic.go and process.go are dead on this platform. Naming the
+	// real value here records that without touching those files.
+	assert.ErrorIs(t, err, windows.ERROR_NOT_SAME_DEVICE,
+		"and it must fail for the reason the branch is about, not merely fail: %v", err)
+
+	// A refusal that consumed the source would be worse than the defect: the
+	// message would be gone and the target never written.
+	assert.FileExists(t, staged, "the source must survive a refused cross-volume replace")
+	got, rerr := os.ReadFile(staged)
+	require.NoError(t, rerr)
+	assert.Equal(t, "NEW", string(got), "and survive intact, not truncated")
 }
 
 // crossVolumeDir finds a directory on a DIFFERENT volume, or skips by name.
@@ -240,6 +368,14 @@ func TestAtomicWriteBytes_SucceedsWhileAReaderHoldsTheTarget(t *testing.T) {
 // TestMoveToProcessed_SucceedsWhileAReaderHoldsTheSource is the second
 // call-site, and it exercises the branch the first one cannot: here the SOURCE
 // is what somebody is reading, and the destination never exists.
+//
+// AND IT DOES NOT DISCRIMINATE THE FIX — said here so nobody reads it as the
+// F-133 oracle it looks like. Mutation testing proved it: with renameAtomic
+// reduced to os.Rename this test stays GREEN, because os.Rename is enough when
+// the source granted share-delete and the target does not exist. What it pins is
+// real and worth keeping — the common path must not break — but the
+// discriminating sibling is
+// TestMoveToProcessed_RetriesWhileTheSourceIsBrieflyLocked.
 func TestMoveToProcessed_SucceedsWhileAReaderHoldsTheSource(t *testing.T) {
 	dir := t.TempDir()
 	inbox := filepath.Join(dir, "inbox")
