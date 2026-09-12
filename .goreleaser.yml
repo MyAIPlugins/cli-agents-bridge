@@ -5,9 +5,18 @@
 # Validate config:
 #   go run github.com/goreleaser/goreleaser/v2@latest check
 #
-# Matrix darwin/linux x amd64/arm64 mirrors Makefile cross-compile-all and
-# .github/workflows/ci.yml (CGO_ENABLED=0, -trimpath). Version is injected from
-# the git tag into main.version (single source of truth = the tag).
+# Matrix darwin/linux x amd64/arm64 PLUS windows/amd64, mirroring Makefile
+# cross-compile-all and .github/workflows/ci.yml (CGO_ENABLED=0, -trimpath).
+# Version is injected from the git tag into main.version (single source of truth
+# = the tag).
+#
+# Windows is here because the port landed and a platform whose binary nobody can
+# download is a platform that shipped to nobody: until this line, a Windows user
+# had to build from source while CI verified the build for them.
+#
+# THE VERSION OF GORELEASER IS PINNED IN release.yml, and that matters to this
+# file: `formats:` and `format_overrides[].formats` are the >= 2.6 spelling, so a
+# moving version range would break the release on a day nobody touched anything.
 version: 2
 project_name: cab-bridge
 
@@ -25,14 +34,36 @@ builds:
     goos:
       - darwin
       - linux
+      - windows
     goarch:
       - amd64
       - arm64
+    # THE MATRIX IS CARTESIAN, so adding windows to goos adds windows/arm64 too.
+    #
+    # It is excluded here rather than by dropping arm64, which would also throw
+    # away darwin/arm64 and linux/arm64 — the two we already ship, one of them to
+    # the machine this project is developed on. The exclusion has to name the
+    # single combination it means.
+    #
+    # And the reason it is excluded is not that it would fail to build: Go builds
+    # it happily. It is that NOBODY HERE HAS A WINDOWS-ON-ARM MACHINE, so it
+    # would be a published artifact that has never been started by anyone. One
+    # fewer binary beats one nobody has run.
+    ignore:
+      - goos: windows
+        goarch: arm64
 
 archives:
   - id: cab-bridge
     formats:
       - tar.gz
+    # zip for Windows, tar.gz untouched everywhere else. Not a preference: a
+    # .tar.gz is a file a stock Windows cannot open by double-clicking, and an
+    # archive the recipient cannot open is a binary that did not ship.
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
     name_template: "cab-bridge_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
       - LICENSE

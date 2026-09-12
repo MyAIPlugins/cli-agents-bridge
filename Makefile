@@ -75,12 +75,13 @@ test: ## Run unit + integration tests
 test-race: ## Run tests with race detector (CI gate)
 	go test -race -count=1 -p $(GO_TEST_PARALLEL) ./...
 
-cross-compile-all: ## Cross-compile darwin-{arm64,amd64} + linux-{amd64,arm64} (no cgo) — matches .goreleaser.yml + ci.yml
+cross-compile-all: ## Cross-compile darwin-{arm64,amd64} + linux-{amd64,arm64} + windows-amd64 (no cgo) — matches .goreleaser.yml + ci.yml
 	@mkdir -p "$(BIN_DIR)"
 	CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build $(GO_FLAGS) -o "$(BIN_DIR)/$(BINARY_BASE)-darwin-arm64" $(PKG)
 	CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build $(GO_FLAGS) -o "$(BIN_DIR)/$(BINARY_BASE)-darwin-amd64" $(PKG)
 	CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build $(GO_FLAGS) -o "$(BIN_DIR)/$(BINARY_BASE)-linux-amd64"  $(PKG)
 	CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build $(GO_FLAGS) -o "$(BIN_DIR)/$(BINARY_BASE)-linux-arm64"  $(PKG)
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build $(GO_FLAGS) -o "$(BIN_DIR)/$(BINARY_BASE)-windows-amd64.exe" $(PKG)
 	@echo "cross-compile artifacts:"
 	@ls -lh "$(BIN_DIR)"/$(BINARY_BASE)-*
 
