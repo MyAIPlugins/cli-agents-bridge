@@ -360,7 +360,9 @@ cleanup | inspect <id> | notify-watch | version | help
 
 `state orchestrating` esenta dall'heartbeat, per un orchestratore che non sta in `next`. **I flag vanno PRIMA del positional**: `cab-bridge read --session-id=<id> <msg-id>`.
 
-Chiudere una finestra non cancella la sessione: resta orfana fino all'auto-gc. Per pulire subito: `cab-bridge cleanup --scope=global --force` (una sessione viva non viene mai rimossa).
+Chiudere una finestra non cancella la sessione: resta orfana fino all'auto-gc. Per pulire subito: `cab-bridge cleanup --scope=global --force`.
+
+⚠️ **ATTENZIONE, e la riga precedente qui diceva il falso**: `cleanup` **NON** e' conservativo quanto l'auto-gc. `[E]` L'auto-gc rimuove solo se **PID morto E heartbeat vecchio** (doppia condizione, dichiarata load-bearing nel codice); `globalSweep` guarda **solo l'heartbeat** e non chiama mai `IsProcessAlive`. ⇒ **Una sessione con processo VIVO ma heartbeat oltre 300 s viene rimossa** — cioe' proprio l'agente **in pausa**, senza `next` appeso e senza `state orchestrating`, che e' fermo per decisione di qualcuno e non abbandonato. *Il comando manuale e' MENO prudente dell'automatismo, che e' il contrario di cio' che ci si aspetta da un attrezzo con `--force`.* ⇒ **Prima di lanciarlo: `peers --all-scopes`, e guarda chi e' fermo di proposito.**
 
 ## Limite noto
 
