@@ -1,0 +1,19 @@
+ROADMAP.md
+  s_9153b07da1749a::t_1b4593e672ed1c 69-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1bea0c48f69c1d5867db1aded61a3f663bbfdae4",
+  "prompts": {},
+  "sessions": {
+    "s_9153b07da1749a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ac3f031a-218a-49eb-8091-04a714e1b414",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan Curtis <info@myaiplugins.com>"
+    }
+  }
+}
