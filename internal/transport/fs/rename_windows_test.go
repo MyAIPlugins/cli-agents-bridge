@@ -186,8 +186,25 @@ func crossVolumeDir(t *testing.T) string {
 		if drive == here {
 			continue
 		}
-		dir := filepath.Join(drive+`\`, "cab-bridge-crossvolume-test")
-		if err := os.MkdirAll(dir, 0o700); err == nil {
+		// MkdirTemp, NOT MkdirAll with a fixed name, and the whole difference is
+		// the RemoveAll underneath. MkdirAll SUCCEEDS on a directory that already
+		// exists — it is not an error — so a fixed name outside t.TempDir()
+		// ADOPTS whatever is already there and then deletes it, contents
+		// included. That is the shape that cost thirteen archived sessions in
+		// August: a destructive command aimed by a path somebody trusted instead
+		// of by an isolation somebody created.
+		//
+		// And the collision to worry about is not a stranger's directory, it is
+		// OURS. This project runs its suite in several worktrees at once, so two
+		// runs would meet on one fixed name on the same volume and one would
+		// RemoveAll while the other was still working inside it — surfacing as an
+		// intermittent, inexplicable red, which is precisely what this lot exists
+		// to remove.
+		//
+		// A unique name per run means the cleanup can only reach what this run
+		// made. "The name is specific enough" is the reasoning, not the defence.
+		dir, err := os.MkdirTemp(drive+`\`, "cab-bridge-xvol-")
+		if err == nil {
 			t.Cleanup(func() { _ = os.RemoveAll(dir) })
 			return dir
 		}
