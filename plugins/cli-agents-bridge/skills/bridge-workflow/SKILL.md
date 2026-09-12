@@ -1,6 +1,6 @@
 ---
 name: bridge-workflow
-description: How to coordinate two (or more) CLI agent sessions with the cab-bridge binary — the five-command working loop (join, next, ask, tell, reply), the mailbox model with explicit states (UNREAD/NOTIFIED/REQUEUED/ARCHIVED) where next never consumes and reply archives one delivery, putting anything that arrived later back in the queue, recipients by agent name, scope = git repository so same-repo worktrees pair automatically, agent state, inbox inspection, and external wake for peers without native push (notify-watch). Use when one agent session needs to hand work to, or exchange messages with, another agent session on the same machine.
+description: How to coordinate two (or more) CLI agent sessions with the cab-bridge binary — the five-command working loop (join, next, ask, tell, reply), the mailbox model with explicit states (UNREAD/NOTIFIED/REQUEUED/ARCHIVED) where next never consumes and reply archives one delivery, putting anything that arrived later back in the queue, recipients by agent name, scope = git repository so same-repo worktrees pair automatically, agent state, inbox inspection, and external wake for peers without native push — `codex queue` for Codex CLI (measured, with the human control), `notify-watch` where it exists. Use when one agent session needs to hand work to, or exchange messages with, another agent session on the same machine.
 ---
 
 # cab-bridge — coordinating agent sessions
