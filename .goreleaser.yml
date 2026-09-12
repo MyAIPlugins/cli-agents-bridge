@@ -92,7 +92,21 @@ release:
   github:
     owner: myAIPlugins
     name: cli-agents-bridge
-  draft: false
+  # DRAFT, so that pushing a tag PREPARES a release instead of publishing one.
+  #
+  # The artifacts are still built by CI from the tag; what changes is that they
+  # land in a draft — visible to people with write access, not downloadable by
+  # anybody else — and going public becomes a deliberate human act rather than a
+  # side effect of `git push --tags`.
+  #
+  # WHAT THIS DOES NOT DO, and it matters more than what it does: it VERIFIES
+  # NOTHING. The release workflow still does not check that the tagged commit
+  # ever passed CI, so a tag on an unverified tree still produces artifacts —
+  # they just sit in a draft instead of on the internet. This line moves the
+  # decision onto a person; it does not put a gate in front of it. Read as "the
+  # gate is here" it would be worse than nothing, because it would stop somebody
+  # from building the gate.
+  draft: true
   prerelease: auto
 
 changelog:
