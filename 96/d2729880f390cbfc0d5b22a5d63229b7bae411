@@ -1,0 +1,26 @@
+docs/handoff/README.md
+  s_0bee6f27b5d10f::t_a0b16dbebbaeaf 18-21
+  s_0bee6f27b5d10f::t_0ebc94655e7f30 1-17,22-24
+ROADMAP.md
+  s_0bee6f27b5d10f::t_ff24aa5e012899 8
+  s_0bee6f27b5d10f::t_94abe670b5e00d 25
+  s_0bee6f27b5d10f::t_b767aef75b3fa4 26
+docs/handoff/2026-09-03-windows-first-run-win.md
+  s_0bee6f27b5d10f::t_b470be35877eca 1-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "96d2729880f390cbfc0d5b22a5d63229b7bae411",
+  "prompts": {},
+  "sessions": {
+    "s_0bee6f27b5d10f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c5436fe9-8fc3-4798-94ce-34a990a2fcba",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Alan Curtis <info@myaiplugins.com>"
+    }
+  }
+}
