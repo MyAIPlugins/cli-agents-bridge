@@ -10,46 +10,61 @@ permissions:
   contents: read
 
 jobs:
-  # THE GATE THAT AUTHORISES MERGES, and until now it was the weaker of the two.
+  # LINT RUNS ONCE AND READS EVERY PLATFORM — which until this change it did not.
   #
-  # The Makefile carries seven lines explaining why `-count=1` is not optional
-  # (LL-11, learned twice): without it Go serves untouched packages from cache,
-  # so a change to a SHARED struct or helper never re-runs the tests of the
-  # packages that use it. This job ran without it — with `cache: true` restoring
-  # Go's build/test cache BETWEEN RUNS, which is exactly the condition the flag
-  # exists for. The strict door was the one nobody used; the one that decides
-  # merges was the loose one.
+  # `go vet` and staticcheck only ever see the files the build constraints let
+  # through, so a lint pinned to ubuntu had never analysed a single `_windows.go`
+  # or `_darwin.go` file in this repository. Not "analysed them less": never
+  # opened them, since the day those files were written.
   #
-  # And the job was called "lint + race" while running only `vet`: a name that
-  # asserts more than it executes, which is the same class the code it guards
-  # spent nine rounds closing. Fixed by making the execution match the name —
-  # staticcheck now runs here too — rather than by renaming the job down.
+  # Proved rather than assumed, with the critic's method — change the source and
+  # see what stays behind — because "the linter probably covers it" is exactly
+  # the kind of sentence that survives for months. An unused function planted in
+  # internal/session/alive_windows.go is invisible to GOOS=linux and comes back
+  # as U1000 under GOOS=windows.
   #
-  # `go-version-file: go.mod`, NOT `go-version: stable`, and this is the line
-  # that broke the gate on 11 August without anybody touching the repository.
-  # `stable` moves: it became Go 1.27, the pinned staticcheck could not read its
-  # export data, and the job that authorises merges went red on its own while
-  # every local gate stayed green. A version that changes underneath you turns
-  # somebody's unrelated PR red for something they did not write.
+  # And it needs no second runner: static analysis executes nothing, so one Linux
+  # machine reads all three platforms. Measured on the Windows PC: vet under a
+  # second per GOOS, staticcheck ~1.8s warm. Five seconds closes a hole that has
+  # been open from the start.
   #
-  # Now the number lives in go.mod's `toolchain` line — one source for this job,
-  # the release workflow, the Mac, WSL2 and the Windows PC. `go 1.25.0` above it
-  # stays the LANGUAGE minimum: what the module needs to compile, not what builds
-  # it. When setup-go honours only the `go` line, GOTOOLCHAIN=auto downloads the
-  # toolchain anyway — either way the `go version` printed by this job is the
-  # proof, which is why it is worth reading.
-  test:
-    name: Test (vet + staticcheck + race)
+  # Only `go test` needs the real operating system, and that is the ONLY thing
+  # the matrix below runs.
+  lint:
+    name: Lint (vet + staticcheck, every GOOS)
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
+          # `go-version-file: go.mod`, NOT `go-version: stable`, and this is the
+          # line that broke the gate on 11 August without anybody touching the
+          # repository. `stable` moves: it became Go 1.27, the pinned staticcheck
+          # could not read its export data, and the job that authorises merges
+          # went red on its own while every local gate stayed green. A version
+          # that changes underneath you turns somebody's unrelated PR red for
+          # something they did not write.
+          #
+          # Now the number lives in go.mod's `toolchain` line — one source for
+          # this workflow, the release workflow, the Mac, WSL2 and the Windows
+          # PC. The `go` line above it stays the LANGUAGE minimum: what the
+          # module needs to compile, not what builds it. When setup-go honours
+          # only that line, GOTOOLCHAIN=auto downloads the toolchain anyway —
+          # either way the `go version` printed below is the proof, which is why
+          # it is worth reading.
           go-version-file: go.mod
           cache: true
-      - name: go vet
-        run: go vet ./...
-      - name: staticcheck
+      - name: go vet (every GOOS)
+        run: |
+          go version
+          for goos in linux windows darwin; do
+            echo "== go vet GOOS=${goos} =="
+            GOOS="${goos}" go vet ./...
+          done
+      - name: staticcheck (every GOOS)
         # PINNED, and the pin lives in .staticcheck-version — the ONE place, read
         # by this job and by `make lint`. Not @latest: a lint that moves under
         # you turns an unrelated PR red for something its author did not write.
@@ -65,14 +80,82 @@ jobs:
           version="$(cat .staticcheck-version)"
           go install "honnef.co/go/tools/cmd/staticcheck@${version}"
           bindir="$(go env GOBIN)"; [ -n "$bindir" ] || bindir="$(go env GOPATH)/bin"
-          "${bindir}/staticcheck" ./...
+          for goos in linux windows darwin; do
+            echo "== staticcheck GOOS=${goos} =="
+            GOOS="${goos}" "${bindir}/staticcheck" ./...
+          done
+
+  # THE GATE THAT AUTHORISES MERGES, and until this change it could only speak
+  # for Linux — while the port it was guarding was a Windows one.
+  #
+  # `fail-fast: false` is not a detail here. The whole reason for a matrix is to
+  # learn WHICH platform is red; cancelling the siblings on the first failure
+  # buys a few seconds and throws away the answer.
+  #
+  # `-count=1` is load-bearing and not optional (LL-11, learned twice): without
+  # it Go serves untouched packages from cache, so a change to a SHARED struct or
+  # helper never re-runs the tests of the packages that use it. `cache: true`
+  # above restores Go's build cache BETWEEN RUNS, which is exactly the condition
+  # the flag exists for. Note which cache is which: the build cache is welcome
+  # and per-runner, the TEST RESULT cache is the one that lies, and `-count=1`
+  # is what disables it. Nothing in this matrix may put the test step behind a
+  # per-OS condition — a leg that silently skips is how a matrix goes green
+  # without running anything.
+  #
+  # The toolchain step PRINTS instead of assuming. Whether the race detector has
+  # a C compiler on a given runner image is the kind of fact that is documented
+  # somewhere and true elsewhere; the only version of it worth having is the one
+  # this job printed on the day it ran. Same for `make`, whose absence makes
+  # makefile_lint_test SKIP rather than fail — a silent skip being the worst
+  # sort of green.
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        # bash on every runner, Git Bash on Windows: one shell means the steps
+        # below cannot mean two different things depending on the leg.
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: toolchain report
+        run: |
+          go version
+          go env GOOS GOARCH CC CGO_ENABLED
+          gcc --version || echo "no gcc on this runner"
+          clang --version || echo "no clang on this runner"
+          make --version || echo "no make on this runner — makefile tests will SKIP"
       - name: go test -race -count=1
-        # -count=1 is load-bearing: see the note above the job.
         run: go test -race -count=1 ./...
 
+  # Windows joins the matrix because we are about to support it, and a platform
+  # nobody compiles is a platform nobody supports.
+  #
+  # windows/arm64 is deliberately ABSENT, and absent is not the same as
+  # forgotten: Go builds it and the build would cost the same seconds, but
+  # nobody on this project owns a Windows-on-ARM machine, so it would be an
+  # artifact that never runs anywhere. We would rather ship one fewer binary
+  # than one nobody has ever started.
+  #
+  # HONEST NOTE ON WHAT THIS MIRRORS, because the previous version of this
+  # comment claimed a symmetry that this very job is about to break: today
+  # `Makefile: cross-compile-all` and `.goreleaser.yml` build darwin+linux ONLY.
+  # So from here on CI VERIFIES MORE THAN THE RELEASE SHIPS — a Windows user
+  # still builds from source. That is a deliberate, temporary asymmetry pending
+  # the decision on whether releases carry Windows binaries; it is written down
+  # rather than left for somebody to discover, because a comment asserting more
+  # than it executes is the defect class this repository keeps closing.
   cross-compile:
     name: Cross-compile (${{ matrix.goos }}-${{ matrix.goarch }})
-    needs: test
+    needs: [lint, test]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -86,6 +169,9 @@ jobs:
             goarch: amd64
           - goos: linux
             goarch: arm64
+          - goos: windows
+            goarch: amd64
+            ext: .exe
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -100,11 +186,11 @@ jobs:
         run: |
           mkdir -p bin
           go build -trimpath -ldflags="-s -w" \
-            -o bin/cab-bridge-${{ matrix.goos }}-${{ matrix.goarch }} \
+            -o bin/cab-bridge-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} \
             ./cmd/cab-bridge
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: cab-bridge-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: bin/cab-bridge-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: bin/cab-bridge-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
           retention-days: 30
