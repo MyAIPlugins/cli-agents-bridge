@@ -1,0 +1,22 @@
+ROADMAP.md
+  s_ed7809519800b5::t_a06c653e08f038 87-90
+  s_ed7809519800b5::t_1eeaac126f916c 8,10-12
+docs/handoff/2026-09-13-gate-macos-mac.md
+  s_ed7809519800b5::t_f2c34de2659c85 1-118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6bd3a6993e5bf0301413932b917f1a298ac4bf2f",
+  "prompts": {},
+  "sessions": {
+    "s_ed7809519800b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4bb315c5-5a95-4258-8137-59d24eb592ef",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
