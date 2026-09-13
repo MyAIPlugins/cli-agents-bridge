@@ -1,0 +1,21 @@
+README.md
+  s_44b658fb3857f5::t_5e532d2e54c9d4 7,30,50,289-291
+SECURITY.md
+  s_44b658fb3857f5::t_5e532d2e54c9d4 3,62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e8afc2fc869d16a1a6dc35d6b4cee152f6cec654",
+  "prompts": {},
+  "sessions": {
+    "s_44b658fb3857f5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e368dee-29b2-470e-883c-2f42b6726895",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
