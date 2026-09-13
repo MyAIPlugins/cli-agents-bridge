@@ -2,7 +2,8 @@
 
 > Segue `2026-09-13-gate-macos-mac.md`, che raccontava il primo gate su darwin e l'apertura di F-142.
 > Da allora: **F-139 e F-143 sono chiusi, mergiati e pushati**, con CI verde su entrambi i merge.
-> `main` e' a `fbb96d4`.
+> `main` e' a **`c9bb11b`** o piu' avanti. **Le sezioni 7-9 sono quelle operative**: come
+> allinearti, e **cosa NON passa da git**.
 
 ---
 
@@ -143,5 +144,105 @@ che questa frase si scrive in questo repository:
   il call-site**. Il call-site era giusto, la conclusione falsa — **guardavo dov'e' il controllo,
   mentre la domanda era quante volte ci si entra**. *Non il dato sbagliato: la domanda sbagliata su un
   dato letto bene.*
+
+
+---
+
+## 7 · Come allinearti, in ordine
+
+```
+git pull --ff-only            # main e' a c9bb11b o piu' avanti
+make build                    # il binario nuovo
+make install-plugin           # il plugin: mergiato NON e' installato
+make lint                     # deve comprendere staticcheck: vedi sotto
+make test-race                # e leggi il TOTALE, non solo i FAIL
+```
+
+⚠️ **Dopo un pull che tocca `plugins/` o `skills/`, serve una sessione NUOVA**: quella in corso tiene
+in contesto la versione precedente, e non e' igiene — e' l'unico modo.
+⚠️ **`cab-bridge version` e' l'unica cosa che conta**: *mergiato non e' installato*.
+
+---
+
+## 8 · Cosa NON passa da git, e quindi va rifatto a mano sul PC
+
+Questa e' la sezione che Alan ha chiesto esplicitamente. Tutto quello sotto **non e' nel repository**:
+se non lo fai a mano, sul PC non c'e'.
+
+### 8.1 · `CLAUDE.md` — la lezione della giornata
+
+`CLAUDE.md` e' **gitignored** ([[claude-md-non-nel-repo-pubblico]]): quello che ho scritto li' oggi
+**non ti arriva**. Sul Mac ho aggiunto **LL-21**, che raccoglie la giornata. Se tieni un `CLAUDE.md`
+sul PC, i tre pezzi da riportare sono gia' tutti in questo documento — §4 (il metodo), §6 (gli
+strumenti), e la forma nuova qui sotto, che e' la parte che non avevamo:
+
+> ⭐ **La domanda sbagliata su un dato letto bene.** Avevo scritto *«il walk ordinario non paga
+> syscall»* **dopo aver verificato il call-site** — e il call-site era giusto. Falso lo stesso: un
+> repository normale il marker lo **trova**. *«Due letture corrette dello stesso codice, una
+> conclusione falsa; a prenderla e' stato chi ha contato i **casi** invece di guardare la
+> **posizione**»* (ESC). ⇒ LL-19(B) chiede *di quale oggetto* e' il dato; qui il dato era del proprio
+> oggetto e la **domanda** era un'altra. **Antidoto: quando leggere il codice produce un'affermazione
+> quantitativa — mai, sempre, zero, N volte — la lettura non basta: si contano i casi in cui ci si
+> passa.**
+
+### 8.2 · Le skill: due canali, e solo uno e' su git
+
+    skills/<vendor>/...              TRACCIATO, generico       -> ti arriva col pull
+    .skills-personal/<vendor>/...    GITIGNORED, specifico     -> NON ti arriva
+    ~/.claude/skills/, ~/.codex/     INSTALLATE, fuori repo    -> NON ti arrivano
+
+`[E]` Oggi ho aggiornato **la stessa riga in tre posti**: la versione tracciata (ti arriva), la copia
+personale e quella installata (**non** ti arrivano). La riga e' quella su `codex queue`: diceva *«`queue`
+mentre lavora: mai misurato»* e ora dice **che e' FIFO**, col dato di §4(b).
+⇒ **Sul PC**: dopo il pull, riporta quella riga anche nella tua copia personale e in quella installata,
+**o** reinstalla la generica se non hai personalizzazioni che valga la pena tenere.
+⚠️ **La copia personale VINCE su quella generica**: se aggiorni solo il repo, l'agente continua a
+leggere la vecchia.
+⚠️ `[E]` **La skill Codex installata differisce da `skills/codex/` nel repo** anche sul Mac: non l'ho
+ispezionata e **non l'ho toccata**. Se sul PC vale lo stesso, guardala prima di sovrascriverla.
+
+### 8.3 · `staticcheck` — controlla che il tuo gate lo comprenda
+
+`[E]` Sul Mac **non era installato**, e i gate che hanno autorizzato i due merge **non lo
+comprendevano**. Installato a valle (`v0.8.1`, la versione pinnata in `.staticcheck-version`) e
+rieseguito su `main`: **exit 0, nessun finding**.
+
+    go install honnef.co/go/tools/cmd/staticcheck@$(cat .staticcheck-version)
+
+📌 `make lint` lo prende da **GOBIN prima del `PATH`**, ed e' voluto: il pin deve governare
+**l'esecuzione**, non solo l'installazione — il commento nel Makefile spiega perche' (in CI l'ordine
+inverso faceva sì che il pin governasse l'install e qualcos'altro il run).
+⚠️ **Un lint silenzioso e un lint che non ha girato stampano la stessa cosa.** Prima di chiamarlo
+verde, dagli un file con un difetto noto e verifica che **esca 1**.
+
+### 8.4 · Lo stato della macchina che nessun diff mostra
+
+    binario in PATH    Mac: ~/.local/bin/cab-bridge e' un SYMLINK a bin/cab-bridge del repo
+                       -> ogni `make build` aggiorna il PATH da solo. Sul PC verifica se e' una COPIA:
+                          una copia va stale in silenzio.
+    plugin             servito dal REPO VIVO (marketplace di tipo `directory`) -> il pull aggiorna
+                       skill e comandi da solo, ma serve una sessione nuova
+    worktree           i tre worktree del Mac (.worktrees/esc|cri|cri2) sono LOCALI e gitignored
+
+---
+
+## 9 · Cosa ho lasciato aperto di proposito sul Mac
+
+- **I tre worktree e i due branch mergiati non sono stati rimossi**: gli agenti (ESC, CRI, CRI2) sono
+  **vivi e senza compito assegnato, non congedati**. Rimuovere un worktree mentre qualcuno ci lavora
+  dentro gli rompe la sessione. La pulizia si fa quando Alan li congeda, non prima.
+- **F-142, F-144 e l'arco sul ciclo di vita delle sessioni**: aperti, nessun lotto.
+- **Il ramo permission-denied di F-143**: aperto e **dichiarato**. ⛔ Non chiamarlo chiuso.
+- **Il ramo `.git` FILE (worktree) in `FindProjectRoot`**: `gitMarkerRoot` ritorna la root del pointer
+  e non passa dal guard. ⚠️ **Non e' un bypass da chiudere**: un worktree del repo dotfiles **deve**
+  risolvere alla propria common-root (contratto **F-41**), e bloccarlo dividerebbe due checkout dello
+  stesso repository. E *«must never return $HOME»* e' il messaggio dell'assert **sui figli
+  marker-less**, non il contratto generale: `TestFindProjectRoot_CwdEqualsHome_Degenerate` **accetta**
+  `scope == home`. **Decisione separata, non un difetto.**
+- **Gli scope gia' persistiti**: `reconnect.go:320` scrive `mf.Scope` **solo se vuoto** ⇒ una sessione
+  collassata resta collassata anche col binario nuovo. Nessuna migrazione, e **non dichiararle
+  risanate**.
+
+---
 
 — VAL-bridge (Mac), 13/09/2026
