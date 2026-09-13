@@ -102,8 +102,15 @@ quando qualcuno digita e' indistinguibile da nessun risveglio*: senza quel contr
 - **Lo sveglia una PERSONA**, non un meccanismo: il watcher (`notify-watch`) **non esiste su Windows**.
   ⇒ Se ingaggi un Codex e poi ti dimentichi di svegliarlo, **resta muto per sempre** — e dal suo lato
   e' indistinguibile da «il VAL non ha ancora finito». **Diglielo quando lo ingaggi.**
-- **`queue` mentre lavora**: mai misurato. Entrambi i risvegli osservati sono partiti **da fermo**, e
-  la documentazione non dice se sia FIFO, se interrompa, o se si perda.
+- 🟢 **`queue` mentre lavora: MISURATO il 13/09 — e' FIFO.** `[E]` Un wake mandato a 46 s dall'inizio
+  di un turno lungo 3m56s **non compare durante il lavoro**: arriva come nuovo turno utente **alla fine**,
+  **col testo integro**, dopo ~3m10s in coda. **Non interrompe e non si perde.** Tre fonti concordi: gli
+  orologi dei file, il referto dell'agente, la sua TUI. ⚠️ **n=1** — l'ordine osservato e' compatibile
+  con l'accodamento, non dimostra la politica generale del runtime.
+  ⇒ **Si puo' accodare lavoro a un Codex occupato**, e lo vede quando finisce; svegliarlo **da fermo**
+  resta il migliore per la *latenza*, non per la consegna.
+  ⭐ E cio' che l'ha riportato al bridge **prima** del wake non e' stato il wake: e' stato il **`reply`**,
+  che segnala posta non letta. **La rete e' il bridge, non il risveglio esterno.**
 - **L'id sopravvive a `/clear`, compact, resume?** Dedotto dalla doc, **non provato**. ⭐ *Un UUID
   ancora valido identifica una STORIA, non certifica che qualcuno la stia ESEGUENDO.*
 - **Chiunque sulla macchina** conosca l'id puo' svegliare quella sessione.
