@@ -21,7 +21,25 @@ jobs:
           go-version-file: go.mod   # same toolchain as the gate — the release binaries
                                     # must not be built by a Go the gate never ran
           cache: true
-      - uses: goreleaser/goreleaser-action@v6
+      # THE TAG IS CHECKED HERE AND NOWHERE ELSE, because this is the only job
+      # where a tag exists by construction: it runs on `push: tags`.
+      #
+      # Not in ci.yml, and not from `git describe`. That checkout is shallow and
+      # carries no tags at all — and the Makefile's line (`--always`, stderr
+      # discarded) does NOT fail without them: it returns a bare SHA that looks
+      # like a good value. A guard built on it would be red on every run, or be
+      # made conditional, and a conditional tag check is the silent green.
+      #
+      # Before goreleaser rather than after: the point is to not publish a
+      # release whose plugin manifest names a different version than the binary
+      # shipped beside it, which is how the last one went out.
+      - name: the tag must match the plugin manifest
+        env:
+          CAB_RELEASE_TAG: ${{ github.ref_name }}
+        run: go test -run TestVersionDrift_TagMatchesSource -count=1 ./tests/integration/
+
+      - name: GoReleaser
+        uses: goreleaser/goreleaser-action@v6
         with:
           # PINNED, not a range, and this is a correction rather than a
           # precaution: .goreleaser.yml already uses `formats:` and
