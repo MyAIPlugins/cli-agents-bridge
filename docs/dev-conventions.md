@@ -210,3 +210,86 @@ The maintainers keep a running `Lessons learned` log in their internal notes, on
 - **LL-6**: actual sprint velocity ~1h per sprint vs estimated 3-7h (Sprint 1-3 trend).
 
 When proposing a process change, draft an LL entry for VAL review.
+
+---
+
+## Patterns the codebase established
+
+These are not style preferences: each one was adopted after a concrete defect, and the code
+implements it today. Every file and symbol named below was checked against the tree on 2026-09-13 —
+if you find one that no longer matches, the document is wrong and the code is right.
+
+### Subcommand flag parsing
+
+`flag.NewFlagSet(name, flag.ContinueOnError)` plus an explicit `flag.ErrHelp` branch. NOT
+`flag.ExitOnError`, which takes error handling away from the caller and makes the subcommand
+untestable without a subprocess.
+
+```go
+// cmd/cab-bridge/connect.go
+fs := flag.NewFlagSet("connect", flag.ContinueOnError)
+fs.SetOutput(os.Stderr)
+// ...
+if err := fs.Parse(args); err != nil {
+    if errors.Is(err, flag.ErrHelp) {
+        // print the subcommand's own usage, then return without an error
+        return nil
+    }
+    return fmt.Errorf("connect: %w", err)
+}
+```
+
+Same shape in `join.go`, `register.go`, `cleanup.go`, `notify_watch.go`.
+
+### Two decoders, not one boolean
+
+The JSON gateway exposes **two named functions** instead of one with a `strict bool` parameter:
+
+- `message.DecodeStrict` — `DisallowUnknownFields`, for the **write/audit** path: a typo or a schema
+  drift is refused rather than silently dropped.
+- `message.DecodeLenient` — ignores unknown fields, for the **runtime read** path: a peer on a newer
+  additive schema can still talk to us.
+
+Both in `internal/message/validate.go`. A single function taking a boolean is the anti-pattern: at the
+call site `true` says nothing about which of the two behaviours the caller wanted.
+
+### Pointer for JSON null semantics
+
+Optional fields that can be **explicitly null** are `*T`, not a zero value — so `null` and
+`"absent"` stay distinguishable from `""`. `Message.InReplyTo` is `*string`
+(`internal/message/schema.go`), and the type's own comment states the reason.
+
+### One place maps errors to exit codes
+
+Subcommands return `error` to the dispatcher; a single `exitFromErr` in `cmd/cab-bridge/main.go`
+turns sentinel errors into exit codes. The anti-pattern is each subcommand calling `os.Exit`
+directly: exit codes scatter and none of them can be tested without a subprocess.
+
+Add a new code only when it is **semantically distinct for a caller writing a script** — today the
+function maps `ErrConfirmRequired` to `3` and everything else to `1`.
+
+### Structural invariant vs overridable default
+
+Two kinds of restriction, and they are implemented differently on purpose:
+
+- **Structural invariant** — cannot be relaxed, no flag exists. An `observer` cannot send: it is
+  read-only by design, so the check is an early `return` before any flag is consulted.
+- **Convenient default** — can be overridden deliberately. `esc → esc` is refused *by default*, and
+  `--allow-mesh` permits it for a documented case.
+
+Both in `internal/routing/role.go`. Putting a flag on an invariant corrupts the model; leaving a
+default without one turns a preference into a rule nobody can escape.
+
+### Minimal dependency injection for testability
+
+Logic that operates on a production path hardcoded in the real world exposes an **optional override
+flag** that defaults to production. `migrate` takes `--patil-dir` (`cmd/cab-bridge/migrate.go`),
+defaulting to `~/.claude/session-bridge`, so a test injects a temp dir instead of reaching for
+`os.Setenv("HOME", ...)` or a filesystem mock. Go-idiomatic, zero runtime overhead.
+
+### What we do NOT use
+
+- **`goleak`** — not a dependency and not imported anywhere. Goroutine discipline is enforced by the
+  done-channel idiom above and by `-race`, not by a leak detector. *(Stated because an internal note
+  claimed otherwise for months: a tool nobody runs is worse than no tool, because readers assume the
+  check exists.)*
