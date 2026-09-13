@@ -170,10 +170,34 @@ func TestVersionDrift_EveryMirrorAgreesWithTheSource(t *testing.T) {
 		contract := readRepoFile(t, repoRoot,
 			filepath.Join("tests", "integration", "testdata", "release.yml.contract"))
 		actual := readRepoFile(t, repoRoot, filepath.Join(".github", "workflows", "release.yml"))
+		name := tagGuardFuncName(t)
+
+		// THE PLACEHOLDERS ARE MANDATORY, and this guard exists because the most
+		// natural way to obey the instruction printed below is
+		// `cp release.yml release.yml.contract`. Do that and the placeholders are
+		// gone, the Replacer substitutes nothing, expected == actual, and this
+		// subtest is green FOREVER with no signal — taking the derived-names half
+		// down with it, since a contract that spells the names out no longer
+		// compares them to anything.
+		//
+		// So the property is not "the files match": it is that the contract NEVER
+		// names what it is supposed to derive. Stated that way it survives the
+		// shape of the step changing — the counts below are floors, not a fixed
+		// number, because the run block legitimately mentions the test twice.
+		const copied = "\n\n    The contract must not spell out %s — that name is DERIVED from the Go symbol.\n" +
+			"    Seeing it here means the contract was copied from the workflow (cp, or a paste),\n" +
+			"    which silently disables both this comparison and the rename guard.\n" +
+			"    Put the placeholders back: @@ENV@@ for the variable, @@TEST@@ for the test name."
+		require.NotContainsf(t, contract, releaseTagEnv, "release.yml.contract"+copied, releaseTagEnv)
+		require.NotContainsf(t, contract, name, "release.yml.contract"+copied, name)
+		require.GreaterOrEqual(t, strings.Count(contract, "@@ENV@@"), 1,
+			"the contract has no @@ENV@@ placeholder left to substitute")
+		require.GreaterOrEqual(t, strings.Count(contract, "@@TEST@@"), 1,
+			"the contract has no @@TEST@@ placeholder left to substitute")
 
 		expected := strings.NewReplacer(
 			"@@ENV@@", releaseTagEnv,
-			"@@TEST@@", tagGuardFuncName(t),
+			"@@TEST@@", name,
 		).Replace(contract)
 
 		// CRLF only. Nothing else is normalised: no per-line trimming, no comment
@@ -193,6 +217,40 @@ func TestVersionDrift_EveryMirrorAgreesWithTheSource(t *testing.T) {
 				"    Do not make it green by relaxing the comparison. A gate somebody switches off\n"+
 				"    is not a gate, and this one exists because the previous, looser assertions were\n"+
 				"    green through all six mutations.")
+	})
+
+	t.Run("release.yml is the only workflow that can publish", func(t *testing.T) {
+		// An exact contract over an object nobody guarantees to be the only one
+		// is not exact: it is precise about the wrong piece. A second workflow on
+		// `push: tags` with goreleaser-action publishes the same tag with no
+		// guard at all, and every assertion above stays green because every one
+		// of them is about release.yml.
+		const dir = ".github/workflows"
+		entries, err := os.ReadDir(filepath.Join(repoRoot, dir))
+		require.NoError(t, err, "%s must exist", dir)
+
+		var workflows, publishers []string
+		for _, entry := range entries {
+			nm := entry.Name()
+			if entry.IsDir() || (!strings.HasSuffix(nm, ".yml") && !strings.HasSuffix(nm, ".yaml")) {
+				continue
+			}
+			workflows = append(workflows, nm)
+			if publishes(readRepoFile(t, repoRoot, filepath.Join(dir, nm))) {
+				publishers = append(publishers, nm)
+			}
+		}
+		// A probe that found no workflows at all would report "no publishers" and
+		// pass, which is the blind-probe failure one directory up.
+		require.NotEmpty(t, workflows, "no workflow files found under %s — this probe has no subject", dir)
+
+		assert.Equal(t, []string{"release.yml"}, publishers,
+			"\nmore than one workflow can publish a release (found %v among %v).\n\n"+
+				"    Everything else in this file pins release.yml line by line. That is worth\n"+
+				"    nothing if a second workflow can push the same tag to the same place without\n"+
+				"    the guard: the contract would still be satisfied, and the release would go out\n"+
+				"    unchecked. If the new workflow legitimately publishes, it needs the tag step\n"+
+				"    too — and then it needs a contract of its own.", publishers, workflows)
 	})
 }
 
@@ -232,6 +290,15 @@ func TestVersionDrift_TagMatchesSource(t *testing.T) {
 // says the opposite. So "the workflow mentions the test" and "the test skipped"
 // and "the test ran and passed" are three different worlds that an exit code
 // alone cannot tell apart. This one asks for the verdict, not the status.
+//
+// DECLARED LIMIT, because it is better written down than discovered: the child
+// runs with THIS environment, never with the release one. A t.Skip conditioned
+// on something only true on a tag — GITHUB_REF_TYPE, say — would pass here and
+// disarm the guard in release.yml, and nothing in this file would notice. That
+// is deliberate sabotage rather than an accident, and review catches it, but the
+// honest statement is that this test proves the guard CAN fail, not that it can
+// fail where it matters. What covers that side is the release step itself, which
+// requires "--- PASS:" in the log instead of trusting the exit code.
 func TestVersionDrift_TheTagGuardRunsAndCanFail(t *testing.T) {
 	self, err := os.Executable()
 	require.NoError(t, err, "the running test binary must be re-executable to prove the guard runs")
@@ -362,6 +429,28 @@ func mustAbs(t *testing.T, rel string) string {
 
 func normalizeEOL(s string) string { return strings.ReplaceAll(s, "\r\n", "\n") }
 
+// publishes reports whether a workflow can put a release out: it either runs the
+// goreleaser action, or grants itself write access to repository contents.
+//
+// It reads what the workflow DOES, not what it mentions. The first version
+// searched the whole text for "goreleaser" and flagged ci.yml, whose comments
+// discuss goreleaser at length while the job only cross-compiles — a probe that
+// cries about the wrong file gets deleted, taking the real check with it. Hence
+// the comment lines are skipped and the markers are the effective ones: the
+// `uses:` of the action, and the permission.
+func publishes(body string) bool {
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if strings.Contains(trimmed, "uses: goreleaser/") || reContentsWrite.MatchString(trimmed) {
+			return true
+		}
+	}
+	return false
+}
+
 // envWithout returns env with every entry for key removed, so the caller can set
 // it exactly once rather than shadowing an inherited one.
 func envWithout(env []string, key string) []string {
@@ -418,4 +507,7 @@ var (
 
 	reSecurityHeader      = regexp.MustCompile(`current through \*\*v(\d+\.\d+\.\d+)\*\*`)
 	reSecurityHonestyNote = regexp.MustCompile(`Honesty note \(through v(\d+\.\d+\.\d+)\)`)
+
+	// The permission as it is GRANTED, not as it is spelled in prose.
+	reContentsWrite = regexp.MustCompile(`^contents:\s*write\b`)
 )

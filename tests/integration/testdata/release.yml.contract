@@ -41,10 +41,22 @@ jobs:
       # the command so it cannot fail. None is visible to an assertion that
       # looks for a step by name, and all are visible to an exact comparison of
       # the whole file.
+      #
+      # AND IT ASKS FOR THE VERDICT, NOT THE EXIT CODE. `go test -run` on a name
+      # that selects nothing prints "ok … [no tests to run]" and exits 0, so an
+      # exit code cannot tell "the guard passed" from "the guard never ran" —
+      # and anything that removes the guard from the binary (a build tag, a
+      # renamed file) produces exactly the second while looking like the first.
+      # The grep is the line that separates them. The log goes to mktemp rather
+      # than into the checkout because goreleaser refuses a dirty tree, and a
+      # guard that breaks the release it is guarding would get deleted.
       - name: the tag must match the plugin manifest
         env:
           @@ENV@@: ${{ github.ref_name }}
-        run: go test -run '^@@TEST@@$' -count=1 ./tests/integration/
+        run: |
+          log="$(mktemp)"
+          go test -run '^@@TEST@@$' -count=1 -v ./tests/integration/ > "$log" 2>&1 || { cat "$log"; exit 1; }
+          grep -q '^--- PASS: @@TEST@@' "$log" || { echo "the tag guard was NOT executed"; cat "$log"; exit 1; }
 
       - name: GoReleaser
         uses: goreleaser/goreleaser-action@v6
