@@ -1,0 +1,19 @@
+docs/handoff/2026-09-13-due-lotti-chiusi-mac.md
+  s_44b658fb3857f5::t_6bbcd8b36ff4c9 1-141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "531aec01b77594da17263fdd85b1ae57d2b1a3a7",
+  "prompts": {},
+  "sessions": {
+    "s_44b658fb3857f5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e368dee-29b2-470e-883c-2f42b6726895",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
