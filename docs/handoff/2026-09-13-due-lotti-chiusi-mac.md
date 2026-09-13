@@ -185,6 +185,30 @@ strumenti), e la forma nuova qui sotto, che e' la parte che non avevamo:
 > quantitativa — mai, sempre, zero, N volte — la lettura non basta: si contano i casi in cui ci si
 > passa.**
 
+### 8.1-bis · ⚠️ Il tuo `CLAUDE.md` puo' contenere QUATTRO affermazioni false — le stesse che aveva il mio
+
+A valle dei due lotti ho riordinato i documenti, e il risultato riguarda te **direttamente**: sette
+convenzioni tecniche che il codice segue vivevano **solo** in `CLAUDE.md`, cioe' in un file
+**gitignored** — non raggiungevano questa macchina, non arrivavano a un contributor, e sarebbero
+sparite col disco. Sono ora in **`docs/dev-conventions.md`**, che e' tracciato: ti arrivano col pull.
+
+⛔ **Non le ho copiate: le ho riverificate sul codice, e quattro su sette erano gia' false.** Se il tuo
+`CLAUDE.md` discende dallo stesso file, **ha le stesse quattro**:
+
+    "Subcommand flag parsing ... cmd/cab-bridge/receive.go"   il file NON ESISTE PIU'
+    "fs.SetOutput(io.Discard)"                                il codice usa os.Stderr
+    "exitFromErr ... cmd/cab-bridge/common.go" + "124 timeout" vive in main.go, e il 124 non c'e'
+    "goleak optional"                                          NON e' in go.mod, non e' importato
+
+⇒ **Sul PC**: togli la sezione `## Go style conventions` dal tuo `CLAUDE.md` e sostituiscila con un
+rimando a `docs/dev-conventions.md` (sul Mac l'ho fatto cosi', e la sezione nuova nel documento
+tracciato porta **la data in cui ogni file e simbolo e' stato controllato**, cosi' il prossimo
+ri-esegue invece di credere).
+
+⭐ **E la ragione per cui erano sopravvissute e' la lezione della giornata**: nessun gate poteva
+prenderle, perche' **un testo non ha modo di fallire**. La quarta e' la peggiore — `goleak` dichiarato
+in uso per mesi: *chi legge conclude che esista un controllo che nessuno esegue*.
+
 ### 8.2 · Le skill: due canali, e solo uno e' su git
 
     skills/<vendor>/...              TRACCIATO, generico       -> ti arriva col pull
