@@ -204,11 +204,18 @@ func TestFindProjectRoot_HomeUnderAnotherSpelling_Firmlink(t *testing.T) {
 	// The property that makes this case distinct from a symlink, asserted rather
 	// than assumed: canonicalising does NOT collapse the two, so the caller
 	// cannot hand the walk a single form even if it wanted to.
-	resolved, err := filepath.EvalSymlinks(viaDataVolume)
+	// The two RESOLVED forms are compared, not "does the data-volume path come
+	// back byte-identical": what the case needs is that canonicalising leaves
+	// them DISTINCT, and a future change to normalisation could alter how each is
+	// spelled without bringing them together. Asserting the stricter thing would
+	// fail on a change that costs the test nothing.
+	resolvedData, err := filepath.EvalSymlinks(viaDataVolume)
 	require.NoError(t, err)
-	require.Equal(t, viaDataVolume, resolved,
-		"if EvalSymlinks reduced this to the other spelling it would be a symlink, and this test "+
-			"would be a duplicate of the symlink one instead of covering firmlinks")
+	resolvedReal, err := filepath.EvalSymlinks(real)
+	require.NoError(t, err)
+	require.NotEqual(t, resolvedReal, resolvedData,
+		"canonicalising brought the two spellings together, so a caller could hand the walk a "+
+			"single form: this would be the symlink case under another name rather than a firmlink")
 
 	one, two := homeWithDotfilesAndTwoProjects(t, real)
 	scopeOne, err := FindProjectRoot(one, viaDataVolume)
@@ -290,9 +297,21 @@ func TestFindProjectRoot_HomeUnreadable_DocumentsTheOpenBranch(t *testing.T) {
 
 	require.NoError(t, os.Chmod(locked, 0o000))
 	t.Cleanup(func() { _ = os.Chmod(locked, 0o700) })
-	if _, err := os.Stat(spelling); err == nil {
+
+	// THE PREMISE IS PINNED, not hoped for. Asking only that the stat FAIL would
+	// let a later change to this fixture — dropping the symlink, say — turn the
+	// branch into a plain ENOENT, which is UnverifiableHome's case rather than
+	// this one. The test would then be a duplicate of another and would never
+	// say so.
+	_, statErr := os.Stat(spelling)
+	if statErr == nil {
 		t.Skip("this platform still stats through a 0000 directory")
 	}
+	require.True(t, os.IsPermission(statErr),
+		"this test is about the PERMISSION branch specifically; the stat failed with %v", statErr)
+	require.DirExists(t, filepath.Join(home, ".git"),
+		"the marker must remain readable: hiding it too would separate the projects for the wrong "+
+			"reason, and this test would pass while exercising nothing")
 	require.DirExists(t, one, "the walk's own route must stay reachable")
 
 	// Home handed in under a spelling the byte comparison cannot match, so only
@@ -303,10 +322,18 @@ func TestFindProjectRoot_HomeUnreadable_DocumentsTheOpenBranch(t *testing.T) {
 	scopeTwo, err := FindProjectRoot(two, spelling)
 	require.NoError(t, err)
 
+	// The exact scopes, not merely "the same as each other": two projects that
+	// both fell back to their own directory would also be equal to nothing in
+	// particular, and that is a different outcome from collapsing onto $HOME.
+	assert.Equal(t, home, scopeOne, "DOCUMENTED LIMIT: the collapse target is $HOME itself")
+	assert.Equal(t, home, scopeTwo, "DOCUMENTED LIMIT: the collapse target is $HOME itself")
 	assert.Equal(t, scopeOne, scopeTwo,
-		"DOCUMENTED LIMIT: with $HOME unreadable the identity check has no proof, keeps the "+
-			"previous behaviour, and the projects collapse. If this assertion ever fails, the "+
-			"branch was closed and this test should become the guarantee it is currently denying")
+		"DOCUMENTED LIMIT: with the configured spelling of $HOME unreadable the identity check has "+
+			"no proof, keeps the previous behaviour, and the two projects collapse onto one scope.\n"+
+			"    If this assertion fails, RE-EXAMINE — do not assume an improvement. The documented "+
+			"behaviour changed, and the cause may equally be a regression elsewhere or this fixture "+
+			"no longer building the permission branch. Verify isolation and pairing before promoting "+
+			"this test to a guarantee.")
 }
 
 // TestFindProjectRoot_DifferentDirectoriesStayDifferent guards the branch next

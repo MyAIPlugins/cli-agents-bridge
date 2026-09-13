@@ -50,10 +50,13 @@ import (
 // LongestPrefixLookup and IsDescendantLexical — including what this function
 // RETURNS, which the identity check never rewrites: it decides whether a marker
 // counts, never what the scope is spelled like. Symlinks are NOT resolved here;
-// the sole caller (cmd resolveScope) symlink-canonicalizes the returned scope so
-// the `.git` DIR branch (lexical cwd) and the `.git` FILE branch (git writes the
-// gitdir already symlink-resolved) converge on one form under a symlinked path
-// (F-41). Scope and the cwd lookup are independent axes — the lookup compares
+// the callers symlink-canonicalize the returned scope so the `.git` DIR branch
+// (lexical cwd) and the `.git` FILE branch (git writes the gitdir already
+// symlink-resolved) converge on one form under a symlinked path (F-41). There
+// are TWO of them, not one as this comment said until the sentence was checked:
+// cmd/cab-bridge resolveScope, on the caller's own cwd, and EffectiveScope,
+// which runs this walk over OTHER sessions' manifests when their stored scope is
+// empty. Scope and the cwd lookup are independent axes — the lookup compares
 // ProjectPath, never Scope — so the two need not share a form.
 //
 // Returns an error only if filepath.Abs fails on cwd (effectively never). The
@@ -72,9 +75,13 @@ func FindProjectRoot(cwd, home string) (string, error) {
 
 	for dir := abs; ; {
 		if dir != cleanHome {
-			// The identity check runs only when a marker is actually here, so the
-			// ordinary walk costs no extra syscall: ancestors without a `.git` are
-			// rejected by gitMarkerRoot before anything is stat'd.
+			// The identity check runs only when a marker is actually here. What
+			// that saves, stated accurately because the first version of this
+			// comment overstated it: ancestors WITHOUT a marker cost no I/O, and
+			// neither does a home matched lexically. An ordinary repository does
+			// find a marker, so it pays up to two Stat calls — one on the home,
+			// one on the directory. See sameDirectoryAsHome for the scale of that
+			// on manifests whose scope is not stored yet.
 			if root, ok := gitMarkerRoot(dir); ok && !sameDirectoryAsHome(dir, cleanHome) {
 				return root, nil
 			}
@@ -118,11 +125,21 @@ func FindProjectRoot(cwd, home string) (string, error) {
 // regression with a common one. It is also what Windows already does: there
 // SameFile returns false when loadFileId fails, so the marker is accepted.
 //
-// DECLARED LIMIT: this narrows the defect to the cases where identity is
-// verifiable, it does not close it. When $HOME is reachable only through a
-// directory that cannot be traversed, the stat is denied, the policy above
-// accepts the marker, and the scopes still collapse exactly as before. That
-// branch stays open and is covered by a test that documents it as such.
+// COST, declared rather than optimised: an ordinary repository pays up to two
+// Stat calls per walk. EffectiveScope skips the walk entirely when a manifest
+// already stores its scope, but runs it for legacy ones — and that happens
+// inside the loops of LookupByCWDDetails and collectPeers, so a scan over N
+// legacy manifests that do carry a marker costs up to 2N Stat calls. No cache:
+// for this lot the cost is proportionate, and if it ever needs optimising the
+// legacy path gets measured rather than guessed at now.
+//
+// DECLARED LIMIT: this PROTECTS the cases where identity is verifiable, and
+// errors preserve the previous behaviour — it does not close the defect. The
+// branch that stays open is the one where the SPELLING handed in goes through a
+// directory that cannot be traversed while the home directory itself remains
+// reachable to the walk: the stat is denied, the policy above accepts the
+// marker, and the scopes collapse exactly as before. A test documents that as a
+// limit rather than asserting it as a guarantee.
 func sameDirectoryAsHome(dir, cleanHome string) bool {
 	if cleanHome == "" {
 		return false // no home known: the exclusion is disabled entirely
