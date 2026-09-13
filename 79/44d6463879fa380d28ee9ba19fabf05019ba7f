@@ -1,0 +1,26 @@
+internal/session/scope.go
+  s_6daabe0edfb307::t_b04502f9320337 93-140
+  s_6daabe0edfb307::t_3670b3081d55bf 42-47,50-52
+  s_6daabe0edfb307::t_496e30841fcad6 75-78
+internal/session/scope_home_identity_test.go
+  s_6daabe0edfb307::t_00181d0a8abf0e 1-43,46-48,70-217,224,226-228,237-238,240-241,243-246,248,250-276
+  s_6daabe0edfb307::t_d82cad1b2a740a 218-223,225,229-235,239,242
+  s_6daabe0edfb307::t_a296a221f6f8f0 236,247,249
+  s_6daabe0edfb307::t_82cdf9bf156463 44-45,49-69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7944d6463879fa380d28ee9ba19fabf05019ba7f",
+  "prompts": {},
+  "sessions": {
+    "s_6daabe0edfb307": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "57eb0a77-9c31-4318-9f3c-a504e631abab",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
