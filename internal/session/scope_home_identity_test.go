@@ -167,6 +167,60 @@ func TestFindProjectRoot_HomeUnderAnotherSpelling_CaseAndUnicode(t *testing.T) {
 	}
 }
 
+// dataVolumePrefix is where macOS mounts the data volume that the system's
+// firmlinks point into. It is a fixed property of the platform since Catalina,
+// not a path of any particular machine — everything else below is derived from
+// the fixture.
+const dataVolumePrefix = "/System/Volumes/Data"
+
+// TestFindProjectRoot_HomeUnderAnotherSpelling_Firmlink covers the fourth
+// spelling, and it is the one worth having a test for rather than a sentence:
+// a firmlink is NOT a symlink, so EvalSymlinks does not reduce the two names to
+// one, and a caller that canonicalises cannot make them converge. It exists on
+// every macOS since Catalina.
+//
+// The second spelling is derived from the REALPATH, not from the temp path: the
+// firmlinks are on /private and /Users, while /var is an ordinary symlink to
+// /private/var and carries none. Prefixing the temp path directly yields a
+// directory that does not exist — a probe that would have skipped forever while
+// looking like coverage.
+func TestFindProjectRoot_HomeUnderAnotherSpelling_Firmlink(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+	real, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		t.Skipf("cannot resolve the fixture to a real path: %v", err)
+	}
+	viaDataVolume := filepath.Join(dataVolumePrefix, real)
+
+	realInfo, realErr := os.Stat(real)
+	dataInfo, dataErr := os.Stat(viaDataVolume)
+	if realErr != nil || dataErr != nil || !os.SameFile(realInfo, dataInfo) {
+		t.Skipf("no firmlink on this system: %q is not the same directory as %q", viaDataVolume, real)
+	}
+	require.NotEqual(t, viaDataVolume, real, "the two spellings must differ lexically")
+
+	// The property that makes this case distinct from a symlink, asserted rather
+	// than assumed: canonicalising does NOT collapse the two, so the caller
+	// cannot hand the walk a single form even if it wanted to.
+	resolved, err := filepath.EvalSymlinks(viaDataVolume)
+	require.NoError(t, err)
+	require.Equal(t, viaDataVolume, resolved,
+		"if EvalSymlinks reduced this to the other spelling it would be a symlink, and this test "+
+			"would be a duplicate of the symlink one instead of covering firmlinks")
+
+	one, two := homeWithDotfilesAndTwoProjects(t, real)
+	scopeOne, err := FindProjectRoot(one, viaDataVolume)
+	require.NoError(t, err)
+	scopeTwo, err := FindProjectRoot(two, viaDataVolume)
+	require.NoError(t, err)
+
+	assert.NotEqual(t, scopeOne, scopeTwo,
+		"$HOME reached through the data-volume firmlink was not recognised as $HOME, so two "+
+			"marker-less projects under it collapsed onto one scope")
+}
+
 // TestFindProjectRoot_UnverifiableHome_KeepsPreviousBehaviour is the test that
 // separates the two candidate error policies, and it is the reason the other one
 // was rejected.
