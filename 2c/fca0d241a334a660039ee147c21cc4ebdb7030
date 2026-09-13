@@ -1,0 +1,28 @@
+.github/workflows/release.yml
+  s_6daabe0edfb307::t_5aa53e8c5c23de 44-52,56-59
+tests/integration/version_drift_test.go
+  s_6daabe0edfb307::t_a06fde58984188 293-301
+  s_6daabe0edfb307::t_06b1e31d74e1bb 432-453
+  s_6daabe0edfb307::t_eadd53df6dc8f2 173-196,200
+  s_6daabe0edfb307::t_684c623314aff6 510-512
+  s_6daabe0edfb307::t_781f16a452b209 239
+  s_6daabe0edfb307::t_af74b7ab40b6da 221-238,240-254
+tests/integration/testdata/release.yml.contract
+  s_6daabe0edfb307::t_8917bc3470c124 44-52,56-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2cfca0d241a334a660039ee147c21cc4ebdb7030",
+  "prompts": {},
+  "sessions": {
+    "s_6daabe0edfb307": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "57eb0a77-9c31-4318-9f3c-a504e631abab",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
