@@ -1,6 +1,6 @@
 # Security — cli-agents-bridge
 
-Threat model, implemented controls, reporting policy, and known limitations for cli-agents-bridge (current through **v0.9.0**).
+Threat model, implemented controls, reporting policy, and known limitations for cli-agents-bridge (current through **v0.10.0**).
 
 ---
 
@@ -59,7 +59,7 @@ _Only SC-8 remains deferred. SC-3 moved to the active list above when the code l
 
 - **SC-8 PII detection**: explicitly NOT implemented. Regex on content for "looks like credit card / email" is false-positive prone and adds runtime cost without addressing the actual threat (same-UID malware reading plaintext). PRIVACY.md warns users not to send secrets.
 
-> **Honesty note (through v0.9.0)**: this document describes controls as actually wired in the shipped binary, verified against the code at each release rather than assumed. v0.9.0 changed no control: `internal/security` and this file are byte-identical to v0.8.0, verified by diff at release time. SC-3 sat under "deferred" from v0.2.0 to v0.7 — seven releases — precisely because the primitive existed and nothing called it; it moved to the active list only when the call-sites landed. SC-8 stays deferred for the same reason. We would rather under-claim than assert a control that is not on the live code path.
+> **Honesty note (through v0.10.0)**: this document describes controls as actually wired in the shipped binary, verified against the code at each release rather than assumed. **v0.10.0 did change `internal/security`** — and bumping the number while leaving this sentence saying "changed no control" is precisely the failure the note exists to prevent. What changed, read off the diff `v0.9.0..v0.10.0`: `perms.go` was split so that the loose-permission predicate is chosen per OS (`perms_unix.go`, `perms_windows.go`, +327 lines of new Windows code), and `CheckOwnedInfo` was added. **Verified for this release**: the exported surface on Unix is unchanged — `ValidateSessionID`, `ValidateTeamID`, `CheckOwnership`, `EnforceDirPerms`, `ReadOwnedFile`, `CheckOwnedFile`, `WarnNotOurs`, `CheckOwnedDir` — so the controls below still describe the Unix binary as they did. **NOT verified for this release, and stated rather than assumed**: the Windows implementation, which nobody has re-read against the shipped binary on a Windows machine; and the threat model above, which still says *macOS / Linux workstation* — a perimeter v0.10.0 outgrew and this document has not yet caught up with. SC-3 sat under "deferred" from v0.2.0 to v0.7 — seven releases — precisely because the primitive existed and nothing called it; it moved to the active list only when the call-sites landed. SC-8 stays deferred for the same reason. We would rather under-claim than assert a control that is not on the live code path.
 
 ---
 
