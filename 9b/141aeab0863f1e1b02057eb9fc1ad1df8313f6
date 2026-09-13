@@ -1,0 +1,19 @@
+internal/session/scope_home_identity_test.go
+  s_6daabe0edfb307::t_9a5459c90cdd9b 170-223
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9b141aeab0863f1e1b02057eb9fc1ad1df8313f6",
+  "prompts": {},
+  "sessions": {
+    "s_6daabe0edfb307": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "57eb0a77-9c31-4318-9f3c-a504e631abab",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
