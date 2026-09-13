@@ -39,12 +39,17 @@ import (
 // $HOME must never count as a project root even when it holds a `.git` — a
 // dotfiles repository in $HOME is common, and without this guard every
 // marker-less project under $HOME would collapse onto $HOME and share a single
-// scope. The same `dir != home` exclusion will gate any future secondary marker
-// (e.g. a project-level `.claude`), kept here so adding it stays purely additive
-// (VAL ratification H1). An empty home disables the exclusion (no $HOME known).
+// scope. The exclusion is byte-equality FIRST (the ordinary case, no syscall)
+// and, only when a marker is present under a different spelling, an identity
+// check — see sameDirectoryAsHome, which also states the error policy and the
+// branch that stays open. The same exclusion will gate any future secondary
+// marker (e.g. a project-level `.claude`), kept here so adding it stays purely
+// additive (VAL ratification H1). An empty home disables it (no $HOME known).
 //
 // Resolution in THIS walk is lexical (filepath.Abs + Clean), matching
-// LongestPrefixLookup and IsDescendantLexical. Symlinks are NOT resolved here;
+// LongestPrefixLookup and IsDescendantLexical — including what this function
+// RETURNS, which the identity check never rewrites: it decides whether a marker
+// counts, never what the scope is spelled like. Symlinks are NOT resolved here;
 // the sole caller (cmd resolveScope) symlink-canonicalizes the returned scope so
 // the `.git` DIR branch (lexical cwd) and the `.git` FILE branch (git writes the
 // gitdir already symlink-resolved) converge on one form under a symlinked path
@@ -67,7 +72,10 @@ func FindProjectRoot(cwd, home string) (string, error) {
 
 	for dir := abs; ; {
 		if dir != cleanHome {
-			if root, ok := gitMarkerRoot(dir); ok {
+			// The identity check runs only when a marker is actually here, so the
+			// ordinary walk costs no extra syscall: ancestors without a `.git` are
+			// rejected by gitMarkerRoot before anything is stat'd.
+			if root, ok := gitMarkerRoot(dir); ok && !sameDirectoryAsHome(dir, cleanHome) {
 				return root, nil
 			}
 		}
@@ -80,6 +88,54 @@ func FindProjectRoot(cwd, home string) (string, error) {
 	// No marker on any ancestor (or the only marker was $HOME's dotfiles repo):
 	// cwd is its own scope.
 	return abs, nil
+}
+
+// sameDirectoryAsHome reports whether dir IS the home directory reached under a
+// different spelling — the case a byte comparison cannot see.
+//
+// It exists because the exclusion above was `dir != cleanHome` while the walk is
+// lexical BY CONTRACT (canonicalisation belongs to the caller), so the guard was
+// routinely handed a spelling of $HOME it could not recognise. Four reach it and
+// none needs a case-insensitive volume: a symlinked home in either direction,
+// /tmp against /private/tmp, Unicode NFC against NFD, and macOS firmlinks —
+// /Users/x and /System/Volumes/Data/Users/x share a (dev,ino) while EvalSymlinks
+// keeps them distinct, a firmlink not being a symlink. Under any of them two
+// marker-less projects under $HOME collapsed onto one scope and could message
+// each other: the isolation failed OPEN.
+//
+// os.SameFile is (dev,ino) on Unix and volume+file-id on Windows, with no cgo.
+// os.Stat and not Lstat: a symlinked home must identify its TARGET, which is the
+// directory the walk is standing in.
+//
+// ERROR POLICY, and it is a decision rather than a fallback. With no proof of
+// identity we PRESERVE THE PREVIOUS BEHAVIOUR and accept the marker. Not "it
+// cannot be stat'd, therefore it is not the home" — that is a negative proof we
+// do not have. The alternative, treating an unverifiable home as a reason to
+// fall back, reads prudent and regresses far more: with HOME=/nonexistent — a
+// container, `sudo -H`, CI with a synthetic user — the stat fails on EVERY join
+// and pairing breaks in every repository, including those that have nothing to
+// do with $HOME. That would trade a defect with a rare precondition for a
+// regression with a common one. It is also what Windows already does: there
+// SameFile returns false when loadFileId fails, so the marker is accepted.
+//
+// DECLARED LIMIT: this narrows the defect to the cases where identity is
+// verifiable, it does not close it. When $HOME is reachable only through a
+// directory that cannot be traversed, the stat is denied, the policy above
+// accepts the marker, and the scopes still collapse exactly as before. That
+// branch stays open and is covered by a test that documents it as such.
+func sameDirectoryAsHome(dir, cleanHome string) bool {
+	if cleanHome == "" {
+		return false // no home known: the exclusion is disabled entirely
+	}
+	homeInfo, err := os.Stat(cleanHome)
+	if err != nil {
+		return false
+	}
+	dirInfo, err := os.Stat(dir)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(homeInfo, dirInfo)
 }
 
 // gitMarkerRoot reports the git-common-root anchored at dir when dir carries a
