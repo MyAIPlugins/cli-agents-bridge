@@ -27,7 +27,7 @@ Download the archive for your OS/arch from the latest [Release](https://github.c
 #### macOS and Linux
 
 ```
-VERSION=PUT_THE_TAG_HERE   # the tag of the release you downloaded
+VERSION=PUT_THE_VERSION_HERE   # the version WITHOUT the leading v (the tag carries it, the archive name does not)
 OS=darwin         # darwin | linux
 ARCH=arm64        # arm64 | amd64
 
@@ -47,7 +47,7 @@ The Windows archive is a **zip**, and everything below is built into PowerShell 
 first.
 
 ```powershell
-$Version = 'PUT_THE_TAG_HERE'   # the tag of the release you downloaded, exactly as it appears on it
+$Version = 'PUT_THE_VERSION_HERE'   # the version WITHOUT the leading v (the tag carries it, the archive name does not)
 $Zip     = "cab-bridge_${Version}_windows_amd64.zip"
 
 # Same check, same limit as above: this proves the file arrived intact, not that it is genuine.
