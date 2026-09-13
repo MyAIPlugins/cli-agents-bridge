@@ -14,8 +14,14 @@
 
 `[E]` Gate su `main` dopo ciascun merge: **EXIT=0 · 12 righe · 12 `ok` · 0 `FAIL` · 0 `cached`**;
 `go vet` a **zero su darwin, linux e windows**.
-⚠️ **`staticcheck` NON e' installato sul Mac**: in nessun gate locale di oggi e' compreso. Quella meta'
-del lint l'ha fatta **solo la CI**. Se dal PC dichiari un gate verde, di' se il tuo lo comprende.
+🟢 **`staticcheck` ERA assente sul Mac e ora c'e'** (installato a valle dei due merge, `v0.8.1`,
+la versione pinnata in `.staticcheck-version`). ⇒ I gate che hanno **autorizzato** i due merge
+**non** lo comprendevano: quella meta' l'aveva fatta solo la CI. `[E]` Rieseguito **dopo**
+l'installazione su `main` che contiene entrambi: `make lint` **exit 0, nessun finding** ⇒ i due lotti
+sono validati anche da quella meta', retroattivamente. `[E]` E il verde e' stato verificato con un
+**controllo positivo** — su un file con difetti noti lo stesso binario trova `SA4017`/`S1039` ed esce
+**1** — perche' un lint silenzioso e' il caso in cui *l'assenza sembra un risultato*.
+⚠️ Se dal PC dichiari un gate verde, di' se il tuo comprende staticcheck.
 
 ---
 
