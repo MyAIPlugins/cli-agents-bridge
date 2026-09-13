@@ -52,11 +52,11 @@ jobs:
       # guard that breaks the release it is guarding would get deleted.
       - name: the tag must match the plugin manifest
         env:
-          CAB_RELEASE_TAG: ${{ github.ref_name }}
+          @@ENV@@: ${{ github.ref_name }}
         run: |
           log="$(mktemp)"
-          go test -run '^TestVersionDrift_TagMatchesSource$' -count=1 -v ./tests/integration/ > "$log" 2>&1 || { cat "$log"; exit 1; }
-          grep -q '^--- PASS: TestVersionDrift_TagMatchesSource' "$log" || { echo "the tag guard was NOT executed"; cat "$log"; exit 1; }
+          go test -run '^@@TEST@@$' -count=1 -v ./tests/integration/ > "$log" 2>&1 || { cat "$log"; exit 1; }
+          grep -q '^--- PASS: @@TEST@@' "$log" || { echo "the tag guard was NOT executed"; cat "$log"; exit 1; }
 
       - name: GoReleaser
         uses: goreleaser/goreleaser-action@v6
