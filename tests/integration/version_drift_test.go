@@ -1,16 +1,28 @@
 package integration
 
 import (
+	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// releaseTagEnv is the ONE spelling of the variable that carries the tag from
+// the release workflow into the guard. It is used by the guard's own LookupEnv
+// and by the workflow contract below, so the two cannot drift onto different
+// names: renaming it here changes what the contract expects, and a workflow
+// still saying the old name goes red.
+const releaseTagEnv = "CAB_RELEASE_TAG"
 
 // THE PRODUCT VERSION IS WRITTEN IN ONE PLACE AND MIRRORED IN FOUR, and until
 // this file nothing checked that the mirrors still said what the source says.
@@ -29,18 +41,15 @@ import (
 // WHY plugin.json is the source, rather than a file we elected: it is what the
 // runtime reads. `claude plugin validate --strict` on a disagreeing pair says so
 // in its own words — "At install time, plugin.json wins (calculatePluginVersion
-// precedence) — the entry version is silently ignored". The marketplace entry is
-// therefore not a second source, it is a DEAD field, and the cheapest way not to
-// have two sources is not to have the second one. It has been removed, and the
-// subtest below keeps it removed.
+// precedence) — the entry version is silently ignored".
 //
 // WHAT THIS FILE DELIBERATELY DOES NOT DO: it never runs git. A `--depth=1`
 // checkout has no tags, and `git describe --tags --always --dirty 2>/dev/null` —
 // the Makefile's exact line — does not fail there: it returns a bare SHA that
-// looks like a good value. A gate built on it inside ci.yml would compare
-// `35df804` against `0.10.0` and be red forever, or be made conditional, and a
-// conditional tag check is the silent green we keep closing. The tag is checked
-// in exactly one place, release.yml, where it exists by construction.
+// looks like a good value. A gate built on it inside ci.yml would compare a SHA
+// against a semver and be red forever, or be made conditional, and a conditional
+// tag check is the silent green we keep closing. The tag is checked in exactly
+// one place, release.yml, where it exists by construction.
 func TestVersionDrift_EveryMirrorAgreesWithTheSource(t *testing.T) {
 	repoRoot, err := filepath.Abs("../..")
 	require.NoError(t, err)
@@ -50,11 +59,18 @@ func TestVersionDrift_EveryMirrorAgreesWithTheSource(t *testing.T) {
 	security := readRepoFile(t, repoRoot, "SECURITY.md")
 
 	t.Run("the marketplace entry does not carry a version at all", func(t *testing.T) {
-		// Not "carries the same version": carries NONE. A field the runtime
-		// ignores cannot be right or wrong, it can only drift, and verifying a
-		// value nobody reads is work that buys nothing. Removing it was checked
-		// against the validator rather than assumed — `claude plugin validate
-		// --strict` passes with the field absent.
+		// Removed rather than checked — but NOT because the field is inert in
+		// general, which is what an earlier version of this comment claimed. It
+		// is the FALLBACK the runtime uses when plugin.json declares no version:
+		// "plugin.json wins" names a precedence, and a precedence has a loser
+		// only because there is something to lose to.
+		//
+		// What makes it removable HERE is that plugin.json always declares one,
+		// so the entry can never be consulted and can only ever drift. Measured
+		// rather than reasoned: with the field absent `claude plugin validate
+		// --strict` passes, and with plugin.json's version absent instead the
+		// validator still demands it FROM plugin.json — so whatever the fallback
+		// does at install time, it does not satisfy validation.
 		raw := readRepoFile(t, repoRoot, filepath.Join(".claude-plugin", "marketplace.json"))
 		var marketplace struct {
 			Plugins []map[string]json.RawMessage `json:"plugins"`
@@ -65,9 +81,9 @@ func TestVersionDrift_EveryMirrorAgreesWithTheSource(t *testing.T) {
 		for i, entry := range marketplace.Plugins {
 			_, present := entry["version"]
 			assert.False(t, present,
-				"marketplace.json plugins[%d] declares a version. plugin.json wins at install time "+
-					"and this field is silently ignored, so it can only ever go stale: delete it "+
-					"rather than update it", i)
+				"marketplace.json plugins[%d] declares a version. plugin.json declares one too and "+
+					"wins at install time, so this copy is never read and can only go stale: delete "+
+					"it rather than update it", i)
 		}
 	})
 
@@ -117,7 +133,9 @@ func TestVersionDrift_EveryMirrorAgreesWithTheSource(t *testing.T) {
 		// The cheapest way to make this test green is a sed on the digits, and
 		// that would certify work that did not happen. Nothing in a test can stop
 		// that; what a test CAN do is make the lie deliberate instead of
-		// mechanical, by refusing to describe the fix as an edit.
+		// mechanical, by refusing to describe the fix as an edit. It earned its
+		// keep on first contact: the re-read it forced found that v0.10.0 had in
+		// fact changed internal/security, which the document was about to deny.
 		const meaning = "\n\n" +
 			"    This is not a stale number to bump. SECURITY.md claims its controls were verified\n" +
 			"    against the code AT THIS RELEASE. Changing this value DECLARES that you re-read\n" +
@@ -132,43 +150,69 @@ func TestVersionDrift_EveryMirrorAgreesWithTheSource(t *testing.T) {
 			"the SECURITY.md honesty note covers a release that is no longer the current one"+meaning, source)
 	})
 
-	t.Run("the release workflow checks the tag, and reads the source to do it", func(t *testing.T) {
-		// The tag half of the guard lives in release.yml because that is where a
-		// tag exists. This subtest is what keeps TestVersionDrift_TagMatchesSource
-		// from being a skip nobody notices: the local gate proves the wiring, the
-		// release run proves the value.
-		release := readRepoFile(t, repoRoot, filepath.Join(".github", "workflows", "release.yml"))
-		step := stepNamed(t, release, "tag")
+	t.Run("the release workflow matches its contract, byte for byte", func(t *testing.T) {
+		// THE OBJECT UNDER CONTRACT IS THE WHOLE FILE, not a step found by name,
+		// and that is the entire point of this subtest.
+		//
+		// The first version asserted things ABOUT a step: that it named the env
+		// variable, that it ran the guard, that it carried no version literal.
+		// Every one of those passed while six different edits disarmed the guard
+		// completely — commenting the env line out, moving the env onto a later
+		// step, adding continue-on-error, reordering past goreleaser, wrapping the
+		// command so it cannot fail, renaming the Go function the YAML names. Six
+		// occurrences of one shape are not six bugs to patch: they are the shape
+		// being wrong. An exact comparison of the whole file makes five of them
+		// visible without a technique of its own, because order, guards and shell
+		// text are all properties an exact form pins down.
+		//
+		// The sixth needs the other half, below: the names are DERIVED from the
+		// symbols instead of retyped, so a rename either propagates or goes red.
+		contract := readRepoFile(t, repoRoot,
+			filepath.Join("tests", "integration", "testdata", "release.yml.contract"))
+		actual := readRepoFile(t, repoRoot, filepath.Join(".github", "workflows", "release.yml"))
 
-		assert.Contains(t, step, "CAB_RELEASE_TAG",
-			"the release workflow must hand the tag to the test that compares it")
-		assert.Contains(t, step, "github.ref_name",
-			"the tag must come from the ref the workflow was triggered by, not from git describe: "+
-				"this job is the only place where a tag is guaranteed to exist")
-		assert.Contains(t, step, "TestVersionDrift_TagMatchesSource",
-			"the step must run the test that does the comparison")
-		assert.Empty(t, reSemver.FindAllString(step, -1),
-			"no version literal may appear in this step, in code OR in a comment: a number written "+
-				"'for the reader' is a second source, and it is the one that goes stale")
+		expected := strings.NewReplacer(
+			"@@ENV@@", releaseTagEnv,
+			"@@TEST@@", tagGuardFuncName(t),
+		).Replace(contract)
+
+		// CRLF only. Nothing else is normalised: no per-line trimming, no comment
+		// stripping. Each of those would reintroduce a way to change behaviour
+		// without changing what the test compares.
+		assert.Equal(t, normalizeEOL(expected), normalizeEOL(actual),
+			"\n.github/workflows/release.yml differs from its contract.\n\n"+
+				"    THIS IS NOT A YAML ERROR AND NOT A FORMATTING NIT — read it as an alarm on the\n"+
+				"    contract itself. The whole file is compared because five of the six known ways to\n"+
+				"    disarm the tag guard leave a step that still READS correctly: a comment character\n"+
+				"    on the env line, the env moved to a later step, continue-on-error, a reordering\n"+
+				"    past goreleaser, a command wrapped so it cannot fail.\n\n"+
+				"    A red here means one of two things and you have to decide WHICH:\n"+
+				"      - the workflow changed on purpose: review the diff above, and then update\n"+
+				"        tests/integration/testdata/release.yml.contract deliberately;\n"+
+				"      - the workflow changed by accident: this is the guard doing its job.\n\n"+
+				"    Do not make it green by relaxing the comparison. A gate somebody switches off\n"+
+				"    is not a gate, and this one exists because the previous, looser assertions were\n"+
+				"    green through all six mutations.")
 	})
 }
 
 // TestVersionDrift_TagMatchesSource is the ONE place where the git tag meets the
 // manifest, and it runs only in the release workflow.
 //
-// The skip below is the kind this project distrusts, so it is worth saying why
-// it is not a silent green: a skip here is invisible ONLY if the workflow can
-// stop setting the variable without anybody noticing, and the subtest above
-// asserts that release.yml still sets it. Take that assertion away and this
-// becomes exactly the defect it is guarding against.
+// The skip below is the kind this project distrusts, so it is worth saying what
+// keeps it honest, because "the subtest checks the workflow mentions it" was NOT
+// enough: a mention proves a string, not an execution. What proves the execution
+// is TestVersionDrift_TheTagGuardRunsAndCanFail, which re-runs this very function
+// in a child process and requires it to PASS on a coherent manifest and FAIL on a
+// mismatched one.
 func TestVersionDrift_TagMatchesSource(t *testing.T) {
-	tag, set := os.LookupEnv("CAB_RELEASE_TAG")
+	tag, set := os.LookupEnv(releaseTagEnv)
 	if !set {
-		t.Skip("not a release run: CAB_RELEASE_TAG is unset")
+		t.Skipf("not a release run: %s is unset", releaseTagEnv)
 	}
-	require.NotEmpty(t, tag,
-		"CAB_RELEASE_TAG is set but empty: the workflow passed nothing, and an empty tag is a "+
-			"failure rather than a reason to skip")
+	require.NotEmptyf(t, tag,
+		"%s is set but empty: the workflow passed nothing, and an empty tag is a failure rather "+
+			"than a reason to skip", releaseTagEnv)
 
 	repoRoot, err := filepath.Abs("../..")
 	require.NoError(t, err)
@@ -177,6 +221,114 @@ func TestVersionDrift_TagMatchesSource(t *testing.T) {
 		"the tag being released does not match plugin.json. Releasing anyway ships a plugin whose "+
 			"manifest names a different version than the binary next to it — which is how v0.10.0 "+
 			"went out with 0.9.0 manifests")
+}
+
+// TestVersionDrift_TheTagGuardRunsAndCanFail EXECUTES the guard instead of
+// reading about it.
+//
+// The distinction is the whole lesson of this lot. `go test -run` on a name that
+// does not exist prints "ok … [no tests to run]" and exits 0 — a command that
+// runs, does nothing, and says so in a note nobody reads, while the exit code
+// says the opposite. So "the workflow mentions the test" and "the test skipped"
+// and "the test ran and passed" are three different worlds that an exit code
+// alone cannot tell apart. This one asks for the verdict, not the status.
+func TestVersionDrift_TheTagGuardRunsAndCanFail(t *testing.T) {
+	self, err := os.Executable()
+	require.NoError(t, err, "the running test binary must be re-executable to prove the guard runs")
+	packageDir, err := os.Getwd()
+	require.NoError(t, err)
+
+	name := tagGuardFuncName(t)
+	source := sourceVersion(t, mustAbs(t, "../.."))
+
+	// No shell anywhere in here: the child is exec'd with an argv, so nothing in
+	// a tag value can be interpreted on the way.
+	run := func(t *testing.T, value string, set bool) (string, int) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+
+		// -test.count=1, and note WHY it is not what it looks like. It is the
+		// binary's own flag (testing.go registers "test.count", default 1), passed
+		// explicitly so the child does not inherit a default somebody changes
+		// later. It is NOT a defence against the test result cache: that cache
+		// belongs to `go test`, and this child is the compiled binary executed
+		// directly, so nothing here could ever be served from it. The first draft
+		// of this comment claimed the cache reason — a true flag with a false
+		// justification, which is the exact class this file exists to close.
+		cmd := exec.CommandContext(ctx, self, "-test.run=^"+name+"$", "-test.v", "-test.count=1")
+		cmd.Dir = packageDir
+		// REPLACED, not appended to: a duplicate key leaves the winner up to the
+		// platform, and the whole point is to control what the child sees.
+		env := envWithout(os.Environ(), releaseTagEnv)
+		if set {
+			env = append(env, releaseTagEnv+"="+value)
+		}
+		cmd.Env = env
+
+		out, runErr := cmd.CombinedOutput()
+		require.NotErrorIs(t, ctx.Err(), context.DeadlineExceeded,
+			"the child guard did not finish in time")
+		code := 0
+		if runErr != nil {
+			var exit *exec.ExitError
+			require.ErrorAs(t, runErr, &exit, "the child failed for a reason other than a test verdict")
+			code = exit.ExitCode()
+		}
+		return clip(string(out)), code
+	}
+
+	t.Run("a coherent manifest makes it PASS, and it really ran", func(t *testing.T) {
+		out, code := run(t, "v"+source, true)
+		assert.Equal(t, 0, code, "the guard must accept a tag that matches plugin.json:\n%s", out)
+		// An exit code is not the verdict. These three make the difference between
+		// "passed", "skipped" and "never selected" impossible to confuse.
+		assert.Contains(t, out, "--- PASS: "+name, "the guard must have RUN and passed:\n%s", out)
+		assert.NotContains(t, out, "--- SKIP", "the guard skipped while the variable was set:\n%s", out)
+		assert.NotContains(t, out, "no tests to run",
+			"the child selected nothing — the derived name does not match any test:\n%s", out)
+	})
+
+	t.Run("a mismatched tag makes it FAIL, with a diagnosis", func(t *testing.T) {
+		out, code := run(t, "v99.99.99", true)
+		assert.NotEqual(t, 0, code, "a tag that disagrees with plugin.json must not pass:\n%s", out)
+		assert.Contains(t, out, "--- FAIL: "+name, "it must fail as a verdict, not crash:\n%s", out)
+		assert.Contains(t, out, "does not match plugin.json",
+			"the failure must say what disagreed, not merely that something did:\n%s", out)
+	})
+
+	t.Run("an empty variable FAILS rather than skipping", func(t *testing.T) {
+		out, code := run(t, "", true)
+		assert.NotEqual(t, 0, code, "an empty tag must be a failure:\n%s", out)
+		assert.Contains(t, out, "--- FAIL: "+name, "an empty tag must fail, not skip:\n%s", out)
+	})
+}
+
+// tagGuardFuncName derives the guard's name FROM THE SYMBOL, so that the YAML
+// and the Go declaration cannot drift apart silently.
+//
+// The parameter is typed `func(*testing.T)` on purpose: the call site hands over
+// the function itself, so renaming only the declaration does not compile. That
+// is the half a string comparison can never have — and the defect it closes is
+// not exotic, it is a rename, which is the most ordinary edit there is.
+func tagGuardFuncName(t *testing.T) string {
+	t.Helper()
+	return derivedFuncName(t, TestVersionDrift_TagMatchesSource)
+}
+
+func derivedFuncName(t *testing.T, f func(*testing.T)) string {
+	t.Helper()
+	fn := runtime.FuncForPC(reflect.ValueOf(f).Pointer())
+	require.NotNil(t, fn, "the function symbol must be resolvable: without it there is no name to "+
+		"compare and the contract would silently check a placeholder")
+
+	full := fn.Name() // e.g. github.com/…/tests/integration.TestVersionDrift_TagMatchesSource
+	short := full[strings.LastIndex(full, ".")+1:]
+	require.Regexp(t, `^Test[A-Z_][A-Za-z0-9_]*$`, short,
+		"derived %q from %q, which is not a plain test-function name. A closure or a method would "+
+			"yield something like func1, and feeding that to -test.run selects nothing while "+
+			"exiting 0", short, full)
+	return short
 }
 
 // sourceVersion reads the single place that declares the product version.
@@ -199,6 +351,38 @@ func readRepoFile(t *testing.T, repoRoot, rel string) string {
 	require.NoError(t, err, "%s must exist: a guard whose subject is missing is a guard that "+
 		"stopped guarding", rel)
 	return string(raw)
+}
+
+func mustAbs(t *testing.T, rel string) string {
+	t.Helper()
+	abs, err := filepath.Abs(rel)
+	require.NoError(t, err)
+	return abs
+}
+
+func normalizeEOL(s string) string { return strings.ReplaceAll(s, "\r\n", "\n") }
+
+// envWithout returns env with every entry for key removed, so the caller can set
+// it exactly once rather than shadowing an inherited one.
+func envWithout(env []string, key string) []string {
+	prefix := key + "="
+	out := make([]string, 0, len(env)+1)
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, prefix) {
+			out = append(out, kv)
+		}
+	}
+	return out
+}
+
+// clip bounds a child's output so a failure message stays readable. The head is
+// what carries the verdict lines.
+func clip(s string) string {
+	const max = 4000
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "\n… (output clipped)"
 }
 
 // soleCapture returns the first capture group of the ONE line matching re.

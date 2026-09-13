@@ -43,8 +43,8 @@ jobs:
       # the whole file.
       - name: the tag must match the plugin manifest
         env:
-          CAB_RELEASE_TAG: ${{ github.ref_name }}
-        run: go test -run '^TestVersionDrift_TagMatchesSource$' -count=1 ./tests/integration/
+          @@ENV@@: ${{ github.ref_name }}
+        run: go test -run '^@@TEST@@$' -count=1 ./tests/integration/
 
       - name: GoReleaser
         uses: goreleaser/goreleaser-action@v6
