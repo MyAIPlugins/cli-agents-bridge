@@ -1,0 +1,25 @@
+internal/session/identitylock_unix_test.go
+  s_ecb5fdcb0207f6::t_c483aa9756e9dc 1-267
+internal/session/identitylock_unix.go
+  s_ecb5fdcb0207f6::t_2947f9c9ca8cb2 1-37
+internal/session/identitylock_windows.go
+  s_ecb5fdcb0207f6::t_2947f9c9ca8cb2 1-18
+internal/session/identitylock.go
+  s_ecb5fdcb0207f6::t_2947f9c9ca8cb2 1-164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e9be5d333c9464d24b96dfaaa38de6e84d4de649",
+  "prompts": {},
+  "sessions": {
+    "s_ecb5fdcb0207f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32afad43-c9ed-4676-bf4d-bee1f17ec8c0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
