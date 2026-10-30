@@ -9,5 +9,6 @@
   "retention_days": 7,
   "heartbeat_tick_ms": 30000,
   "auto_gc_hours": 24,
-  "dedup_window_seconds": 10
+  "dedup_window_seconds": 10,
+  "mcp_grant_ttl_minutes": 480
 }

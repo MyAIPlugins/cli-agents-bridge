@@ -128,6 +128,13 @@ type Config struct {
 	// it lives in config precisely so it can be corrected without a rebuild.
 	// Env override: CAB_MAX_PAGE_BYTES.
 	MaxPageBytes int `json:"max_page_bytes"`
+
+	// MCPGrantTTLMinutes is how long `cab-bridge desktop open` keeps the bridge
+	// open to Claude Desktop (F-72). A val has no heartbeat to say it is still
+	// alive (it is exempt by design), so the expiry is what bounds a grant its
+	// owner forgot to close.
+	// Default: 480 (8 hours). Env override: CAB_MCP_GRANT_TTL_MINUTES.
+	MCPGrantTTLMinutes int `json:"mcp_grant_ttl_minutes"`
 }
 
 // DefaultConfig returns the source-of-truth default values. The DataDir is
@@ -147,6 +154,7 @@ func DefaultConfig() Config {
 		DedupWindowSeconds: 10,
 		MaxPageMessages:    50,
 		MaxPageBytes:       131072,
+		MCPGrantTTLMinutes: 480,
 	}
 }
 
@@ -258,6 +266,9 @@ func applyUserFile(cfg *Config, path string) error {
 	if override.MaxPageBytes != 0 {
 		cfg.MaxPageBytes = override.MaxPageBytes
 	}
+	if override.MCPGrantTTLMinutes != 0 {
+		cfg.MCPGrantTTLMinutes = override.MCPGrantTTLMinutes
+	}
 	return nil
 }
 
@@ -300,6 +311,9 @@ func applyEnv(cfg *Config) []string {
 		warnings = append(warnings, w)
 	}
 	if w := envInt("CAB_MAX_PAGE_BYTES", &cfg.MaxPageBytes); w != "" {
+		warnings = append(warnings, w)
+	}
+	if w := envInt("CAB_MCP_GRANT_TTL_MINUTES", &cfg.MCPGrantTTLMinutes); w != "" {
 		warnings = append(warnings, w)
 	}
 
