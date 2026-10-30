@@ -657,7 +657,7 @@ func replyRun(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	// (reply_core.go), with the reasoning of CRI diff-gate P0-1: journal precedence,
 	// selection and persistence are ONE critical section. What this verb brings to it
 	// is only the selection of what to close.
-	txn, lockErr := beginReply(mgr, sid, cliReplySelector(mgr, cfg, sid, args, stdin))
+	txn, lockErr := beginReply(mgr, sid, cliReplySelector(mgr, cfg, sid, args, stdin), routingReplyGate(mgr, sid))
 	if lockErr != nil {
 		if errors.Is(lockErr, errUndeliveredWaiting) {
 			return fmt.Errorf("reply (%s): %w", whoIThoughtIWas(mgr, sid), lockErr)
@@ -1267,6 +1267,14 @@ func deliverResponse(cfg config.Config, mgr *session.Manager, sid string, txn *s
 	targetManifest, err := mgr.LoadManifest(txn.To)
 	if err != nil {
 		return false, fmt.Errorf("load target manifest %q: %w", txn.To, err)
+	}
+
+	// The routing policy binds an answer exactly as it binds an ask (F-147). This
+	// is the last line of defence: the gate in beginReply stops a refused reply
+	// before it becomes a journal, and this catches any caller that reaches the
+	// delivery without it. Roles come from the two manifests above.
+	if verr := routing.ValidateSendPair(senderManifest.Role, targetManifest.Role, false); verr != nil {
+		return false, fmt.Errorf("reply not delivered: %w", verr)
 	}
 
 	anchor := txn.Anchor

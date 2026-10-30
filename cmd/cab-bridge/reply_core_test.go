@@ -33,7 +33,7 @@ func TestBeginReply_InFlightJournalOutranksTheSelector(t *testing.T) {
 
 	var called bool
 	other := newTxn(replySelf, []string{"msg-bbbbbbbbbbbb"}, "a completely different answer")
-	got, err := beginReply(mgr, replySelf, staticSelector(&called, other))
+	got, err := beginReply(mgr, replySelf, staticSelector(&called, other), nil)
 	require.NoError(t, err)
 
 	assert.False(t, called, "the selector must not even run while a journal is in flight")
@@ -54,7 +54,7 @@ func TestBeginReply_PersistsTheSelectionAndASecondInitializerResumesIt(t *testin
 
 	var firstCalled, secondCalled bool
 	mine := newTxn(replySelf, []string{"msg-aaaaaaaaaaaa"}, "mine")
-	got, err := beginReply(mgr, replySelf, staticSelector(&firstCalled, mine))
+	got, err := beginReply(mgr, replySelf, staticSelector(&firstCalled, mine), nil)
 	require.NoError(t, err)
 	require.True(t, firstCalled)
 	assert.Equal(t, "mine", got.Content)
@@ -65,7 +65,7 @@ func TestBeginReply_PersistsTheSelectionAndASecondInitializerResumesIt(t *testin
 	assert.Equal(t, mine.ResponseID, onDisk.ResponseID)
 
 	rival := newTxn(replySelf, []string{"msg-bbbbbbbbbbbb"}, "rival")
-	resumed, err := beginReply(mgr, replySelf, staticSelector(&secondCalled, rival))
+	resumed, err := beginReply(mgr, replySelf, staticSelector(&secondCalled, rival), nil)
 	require.NoError(t, err)
 	assert.False(t, secondCalled, "a second initializer resumes J1, it never builds J2")
 	assert.Equal(t, mine.ResponseID, resumed.ResponseID)
@@ -76,7 +76,7 @@ func TestBeginReply_SelectorErrorLeavesNoJournal(t *testing.T) {
 	mgr, _, _ := newReplyPair(t)
 	got, err := beginReply(mgr, replySelf, func() (*session.ReplyTxn, error) {
 		return nil, errNothingToReplyTo
-	})
+	}, nil)
 	require.ErrorIs(t, err, errNothingToReplyTo)
 	assert.Nil(t, got)
 
@@ -91,7 +91,7 @@ func TestCliReplySelector_BuildsTheTransactionFromTheNotifiedAsk(t *testing.T) {
 	mgr, cfg, dataDir := newReplyPair(t)
 	deliverAndNotify(t, mgr, dataDir, "msg-aaaaaaaaaaaa", "brief", time.Now().UTC())
 
-	got, err := beginReply(mgr, replySelf, cliReplySelector(mgr, cfg, replySelf, []string{"the report"}, strings.NewReader("")))
+	got, err := beginReply(mgr, replySelf, cliReplySelector(mgr, cfg, replySelf, []string{"the report"}, strings.NewReader("")), nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, replyPeer, got.To)
@@ -112,11 +112,11 @@ func TestCliReplySelector_BuildsTheTransactionFromTheNotifiedAsk(t *testing.T) {
 func TestCliReplySelector_KeepsItsTwoRefusals(t *testing.T) {
 	mgr, cfg, dataDir := newReplyPair(t)
 
-	_, err := beginReply(mgr, replySelf, cliReplySelector(mgr, cfg, replySelf, []string{"x"}, strings.NewReader("")))
+	_, err := beginReply(mgr, replySelf, cliReplySelector(mgr, cfg, replySelf, []string{"x"}, strings.NewReader("")), nil)
 	require.ErrorIs(t, err, errNothingToReplyTo, "an empty inbox has nothing to answer")
 
 	plantInboxAt(t, dataDir, replySelf, "msg-cccccccccccc", replyPeer, "query", "never shown", time.Now().UTC())
-	_, err = beginReply(mgr, replySelf, cliReplySelector(mgr, cfg, replySelf, []string{"x"}, strings.NewReader("")))
+	_, err = beginReply(mgr, replySelf, cliReplySelector(mgr, cfg, replySelf, []string{"x"}, strings.NewReader("")), nil)
 	require.ErrorIs(t, err, errUndeliveredWaiting, "an ask that was never delivered is not answerable through the CLI")
 
 	_, found, rerr := mgr.ReadReplyTxn(replySelf)

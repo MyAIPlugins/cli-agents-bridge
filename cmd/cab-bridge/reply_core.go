@@ -1,11 +1,13 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"time"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/routing"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
@@ -19,6 +21,15 @@ import (
 // journal, its precedence and its persistence are what they share, and nothing
 // else.
 type replySelector func() (*session.ReplyTxn, error)
+
+// replyGate decides whether a transaction that still has to DELIVER may go on.
+// It is handed the EFFECTIVE transaction: the one already in flight if there is
+// one, not whatever the caller asked for this time. A nil gate allows everything.
+type replyGate func(txn *session.ReplyTxn) error
+
+// errReplyBlocked marks a reply that a gate refused. The transaction, if one was
+// already persisted, is left exactly as it was: blocking is not discarding.
+var errReplyBlocked = errors.New("reply blocked")
 
 // beginReply returns the transaction `reply` must drive to completion: the one
 // already in flight if there is one, otherwise a fresh one built by sel and
@@ -38,7 +49,22 @@ type replySelector func() (*session.ReplyTxn, error)
 // So a second initializer must RESUME J1, never replace it. The set is also
 // frozen in here, not before: a snapshot taken outside the lock could be
 // stale by the time it is persisted.
-func beginReply(mgr *session.Manager, sid string, sel replySelector) (*session.ReplyTxn, error) {
+//
+// THE GATE DEPENDS ON THE STATE OF THE JOURNAL (F-72 C2). What a gate protects
+// is a NEW DELIVERY, so it applies to exactly the transactions that still have
+// one to make:
+//
+//   - a fresh transaction is gated BEFORE it is written, so a forbidden reply
+//     never becomes a journal. A pending journal outranks every argument and
+//     retries its delivery forever: persisting a refused reply would block every
+//     later reply of the session behind it.
+//   - a pending journal is gated before it is finished; if refused it stays
+//     intact and nothing is delivered.
+//   - a SENT journal is not gated: the response is already there and only the
+//     local archiving is left. Refusing it would leave the ask half-closed and
+//     jam the session, for a delivery that cannot be undone anyway.
+//   - any other state is an error. It is never read as "sent".
+func beginReply(mgr *session.Manager, sid string, sel replySelector, gate replyGate) (*session.ReplyTxn, error) {
 	var txn *session.ReplyTxn
 	err := mgr.WithSessionLock(sid, func() error {
 		existing, found, terr := mgr.ReadReplyTxn(sid)
@@ -49,12 +75,25 @@ func beginReply(mgr *session.Manager, sid string, sel replySelector) (*session.R
 			// An in-flight journal outranks anything the arguments say: finishing
 			// a delivered reply must not depend on the retry being spelled the
 			// same way.
+			switch existing.State {
+			case session.ReplyTxnPending:
+				if gerr := runGate(gate, existing); gerr != nil {
+					return fmt.Errorf("%w: %w (the pending reply stays on record, untouched)", errReplyBlocked, gerr)
+				}
+			case session.ReplyTxnSent:
+				// Archive-only: nothing is delivered from here.
+			default:
+				return fmt.Errorf("reply journal is in state %q, which this version does not know — refusing to guess, inspect it by hand", existing.State)
+			}
 			txn = existing
 			return nil
 		}
 		fresh, serr := sel()
 		if serr != nil {
 			return serr
+		}
+		if gerr := runGate(gate, fresh); gerr != nil {
+			return fmt.Errorf("%w: %w", errReplyBlocked, gerr)
 		}
 		txn = fresh
 		return mgr.WriteReplyTxn(sid, txn)
@@ -63,6 +102,33 @@ func beginReply(mgr *session.Manager, sid string, sel replySelector) (*session.R
 		return nil, err
 	}
 	return txn, nil
+}
+
+func runGate(gate replyGate, txn *session.ReplyTxn) error {
+	if gate == nil {
+		return nil
+	}
+	return gate(txn)
+}
+
+// routingReplyGate is the gate every front-end shares: the routing policy applies
+// to an answer exactly as it applies to an ask (F-147). sendMessage always
+// checked it; deliverResponse did not, so an observer's reply was delivered
+// although an observer may never send, and a critic's reached an executor.
+// The roles are read from the two manifests, never from a message, and allowMesh
+// is false: answering has no flag.
+func routingReplyGate(mgr *session.Manager, sid string) replyGate {
+	return func(txn *session.ReplyTxn) error {
+		sender, err := mgr.LoadManifest(sid)
+		if err != nil {
+			return fmt.Errorf("load sender manifest: %w", err)
+		}
+		target, err := mgr.LoadManifest(txn.To)
+		if err != nil {
+			return fmt.Errorf("load target manifest %q: %w", txn.To, err)
+		}
+		return routing.ValidateSendPair(sender.Role, target.Role, false)
+	}
 }
 
 // cliReplySelector is the selection `cab-bridge reply` has always done, moved
