@@ -1,0 +1,31 @@
+internal/mcp/fit_test.go
+  s_ecb5fdcb0207f6::t_a28cbcb205df1d 1-42,47-101
+  s_ecb5fdcb0207f6::t_ca4660f4b6371b 43-46
+internal/mcp/protocol.go
+  s_ecb5fdcb0207f6::t_17dac80418ce48 1-16,18-60,62-124
+  s_ecb5fdcb0207f6::t_33cb6ffb6b9403 17,61
+internal/mcp/server_test.go
+  s_ecb5fdcb0207f6::t_dcadf53fca38d0 247,477-479
+  s_ecb5fdcb0207f6::t_e6e378649d00c7 1-246,248-476,480-500
+internal/mcp/server.go
+  s_ecb5fdcb0207f6::t_6db7986b27ae9c 109,137,155-157,163-165,173-183,348,353,355,363-365
+  s_ecb5fdcb0207f6::t_ffa004dc90cd58 1-108,110-136,138-154,158-162,166-172,184-347,349-352,354,356-362,366-451
+internal/mcp/fit.go
+  s_ecb5fdcb0207f6::t_031e8bda0391dc 1-107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5374d89005cafb4f7937d57dd6d184e0a7b99a02",
+  "prompts": {},
+  "sessions": {
+    "s_ecb5fdcb0207f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32afad43-c9ed-4676-bf4d-bee1f17ec8c0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
