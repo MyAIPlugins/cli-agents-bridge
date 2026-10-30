@@ -1,0 +1,23 @@
+internal/routing/role_architect_test.go
+  s_ecb5fdcb0207f6::t_eda101613042b4 1-56
+internal/routing/role.go
+  s_ecb5fdcb0207f6::t_3ff3450a5eb24f 30-34
+  s_ecb5fdcb0207f6::t_b0430d822e9a52 122-130
+  s_ecb5fdcb0207f6::t_b3b3cb66138807 73-84,89-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e8403c79b5db930922da5680a98ba81965fe0e81",
+  "prompts": {},
+  "sessions": {
+    "s_ecb5fdcb0207f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32afad43-c9ed-4676-bf4d-bee1f17ec8c0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
