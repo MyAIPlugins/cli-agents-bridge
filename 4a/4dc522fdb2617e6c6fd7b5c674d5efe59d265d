@@ -1,0 +1,33 @@
+internal/config/config.go
+  s_ecb5fdcb0207f6::t_2eaea80b521834 131-137,157,269-271,316
+  s_ecb5fdcb0207f6::t_1855dca0cf39b1 317-318
+internal/session/desktopgrant.go
+  s_ecb5fdcb0207f6::t_ea6d22ed9d3be4 1-93
+cmd/cab-bridge/desktop_test.go
+  s_ecb5fdcb0207f6::t_fa37f2d9bc8bfd 80-81,85
+  s_ecb5fdcb0207f6::t_f82dbdb76685e7 1-79,82-84,86-156
+config/default.json
+  s_ecb5fdcb0207f6::t_2eaea80b521834 12-13
+cmd/cab-bridge/main.go
+  s_ecb5fdcb0207f6::t_bf13864dba91dc 74-75,147
+cmd/cab-bridge/desktop.go
+  s_ecb5fdcb0207f6::t_0804ef4437e2d4 1-146
+internal/session/desktopgrant_test.go
+  s_ecb5fdcb0207f6::t_878eaecc8f12ba 1-198
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4a4dc522fdb2617e6c6fd7b5c674d5efe59d265d",
+  "prompts": {},
+  "sessions": {
+    "s_ecb5fdcb0207f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32afad43-c9ed-4676-bf4d-bee1f17ec8c0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
