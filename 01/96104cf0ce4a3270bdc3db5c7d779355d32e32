@@ -1,0 +1,21 @@
+cmd/cab-bridge/mcp_inbox_test.go
+  s_ecb5fdcb0207f6::t_f476b9f723c926 1-265
+cmd/cab-bridge/mcp_inbox.go
+  s_ecb5fdcb0207f6::t_b93d9bf99e16d3 1-252
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0196104cf0ce4a3270bdc3db5c7d779355d32e32",
+  "prompts": {},
+  "sessions": {
+    "s_ecb5fdcb0207f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32afad43-c9ed-4676-bf4d-bee1f17ec8c0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
