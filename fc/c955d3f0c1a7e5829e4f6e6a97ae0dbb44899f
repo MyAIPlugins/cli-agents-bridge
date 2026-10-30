@@ -1,0 +1,23 @@
+internal/mcp/planner.go
+  s_ecb5fdcb0207f6::t_a40c10e9f5dafe 1-164
+internal/mcp/planner_test.go
+  s_ecb5fdcb0207f6::t_b1a168096915b0 301-316
+  s_ecb5fdcb0207f6::t_f9de8cd439df70 1-92,97-98,118,122,137-169,171-197,200,202-268,270-300
+  s_ecb5fdcb0207f6::t_83ba524ead0e1b 93-96,99-117,119-121,123-136,170,198-199,201,269
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fcc955d3f0c1a7e5829e4f6e6a97ae0dbb44899f",
+  "prompts": {},
+  "sessions": {
+    "s_ecb5fdcb0207f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32afad43-c9ed-4676-bf4d-bee1f17ec8c0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
