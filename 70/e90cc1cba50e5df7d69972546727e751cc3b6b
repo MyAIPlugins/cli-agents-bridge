@@ -1,0 +1,30 @@
+cmd/cab-bridge/mcp_signal_unix.go
+  s_ecb5fdcb0207f6::t_d3b52ffb519497 1-32
+cmd/cab-bridge/mcp_boot.go
+  s_ecb5fdcb0207f6::t_d3b52ffb519497 1-57
+cmd/cab-bridge/mcp_signal_windows.go
+  s_ecb5fdcb0207f6::t_d3b52ffb519497 1-7
+cmd/cab-bridge/mcp_signal_unix_test.go
+  s_ecb5fdcb0207f6::t_c1c0c49fde1014 1-34,38-81
+  s_ecb5fdcb0207f6::t_927be74e21ef00 35-37
+cmd/cab-bridge/mcp_boot_test.go
+  s_ecb5fdcb0207f6::t_530e946f62dcf9 1-76
+internal/session/identitylock_unix.go
+  s_ecb5fdcb0207f6::t_c9b5be1151831c 8,17-24,30-31,38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "70e90cc1cba50e5df7d69972546727e751cc3b6b",
+  "prompts": {},
+  "sessions": {
+    "s_ecb5fdcb0207f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32afad43-c9ed-4676-bf4d-bee1f17ec8c0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
