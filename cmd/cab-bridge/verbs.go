@@ -653,83 +653,11 @@ func replyRun(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	// EVERYTHING up to and including the journal's creation happens inside ONE
-	// critical section (CRI diff-gate P0-1).
-	//
-	// Reading the journal outside the lock and writing it with an overwrite let
-	// two concurrent replies both see "no journal", build J1 and J2 for the same
-	// anchor, and write them in sequence. If the first then delivered its
-	// response and died before persisting SENT, recovery would read J2 while the
-	// response id on disk carries J1's bytes: create-if-absent refuses it — as it
-	// should — and every retry fails identically. The ask stays open forever and
-	// exactly-once stops being recoverable.
-	//
-	// So a second initializer must RESUME J1, never replace it. The set is also
-	// frozen in here, not before: a snapshot taken outside the lock could be
-	// stale by the time it is persisted.
-	var txn *session.ReplyTxn
-	lockErr := mgr.WithSessionLock(sid, func() error {
-		existing, found, terr := mgr.ReadReplyTxn(sid)
-		if terr != nil {
-			return terr
-		}
-		if found {
-			// An in-flight journal outranks anything the arguments say: finishing
-			// a delivered reply must not depend on the retry being spelled the
-			// same way.
-			txn = existing
-			return nil
-		}
-
-		asks, aerr := collectOpenAsks(mgr, cfg, sid)
-		if aerr != nil {
-			return aerr
-		}
-		if len(asks) == 0 {
-			// The state the agent is actually in matters here (CRI2 P1-3): with an
-			// ask sitting UNREAD, "no ask of yours is open" is FALSE from where the
-			// agent stands — it knows it was asked something — and the tool
-			// contradicts its memory with no bridge across. Say which state it is.
-			if n := countUnseenInbound(mgr, cfg, sid); n > 0 {
-				return fmt.Errorf("%w: %d message(s) are waiting to be delivered — run next first, then reply", errUndeliveredWaiting, n)
-			}
-			return errNothingToReplyTo
-		}
-		// The names that could plausibly be the RECIPIENT of this reply: the
-		// senders with an open ask, and nobody else.
-		//
-		// It used to be every peer in my scope, and the plan for F-116 proposed
-		// widening it to the whole data dir — which would have made `reply GO`
-		// stop working the day somebody in an unrelated project registered an
-		// agent called `GO`: the meaning of a valid payload changing because of a
-		// session that has nothing to do with this conversation.
-		//
-		// Narrowing is the correct move and it also fixes today: this list only
-		// ever answers "did they mean to name a recipient, or is this the
-		// message?", and only a sender with an open ask can be the recipient of a
-		// reply. A typo aimed at a peer with no open ask is not a near-miss — it
-		// is a message. (CRI design-gate P1-3.)
-		known := senderNames(asks)
-		target, content, rerr := resolveReplyTarget(args, asks, known, stdin)
-		if rerr != nil {
-			return rerr
-		}
-
-		closeIDs := oldestPage(asks, target)
-		if len(closeIDs) == 0 {
-			return fmt.Errorf("no open ask from %s to answer", target)
-		}
-		txn = &session.ReplyTxn{
-			ResponseID: session.DeterministicResponseID(sid, closeIDs[0]),
-			To:         target,
-			Anchor:     closeIDs[0],
-			CloseIDs:   closeIDs,
-			State:      session.ReplyTxnPending,
-			Timestamp:  time.Now().UTC(),
-			Content:    content,
-		}
-		return mgr.WriteReplyTxn(sid, txn)
-	})
+	// The critical section that freezes the transaction lives in beginReply
+	// (reply_core.go), with the reasoning of CRI diff-gate P0-1: journal precedence,
+	// selection and persistence are ONE critical section. What this verb brings to it
+	// is only the selection of what to close.
+	txn, lockErr := beginReply(mgr, sid, cliReplySelector(mgr, cfg, sid, args, stdin))
 	if lockErr != nil {
 		if errors.Is(lockErr, errUndeliveredWaiting) {
 			return fmt.Errorf("reply (%s): %w", whoIThoughtIWas(mgr, sid), lockErr)
