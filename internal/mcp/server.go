@@ -59,8 +59,8 @@ func New(cfg Config) (*Server, error) {
 		return nil, errors.New("mcp: Name is required")
 	case cfg.MaxLineBytes <= 0:
 		return nil, errors.New("mcp: MaxLineBytes must be positive")
-	case cfg.MaxResultBytes < minResultBytes:
-		return nil, fmt.Errorf("mcp: MaxResultBytes must be at least %d", minResultBytes)
+	case cfg.MaxResultBytes < MinResultBytes:
+		return nil, fmt.Errorf("mcp: MaxResultBytes must be at least %d", MinResultBytes)
 	case cfg.DrainTimeout <= 0:
 		return nil, errors.New("mcp: DrainTimeout must be positive")
 	case cfg.Logf == nil:

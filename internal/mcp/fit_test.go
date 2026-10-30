@@ -73,7 +73,7 @@ func TestFitResponse_PropertyTheLineNeverExceedsTheBudget(t *testing.T) {
 	rng := rand.New(rand.NewSource(7))
 	alphabets := []string{"abc", "\"\\\n\t", "è☃𝄞", "x"}
 	for i := 0; i < 400; i++ {
-		max := minResultBytes + rng.Intn(6000)
+		max := MinResultBytes + rng.Intn(6000)
 		var blocks []Block
 		for b := 0; b < 1+rng.Intn(5); b++ {
 			alpha := []rune(alphabets[rng.Intn(len(alphabets))])

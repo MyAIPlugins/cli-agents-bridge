@@ -4,6 +4,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/mcp"
+)
+
+// Claude Desktop's relay gives up on a tool call after 60 seconds: a 55 s call came
+// back, a 65 s one did not, and the error message names 60 (measured, F-72 spike).
+// A call's whole time, its wait included, has to stay well under that, with a margin
+// for the relay's own latency, which was not measured.
+const (
+	relayCallBudgetSeconds = 60
+	relaySafetyMarginSecs  = 10
 )
 
 // Start-up guards of `cab-bridge mcp` (F-72). They live apart from the server so
@@ -54,4 +66,47 @@ func reserveProtocolStdout() *os.File {
 	real := os.Stdout
 	os.Stdout = os.Stderr
 	return real
+}
+
+// validateMCPConfig refuses limits that cannot be honoured. The wait of a `next` is
+// the one that matters: a call that outlasts the relay's patience is a call whose
+// answer nobody receives, and the server would not know. Every number must be
+// positive (a zero would mean "no limit" to somebody), the default wait cannot exceed
+// the maximum, and the wait plus the time allowed to read the inbox, like the child's
+// deadline, must fit under the relay's budget minus the margin.
+func validateMCPConfig(cfg config.Config) error {
+	limit := relayCallBudgetSeconds - relaySafetyMarginSecs
+	positive := []struct {
+		name string
+		v    int
+	}{
+		{"mcp_next_max_wait_seconds", cfg.MCPNextMaxWaitSeconds},
+		{"mcp_next_default_wait_seconds", cfg.MCPNextDefaultWaitSeconds},
+		{"mcp_scan_budget_seconds", cfg.MCPScanBudgetSeconds},
+		{"mcp_child_timeout_seconds", cfg.MCPChildTimeoutSeconds},
+		{"mcp_max_result_bytes", cfg.MCPMaxResultBytes},
+		{"mcp_grant_ttl_minutes", cfg.MCPGrantTTLMinutes},
+	}
+	for _, p := range positive {
+		if p.v <= 0 {
+			return fmt.Errorf("cab-bridge mcp: not starting — %s is %d; it must be positive", p.name, p.v)
+		}
+	}
+	if cfg.MCPNextDefaultWaitSeconds > cfg.MCPNextMaxWaitSeconds {
+		return fmt.Errorf("cab-bridge mcp: not starting — mcp_next_default_wait_seconds (%d) is larger than mcp_next_max_wait_seconds (%d)",
+			cfg.MCPNextDefaultWaitSeconds, cfg.MCPNextMaxWaitSeconds)
+	}
+	if total := cfg.MCPNextMaxWaitSeconds + cfg.MCPScanBudgetSeconds; total > limit {
+		return fmt.Errorf("cab-bridge mcp: not starting — a next call could take %d s (mcp_next_max_wait_seconds %d + mcp_scan_budget_seconds %d), "+
+			"but Claude Desktop gives up on a tool call after %d s and the answer would be lost; keep it at %d s or less",
+			total, cfg.MCPNextMaxWaitSeconds, cfg.MCPScanBudgetSeconds, relayCallBudgetSeconds, limit)
+	}
+	if cfg.MCPChildTimeoutSeconds > limit {
+		return fmt.Errorf("cab-bridge mcp: not starting — mcp_child_timeout_seconds (%d) is above %d s, the most a call may take under Claude Desktop's %d s limit",
+			cfg.MCPChildTimeoutSeconds, limit, relayCallBudgetSeconds)
+	}
+	if cfg.MCPMaxResultBytes < mcp.MinResultBytes {
+		return fmt.Errorf("cab-bridge mcp: not starting — mcp_max_result_bytes (%d) is below the floor of %d bytes", cfg.MCPMaxResultBytes, mcp.MinResultBytes)
+	}
+	return nil
 }

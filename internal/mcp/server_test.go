@@ -459,7 +459,7 @@ func TestLogsCarryMetadataNeverContent(t *testing.T) {
 }
 
 func TestNew_RefusesAConfigurationThatCannotBeHonoured(t *testing.T) {
-	base := Config{Name: "n", MaxLineBytes: 10, MaxResultBytes: minResultBytes, DrainTimeout: time.Second, Logf: func(string, ...any) {}}
+	base := Config{Name: "n", MaxLineBytes: 10, MaxResultBytes: MinResultBytes, DrainTimeout: time.Second, Logf: func(string, ...any) {}}
 	ok := func(c Config) { _, err := New(c); require.NoError(t, err) }
 	bad := func(name string, mut func(*Config)) {
 		c := base
@@ -470,7 +470,7 @@ func TestNew_RefusesAConfigurationThatCannotBeHonoured(t *testing.T) {
 	ok(base)
 	bad("no name", func(c *Config) { c.Name = "" })
 	bad("no line cap", func(c *Config) { c.MaxLineBytes = 0 })
-	bad("a result budget below the floor", func(c *Config) { c.MaxResultBytes = minResultBytes - 1 })
+	bad("a result budget below the floor", func(c *Config) { c.MaxResultBytes = MinResultBytes - 1 })
 	bad("no drain timeout", func(c *Config) { c.DrainTimeout = 0 })
 	bad("no logger", func(c *Config) { c.Logf = nil })
 	bad("a tool without a handler", func(c *Config) { c.Tools = []Tool{{Name: "x"}} })

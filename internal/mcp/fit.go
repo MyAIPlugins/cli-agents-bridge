@@ -6,10 +6,10 @@ import (
 	"unicode/utf8"
 )
 
-// minResultBytes is the smallest budget the server accepts. Below it the envelope
+// MinResultBytes is the smallest budget the server accepts. Below it the envelope
 // of a response and the truncation notice would not fit, and a budget that cannot
 // be honoured is refused when the server is built, not at the first big result.
-const minResultBytes = 512
+const MinResultBytes = 512
 
 // maxShrinkRounds bounds the loop that shrinks a result until it fits. Each round
 // cuts a tenth of what is left, so 64 rounds bring any text below one byte.
@@ -52,7 +52,7 @@ func fitResponse(id json.RawMessage, res Result, max int) (line []byte, cut bool
 		}
 	}
 	// Last resort, still honest: nothing but the notice. It fits because max is
-	// at least minResultBytes and the envelope plus the notice is far below it.
+	// at least MinResultBytes and the envelope plus the notice is far below it.
 	only := Result{Content: []Block{notice}, IsError: res.IsError}
 	line, err = marshalResult(id, only)
 	if err != nil {
