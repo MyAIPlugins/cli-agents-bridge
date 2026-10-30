@@ -228,3 +228,21 @@ func TestAuthorizer_TheTypesAreShapedSoThatNothingElseCanLeakOrBeForged(t *testi
 	}
 	assert.False(t, strings.Contains(v.PkgPath(), "internal/"), "sanity: the type lives in package main")
 }
+
+// "Only this file builds a visibleMessage" is a property of the source, and a
+// property of the source can be checked: any other non-test file that writes the
+// composite literal is a second door.
+func TestVisibleMessageHasASingleConstructor(t *testing.T) {
+	t.Parallel()
+	files, err := filepath.Glob("*.go")
+	require.NoError(t, err)
+	require.NotEmpty(t, files)
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") || f == "mcp_authorize.go" {
+			continue
+		}
+		data, err := os.ReadFile(f)
+		require.NoError(t, err)
+		assert.NotContains(t, string(data), "visibleMessage{", "%s builds a visibleMessage: only mcp_authorize.go may, after judging the author", f)
+	}
+}
