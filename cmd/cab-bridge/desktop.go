@@ -94,13 +94,13 @@ func desktopClose(mgr *session.Manager, sid string, mf *session.Manifest, stdout
 	default:
 		fmt.Fprintf(stdout, "desktop: the bridge was not open for %s; nothing to close\n", session.EffectiveScope(mf))
 	}
-	fmt.Fprintln(stdout, "  Messages already in Desktop's inbox stay where they are; they are not shown again unless a val reopens the bridge.")
+	fmt.Fprintln(stdout, "  Messages already in Desktop's inbox stay where they are; they are not shown again unless this val reopens the bridge.")
 	return nil
 }
 
 func desktopStatus(mgr *session.Manager, staleSeconds, maxContent int, dataDir, sid string, mf *session.Manifest, stdout io.Writer) error {
 	scope := session.EffectiveScope(mf)
-	now := time.Now().UTC()
+	now := mgr.NowUTC() // the clock the reader side judges the grant by, so status and MCP agree
 	g, found, rerr := mgr.ReadDesktopGrant(sid)
 	switch {
 	case rerr != nil:
