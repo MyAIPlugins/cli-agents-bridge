@@ -198,7 +198,11 @@ func renderNext(pl *mcp.Planner, v nextView) mcp.Result {
 	if notices != "" {
 		blocks = append(blocks, after(notices))
 	}
-	blocks = append(blocks, after(nextFooter))
+	// The footer is how to act on a message: with none to act on (a closed bridge shows
+	// none, and neither does a wait that found nothing) it is noise.
+	if len(v.visible) > 0 {
+		blocks = append(blocks, after(nextFooter))
+	}
 	return mcp.Result{Content: blocks}
 }
 
