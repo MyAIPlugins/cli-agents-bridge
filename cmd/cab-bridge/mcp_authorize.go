@@ -10,9 +10,17 @@ import (
 
 // What Claude Desktop is allowed to SEE (F-72, D3, C1).
 //
-// A message reaches the agent through ONE door: authorizeAuthor. It looks at the
-// message's real author on disk, not at anything the message says about itself,
-// and returns either a visibleMessage or a withheld notice. Every result the MCP
+// A message reaches the agent through ONE door: the authorizer (authorize). It judges
+// the message's author by the session id in the message's `from` field. That id is
+// what the sending process declared: the CLI takes it from the session the process
+// runs as, and a process started with another session's CAB_SESSION_ID signs as that
+// session. This is the same-uid limit the design declares (3.9), not something this
+// door can close, and nothing here pretends otherwise.
+//
+// What the door does decide from the disk, for that id, is everything else: the role,
+// the scope, the name and the grant are read from the author's manifest and grant file,
+// never from anything the message says about itself (its claimed role, its claimed
+// name). It returns either a visibleMessage or a withheld notice. Every result the MCP
 // tools build takes visibleMessage and nothing else; its fields are unexported
 // and this file holds its only constructor. A message that was not authorized does
 // not compile into a result, which is a stronger statement than "the tools were

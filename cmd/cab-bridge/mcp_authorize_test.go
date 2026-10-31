@@ -246,3 +246,19 @@ func TestVisibleMessageHasASingleConstructor(t *testing.T) {
 		assert.NotContains(t, string(data), "visibleMessage{", "%s builds a visibleMessage: only mcp_authorize.go may, after judging the author", f)
 	}
 }
+
+// The limit the header declares, reproduced instead of described: the author is the
+// session id the message carries, so a message that CLAIMS to come from an executor
+// (role, name) but carries a val's id is judged as the val's, under the val's own name.
+// What stops a process from signing as another session is not this door.
+func TestAuthorizer_TheAuthorIsTheSessionIDTheMessageCarriesNotWhoWroteIt(t *testing.T) {
+	t.Parallel()
+	env := newAuthEnv(t)
+	env.plant("valsigned", session.RoleVal, "VAL-signed", authScope)
+	env.open("valsigned", time.Hour)
+
+	m := msgFrom("msg-dddddddddddd", "valsigned", "esc", "ESC-who-really-wrote-it", "written by an executor, signed as the val")
+	v, w := newAuthorizer(env.mgr, authScope, authT0).authorize(m, 7)
+	require.Nil(t, w, "the id decides, and the id is the val's")
+	assert.Equal(t, "VAL-signed", v.AuthorName(), "and the name shown is the manifest's, never the claimed one")
+}
