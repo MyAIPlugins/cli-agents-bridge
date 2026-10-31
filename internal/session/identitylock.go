@@ -88,7 +88,9 @@ func (l *IdentityLock) Release() error {
 
 // AcquireIdentityLock takes the exclusive lock for identity, or fails at once:
 // it never waits. identity is any string that names who is speaking (the MCP
-// server passes the ProjectPath of the session); the file name is a hash of it.
+// server passes the project's scope and the surface it is reached through, one
+// identity per pair: projectKey in cmd/cab-bridge/mcp_app.go); the file name is a
+// hash of it.
 //
 // A second process, or a second call in this one, gets a *HeldError. The lock
 // directory is created at 0700 and refused if it is a symlink or belongs to
