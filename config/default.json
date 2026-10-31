@@ -9,5 +9,11 @@
   "retention_days": 7,
   "heartbeat_tick_ms": 30000,
   "auto_gc_hours": 24,
-  "dedup_window_seconds": 10
+  "dedup_window_seconds": 10,
+  "mcp_grant_ttl_minutes": 480,
+  "mcp_next_max_wait_seconds": 40,
+  "mcp_next_default_wait_seconds": 25,
+  "mcp_scan_budget_seconds": 5,
+  "mcp_child_timeout_seconds": 20,
+  "mcp_max_result_bytes": 24576
 }

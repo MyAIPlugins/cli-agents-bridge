@@ -128,6 +128,37 @@ type Config struct {
 	// it lives in config precisely so it can be corrected without a rebuild.
 	// Env override: CAB_MAX_PAGE_BYTES.
 	MaxPageBytes int `json:"max_page_bytes"`
+
+	// MCPGrantTTLMinutes is how long `cab-bridge desktop open` keeps the bridge
+	// open to Claude Desktop (F-72). A val has no heartbeat to say it is still
+	// alive (it is exempt by design), so the expiry is what bounds a grant its
+	// owner forgot to close.
+	// Default: 480 (8 hours). Env override: CAB_MCP_GRANT_TTL_MINUTES.
+	MCPGrantTTLMinutes int `json:"mcp_grant_ttl_minutes"`
+
+	// The MCP server's limits (F-72). The first three are bounded by something
+	// measured: Claude Desktop's relay gives up on a tool call after 60 seconds
+	// (55 s returned, 65 s did not), so one call's total time, wait included, has to
+	// stay well under that. `cab-bridge mcp` refuses to start with values that break it.
+	//
+	// MCPNextMaxWaitSeconds is the longest a `next` call waits for mail. Default 40.
+	// Env override: CAB_MCP_NEXT_MAX_WAIT_SECONDS.
+	MCPNextMaxWaitSeconds int `json:"mcp_next_max_wait_seconds"`
+	// MCPNextDefaultWaitSeconds is how long a `next` waits when the caller does not
+	// say. Default 25. Env override: CAB_MCP_NEXT_DEFAULT_WAIT_SECONDS.
+	MCPNextDefaultWaitSeconds int `json:"mcp_next_default_wait_seconds"`
+	// MCPScanBudgetSeconds is the time one call may spend READING the inbox on top
+	// of its wait; missing it is an explicit error. Default 5. Env override:
+	// CAB_MCP_SCAN_BUDGET_SECONDS.
+	MCPScanBudgetSeconds int `json:"mcp_scan_budget_seconds"`
+	// MCPChildTimeoutSeconds bounds the `ask`/`tell` child process. Default 20. Env
+	// override: CAB_MCP_CHILD_TIMEOUT_SECONDS.
+	MCPChildTimeoutSeconds int `json:"mcp_child_timeout_seconds"`
+	// MCPMaxResultBytes caps the serialized response of EVERY tool call, envelope
+	// included. Default 24576 (24 KiB), PROVISIONAL: the client rejected a 900,183
+	// character result ("exceeds maximum allowed tokens") and the real threshold has
+	// not been measured. Env override: CAB_MCP_MAX_RESULT_BYTES.
+	MCPMaxResultBytes int `json:"mcp_max_result_bytes"`
 }
 
 // DefaultConfig returns the source-of-truth default values. The DataDir is
@@ -147,6 +178,13 @@ func DefaultConfig() Config {
 		DedupWindowSeconds: 10,
 		MaxPageMessages:    50,
 		MaxPageBytes:       131072,
+		MCPGrantTTLMinutes: 480,
+
+		MCPNextMaxWaitSeconds:     40,
+		MCPNextDefaultWaitSeconds: 25,
+		MCPScanBudgetSeconds:      5,
+		MCPChildTimeoutSeconds:    20,
+		MCPMaxResultBytes:         24576,
 	}
 }
 
@@ -258,6 +296,24 @@ func applyUserFile(cfg *Config, path string) error {
 	if override.MaxPageBytes != 0 {
 		cfg.MaxPageBytes = override.MaxPageBytes
 	}
+	if override.MCPGrantTTLMinutes != 0 {
+		cfg.MCPGrantTTLMinutes = override.MCPGrantTTLMinutes
+	}
+	if override.MCPNextMaxWaitSeconds != 0 {
+		cfg.MCPNextMaxWaitSeconds = override.MCPNextMaxWaitSeconds
+	}
+	if override.MCPNextDefaultWaitSeconds != 0 {
+		cfg.MCPNextDefaultWaitSeconds = override.MCPNextDefaultWaitSeconds
+	}
+	if override.MCPScanBudgetSeconds != 0 {
+		cfg.MCPScanBudgetSeconds = override.MCPScanBudgetSeconds
+	}
+	if override.MCPChildTimeoutSeconds != 0 {
+		cfg.MCPChildTimeoutSeconds = override.MCPChildTimeoutSeconds
+	}
+	if override.MCPMaxResultBytes != 0 {
+		cfg.MCPMaxResultBytes = override.MCPMaxResultBytes
+	}
 	return nil
 }
 
@@ -301,6 +357,23 @@ func applyEnv(cfg *Config) []string {
 	}
 	if w := envInt("CAB_MAX_PAGE_BYTES", &cfg.MaxPageBytes); w != "" {
 		warnings = append(warnings, w)
+	}
+	if w := envInt("CAB_MCP_GRANT_TTL_MINUTES", &cfg.MCPGrantTTLMinutes); w != "" {
+		warnings = append(warnings, w)
+	}
+	for _, e := range []struct {
+		name string
+		dst  *int
+	}{
+		{"CAB_MCP_NEXT_MAX_WAIT_SECONDS", &cfg.MCPNextMaxWaitSeconds},
+		{"CAB_MCP_NEXT_DEFAULT_WAIT_SECONDS", &cfg.MCPNextDefaultWaitSeconds},
+		{"CAB_MCP_SCAN_BUDGET_SECONDS", &cfg.MCPScanBudgetSeconds},
+		{"CAB_MCP_CHILD_TIMEOUT_SECONDS", &cfg.MCPChildTimeoutSeconds},
+		{"CAB_MCP_MAX_RESULT_BYTES", &cfg.MCPMaxResultBytes},
+	} {
+		if w := envInt(e.name, e.dst); w != "" {
+			warnings = append(warnings, w)
+		}
 	}
 
 	return warnings

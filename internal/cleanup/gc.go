@@ -65,6 +65,9 @@ type Orphan struct {
 // session inside `listen` keeps a live PID (via AdoptPID) and refreshes its
 // heartbeat, so it is never swept even if gcHours is small.
 //
+// An `architect` session is never swept by this function (D11, see the loop): the
+// process that owns it is Claude Desktop's connector, which dies with the app.
+//
 // gcHours <= 0 is treated as "disabled" and returns no removals — a defensive
 // echo of the caller's AutoGCHours>0 gate so GCOrphans cannot wipe everything
 // if invoked with a zero threshold by mistake.
@@ -109,6 +112,15 @@ func GCOrphans(dataDir, scope string, gcHours int, now func() time.Time) ([]Orph
 		}
 		if !gcOwns(scope, mf.Scope) {
 			continue // another team's session — not this caller's to collect
+		}
+		if mf.Role == session.RoleArchitect {
+			// Claude Desktop's session over MCP (F-72, D11). Its process ends with every
+			// quit of Desktop, so "PID dead and quiet for a day" is its normal resting
+			// state and not abandonment, and what waits in its inbox is what the val sent
+			// while Desktop was closed. There are at most two per project (chat and
+			// Cowork), so keeping them does not accumulate. The explicit cleanup still
+			// collects them: only the sweep nobody asked for leaves them alone.
+			continue
 		}
 		if session.IsProcessAlive(mf.PID) {
 			continue // live owner (e.g. in listen via AdoptPID) — never touch

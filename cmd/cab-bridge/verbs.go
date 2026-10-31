@@ -480,6 +480,12 @@ func runTell(args []string) error {
 	return runSendVerb("tell", message.TypeNotify, args, os.Stdin, os.Stdout, os.Stderr)
 }
 
+// dedupWarningLead begins the warning `ask` and `tell` print when an identical message
+// went out a moment ago. The MCP server recognises the warning by this text and says
+// it again in words of its own (the rest of stderr is not passed on), so the two share
+// the constant instead of each keeping a copy of the sentence.
+const dedupWarningLead = "warning: an identical message to "
+
 func runSendVerb(verb, msgType string, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return fmt.Errorf("%s: usage: cab-bridge %s <agent-name> [\"message\"]   (without the message, it is read from stdin)", verb, verb)
@@ -521,7 +527,7 @@ func runSendVerb(verb, msgType string, args []string, stdin io.Reader, stdout, s
 			// The AGE, not the window: printing DedupWindowSeconds said "10s ago"
 			// one second after the fact — a statement of something that did not
 			// happen, in the very message meant to help spot a double-invoke.
-			fmt.Fprintf(stderr, "%s: warning: an identical message to %s went out %s ago as %s — sending anyway; if that was a double-invoke, the recipient now has two\n",
+			fmt.Fprintf(stderr, "%s: "+dedupWarningLead+"%s went out %s ago as %s — sending anyway; if that was a double-invoke, the recipient now has two\n",
 				verb, args[0], now.Sub(dupAt).Round(time.Second), dupID)
 		}
 	}
@@ -653,83 +659,11 @@ func replyRun(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	// EVERYTHING up to and including the journal's creation happens inside ONE
-	// critical section (CRI diff-gate P0-1).
-	//
-	// Reading the journal outside the lock and writing it with an overwrite let
-	// two concurrent replies both see "no journal", build J1 and J2 for the same
-	// anchor, and write them in sequence. If the first then delivered its
-	// response and died before persisting SENT, recovery would read J2 while the
-	// response id on disk carries J1's bytes: create-if-absent refuses it — as it
-	// should — and every retry fails identically. The ask stays open forever and
-	// exactly-once stops being recoverable.
-	//
-	// So a second initializer must RESUME J1, never replace it. The set is also
-	// frozen in here, not before: a snapshot taken outside the lock could be
-	// stale by the time it is persisted.
-	var txn *session.ReplyTxn
-	lockErr := mgr.WithSessionLock(sid, func() error {
-		existing, found, terr := mgr.ReadReplyTxn(sid)
-		if terr != nil {
-			return terr
-		}
-		if found {
-			// An in-flight journal outranks anything the arguments say: finishing
-			// a delivered reply must not depend on the retry being spelled the
-			// same way.
-			txn = existing
-			return nil
-		}
-
-		asks, aerr := collectOpenAsks(mgr, cfg, sid)
-		if aerr != nil {
-			return aerr
-		}
-		if len(asks) == 0 {
-			// The state the agent is actually in matters here (CRI2 P1-3): with an
-			// ask sitting UNREAD, "no ask of yours is open" is FALSE from where the
-			// agent stands — it knows it was asked something — and the tool
-			// contradicts its memory with no bridge across. Say which state it is.
-			if n := countUnseenInbound(mgr, cfg, sid); n > 0 {
-				return fmt.Errorf("%w: %d message(s) are waiting to be delivered — run next first, then reply", errUndeliveredWaiting, n)
-			}
-			return errNothingToReplyTo
-		}
-		// The names that could plausibly be the RECIPIENT of this reply: the
-		// senders with an open ask, and nobody else.
-		//
-		// It used to be every peer in my scope, and the plan for F-116 proposed
-		// widening it to the whole data dir — which would have made `reply GO`
-		// stop working the day somebody in an unrelated project registered an
-		// agent called `GO`: the meaning of a valid payload changing because of a
-		// session that has nothing to do with this conversation.
-		//
-		// Narrowing is the correct move and it also fixes today: this list only
-		// ever answers "did they mean to name a recipient, or is this the
-		// message?", and only a sender with an open ask can be the recipient of a
-		// reply. A typo aimed at a peer with no open ask is not a near-miss — it
-		// is a message. (CRI design-gate P1-3.)
-		known := senderNames(asks)
-		target, content, rerr := resolveReplyTarget(args, asks, known, stdin)
-		if rerr != nil {
-			return rerr
-		}
-
-		closeIDs := oldestPage(asks, target)
-		if len(closeIDs) == 0 {
-			return fmt.Errorf("no open ask from %s to answer", target)
-		}
-		txn = &session.ReplyTxn{
-			ResponseID: session.DeterministicResponseID(sid, closeIDs[0]),
-			To:         target,
-			Anchor:     closeIDs[0],
-			CloseIDs:   closeIDs,
-			State:      session.ReplyTxnPending,
-			Timestamp:  time.Now().UTC(),
-			Content:    content,
-		}
-		return mgr.WriteReplyTxn(sid, txn)
-	})
+	// The critical section that freezes the transaction lives in beginReply
+	// (reply_core.go), with the reasoning of CRI diff-gate P0-1: journal precedence,
+	// selection and persistence are ONE critical section. What this verb brings to it
+	// is only the selection of what to close.
+	txn, lockErr := beginReply(mgr, sid, cliReplySelector(mgr, cfg, sid, args, stdin), routingReplyGate(mgr, sid))
 	if lockErr != nil {
 		if errors.Is(lockErr, errUndeliveredWaiting) {
 			return fmt.Errorf("reply (%s): %w", whoIThoughtIWas(mgr, sid), lockErr)
@@ -1083,12 +1017,27 @@ func sortedNames(senders map[string]string) []string {
 // actionable query if the send failed. The gap between them is what the
 // journal covers.
 func finishReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *session.ReplyTxn, stdout, stderr io.Writer) error {
+	note := func(format string, args ...any) { fmt.Fprintf(stderr, format, args...) }
+	if err := driveReplyTxn(mgr, cfg, sid, txn, note); err != nil {
+		return err
+	}
+	return reportReplyTxn(mgr, cfg, sid, txn, stdout, stderr)
+}
+
+// driveReplyTxn is the half of finishReplyTxn that DOES things: deliver the response
+// if the journal is still pending, record that it was sent, archive exactly the frozen
+// closeIDs, and remove the journal. It prints nothing of its own and quotes no message:
+// whatever has to be said goes through note, so a front-end that must not show what a
+// recovered journal holds (the MCP server, F-72 C2) can drive the very same code and
+// say its own words. The CLI passes a note that writes to stderr, so its output is the
+// one it always had.
+func driveReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *session.ReplyTxn, note func(format string, args ...any)) error {
 	// Entering already SENT means we are resuming after a crash in the gap.
 	// Say so: completing a recovery in silence would look identical to having
 	// just sent the text of THIS invocation, which is not what happened — the
 	// delivered response is the one frozen in the journal.
 	if txn.State == session.ReplyTxnSent {
-		fmt.Fprintf(stderr, "reply: resuming an interrupted reply — response %s was already delivered, finishing the archiving without sending again\n", txn.ResponseID)
+		note("reply: resuming an interrupted reply — response %s was already delivered, finishing the archiving without sending again\n", txn.ResponseID)
 	}
 
 	if txn.State == session.ReplyTxnPending {
@@ -1101,7 +1050,7 @@ func finishReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *se
 			return fmt.Errorf("reply: %w", err)
 		}
 		if !delivered {
-			fmt.Fprintf(stderr, "reply: response %s was already delivered — completing the archiving without sending again\n", txn.ResponseID)
+			note("reply: response %s was already delivered — completing the archiving without sending again\n", txn.ResponseID)
 		}
 	}
 
@@ -1125,7 +1074,12 @@ func finishReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *se
 	if err := mgr.RemoveReplyTxn(sid); err != nil {
 		return fmt.Errorf("reply: %w", err)
 	}
+	return nil
+}
 
+// reportReplyTxn is the half that TELLS: the echo of what was sent, what it closed
+// and what stayed open. It runs after driveReplyTxn has finished the journal.
+func reportReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *session.ReplyTxn, stdout, stderr io.Writer) error {
 	name := txn.To
 	if mf, err := mgr.LoadManifest(txn.To); err == nil && mf.AgentName != "" {
 		name = mf.AgentName
@@ -1339,6 +1293,14 @@ func deliverResponse(cfg config.Config, mgr *session.Manager, sid string, txn *s
 	targetManifest, err := mgr.LoadManifest(txn.To)
 	if err != nil {
 		return false, fmt.Errorf("load target manifest %q: %w", txn.To, err)
+	}
+
+	// The routing policy binds an answer exactly as it binds an ask (F-147). This
+	// is the last line of defence: the gate in beginReply stops a refused reply
+	// before it becomes a journal, and this catches any caller that reaches the
+	// delivery without it. Roles come from the two manifests above.
+	if verr := routing.ValidateSendPair(senderManifest.Role, targetManifest.Role, false); verr != nil {
+		return false, fmt.Errorf("reply not delivered: %w", verr)
 	}
 
 	anchor := txn.Anchor

@@ -27,6 +27,11 @@
 //   - val ↔ architect  OK — architect is RESERVED for Claude Desktop joining
 //     through the MCP connector (F-72), not a synonym for critic.
 //
+//   - architect ↔ anyone but a val  REJECTED, structurally, no flag, in BOTH
+//     directions. The wall used to be only the first half of that sentence's
+//     intent: nothing forbade an executor from writing to an architect, and the
+//     architect's inbox is the one that leaves the machine.
+//
 //   - val ↔ observer   OK (val can notify observers)
 //
 //   - neutral ↔ any    OK (v1 schema compat — neutral is the read-default
@@ -65,12 +70,25 @@ var ErrObserverCannotSend = errors.New("observer role cannot send messages (obse
 var ErrCriticMustGoThroughVal = errors.New(
 	"a critic sends only to its val — tell the val instead and it will pass it on")
 
+// ErrArchitectMustGoThroughVal is returned when an architect addresses anyone
+// but a val. Like the critic's, it carries the way forward.
+var ErrArchitectMustGoThroughVal = errors.New(
+	"an architect talks only to a val — tell the val instead and it will pass it on")
+
+// ErrOnlyValMayAddressArchitect is the other direction of the same wall: the
+// only road INTO an architect's inbox is a val. An architect is Claude Desktop
+// (F-72), whose messages travel through a cloud agent, so letting an executor
+// write there directly would open a channel the val never sees.
+var ErrOnlyValMayAddressArchitect = errors.New(
+	"only a val may address an architect — tell the val instead and it will pass it on")
+
 // ValidateSendPair returns nil if a message with the given fromRole/toRole
 // is allowed by the default routing policy, or an error otherwise.
 //
 // allowMesh, when true, relaxes the esc↔esc constraint AND NOTHING ELSE. The
-// other two are structural (LL-7): no flag makes an observer send, and no flag
-// lets a critic route around its val.
+// others are structural (LL-7): no flag makes an observer send, no flag lets a
+// critic route around its val, and no flag opens a road between an architect
+// and anyone who is not a val.
 //
 // Unknown roles are permitted to send/receive — the policy is permissive for
 // forward compat with later role additions. Validation is structural, not
@@ -100,6 +118,15 @@ func ValidateSendPair(fromRole, toRole string, allowMesh bool) error {
 	// should be designed, not guessed at here.
 	if fromRole == "critic" && toRole != "val" {
 		return fmt.Errorf("%w (tried to send to a %q)", ErrCriticMustGoThroughVal, toRole)
+	}
+	// An architect and a val, and nobody else, in both directions (F-72, D7').
+	// After the critic rule on purpose: a critic addressing an architect keeps
+	// the error that names ITS road.
+	if fromRole == "architect" && toRole != "val" {
+		return fmt.Errorf("%w (tried to send to a %q)", ErrArchitectMustGoThroughVal, toRole)
+	}
+	if toRole == "architect" && fromRole != "val" {
+		return fmt.Errorf("%w (sent by a %q)", ErrOnlyValMayAddressArchitect, fromRole)
 	}
 	if fromRole == "esc" && toRole == "esc" && !allowMesh {
 		return fmt.Errorf("%w: from=%q to=%q", ErrEscToEscForbidden, fromRole, toRole)
