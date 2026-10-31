@@ -1,0 +1,22 @@
+cmd/cab-bridge/verbs.go
+  s_ecb5fdcb0207f6::t_3753b87725e6ce 1014-1028,1034,1047,1071-1072,1074-1076
+cmd/cab-bridge/reply_drive_test.go
+  s_ecb5fdcb0207f6::t_a5cf0afc762806 89-107
+  s_ecb5fdcb0207f6::t_2cf5fa6c7dac5a 1-88,108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c34f484fef05359c8bdc0ae2105fb8b8583f9a6a",
+  "prompts": {},
+  "sessions": {
+    "s_ecb5fdcb0207f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32afad43-c9ed-4676-bf4d-bee1f17ec8c0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
