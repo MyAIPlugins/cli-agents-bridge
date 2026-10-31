@@ -1,0 +1,23 @@
+internal/session/desktopgrant_guard_test.go
+  s_ecb5fdcb0207f6::t_f76a229aec7380 1-111
+internal/session/desktopgrant.go
+  s_ecb5fdcb0207f6::t_c7c8746c0c088b 4,7,42-43,45,48-52,62-70,72-76,83-85,90-105,111-113,128-130
+cmd/cab-bridge/mcp_authorize_test.go
+  s_ecb5fdcb0207f6::t_f11ee4aea1e94a 133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "30a1670d82bf4fdbbf805f3051071600b16ac64c",
+  "prompts": {},
+  "sessions": {
+    "s_ecb5fdcb0207f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32afad43-c9ed-4676-bf4d-bee1f17ec8c0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
