@@ -1,0 +1,36 @@
+cmd/cab-bridge/mcp_send_test.go
+  s_ecb5fdcb0207f6::t_e9a862c49fb3e2 99,108-115
+  s_ecb5fdcb0207f6::t_f8a94f45d2aa40 100-107
+  s_ecb5fdcb0207f6::t_f0aac971732445 1-98,116-177
+cmd/cab-bridge/mcp_ack_read_test.go
+  s_ecb5fdcb0207f6::t_1b0ff762145224 1-2
+cmd/cab-bridge/mcp_join_test.go
+  s_ecb5fdcb0207f6::t_1b0ff762145224 1-2
+cmd/cab-bridge/mcp_app.go
+  s_ecb5fdcb0207f6::t_00b5f912d8cf2b 234-248
+cmd/cab-bridge/mcp_harness_test.go
+  s_ecb5fdcb0207f6::t_1b0ff762145224 1-2
+  s_ecb5fdcb0207f6::t_f0aac971732445 69,103
+cmd/cab-bridge/mcp_tools.go
+  s_ecb5fdcb0207f6::t_00b5f912d8cf2b 92-113
+cmd/cab-bridge/mcp_next_test.go
+  s_ecb5fdcb0207f6::t_1b0ff762145224 1-2
+cmd/cab-bridge/mcp_send.go
+  s_ecb5fdcb0207f6::t_00b5f912d8cf2b 1-126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ba88b7662d135ffd70c95544c88a3cd321fca8fe",
+  "prompts": {},
+  "sessions": {
+    "s_ecb5fdcb0207f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32afad43-c9ed-4676-bf4d-bee1f17ec8c0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
