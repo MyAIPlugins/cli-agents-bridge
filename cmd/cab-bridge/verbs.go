@@ -1011,12 +1011,27 @@ func sortedNames(senders map[string]string) []string {
 // actionable query if the send failed. The gap between them is what the
 // journal covers.
 func finishReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *session.ReplyTxn, stdout, stderr io.Writer) error {
+	note := func(format string, args ...any) { fmt.Fprintf(stderr, format, args...) }
+	if err := driveReplyTxn(mgr, cfg, sid, txn, note); err != nil {
+		return err
+	}
+	return reportReplyTxn(mgr, cfg, sid, txn, stdout, stderr)
+}
+
+// driveReplyTxn is the half of finishReplyTxn that DOES things: deliver the response
+// if the journal is still pending, record that it was sent, archive exactly the frozen
+// closeIDs, and remove the journal. It prints nothing of its own and quotes no message:
+// whatever has to be said goes through note, so a front-end that must not show what a
+// recovered journal holds (the MCP server, F-72 C2) can drive the very same code and
+// say its own words. The CLI passes a note that writes to stderr, so its output is the
+// one it always had.
+func driveReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *session.ReplyTxn, note func(format string, args ...any)) error {
 	// Entering already SENT means we are resuming after a crash in the gap.
 	// Say so: completing a recovery in silence would look identical to having
 	// just sent the text of THIS invocation, which is not what happened — the
 	// delivered response is the one frozen in the journal.
 	if txn.State == session.ReplyTxnSent {
-		fmt.Fprintf(stderr, "reply: resuming an interrupted reply — response %s was already delivered, finishing the archiving without sending again\n", txn.ResponseID)
+		note("reply: resuming an interrupted reply — response %s was already delivered, finishing the archiving without sending again\n", txn.ResponseID)
 	}
 
 	if txn.State == session.ReplyTxnPending {
@@ -1029,7 +1044,7 @@ func finishReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *se
 			return fmt.Errorf("reply: %w", err)
 		}
 		if !delivered {
-			fmt.Fprintf(stderr, "reply: response %s was already delivered — completing the archiving without sending again\n", txn.ResponseID)
+			note("reply: response %s was already delivered — completing the archiving without sending again\n", txn.ResponseID)
 		}
 	}
 
@@ -1053,7 +1068,12 @@ func finishReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *se
 	if err := mgr.RemoveReplyTxn(sid); err != nil {
 		return fmt.Errorf("reply: %w", err)
 	}
+	return nil
+}
 
+// reportReplyTxn is the half that TELLS: the echo of what was sent, what it closed
+// and what stayed open. It runs after driveReplyTxn has finished the journal.
+func reportReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *session.ReplyTxn, stdout, stderr io.Writer) error {
 	name := txn.To
 	if mf, err := mgr.LoadManifest(txn.To); err == nil && mf.AgentName != "" {
 		name = mf.AgentName
