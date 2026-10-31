@@ -1,0 +1,21 @@
+cmd/cab-bridge/desktop_clock_test.go
+  s_ecb5fdcb0207f6::t_c28fe2727f5d5c 1-46
+cmd/cab-bridge/desktop.go
+  s_ecb5fdcb0207f6::t_c28fe2727f5d5c 97,103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e29a703f44a9590221b8053953a4d1dd9e2c47b5",
+  "prompts": {},
+  "sessions": {
+    "s_ecb5fdcb0207f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32afad43-c9ed-4676-bf4d-bee1f17ec8c0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
