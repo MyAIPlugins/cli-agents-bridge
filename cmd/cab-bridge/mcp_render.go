@@ -45,14 +45,14 @@ const blockSep = "\n"
 func after(text string) mcp.Block { return mcp.Text(blockSep + text) }
 
 // pointerTitle heads the block of pointer lines.
-const pointerTitle = "Pointer lines (already shown to you, or not inlined for size):\n"
+const pointerTitle = "Pointer lines (no body: already shown on this Claude Desktop surface, perhaps in another conversation, or too large to inline):\n"
 
 func moreLine(n int) string {
 	return fmt.Sprintf("%d more message(s) did not fit in this result; they come up in the next calls.", n)
 }
 
 const nextFooter = "To answer an ask use `reply` with ask_id set to its id. To clear a tell or a response you have handled use `ack` with their ids. " +
-	"Nothing leaves the inbox until you do one of the two. A pointer line (no body) means the message was already shown to you or is too large: `read` with its id gives it."
+	"Nothing leaves the inbox until you do one of the two. A pointer line (no body) means the message was already shown on this Claude Desktop surface (perhaps in another conversation) or is too large: `read` with its id gives it."
 
 // nextView is everything one `next` result is made of.
 type nextView struct {

@@ -129,7 +129,7 @@ func (a *mcpApp) renderJoined(p *mcpProject, op openProject, already bool) strin
 	now := a.mgr.NowUTC()
 	var b strings.Builder
 	if already {
-		fmt.Fprintf(&b, "Already joined to %s as %s.\n", p.label, p.name)
+		fmt.Fprintf(&b, "Already joined to %s as %s, by this conversation earlier or by another one open on the same Claude Desktop surface (%s).\n", p.label, p.name, p.surface)
 	} else {
 		fmt.Fprintf(&b, "Joined %s as %s (role architect, through %s).\n", p.label, p.name, p.surface)
 	}
@@ -137,7 +137,8 @@ func (a *mcpApp) renderJoined(p *mcpProject, op openProject, already bool) strin
 	for _, v := range op.vals {
 		fmt.Fprintf(&b, "- %s\n", describeVal(v, now))
 	}
-	b.WriteString("What the val sends arrives with `next`. `ask` expects an answer, `tell` does not; `reply` answers an ask you received.")
+	b.WriteString("What the val sends arrives with `next`. `ask` expects an answer, `tell` does not; `reply` answers an ask you received.\n")
+	b.WriteString(sharedBySurface)
 	return b.String()
 }
 
@@ -172,7 +173,7 @@ func identityLockError(err error) error {
 	var held *session.HeldError
 	switch {
 	case errors.As(err, &held):
-		return mcp.Refusef("another Claude Desktop process is already speaking as this identity (pid %d): only one conversation can hold a project through a surface at a time. Close the other one, or wait for it to end", held.PID)
+		return mcp.Refusef("another Claude Desktop process is already speaking as this identity (pid %d): only one process at a time can hold a project through a surface (chat, or Cowork), and every conversation of that surface shares it. Quit the other Claude Desktop, or wait for its process to end", held.PID)
 	case errors.Is(err, session.ErrIdentityLockUnsupported):
 		return mcp.Refuse(session.ErrIdentityLockUnsupported.Error())
 	}

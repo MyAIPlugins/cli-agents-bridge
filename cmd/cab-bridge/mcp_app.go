@@ -113,7 +113,14 @@ func (a *mcpApp) joinedProjects() []*mcpProject {
 	return out
 }
 
-var errNoProjectJoined = mcp.Refuse("no project is joined in this conversation yet: call `join` first (without arguments it lists the projects that are open to you)")
+// A join, the identity it takes and the inbox behind it belong to the SURFACE of Claude
+// Desktop (chat, Cowork), not to a conversation: Desktop starts one server process per
+// surface when the app launches and every conversation of that surface talks to it. The
+// server cannot tell the conversations apart, so a text to the model never speaks of
+// "this conversation" as if the server remembered anything of it.
+const sharedBySurface = "Every conversation open on the same Claude Desktop surface (chat, or Cowork) shares the joined projects and the inbox: an `ack` or a `reply` in one removes the message for all of them."
+
+var errNoProjectJoined = mcp.Refuse("no project is joined on this Claude Desktop surface yet (chat and Cowork each have their own, shared by all their conversations): call `join` first (without arguments it lists the projects that are open to you)")
 
 // projectFor picks the project a tool call is about: the one named, or the only one
 // joined. With several joined and none named it asks, instead of choosing.
@@ -137,7 +144,7 @@ func (a *mcpApp) projectFor(named string) (*mcpProject, error) {
 			return p, nil
 		}
 	}
-	return nil, mcp.Refusef("project %q is not joined in this conversation: call `join` with it first", named)
+	return nil, mcp.Refusef("project %q is not joined on this Claude Desktop surface (a join is shared by all its conversations): call `join` with it first", named)
 }
 
 // sessionManifests reads every manifest in the data dir. A session that cannot be
