@@ -1,0 +1,39 @@
+cmd/cab-bridge/mcp_inbox.go
+  s_ecb5fdcb0207f6::t_140dbbb51f494b 122,125,129,131,156,194,200
+cmd/cab-bridge/mcp_render_test.go
+  s_ecb5fdcb0207f6::t_140dbbb51f494b 24
+cmd/cab-bridge/mcp_ack.go
+  s_ecb5fdcb0207f6::t_140dbbb51f494b 42,46
+cmd/cab-bridge/mcp_size_test.go
+  s_ecb5fdcb0207f6::t_7633c793128eb7 65
+  s_ecb5fdcb0207f6::t_8ae5173a972ed0 1-64,66-89
+cmd/cab-bridge/mcp_authorize.go
+  s_ecb5fdcb0207f6::t_140dbbb51f494b 101,108,158
+cmd/cab-bridge/mcp_authorize_test.go
+  s_ecb5fdcb0207f6::t_140dbbb51f494b 63,100,118,261
+cmd/cab-bridge/mcp_read.go
+  s_ecb5fdcb0207f6::t_140dbbb51f494b 47,51
+cmd/cab-bridge/mcp_reply.go
+  s_ecb5fdcb0207f6::t_140dbbb51f494b 109,116
+cmd/cab-bridge/mcp_render.go
+  s_ecb5fdcb0207f6::t_838fdfccbf113c 103-105,107
+cmd/cab-bridge/mcp_inbox_test.go
+  s_ecb5fdcb0207f6::t_140dbbb51f494b 25,117
+  s_ecb5fdcb0207f6::t_1510014faeaaaf 209
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4674e95b6731f1b7943eb816e86aec958f1bf65c",
+  "prompts": {},
+  "sessions": {
+    "s_ecb5fdcb0207f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32afad43-c9ed-4676-bf4d-bee1f17ec8c0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
