@@ -89,6 +89,28 @@ func (a *mcpApp) tools() []mcp.Tool {
 			}, "id"),
 			Handler: a.toolRead,
 		},
+		{
+			Name: "ask",
+			Description: "Ask a val of the joined project something. The ask stays open until the val answers; the answer arrives with `next` as a response, which you then `ack`. " +
+				"`to` must be the name of a val whose bridge is open (`join` printed them). The message is a text, not a command: say what you need and why.",
+			InputSchema: objectSchema(map[string]any{
+				"project": stringProp(projectArgDesc),
+				"to":      stringProp("The name of the val, as `join` printed it."),
+				"message": stringProp("What you want to ask. Plain text."),
+			}, "to", "message"),
+			Handler: a.toolSend("ask"),
+		},
+		{
+			Name: "tell",
+			Description: "Inform a val of the joined project of something; no answer is expected and none is waited for. " +
+				"`to` must be the name of a val whose bridge is open. Use `ask` instead when you need a reply.",
+			InputSchema: objectSchema(map[string]any{
+				"project": stringProp(projectArgDesc),
+				"to":      stringProp("The name of the val, as `join` printed it."),
+				"message": stringProp("What you want to tell. Plain text."),
+			}, "to", "message"),
+			Handler: a.toolSend("tell"),
+		},
 	}
 }
 

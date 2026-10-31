@@ -231,6 +231,21 @@ func (a *mcpApp) openProjects() ([]openProject, error) {
 	return out, nil
 }
 
+// grantingVals is the closed list a message may be addressed to: the open vals of one
+// project, judged now.
+func (a *mcpApp) grantingVals(scope string) ([]openVal, error) {
+	open, err := a.openProjects()
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range open {
+		if session.SameProject(p.scope, scope) {
+			return p.vals, nil
+		}
+	}
+	return nil, nil
+}
+
 // scopeTag is four hex characters that tell two projects of the same name apart.
 func scopeTag(scope string) string {
 	sum := sha256.Sum256([]byte(scope))

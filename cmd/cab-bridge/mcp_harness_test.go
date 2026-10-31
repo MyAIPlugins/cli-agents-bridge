@@ -1,3 +1,5 @@
+//go:build !windows
+
 package main
 
 import (
@@ -64,6 +66,7 @@ type mcpEnv struct {
 	clock   *testClock
 	logs    *syncLog
 	home    string
+	exe     string // the binary the sending verbs run as a child; empty until a test sets one
 }
 
 func newMCPEnv(t *testing.T) *mcpEnv {
@@ -97,7 +100,7 @@ func (e *mcpEnv) val(id, name, scope string, ttl time.Duration) {
 func (e *mcpEnv) start(clientName string) (*mcpApp, *mcpClient) {
 	e.t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	app := newMCPApp(ctx, e.cfg, e.manager(), "", e.home, e.logs.add)
+	app := newMCPApp(ctx, e.cfg, e.manager(), e.exe, e.home, e.logs.add)
 	app.pollInterval = 20 * time.Millisecond
 	srv, err := app.newServer()
 	require.NoError(e.t, err)
