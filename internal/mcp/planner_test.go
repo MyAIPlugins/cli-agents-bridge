@@ -314,3 +314,17 @@ func TestPlanner_SmallMessagesDoNotOvertakeOneThatDoesNotFit(t *testing.T) {
 	assert.Empty(t, plan.Entries, "the oldest does not fit even as a pointer, so nothing behind it goes first")
 	assert.Equal(t, 3, plan.Omitted)
 }
+
+func TestPlanner_CountNewIsAReadAndSeesWhatAResultRepresented(t *testing.T) {
+	t.Parallel()
+	pl := NewPlanner()
+	ids := []string{"a", "b", "c"}
+	assert.Equal(t, 3, pl.CountNew(ids))
+	assert.Equal(t, 3, pl.CountNew(ids), "asking does not represent anything")
+	assert.Zero(t, pl.Tracked())
+
+	pl.Plan([]Item{{ID: "a", FullSize: 10, CompactSize: 5}, {ID: "b", FullSize: 10, CompactSize: 5}}, 100)
+	assert.Equal(t, 1, pl.CountNew(ids), "a and b were represented, c was not")
+	assert.Zero(t, pl.CountNew([]string{"a"}))
+	assert.Zero(t, pl.CountNew(nil))
+}

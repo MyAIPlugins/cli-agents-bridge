@@ -67,6 +67,7 @@ type mcpProject struct {
 	stopBeats context.CancelFunc
 	beatsDone <-chan struct{}
 
+	guard   scanGuard
 	planner *mcp.Planner
 }
 
@@ -78,13 +79,21 @@ type mcpApp struct {
 	home string
 	logf func(format string, args ...any)
 
+	// pollInterval is how often a waiting `next` looks at the inbox again.
+	pollInterval time.Duration
+
 	joinMu   sync.Mutex // one join at a time: the identity lock is per open file
 	mu       sync.Mutex // guards projects
 	projects map[string]*mcpProject
 }
 
+// nextPollInterval is the production polling period of a waiting `next`: short
+// enough that mail is handed over within a second, long enough that a forty-second
+// wait reads the inbox forty times and not four thousand.
+const nextPollInterval = time.Second
+
 func newMCPApp(ctx context.Context, cfg config.Config, mgr *session.Manager, exe, home string, logf func(string, ...any)) *mcpApp {
-	return &mcpApp{ctx: ctx, cfg: cfg, mgr: mgr, exe: exe, home: home, logf: logf, projects: map[string]*mcpProject{}}
+	return &mcpApp{ctx: ctx, cfg: cfg, mgr: mgr, exe: exe, home: home, logf: logf, pollInterval: nextPollInterval, projects: map[string]*mcpProject{}}
 }
 
 func projectKey(scope, surface string) string { return scope + "\x00" + surface }

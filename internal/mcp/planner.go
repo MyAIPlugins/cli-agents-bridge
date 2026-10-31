@@ -155,6 +155,21 @@ func reserveFor(tail []Item, budget int) int {
 	return reserve
 }
 
+// CountNew says how many of ids no result has represented yet, without recording
+// anything. It is how a call that waits knows whether there is something to hand over
+// now or only what the agent has already been shown.
+func (p *Planner) CountNew(ids []string) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	n := 0
+	for _, id := range ids {
+		if _, seen := p.rep[id]; !seen {
+			n++
+		}
+	}
+	return n
+}
+
 // Tracked is how many ids the planner currently remembers, for tests and
 // diagnostics.
 func (p *Planner) Tracked() int {

@@ -34,6 +34,12 @@ func (l *syncLog) add(format string, args ...any) {
 	l.lines = append(l.lines, fmt.Sprintf(format, args...))
 }
 
+func (l *syncLog) all() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return strings.Join(l.lines, "\n")
+}
+
 type testClock struct {
 	mu sync.Mutex
 	t  time.Time
@@ -92,6 +98,7 @@ func (e *mcpEnv) start(clientName string) (*mcpApp, *mcpClient) {
 	e.t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	app := newMCPApp(ctx, e.cfg, e.manager(), "", e.home, e.logs.add)
+	app.pollInterval = 20 * time.Millisecond
 	srv, err := app.newServer()
 	require.NoError(e.t, err)
 
