@@ -130,7 +130,7 @@ func (c *countingDeps) LoadManifest(string) (*session.Manifest, error) {
 
 func (c *countingDeps) ReadDesktopGrant(string) (*session.DesktopGrant, bool, error) {
 	c.grants++
-	return &session.DesktopGrant{ExpiresAt: authT0.Add(time.Hour)}, true, nil
+	return &session.DesktopGrant{SchemaVersion: session.DesktopGrantSchemaVersion, ExpiresAt: authT0.Add(time.Hour)}, true, nil
 }
 
 // One pass reads each author once, however many messages the author sent; the

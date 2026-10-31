@@ -1,8 +1,10 @@
 package session
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -37,10 +39,16 @@ type DesktopGrant struct {
 }
 
 // ValidAt reports whether the grant is open at now. A grant without an expiry is
-// not open: an empty or half-written value must never read as "forever".
+// not open: an empty or half-written value must never read as "forever". Neither
+// is one in a format this binary does not know, whatever its expiry says.
 func (g DesktopGrant) ValidAt(now time.Time) bool {
-	return !g.ExpiresAt.IsZero() && now.Before(g.ExpiresAt)
+	return g.SchemaVersion == DesktopGrantSchemaVersion && !g.ExpiresAt.IsZero() && now.Before(g.ExpiresAt)
 }
+
+// NowUTC is the clock a grant is judged by: the manager's own, the one tests inject.
+// Whoever decides open or expired asks it, instead of reading the wall clock, so the
+// two cannot disagree.
+func (m *Manager) NowUTC() time.Time { return m.now() }
 
 func (m *Manager) desktopGrantPath(sessionID string) string {
 	return filepath.Join(m.sessionDir(sessionID), desktopGrantFile)
@@ -51,20 +59,48 @@ func (m *Manager) desktopGrantPath(sessionID string) string {
 // as "no grant" would hide a damaged file; reading it as open would grant on
 // garbage.
 //
-// Does not validate sessionID — callers validate via security.ValidateSessionID.
+// The id is validated here, before it builds any path: the MCP server reads the grant
+// of a val whose id comes out of a manifest, so the check cannot be left to the one
+// caller that used to resolve it from the working directory (SC-4).
+//
+// The file is decoded STRICTLY, unlike the messages: an authorization with a field
+// this binary does not know is not an authorization it can honour, and a version
+// other than its own is an error with the reason (a newer binary wrote it) instead
+// of a bridge that is closed with no visible cause. A file with no version, or an
+// older number, is read as present and is never open (ValidAt).
 func (m *Manager) ReadDesktopGrant(sessionID string) (*DesktopGrant, bool, error) {
-	data, err := security.ReadOwnedFile(m.desktopGrantPath(sessionID))
+	if err := security.ValidateSessionID(sessionID); err != nil {
+		return nil, false, fmt.Errorf("desktop grant: %w", err)
+	}
+	path := m.desktopGrantPath(sessionID)
+	data, err := security.ReadOwnedFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, false, nil
 		}
 		return nil, false, fmt.Errorf("desktop grant: read: %w", err)
 	}
-	var g DesktopGrant
-	if err := json.Unmarshal(data, &g); err != nil {
-		return nil, false, fmt.Errorf("desktop grant at %s is unreadable (%w) — it counts as closed; `cab-bridge desktop open` writes a new one", m.desktopGrantPath(sessionID), err)
+	g, err := decodeDesktopGrant(data)
+	if err != nil {
+		return nil, false, fmt.Errorf("desktop grant at %s is unreadable (%w) — it counts as closed; `cab-bridge desktop open` writes a new one", path, err)
 	}
 	return &g, true, nil
+}
+
+func decodeDesktopGrant(data []byte) (DesktopGrant, error) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	var g DesktopGrant
+	if err := dec.Decode(&g); err != nil {
+		return DesktopGrant{}, err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return DesktopGrant{}, fmt.Errorf("data after the first JSON value")
+	}
+	if g.SchemaVersion > DesktopGrantSchemaVersion {
+		return DesktopGrant{}, fmt.Errorf("schema version %d: written by a newer cab-bridge than this one (%d)", g.SchemaVersion, DesktopGrantSchemaVersion)
+	}
+	return g, nil
 }
 
 // OpenDesktopGrant opens (or renews) the grant for ttl from now. Renewing is the
@@ -72,6 +108,9 @@ func (m *Manager) ReadDesktopGrant(sessionID string) (*DesktopGrant, bool, error
 // The write is atomic (rename), so a reader sees the old file or the new one,
 // never half of either.
 func (m *Manager) OpenDesktopGrant(sessionID string, ttl time.Duration) (DesktopGrant, error) {
+	if err := security.ValidateSessionID(sessionID); err != nil {
+		return DesktopGrant{}, fmt.Errorf("desktop grant: %w", err)
+	}
 	if ttl <= 0 {
 		return DesktopGrant{}, fmt.Errorf("desktop grant: ttl must be positive, got %s", ttl)
 	}
@@ -86,6 +125,9 @@ func (m *Manager) OpenDesktopGrant(sessionID string, ttl time.Duration) (Desktop
 // CloseDesktopGrant removes the grant. Closing a grant that is not open is not an
 // error: the end state is the one that was asked for.
 func (m *Manager) CloseDesktopGrant(sessionID string) error {
+	if err := security.ValidateSessionID(sessionID); err != nil {
+		return fmt.Errorf("desktop grant: %w", err)
+	}
 	if err := os.Remove(m.desktopGrantPath(sessionID)); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("desktop grant: remove: %w", err)
 	}
