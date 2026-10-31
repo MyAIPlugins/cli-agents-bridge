@@ -60,6 +60,9 @@ func (a *mcpApp) recipient(p *mcpProject, named string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if len(vals) == 0 {
+		return "", mcp.Refusef("no val of %s has the bridge open now, so nothing was sent. A val reopens it with `cab-bridge desktop open`.", p.label)
+	}
 	var matches []openVal
 	names := make([]string, len(vals))
 	for i, v := range vals {
@@ -70,20 +73,13 @@ func (a *mcpApp) recipient(p *mcpProject, named string) (string, error) {
 	}
 	switch {
 	case named == "" || strings.HasPrefix(named, "-") || session.ValidateAgentName(named) != nil:
-		return "", mcp.Refusef("`to` must be the name of a val of this project; the ones with the bridge open are: %s", listOrNone(names))
+		return "", mcp.Refusef("`to` must be the name of a val of this project; the ones with the bridge open are: %s", strings.Join(names, ", "))
 	case len(matches) == 0:
-		return "", mcp.Refusef("no val named %q has the bridge open for %s now; the ones that do are: %s", named, p.label, listOrNone(names))
+		return "", mcp.Refusef("no val named %q has the bridge open for %s now; the ones that do are: %s", named, p.label, strings.Join(names, ", "))
 	case len(matches) > 1:
 		return "", mcp.Refusef("%d open vals of %s are named %q, so nothing was sent: the val has to rename one of them", len(matches), p.label, named)
 	}
 	return named, nil
-}
-
-func listOrNone(names []string) string {
-	if len(names) == 0 {
-		return "none (the val of the project opens the bridge with `cab-bridge desktop open`)"
-	}
-	return strings.Join(names, ", ")
 }
 
 // duplicateNote is what Desktop is told when the command warned that an identical

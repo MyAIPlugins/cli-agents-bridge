@@ -127,7 +127,8 @@ func TestMCPSend_AClosedOrExpiredBridgeCannotBeWrittenTo(t *testing.T) {
 	require.NoError(t, j.e.manager().CloseDesktopGrant(j.valSID))
 	res := j.c.call("tell", map[string]any{"to": "VAL-demo", "message": "hello"})
 	require.True(t, res.IsError)
-	assert.Contains(t, res.Text(), "none")
+	assert.Contains(t, res.Text(), "no val of demo has the bridge open now, so nothing was sent")
+	assert.NotContains(t, res.Text(), "the ones that do are", "an empty list is a sentence, not a list that ends in `none`")
 	assert.Empty(t, j.e.fakeLog())
 
 	_, err := j.e.manager().OpenDesktopGrant(j.valSID, time.Hour)
@@ -209,4 +210,21 @@ func TestMCPSend_OnSuccessOnlyTheEchoAndAFixedDuplicateNoteReachTheModel(t *test
 // constant the server recognises from drifting apart.
 func TestFakeCLI_ItsDuplicateWarningUsesTheRealLead(t *testing.T) {
 	assert.Contains(t, fakeCLI, dedupWarningLead)
+}
+
+// With no val holding the bridge open there is no list to give: saying "the ones that
+// do are: none" made the model read a list that was a sentence in disguise.
+func TestMCPSend_WithNoValOpenTheRefusalIsASentenceForEveryRecipientAndVerb(t *testing.T) {
+	j := newSendDemo(t)
+	require.NoError(t, j.e.manager().CloseDesktopGrant(j.valSID))
+	for _, verb := range []string{"ask", "tell"} {
+		for _, to := range []string{"VAL-demo", "VAL-nobody", "-h", ""} {
+			res := j.c.call(verb, map[string]any{"to": to, "message": "hello"})
+			require.True(t, res.IsError, "%s to %q", verb, to)
+			assert.Contains(t, res.Text(), "no val of demo has the bridge open now, so nothing was sent", "%s to %q", verb, to)
+			assert.Contains(t, res.Text(), "cab-bridge desktop open", "and it says who reopens it")
+			assert.NotContains(t, res.Text(), "none")
+		}
+	}
+	assert.Empty(t, j.e.fakeLog(), "the command was never run")
 }
