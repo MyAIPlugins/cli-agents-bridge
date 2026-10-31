@@ -101,7 +101,6 @@ func (e *mcpEnv) start(clientName string) (*mcpApp, *mcpClient) {
 	e.t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	app := newMCPApp(ctx, e.cfg, e.manager(), e.exe, e.home, e.logs.add)
-	app.pollInterval = 20 * time.Millisecond
 	srv, err := app.newServer()
 	require.NoError(e.t, err)
 

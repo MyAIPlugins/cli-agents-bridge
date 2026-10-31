@@ -86,6 +86,7 @@ func validateMCPConfig(cfg config.Config) error {
 		{"mcp_child_timeout_seconds", cfg.MCPChildTimeoutSeconds},
 		{"mcp_max_result_bytes", cfg.MCPMaxResultBytes},
 		{"mcp_grant_ttl_minutes", cfg.MCPGrantTTLMinutes},
+		{"poll_interval_ms", cfg.PollIntervalMs},
 	}
 	for _, p := range positive {
 		if p.v <= 0 {
