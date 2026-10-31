@@ -1,0 +1,20 @@
+cmd/cab-bridge/mcp_boot_test.go
+  s_ecb5fdcb0207f6::t_d5bb379b0119ce 30,42
+  s_ecb5fdcb0207f6::t_9ac55f39a3f7e2 7,24-29,37-38,41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e50942060bdbc8d2dfa2e773ea90a1ae7d686bcb",
+  "prompts": {},
+  "sessions": {
+    "s_ecb5fdcb0207f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32afad43-c9ed-4676-bf4d-bee1f17ec8c0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
