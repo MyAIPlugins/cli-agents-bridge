@@ -1,0 +1,20 @@
+cmd/cab-bridge/mcp_child_test.go
+  s_ecb5fdcb0207f6::t_43b2b1ff04b6df 192
+  s_ecb5fdcb0207f6::t_2cafe886dc8941 10,12,29-32,52-99,157-191,193-199,201-204,206-209,211-214,216-218
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d102821034e4c4afa5bc6dfbf1af1ddeb1a0734c",
+  "prompts": {},
+  "sessions": {
+    "s_ecb5fdcb0207f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32afad43-c9ed-4676-bf4d-bee1f17ec8c0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
