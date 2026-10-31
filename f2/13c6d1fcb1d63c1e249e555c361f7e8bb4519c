@@ -1,0 +1,21 @@
+cmd/cab-bridge/mcp_authorize_test.go
+  s_ecb5fdcb0207f6::t_96adf73eea66be 249-264
+cmd/cab-bridge/mcp_authorize.go
+  s_ecb5fdcb0207f6::t_96adf73eea66be 13-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f213c6d1fcb1d63c1e249e555c361f7e8bb4519c",
+  "prompts": {},
+  "sessions": {
+    "s_ecb5fdcb0207f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32afad43-c9ed-4676-bf4d-bee1f17ec8c0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
