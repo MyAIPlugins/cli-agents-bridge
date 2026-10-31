@@ -10,6 +10,12 @@ import (
 
 const identityLocksSupported = true
 
+// maxFlockAttempts bounds the retry on EINTR: a signal landing during the syscall
+// is not a reason to give up, and not a reason to loop forever either. It lives here
+// and not next to the other constants because only this file loops: under
+// GOOS=windows it would be a constant nothing uses.
+const maxFlockAttempts = 5
+
 // errLockContended means another open file description holds the lock. It is the
 // ordinary "someone else has it", as opposed to a failure of the syscall.
 var errLockContended = errors.New("lock contended")
