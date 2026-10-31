@@ -160,6 +160,14 @@ func (s *server) waitExit(t *testing.T, within time.Duration) int {
 
 func (s *server) endInput() { _ = s.client.stdin.Close() }
 
+// assertLogEventually waits for a line in the server's stderr: the pipe is copied by
+// another goroutine, so the client can hold the response before the log line behind it
+// has arrived in the buffer.
+func assertLogEventually(t *testing.T, s *server, want string, msg string) {
+	t.Helper()
+	assert.Eventually(t, func() bool { return strings.Contains(s.stderr.String(), want) }, 3*time.Second, 20*time.Millisecond, msg)
+}
+
 var idInResult = regexp.MustCompile(`id (msg-[0-9a-f]{12}) \|`)
 
 func firstID(t *testing.T, text string) string {
@@ -211,7 +219,6 @@ func TestMCPWithTheRealBinary(t *testing.T) {
 		res = srv.client.call("ask", map[string]any{"to": "VAL-real", "message": "QUESTION-ONE: is the plan sound?"})
 		require.False(t, res.IsError, res.Text())
 		assert.Contains(t, res.Text(), "open until they reply")
-		assert.NotContains(t, res.Text(), "no next is listening", "that note is about a listener, and over MCP there is none by design")
 		out, err := sb.cli(valSID, "next")
 		require.NoError(t, err, out)
 		assert.Contains(t, out, "QUESTION-ONE")
@@ -281,6 +288,10 @@ func TestMCPWithTheRealBinary(t *testing.T) {
 		// text the caller wrote.
 		res := srv.client.call("tell", map[string]any{"to": "VAL-real", "message": "a plain message"})
 		require.False(t, res.IsError, res.Text())
+		// The command does print "no next is listening" for this session, which has no
+		// listener by design; it is on the stderr the server does not pass on.
+		assert.NotContains(t, res.Text(), "no next is listening")
+		assertLogEventually(t, srv, "stderr 1 lines", "it was there to be passed on: the note and nothing else, counted in the log")
 		for _, machine := range []string{sb.data, sb.home, "/Users/"} {
 			assert.NotContains(t, res.Raw, machine, "a successful result names nothing of this machine")
 		}
@@ -297,7 +308,7 @@ func TestMCPWithTheRealBinary(t *testing.T) {
 		for _, leaked := range []string{sb.data, sb.home, "non-fatal", "outbox", "not a directory"} {
 			assert.NotContains(t, res.Raw, leaked)
 		}
-		assert.Contains(t, srv.stderr.String(), "stderr", "the log has the sizes")
+		assertLogEventually(t, srv, "stderr 1 lines", "the log has the sizes")
 		assert.NotContains(t, srv.stderr.String(), "non-fatal", "and not the command's sentence")
 
 		// And the one warning a client needs is translated, from the real CLI.
