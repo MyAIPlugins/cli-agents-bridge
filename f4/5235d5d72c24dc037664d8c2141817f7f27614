@@ -1,0 +1,21 @@
+cmd/cab-bridge/mcp_flows_test.go
+  s_ecb5fdcb0207f6::t_0120ad739acbab 37-38,46
+  s_ecb5fdcb0207f6::t_b0e21dbcfed54d 154
+  s_ecb5fdcb0207f6::t_900a824ae60f62 1-36,39-45,47-153,155-248
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f45235d5d72c24dc037664d8c2141817f7f27614",
+  "prompts": {},
+  "sessions": {
+    "s_ecb5fdcb0207f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32afad43-c9ed-4676-bf4d-bee1f17ec8c0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
