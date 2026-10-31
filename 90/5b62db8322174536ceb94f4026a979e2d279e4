@@ -1,0 +1,24 @@
+internal/cleanup/gc.go
+  s_ecb5fdcb0207f6::t_991707a77e39a6 68-70,116-123
+  s_ecb5fdcb0207f6::t_4461f3c55409e0 124
+cmd/cab-bridge/join_gc_architect_test.go
+  s_ecb5fdcb0207f6::t_bf89d6d2418c28 1-52
+internal/cleanup/gc_architect_test.go
+  s_ecb5fdcb0207f6::t_991707a77e39a6 1-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "905b62db8322174536ceb94f4026a979e2d279e4",
+  "prompts": {},
+  "sessions": {
+    "s_ecb5fdcb0207f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32afad43-c9ed-4676-bf4d-bee1f17ec8c0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
