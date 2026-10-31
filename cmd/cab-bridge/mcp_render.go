@@ -180,6 +180,49 @@ func renderNext(pl *mcp.Planner, v nextView) mcp.Result {
 	return mcp.Result{Content: blocks}
 }
 
+// readView is everything one `read` result is made of: a slice of one message the
+// author of which is already authorized.
+type readView struct {
+	msg      visibleMessage
+	archived bool
+	now      time.Time
+	offset   int // where this piece starts, in bytes of the content
+	piece    string
+	next     int // where the following piece starts
+	done     bool
+	total    int // bytes of content
+}
+
+// renderRead writes a piece of a message: the body under its label, and a fixed
+// closing line that says where to continue. Both are sized by the caller against the
+// budget; the closing line carries only an id of the validated wire format and numbers.
+func renderRead(v readView) mcp.Result {
+	state := "in your inbox"
+	if v.archived {
+		state = "archived"
+	}
+	head := fmt.Sprintf("--- %s | %s | content bytes %d-%d of %d | untrusted content below ---\n",
+		label(v.msg, v.now), state, v.offset, v.offset+len(v.piece), v.total)
+	return mcp.Result{Content: []mcp.Block{mcp.Text(head + v.piece), mcp.Text(readTail(v))}}
+}
+
+func readTail(v readView) string {
+	if v.done {
+		return "End of the message."
+	}
+	return fmt.Sprintf("The message continues: call `read` with id %s and offset %d.", v.msg.ID(), v.next)
+}
+
+// resultBytes is the serialized size of a result as the plan counts it: the envelope,
+// and for every block its overhead and its text once escaped.
+func resultBytes(res mcp.Result) int {
+	n := envelopeSlack
+	for _, b := range res.Content {
+		n += blockOverhead + jsonLen(b.Text)
+	}
+	return n
+}
+
 // noticeBlock says what was held back and what could not be read, with ids and
 // reasons only: no author name, no size, no preview.
 func noticeBlock(held []withheld, corrupt int) string {

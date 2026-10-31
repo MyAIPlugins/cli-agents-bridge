@@ -67,6 +67,9 @@ type mcpProject struct {
 	stopBeats context.CancelFunc
 	beatsDone <-chan struct{}
 
+	// mu orders ack and reply of THIS project against each other. It is never held
+	// while waiting for anything (next holds nothing) and never across projects.
+	mu      sync.Mutex
 	guard   scanGuard
 	planner *mcp.Planner
 }
