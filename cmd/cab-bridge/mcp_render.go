@@ -22,7 +22,9 @@ import (
 
 const (
 	// blockOverhead is what one text block costs in the serialized result beyond its
-	// text: {"type":"text","text":""}, the comma, and slack.
+	// text: {"type":"text","text":""}, the comma, and slack. The slack is what pays for
+	// the separator in front of every block but the first (blockSep, two bytes once
+	// escaped), so the plan does not count it separately.
 	blockOverhead = 40
 	// envelopeSlack is what the JSON-RPC envelope costs around the result: the
 	// protocol tag, an id of up to ten digits and the braces.
@@ -32,6 +34,15 @@ const (
 	// maxHeldIDsListed bounds the ids named in a withheld notice.
 	maxHeldIDsListed = 10
 )
+
+// blockSep goes in front of every block but the first. A client may join the text
+// blocks of a result with nothing between them, and then "...open for you." runs into
+// "No val of this project": each block says where it begins instead of relying on
+// the reader to put a line break between them.
+const blockSep = "\n"
+
+// after builds a block that is not the first of its result.
+func after(text string) mcp.Block { return mcp.Text(blockSep + text) }
 
 // pointerTitle heads the block of pointer lines.
 const pointerTitle = "Pointer lines (already shown to you, or not inlined for size):\n"
@@ -170,21 +181,21 @@ func renderNext(pl *mcp.Planner, v nextView) mcp.Result {
 	for _, e := range plan.Entries {
 		m := byID[e.ID]
 		if e.Full {
-			blocks = append(blocks, mcp.Text(renderFull(m, v.now)))
+			blocks = append(blocks, after(renderFull(m, v.now)))
 			continue
 		}
 		pointers = append(pointers, renderPointer(m, v.now, tooBig[e.ID]))
 	}
 	if len(pointers) > 0 {
-		blocks = append(blocks, mcp.Text(pointerTitle+strings.Join(pointers, "\n")))
+		blocks = append(blocks, after(pointerTitle+strings.Join(pointers, "\n")))
 	}
 	if plan.Omitted > 0 {
-		blocks = append(blocks, mcp.Text(moreLine(plan.Omitted)))
+		blocks = append(blocks, after(moreLine(plan.Omitted)))
 	}
 	if notices != "" {
-		blocks = append(blocks, mcp.Text(notices))
+		blocks = append(blocks, after(notices))
 	}
-	blocks = append(blocks, mcp.Text(nextFooter))
+	blocks = append(blocks, after(nextFooter))
 	return mcp.Result{Content: blocks}
 }
 
@@ -211,7 +222,7 @@ func renderRead(v readView) mcp.Result {
 	}
 	head := fmt.Sprintf("--- %s | %s | content bytes %d-%d of %d | untrusted content below ---\n",
 		label(v.msg, v.now), state, v.offset, v.offset+len(v.piece), v.total)
-	return mcp.Result{Content: []mcp.Block{mcp.Text(head + v.piece), mcp.Text(readTail(v))}}
+	return mcp.Result{Content: []mcp.Block{mcp.Text(head + v.piece), after(readTail(v))}}
 }
 
 func readTail(v readView) string {

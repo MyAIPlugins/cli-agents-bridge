@@ -75,7 +75,7 @@ func TestRenderNext_ABodyNeverEntersTheInstructionBlocks(t *testing.T) {
 	assert.Equal(t, 1, holders, "the body is in exactly one block, its own")
 	first, last := res.Content[0].Text, res.Content[len(res.Content)-1].Text
 	assert.NotContains(t, first, "SENTINEL-INJECTION")
-	assert.Equal(t, nextFooter, last, "the instructions are the tool's fixed text, last")
+	assert.Equal(t, blockSep+nextFooter, last, "the instructions are the tool's fixed text, last")
 }
 
 func TestRenderNext_NoMessagesSaysSo(t *testing.T) {
@@ -207,4 +207,25 @@ func TestSliceForRead(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, done)
 	assert.Empty(t, piece)
+}
+
+// Some clients join the text blocks of a result with nothing between them. Each block
+// after the first therefore begins with a line break of its own, so no sentence runs
+// into the next block's.
+func TestRenderNext_EveryBlockAfterTheFirstBeginsOnItsOwnLine(t *testing.T) {
+	t.Parallel()
+	msgs := []visibleMessage{vis("msg-aaaaaaaaaaaa", "query", "a body", 3), vis("msg-bbbbbbbbbbbb", "notify", "another", 2)}
+	res := renderNext(mcp.NewPlanner(), nextView{
+		project: "demo", agentName: "ARC-demo-cowork", visible: msgs, held: []withheld{{ID: "msg-cccccccccccc", Reason: reasonNotOpen}},
+		corrupt: 1, bridgeClosed: true, now: renderNow, budget: 24576,
+	})
+	blocks := texts(res)
+	require.Greater(t, len(blocks), 3)
+	assert.False(t, strings.HasPrefix(blocks[0], "\n"), "the first block has nothing to be separated from")
+	for i, b := range blocks[1:] {
+		assert.True(t, strings.HasPrefix(b, blockSep), "block %d begins on a new line", i+1)
+	}
+	glued := strings.Join(blocks, "")
+	assert.Contains(t, glued, "message(s) open for you.\n", "joined with nothing, the header still ends its line")
+	assert.Contains(t, glued, "\nNo val of this project has the bridge open")
 }

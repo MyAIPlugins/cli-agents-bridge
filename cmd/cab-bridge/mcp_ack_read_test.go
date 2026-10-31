@@ -185,12 +185,14 @@ func TestMCPRead_FollowingTheHintsRebuildsTheMessageExactly(t *testing.T) {
 		rebuilt.WriteString(piece)
 		calls++
 		require.Less(t, calls, 100, "bounded")
-		if strings.HasPrefix(res.Blocks[1], "End of the message") {
+		tail := strings.TrimPrefix(res.Blocks[1], blockSep)
+		assert.NotEqual(t, tail, res.Blocks[1], "the closing line begins on a new line of its own")
+		if strings.HasPrefix(tail, "End of the message") {
 			break
 		}
 		var id string
-		_, err := fmt.Sscanf(res.Blocks[1], "The message continues: call `read` with id %s and offset %d.", &id, &offset)
-		require.NoError(t, err, res.Blocks[1])
+		_, err := fmt.Sscanf(tail, "The message continues: call `read` with id %s and offset %d.", &id, &offset)
+		require.NoError(t, err, tail)
 	}
 	assert.Equal(t, body, rebuilt.String())
 	assert.Greater(t, calls, 2, "it really was in pieces")
