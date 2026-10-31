@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -50,7 +49,7 @@ func surfaceOf(clientName string) (string, error) {
 	case strings.HasPrefix(clientName, clientPrefixCowork):
 		return surfaceCowork, nil
 	}
-	return "", fmt.Errorf("this client calls itself %q, which this bridge does not know how to tell apart: it knows Claude Desktop's chat (%q) and Cowork (%q...)",
+	return "", mcp.Refusef("this client calls itself %q, which this bridge does not know how to tell apart: it knows Claude Desktop's chat (%q) and Cowork (%q...)",
 		clientName, clientNameChat, clientPrefixCowork)
 }
 
@@ -114,7 +113,7 @@ func (a *mcpApp) joinedProjects() []*mcpProject {
 	return out
 }
 
-var errNoProjectJoined = errors.New("no project is joined in this conversation yet: call `join` first (without arguments it lists the projects that are open to you)")
+var errNoProjectJoined = mcp.Refuse("no project is joined in this conversation yet: call `join` first (without arguments it lists the projects that are open to you)")
 
 // projectFor picks the project a tool call is about: the one named, or the only one
 // joined. With several joined and none named it asks, instead of choosing.
@@ -131,14 +130,14 @@ func (a *mcpApp) projectFor(named string) (*mcpProject, error) {
 		for i, p := range all {
 			labels[i] = p.label
 		}
-		return nil, fmt.Errorf("several projects are joined (%s): say which one with the `project` argument", strings.Join(labels, ", "))
+		return nil, mcp.Refusef("several projects are joined (%s): say which one with the `project` argument", strings.Join(labels, ", "))
 	}
 	for _, p := range all {
 		if p.label == named || p.scope == named {
 			return p, nil
 		}
 	}
-	return nil, fmt.Errorf("project %q is not joined in this conversation: call `join` with it first", named)
+	return nil, mcp.Refusef("project %q is not joined in this conversation: call `join` with it first", named)
 }
 
 // sessionManifests reads every manifest in the data dir. A session that cannot be

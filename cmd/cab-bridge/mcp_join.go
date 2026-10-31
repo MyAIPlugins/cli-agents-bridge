@@ -39,11 +39,11 @@ func (a *mcpApp) toolJoin(ctx context.Context, raw json.RawMessage) (mcp.Result,
 	}
 	op, ok := pickProject(open, args.Project)
 	if !ok {
-		return mcp.Result{}, fmt.Errorf("project %q is not open to Claude Desktop. The val of a project opens it with `cab-bridge desktop open`. %s", args.Project, a.renderOpenProjects(open))
+		return mcp.Result{}, mcp.Refusef("project %q is not open to Claude Desktop. The val of a project opens it with `cab-bridge desktop open`. %s", args.Project, a.renderOpenProjects(open))
 	}
 	client, ok := mcp.ClientFrom(ctx)
 	if !ok {
-		return mcp.Result{}, errors.New("the client did not introduce itself, so its surface is unknown")
+		return mcp.Result{}, mcp.Refuse("the client did not introduce itself, so its surface is unknown")
 	}
 	surface, err := surfaceOf(client.Name)
 	if err != nil {
@@ -129,9 +129,9 @@ func identityLockError(err error) error {
 	var held *session.HeldError
 	switch {
 	case errors.As(err, &held):
-		return fmt.Errorf("another Claude Desktop process is already speaking as this identity (pid %d): only one conversation can hold a project through a surface at a time. Close the other one, or wait for it to end", held.PID)
+		return mcp.Refusef("another Claude Desktop process is already speaking as this identity (pid %d): only one conversation can hold a project through a surface at a time. Close the other one, or wait for it to end", held.PID)
 	case errors.Is(err, session.ErrIdentityLockUnsupported):
-		return err
+		return mcp.Refuse(session.ErrIdentityLockUnsupported.Error())
 	}
 	return fmt.Errorf("could not take the identity of this project: %w", err)
 }
@@ -184,7 +184,7 @@ func commonTeam(op openProject) (string, error) {
 	team := op.vals[0].team
 	for _, v := range op.vals[1:] {
 		if v.team != team {
-			return "", fmt.Errorf("the vals of %s belong to different teams (%q and %q), so no single team label would let each of them find the architect by name: close the bridge of all but one of them", op.label, team, v.team)
+			return "", mcp.Refusef("the vals of %s belong to different teams (%q and %q), so no single team label would let each of them find the architect by name: close the bridge of all but one of them", op.label, team, v.team)
 		}
 	}
 	return team, nil
@@ -220,7 +220,7 @@ func (a *mcpApp) architectName(scope, vpath, surface string) (string, error) {
 		name = session.SuggestAddressableName(name + "-" + scopeTag(scope))
 	}
 	if taken[name] {
-		return "", fmt.Errorf("the name %s is already taken by another session in this data dir, and so is the one with the project's tag added: remove the stale session that holds it (`cab-bridge peers --all-scopes`, then `cab-bridge cleanup --session-id=<id>`)", name)
+		return "", mcp.Refusef("the name %s is already taken by another session in this data dir, and so is the one with the project's tag added: remove the stale session that holds it (`cab-bridge peers --all-scopes`, then `cab-bridge cleanup --session-id=<id>`)", name)
 	}
 	return name, nil
 }

@@ -246,3 +246,56 @@ func TestMCPLoad_AThousandsStrongInboxIsReadInTimeAndTheResultFits(t *testing.T)
 	assert.True(t, j.archived(ids[0]))
 	t.Logf("scan of %d files, answer built in %s", n, elapsed)
 }
+
+// A failure of the file system carries the path of the machine in its text. The four
+// places where a handler wraps one (listing the projects, reading the inbox, taking the
+// identity lock, registering the session) are the four a reader found by reading, and
+// the rule that closes them is not in any of the four: only an error written for the
+// model reaches it, everything else is replaced and logged. The test plants each failure
+// for real and checks the whole response, not the sentence the handler meant to write.
+func TestMCPAFileSystemErrorWithAPathNeverReachesTheClient(t *testing.T) {
+	const neutral = "could not complete this call on the machine it runs on"
+	cases := []struct {
+		name  string
+		setup func(t *testing.T, j *joinedDemo, e *mcpEnv) func() toolResult
+	}{
+		{"listing the projects", func(t *testing.T, j *joinedDemo, e *mcpEnv) func() toolResult {
+			sessions := filepath.Join(e.dataDir, "sessions")
+			require.NoError(t, os.Chmod(sessions, 0o000))
+			t.Cleanup(func() { _ = os.Chmod(sessions, 0o700) })
+			return func() toolResult { return j.c.call("join", nil) }
+		}},
+		{"reading the inbox", func(t *testing.T, j *joinedDemo, e *mcpEnv) func() toolResult {
+			require.NoError(t, os.RemoveAll(j.inbox))
+			require.NoError(t, os.WriteFile(j.inbox, []byte("not a directory"), 0o600))
+			return func() toolResult { return j.next(0) }
+		}},
+		{"taking the identity lock", func(t *testing.T, j *joinedDemo, e *mcpEnv) func() toolResult {
+			owners := filepath.Join(e.dataDir, "mcp-owners")
+			require.NoError(t, os.RemoveAll(owners)) // the first join made it; the second must find a file instead
+			require.NoError(t, os.WriteFile(owners, []byte("a file where a directory belongs"), 0o600))
+			_, c2 := e.start(chatClient)
+			return func() toolResult { return c2.call("join", map[string]any{"project": "demo"}) }
+		}},
+		{"registering the session", func(t *testing.T, j *joinedDemo, e *mcpEnv) func() toolResult {
+			sessions := filepath.Join(e.dataDir, "sessions")
+			require.NoError(t, os.Chmod(sessions, 0o500))
+			t.Cleanup(func() { _ = os.Chmod(sessions, 0o700) })
+			_, c2 := e.start(chatClient)
+			return func() toolResult { return c2.call("join", map[string]any{"project": "demo"}) }
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			j := newJoinedDemo(t)
+			call := tc.setup(t, j, j.e)
+			res := call()
+			require.True(t, res.IsError, res.Text())
+			assert.Contains(t, res.Text(), neutral)
+			assert.NotContains(t, res.Raw, j.e.dataDir, "the path of the data directory is the machine's, not the model's")
+			assert.NotContains(t, res.Raw, "permission denied")
+			assert.NotContains(t, res.Raw, "not a directory")
+			assert.Contains(t, j.e.logs.all(), j.e.dataDir, "and the detail is in the log, where the operator looks")
+		})
+	}
+}

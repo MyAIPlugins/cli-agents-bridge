@@ -396,7 +396,14 @@ func (s *Server) invoke(ctx context.Context, tool Tool, args json.RawMessage) (r
 	}()
 	out, err := tool.Handler(ctx, args)
 	if err != nil {
-		return ErrorResult(err.Error())
+		var vouched *ToolError
+		if errors.As(err, &vouched) {
+			return ErrorResult(vouched.Error())
+		}
+		if ctx.Err() == nil { // a withdrawn or interrupted call is not a failure worth a line
+			s.cfg.Logf("mcp: tool %s failed: %v", tool.Name, err)
+		}
+		return ErrorResult(neutralToolError)
 	}
 	return out
 }

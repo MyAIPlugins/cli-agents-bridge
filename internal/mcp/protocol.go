@@ -54,10 +54,35 @@ type Result struct {
 // ErrorResult is the failure shape for a tool that refuses.
 func ErrorResult(msg string) Result { return Result{Content: []Block{Text(msg)}, IsError: true} }
 
+// ToolError is an error whose text was written for the model that called the tool.
+// A handler vouches for the text by building the error with Refuse or Refusef: it
+// says what went wrong in words that name no path, no session and no message.
+//
+// It is the ONLY kind of error whose text reaches the model. Anything else a handler
+// returns (a wrapped file-system error, a library error, a context error) is replaced
+// by a fixed text and its detail goes to the server's log, so the default of a new
+// error is to stay on the machine and the exception is to be said on purpose.
+type ToolError struct{ text string }
+
+func (e *ToolError) Error() string { return e.text }
+
+// Refuse builds an error whose text is meant for the model.
+func Refuse(text string) *ToolError { return &ToolError{text: text} }
+
+// Refusef is Refuse with a format. It has no %w: the text it builds is a sentence of
+// its own, and wrapping another error in it is exactly what it exists to prevent.
+func Refusef(format string, args ...any) *ToolError {
+	return &ToolError{text: fmt.Sprintf(format, args...)}
+}
+
+// neutralToolError is what the model is told when a handler fails with an error that
+// was not written for it.
+const neutralToolError = "the tool could not complete this call on the machine it runs on. The details are in the server's log, not here"
+
 // Handler runs one tool call. ctx is cancelled when the client withdraws the
 // request or the server shuts down. An error returned here becomes an IsError
-// result carrying the error text, so a handler must not put anything in an error
-// that the model should not read.
+// result, but only a *ToolError carries its text to the model; any other error
+// becomes neutralToolError and is logged (see ToolError).
 type Handler func(ctx context.Context, args json.RawMessage) (Result, error)
 
 // Tool is one entry of the registry.
@@ -115,10 +140,11 @@ func DecodeArgs(raw json.RawMessage, dst any) error {
 	dec := json.NewDecoder(bytes.NewReader(trimmed))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
-		return fmt.Errorf("invalid arguments: %w", err)
+		// The decoder's words name the caller's own keys and Go types, nothing else.
+		return Refusef("invalid arguments: %v", err)
 	}
 	if dec.More() {
-		return fmt.Errorf("invalid arguments: trailing data after the object")
+		return Refuse("invalid arguments: trailing data after the object")
 	}
 	return nil
 }

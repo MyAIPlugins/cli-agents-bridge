@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -40,10 +39,10 @@ func (a *mcpApp) toolSend(verb string) mcp.Handler {
 			return mcp.Result{}, err
 		}
 		if strings.TrimSpace(args.Message) == "" {
-			return mcp.Result{}, errors.New("the message is empty")
+			return mcp.Result{}, mcp.Refuse("the message is empty")
 		}
 		if len(args.Message) > a.cfg.MaxMessageBytes {
-			return mcp.Result{}, fmt.Errorf("the message is %d bytes; the most one message may carry is %d", len(args.Message), a.cfg.MaxMessageBytes)
+			return mcp.Result{}, mcp.Refusef("the message is %d bytes; the most one message may carry is %d", len(args.Message), a.cfg.MaxMessageBytes)
 		}
 		to, err := a.recipient(p, args.To)
 		if err != nil {
@@ -71,11 +70,11 @@ func (a *mcpApp) recipient(p *mcpProject, named string) (string, error) {
 	}
 	switch {
 	case named == "" || strings.HasPrefix(named, "-") || session.ValidateAgentName(named) != nil:
-		return "", fmt.Errorf("`to` must be the name of a val of this project; the ones with the bridge open are: %s", listOrNone(names))
+		return "", mcp.Refusef("`to` must be the name of a val of this project; the ones with the bridge open are: %s", listOrNone(names))
 	case len(matches) == 0:
-		return "", fmt.Errorf("no val named %q has the bridge open for %s now; the ones that do are: %s", named, p.label, listOrNone(names))
+		return "", mcp.Refusef("no val named %q has the bridge open for %s now; the ones that do are: %s", named, p.label, listOrNone(names))
 	case len(matches) > 1:
-		return "", fmt.Errorf("%d open vals of %s are named %q, so nothing was sent: the val has to rename one of them", len(matches), p.label, named)
+		return "", mcp.Refusef("%d open vals of %s are named %q, so nothing was sent: the val has to rename one of them", len(matches), p.label, named)
 	}
 	return named, nil
 }
@@ -107,13 +106,13 @@ func (a *mcpApp) runVerb(ctx context.Context, p *mcpProject, verb, to, content s
 	switch {
 	case errors.Is(err, errChildTimeout):
 		a.logf("%s to a val of %s did not finish in time", verb, p.label)
-		return mcp.Result{}, errors.New("the command did not finish in the time allowed, so it is not known whether the message was sent: look at `next` for the answer before sending it again")
+		return mcp.Result{}, mcp.Refuse("the command did not finish in the time allowed, so it is not known whether the message was sent: look at `next` for the answer before sending it again")
 	case err != nil:
 		a.logf("%s could not be run: %v", verb, err)
-		return mcp.Result{}, errors.New("the command could not be run, nothing was sent")
+		return mcp.Result{}, mcp.Refuse("the command could not be run, nothing was sent")
 	case res.exitCode != 0:
 		a.logf("%s to a val of %s was refused (exit %d)", verb, p.label, res.exitCode)
-		return mcp.Result{}, fmt.Errorf("the message was not sent (the command refused it, exit %d). Check with `join` that the project is still open and that the val is still there", res.exitCode)
+		return mcp.Result{}, mcp.Refusef("the message was not sent (the command refused it, exit %d). Check with `join` that the project is still open and that the val is still there", res.exitCode)
 	}
 	out := strings.TrimSpace(res.stdout)
 	if note := strings.TrimSpace(res.stderr); note != "" {

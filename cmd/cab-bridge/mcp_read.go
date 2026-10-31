@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"path/filepath"
 	"unicode/utf8"
 
@@ -41,17 +40,17 @@ func (a *mcpApp) toolRead(ctx context.Context, raw json.RawMessage) (mcp.Result,
 	loc, err := locateMessage(filepath.Join(a.cfg.DataDir, "sessions", p.sid), args.ID)
 	switch {
 	case errors.Is(err, errMessageNotFound):
-		return mcp.Result{}, errors.New("there is no message with this id in your inbox or among the archived ones")
+		return mcp.Result{}, mcp.Refuse("there is no message with this id in your inbox or among the archived ones")
 	case err != nil:
-		return mcp.Result{}, errors.New("this is not a valid message id")
+		return mcp.Result{}, mcp.Refuse("this is not a valid message id")
 	}
 	m, size, err := loadMessageAt(loc.path, a.cfg.MaxMessageBytes)
 	if err != nil {
-		return mcp.Result{}, errors.New("the message could not be read")
+		return mcp.Result{}, mcp.Refuse("the message could not be read")
 	}
 	v, held := newAuthorizer(a.mgr, p.scope, a.mgr.NowUTC()).authorize(m, size)
 	if held != nil {
-		return mcp.Result{}, fmt.Errorf("this message is held back (%s) and cannot be read from here", held.Reason)
+		return mcp.Result{}, mcp.Refusef("this message is held back (%s) and cannot be read from here", held.Reason)
 	}
 	return a.readPiece(v, loc.archived, args.Offset)
 }
@@ -60,7 +59,7 @@ func (a *mcpApp) toolRead(ctx context.Context, raw json.RawMessage) (mcp.Result,
 func (a *mcpApp) readPiece(v visibleMessage, archived bool, offset int) (mcp.Result, error) {
 	content := v.Content()
 	if offset < 0 || offset > len(content) {
-		return mcp.Result{}, fmt.Errorf("offset %d is outside the message: its content is %d bytes", offset, len(content))
+		return mcp.Result{}, mcp.Refusef("offset %d is outside the message: its content is %d bytes", offset, len(content))
 	}
 	start := alignToRune(content, offset)
 	limit := a.cfg.MCPMaxResultBytes
@@ -75,7 +74,7 @@ func (a *mcpApp) readPiece(v visibleMessage, archived bool, offset int) (mcp.Res
 		}
 		limit = limit * 3 / 4
 	}
-	return mcp.Result{}, errors.New("not even one character of this message fits in a result with the configured limit")
+	return mcp.Result{}, mcp.Refuse("not even one character of this message fits in a result with the configured limit")
 }
 
 // alignToRune moves an offset that falls inside a character to the next one, which is

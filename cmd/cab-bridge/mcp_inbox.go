@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/myAIPlugins/cli-agents-bridge/internal/mcp"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	transportfs "github.com/myAIPlugins/cli-agents-bridge/internal/transport/fs"
@@ -21,7 +22,7 @@ import (
 // errInboxScanTimeout is returned when the inbox could not be read within the budget
 // of the call. It is an error and never a partial result: a half-read inbox shown as
 // the inbox is how a message goes missing without anybody being told.
-var errInboxScanTimeout = errors.New("the inbox could not be read within the time allowed for one call")
+var errInboxScanTimeout = mcp.Refuse("the inbox could not be read within the time allowed for one call")
 
 // errMessageNotFound is returned by locateMessage for an id that is in neither the
 // inbox nor processed/.

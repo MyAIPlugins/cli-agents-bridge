@@ -34,13 +34,13 @@ type replyArgs struct {
 }
 
 var (
-	errReplyNoSuchAsk   = errors.New("there is no such ask in your inbox")
-	errReplyNotAnAsk    = errors.New("only an ask is answered with `reply`; a tell or a response is handled with `ack`")
-	errReplyAskArchived = errors.New("this ask is already answered or archived")
-	errReplyAskHeld     = errors.New("this ask is held back, so it cannot be answered from here")
-	errReplyBadID       = errors.New("this is not a valid message id")
-	errRecipientClosed  = errors.New("the recipient's bridge is not open")
-	errReplyUnreadable  = errors.New("the ask could not be read")
+	errReplyNoSuchAsk   = mcp.Refuse("there is no such ask in your inbox")
+	errReplyNotAnAsk    = mcp.Refuse("only an ask is answered with `reply`; a tell or a response is handled with `ack`")
+	errReplyAskArchived = mcp.Refuse("this ask is already answered or archived")
+	errReplyAskHeld     = mcp.Refuse("this ask is held back, so it cannot be answered from here")
+	errReplyBadID       = mcp.Refuse("this is not a valid message id")
+	errRecipientClosed  = mcp.Refuse("the recipient's bridge is not open")
+	errReplyUnreadable  = mcp.Refuse("the ask could not be read")
 )
 
 func (a *mcpApp) toolReply(ctx context.Context, raw json.RawMessage) (mcp.Result, error) {
@@ -53,10 +53,10 @@ func (a *mcpApp) toolReply(ctx context.Context, raw json.RawMessage) (mcp.Result
 		return mcp.Result{}, err
 	}
 	if strings.TrimSpace(args.Message) == "" {
-		return mcp.Result{}, errors.New("the reply is empty")
+		return mcp.Result{}, mcp.Refuse("the reply is empty")
 	}
 	if len(args.Message) > a.cfg.MaxMessageBytes {
-		return mcp.Result{}, fmt.Errorf("the reply is %d bytes; the most one message may carry is %d", len(args.Message), a.cfg.MaxMessageBytes)
+		return mcp.Result{}, mcp.Refusef("the reply is %d bytes; the most one message may carry is %d", len(args.Message), a.cfg.MaxMessageBytes)
 	}
 
 	p.mu.Lock()
@@ -87,7 +87,7 @@ func (a *mcpApp) toolReply(ctx context.Context, raw json.RawMessage) (mcp.Result
 	note := func(format string, v ...any) { a.logf(strings.TrimSuffix(format, "\n"), v...) }
 	if derr := driveReplyTxn(a.mgr, a.cfg, p.sid, txn, note); derr != nil {
 		a.logf("reply could not be completed: %v", derr)
-		return mcp.Result{}, errors.New("the reply could not be completed. It is on record and the next `reply` finishes it without sending it twice")
+		return mcp.Result{}, mcp.Refuse("the reply could not be completed. It is on record and the next `reply` finishes it without sending it twice")
 	}
 	return mcp.Result{Content: []mcp.Block{mcp.Text(describeReply(txn, args.AskID, toName, resumed, wasSent))}}, nil
 }
@@ -151,17 +151,17 @@ func (a *mcpApp) replyGate(p *mcpProject, auth *authorizer) replyGate {
 func (a *mcpApp) explainReplyRefusal(err error) error {
 	switch {
 	case errors.Is(err, errRecipientClosed):
-		return errors.New("the reply was not sent: the bridge of the val it is addressed to is not open (it was closed or it expired). " +
+		return mcp.Refuse("the reply was not sent: the bridge of the val it is addressed to is not open (it was closed or it expired). " +
 			"If an earlier reply of yours was waiting, it stays on record untouched, and nothing new was processed. The val reopens the bridge with `cab-bridge desktop open`")
 	case errors.Is(err, errReplyBlocked):
-		return errors.New("the reply was not sent: the routing policy does not let this session write to that recipient. " +
+		return mcp.Refuse("the reply was not sent: the routing policy does not let this session write to that recipient. " +
 			"If an earlier reply of yours was waiting, it stays on record untouched, and nothing new was processed")
 	case errors.Is(err, errReplyNoSuchAsk), errors.Is(err, errReplyNotAnAsk), errors.Is(err, errReplyAskArchived),
 		errors.Is(err, errReplyAskHeld), errors.Is(err, errReplyBadID), errors.Is(err, errReplyUnreadable):
 		return err
 	}
 	a.logf("reply could not start: %v", err)
-	return errors.New("the reply could not be started; nothing was sent")
+	return mcp.Refuse("the reply could not be started; nothing was sent")
 }
 
 func describeReply(txn *session.ReplyTxn, askID, toName string, resumed, wasSent bool) string {

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -68,7 +67,7 @@ func testTools(release chan struct{}) []Tool {
 			panic("secret-sentinel-in-panic")
 		}},
 		{Name: "fail", Description: "refuses", Handler: func(ctx context.Context, raw json.RawMessage) (Result, error) {
-			return Result{}, errors.New("refused: for a reason")
+			return Result{}, Refuse("refused: for a reason")
 		}},
 		{Name: "big", Description: "returns n bytes", Handler: func(ctx context.Context, raw json.RawMessage) (Result, error) {
 			var a struct {

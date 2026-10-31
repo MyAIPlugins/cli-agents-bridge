@@ -75,7 +75,7 @@ func (a *mcpApp) waitFor(requested *int) (time.Duration, error) {
 		secs = *requested
 	}
 	if secs < 0 || secs > a.cfg.MCPNextMaxWaitSeconds {
-		return 0, fmt.Errorf("wait_seconds must be between 0 and %d, got %d", a.cfg.MCPNextMaxWaitSeconds, secs)
+		return 0, mcp.Refusef("wait_seconds must be between 0 and %d, got %d", a.cfg.MCPNextMaxWaitSeconds, secs)
 	}
 	return time.Duration(secs) * time.Second, nil
 }
