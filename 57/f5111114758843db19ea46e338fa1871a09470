@@ -1,0 +1,22 @@
+cmd/cab-bridge/mcp_send.go
+  s_ecb5fdcb0207f6::t_04781f29fa2f49 63-65,76,78
+cmd/cab-bridge/mcp_send_test.go
+  s_ecb5fdcb0207f6::t_04781f29fa2f49 130-131
+  s_ecb5fdcb0207f6::t_35fae58efdd4b5 214-230
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "57f5111114758843db19ea46e338fa1871a09470",
+  "prompts": {},
+  "sessions": {
+    "s_ecb5fdcb0207f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32afad43-c9ed-4676-bf4d-bee1f17ec8c0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
