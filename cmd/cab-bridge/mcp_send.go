@@ -86,14 +86,24 @@ func listOrNone(names []string) string {
 	return strings.Join(names, ", ")
 }
 
+// duplicateNote is what Desktop is told when the command warned that an identical
+// message had just gone out. It is the one thing on the command's stderr that a client
+// needs: a call whose answer never arrived is retried (the relay gives up after sixty
+// seconds and the server finishes anyway), and a retried ask is a second ask.
+const duplicateNote = "Note: an identical message went to this val a moment ago, so it has it twice now. If this was a retry of a call whose answer you never got, the first one had already gone out."
+
 // runVerb runs `cab-bridge <verb> <to>` with the message on its stdin, as this
 // identity, and turns the outcome into a result.
 //
-// On success, what the command said is passed on: it carries the echo of what was
-// sent and any warning about the recipient. On failure it is NOT: a refusal of the CLI
-// may name other sessions of the project (its "no such agent" lists them), and the
-// names of executors must not reach Claude Desktop through an error message. The
-// failure says what is true without it, and what to do.
+// The result is built by the server. On success it is the command's STDOUT, which is
+// the echo of what was sent (names, an id, the start of the text the caller wrote) and
+// carries no path, plus a fixed note when stderr held the duplicate warning. Nothing
+// else of stderr is passed on, neither to the model nor, verbatim, to the log: a
+// non-fatal complaint of the command names paths on this machine, and a stderr may quote
+// the message. The log gets what it can safely hold, the sizes. On failure the command's
+// words are not passed on either: a refusal of the CLI can name the other sessions of
+// the project, and an error text is the one place where an executor's name would reach
+// Claude Desktop unjudged. The failure says what is true without it, and what to do.
 func (a *mcpApp) runVerb(ctx context.Context, p *mcpProject, verb, to, content string) (mcp.Result, error) {
 	res, err := runChild(ctx, childSpec{
 		exe:     a.exe,
@@ -114,12 +124,11 @@ func (a *mcpApp) runVerb(ctx context.Context, p *mcpProject, verb, to, content s
 		a.logf("%s to a val of %s was refused (exit %d)", verb, p.label, res.exitCode)
 		return mcp.Result{}, mcp.Refusef("the message was not sent (the command refused it, exit %d). Check with `join` that the project is still open and that the val is still there", res.exitCode)
 	}
+	a.logf("%s to a val of %s sent: stdout %d bytes, stderr %d lines %d bytes, cut=%v",
+		verb, p.label, len(res.stdout), strings.Count(res.stderr, "\n"), len(res.stderr), res.truncated)
 	out := strings.TrimSpace(res.stdout)
-	if note := strings.TrimSpace(res.stderr); note != "" {
-		out += "\n" + note
-	}
-	if res.truncated {
-		out += "\n(the command's output was cut)"
+	if strings.Contains(res.stderr, dedupWarningLead) {
+		out += "\n" + duplicateNote
 	}
 	return mcp.Result{Content: []mcp.Block{mcp.Text(out)}}, nil
 }

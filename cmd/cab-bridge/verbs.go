@@ -480,6 +480,12 @@ func runTell(args []string) error {
 	return runSendVerb("tell", message.TypeNotify, args, os.Stdin, os.Stdout, os.Stderr)
 }
 
+// dedupWarningLead begins the warning `ask` and `tell` print when an identical message
+// went out a moment ago. The MCP server recognises the warning by this text and says
+// it again in words of its own (the rest of stderr is not passed on), so the two share
+// the constant instead of each keeping a copy of the sentence.
+const dedupWarningLead = "warning: an identical message to "
+
 func runSendVerb(verb, msgType string, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return fmt.Errorf("%s: usage: cab-bridge %s <agent-name> [\"message\"]   (without the message, it is read from stdin)", verb, verb)
@@ -521,7 +527,7 @@ func runSendVerb(verb, msgType string, args []string, stdin io.Reader, stdout, s
 			// The AGE, not the window: printing DedupWindowSeconds said "10s ago"
 			// one second after the fact — a statement of something that did not
 			// happen, in the very message meant to help spot a double-invoke.
-			fmt.Fprintf(stderr, "%s: warning: an identical message to %s went out %s ago as %s — sending anyway; if that was a double-invoke, the recipient now has two\n",
+			fmt.Fprintf(stderr, "%s: "+dedupWarningLead+"%s went out %s ago as %s — sending anyway; if that was a double-invoke, the recipient now has two\n",
 				verb, args[0], now.Sub(dupAt).Round(time.Second), dupID)
 		}
 	}

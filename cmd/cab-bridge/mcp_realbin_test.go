@@ -271,6 +271,48 @@ func TestMCPWithTheRealBinary(t *testing.T) {
 		assert.Equal(t, "done", arcs[0]["state"])
 	})
 
+	t.Run("what the command says on stderr stays on the machine", func(t *testing.T) {
+		sb := newSandbox(t, bin)
+		valSID := sb.openVal("VAL-real")
+		srv := sb.startServer("local-agent-mode-real")
+		require.False(t, srv.client.call("join", map[string]any{"project": "repo"}).IsError)
+
+		// A success has no path in it: the echo carries names, an id and the start of the
+		// text the caller wrote.
+		res := srv.client.call("tell", map[string]any{"to": "VAL-real", "message": "a plain message"})
+		require.False(t, res.IsError, res.Text())
+		for _, machine := range []string{sb.data, sb.home, "/Users/"} {
+			assert.NotContains(t, res.Raw, machine, "a successful result names nothing of this machine")
+		}
+
+		// The CRI2 reproduction: the command succeeds but complains, on stderr, about a
+		// disk path (the sender's outbox is a file). The complaint must not arrive.
+		arcs := architectPeers(t, sb)
+		require.Len(t, arcs, 1)
+		outbox := filepath.Join(sb.data, "sessions", arcs[0]["sessionId"].(string), "outbox")
+		require.NoError(t, os.RemoveAll(outbox))
+		require.NoError(t, os.WriteFile(outbox, []byte("a file where a directory belongs"), 0o600))
+		res = srv.client.call("tell", map[string]any{"to": "VAL-real", "message": "a second message, while the disk misbehaves"})
+		require.False(t, res.IsError, res.Text())
+		for _, leaked := range []string{sb.data, sb.home, "non-fatal", "outbox", "not a directory"} {
+			assert.NotContains(t, res.Raw, leaked)
+		}
+		assert.Contains(t, srv.stderr.String(), "stderr", "the log has the sizes")
+		assert.NotContains(t, srv.stderr.String(), "non-fatal", "and not the command's sentence")
+
+		// And the one warning a client needs is translated, from the real CLI.
+		require.NoError(t, os.Remove(outbox))
+		require.NoError(t, os.MkdirAll(outbox, 0o700))
+		first := srv.client.call("ask", map[string]any{"to": "VAL-real", "message": "is anybody there?"})
+		require.False(t, first.IsError, first.Text())
+		assert.NotContains(t, first.Text(), duplicateNote)
+		second := srv.client.call("ask", map[string]any{"to": "VAL-real", "message": "is anybody there?"})
+		require.False(t, second.IsError, second.Text())
+		assert.Contains(t, second.Text(), duplicateNote)
+		assert.NotContains(t, second.Raw, "double-invoke", "the CLI's sentence is not forwarded, the server's note is")
+		_ = valSID
+	})
+
 	t.Run("the server never reads as a listener", func(t *testing.T) {
 		sb := newSandbox(t, bin)
 		sb.openVal("VAL-real")

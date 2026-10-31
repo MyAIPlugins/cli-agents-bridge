@@ -26,6 +26,8 @@ mv "$log.tmp" "$log"
 case "$(sed -n '/^---STDIN/,$p' "$log")" in
   *EXIT3*) echo "no agent named x - registered here: ESC-SECRET-NAME, CRI-other" >&2; exit 3;;
   *SLEEP*) sleep 30;;
+  *DUP*) echo "$1: warning: an identical message to VAL-demo went out 3s ago as msg-0123456789ab - sending anyway" >&2;;
+  *NOISE*) echo "cab-bridge: send: mkdir sender outbox (non-fatal): mkdir /Users/someone/.claude/cli-agents-bridge/sessions/28286c50/outbox: not a directory" >&2;;
 esac
 echo "sent via the fake"
 echo "note: a warning about the recipient" >&2
@@ -69,8 +71,10 @@ func TestMCPSend_RunsTheVerbAsAChildWithTheMessageOnStdinAndANothingElseEnvironm
 
 	res := j.c.call("ask", map[string]any{"to": "VAL-demo", "message": msg})
 	require.False(t, res.IsError, res.Text())
-	assert.Contains(t, res.Text(), "sent via the fake")
-	assert.Contains(t, res.Text(), "a warning about the recipient", "what the command said on stderr is passed on when it succeeded")
+	assert.Contains(t, res.Text(), "sent via the fake", "the echo on stdout is the result")
+	assert.NotContains(t, res.Text(), "a warning about the recipient", "and stderr is not: the server writes what Desktop is told")
+	assert.NotContains(t, j.e.logs.all(), "a warning about the recipient", "nor verbatim in the log, which gets sizes")
+	assert.Contains(t, j.e.logs.all(), "stderr 1 lines")
 
 	log := j.e.fakeLog()
 	assert.Contains(t, log, "ARGC:2\nARG:ask\nARG:VAL-demo\n", "argv is the verb and the recipient, nothing else")
@@ -174,4 +178,35 @@ func TestMCPSend_TwoOpenValsOfTheSameNameAreNotGuessedBetween(t *testing.T) {
 	require.True(t, res.IsError)
 	assert.Contains(t, res.Text(), "nothing was sent")
 	assert.Empty(t, j.e.fakeLog())
+}
+
+// Success is the ramo accanto of failure, and it had the same leak: whatever the
+// command wrote on stderr went to the model. A non-fatal complaint names paths on this
+// machine; only the one warning a client needs is said, in the server's own words.
+func TestMCPSend_OnSuccessOnlyTheEchoAndAFixedDuplicateNoteReachTheModel(t *testing.T) {
+	j := newSendDemo(t)
+
+	res := j.c.call("ask", map[string]any{"to": "VAL-demo", "message": "NOISE: a message whose send complains about the disk"})
+	require.False(t, res.IsError, res.Text())
+	assert.Contains(t, res.Text(), "sent via the fake")
+	for _, leaked := range []string{"/Users/someone", "28286c50", "non-fatal", "outbox", "not a directory"} {
+		assert.NotContains(t, res.Raw, leaked)
+	}
+	assert.Contains(t, j.e.logs.all(), "stderr 2 lines", "the log keeps the sizes")
+	assert.NotContains(t, j.e.logs.all(), "/Users/someone", "and not the text")
+
+	res = j.c.call("tell", map[string]any{"to": "VAL-demo", "message": "DUP: the same thing again"})
+	require.False(t, res.IsError, res.Text())
+	assert.Contains(t, res.Text(), duplicateNote)
+	assert.NotContains(t, res.Raw, "msg-0123456789ab", "the command's own sentence, with its id and age, is not forwarded")
+	assert.NotContains(t, res.Raw, "went out 3s ago")
+
+	res = j.c.call("tell", map[string]any{"to": "VAL-demo", "message": "an ordinary message"})
+	assert.NotContains(t, res.Text(), duplicateNote, "no duplicate warning, no note")
+}
+
+// The fake prints the CLI's warning from a copy of its lead; this keeps the copy and the
+// constant the server recognises from drifting apart.
+func TestFakeCLI_ItsDuplicateWarningUsesTheRealLead(t *testing.T) {
+	assert.Contains(t, fakeCLI, dedupWarningLead)
 }
