@@ -1,0 +1,39 @@
+cmd/cab-bridge/mcp_next.go
+  s_ecb5fdcb0207f6::t_da6d4345542bdf 62,111-115,117-125
+cmd/cab-bridge/mcp_signal_unix.go
+  s_ecb5fdcb0207f6::t_7c54146d502b7f 33-41
+cmd/cab-bridge/mcp_signal_windows.go
+  s_ecb5fdcb0207f6::t_98509bbcabf9c5 5-9,13-20
+cmd/cab-bridge/mcp.go
+  s_ecb5fdcb0207f6::t_98509bbcabf9c5 1-62,64-68
+  s_ecb5fdcb0207f6::t_60955b0443477d 63
+cmd/cab-bridge/mcp_realbin_test.go
+  s_ecb5fdcb0207f6::t_350c3682cd99ee 383-397
+  s_ecb5fdcb0207f6::t_2c80e97e2c6327 248-255,349-351
+  s_ecb5fdcb0207f6::t_d762bb3e7a99d4 106-107,123-127,133,146-147,151
+  s_ecb5fdcb0207f6::t_45234c6c769f86 1-105,108-122,128-132,134-145,148-150,152-247,256-348,352-382,398-405
+cmd/cab-bridge/main.go
+  s_ecb5fdcb0207f6::t_60955b0443477d 76-77,150
+cmd/cab-bridge/mcp_harness_test.go
+  s_ecb5fdcb0207f6::t_fd1aa9ef31ab34 247-263
+cmd/cab-bridge/mcp_render.go
+  s_ecb5fdcb0207f6::t_da6d4345542bdf 53-57,60-61,132-134
+cmd/cab-bridge/mcp_next_test.go
+  s_ecb5fdcb0207f6::t_da6d4345542bdf 263-281
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "49736ca114f41ea8196f72488750b902b1e61ca4",
+  "prompts": {},
+  "sessions": {
+    "s_ecb5fdcb0207f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32afad43-c9ed-4676-bf4d-bee1f17ec8c0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
