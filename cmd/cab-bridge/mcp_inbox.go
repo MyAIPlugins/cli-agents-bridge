@@ -152,7 +152,7 @@ type ackResult struct {
 
 // ackCheck decides whether the message in the inbox may be archived by an ack. It is
 // where the caller puts "visible to Desktop" and "not an ask": it receives the
-// decoded message and the size of its file.
+// decoded message.
 type ackCheck func(m *message.Message) error
 
 // archiveBatch archives exactly the named messages, in two phases.
