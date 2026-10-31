@@ -40,7 +40,7 @@ func integerProp(desc string) map[string]any {
 	return map[string]any{"type": "integer", "minimum": 0, "description": desc}
 }
 
-const projectArgDesc = "The project, by the name `join` printed. Optional while only one project is joined."
+const projectArgDesc = "The project, by the name `join` printed after \"project:\" (never a val's name). Optional while only one project is joined."
 
 func (a *mcpApp) tools() []mcp.Tool {
 	return []mcp.Tool{
@@ -50,7 +50,7 @@ func (a *mcpApp) tools() []mcp.Tool {
 				"(a val does that with `cab-bridge desktop open`, and it expires). With `project` it joins that one. " +
 				"In a joined project you can talk to its val and to nobody else. Calling it again for the same project changes nothing.",
 			InputSchema: objectSchema(map[string]any{
-				"project": stringProp("A project name from the list. Leave it out to see the list."),
+				"project": stringProp("A project name as the list prints it after \"project:\", never a val's name. Leave it out to see the list."),
 			}),
 			Handler: a.toolJoin,
 		},

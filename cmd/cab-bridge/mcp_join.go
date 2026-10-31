@@ -39,7 +39,7 @@ func (a *mcpApp) toolJoin(ctx context.Context, raw json.RawMessage) (mcp.Result,
 	}
 	op, ok := pickProject(open, args.Project)
 	if !ok {
-		return mcp.Result{}, mcp.Refusef("project %q is not open to Claude Desktop. The val of a project opens it with `cab-bridge desktop open`. %s", args.Project, a.renderOpenProjects(open))
+		return mcp.Result{}, a.refuseJoin(open, args.Project)
 	}
 	client, ok := mcp.ClientFrom(ctx)
 	if !ok {
@@ -65,21 +65,64 @@ func pickProject(open []openProject, named string) (openProject, bool) {
 	return openProject{}, false
 }
 
+// refuseJoin says why `named` is not a project to join. A val's name is the usual
+// wrong token (a project and its val sit on the same line of the list): then it names
+// the project to use, instead of printing again the list that caused the mix-up.
+func (a *mcpApp) refuseJoin(open []openProject, named string) error {
+	if of := projectsOfVal(open, named); len(of) > 0 {
+		labels := make([]string, len(of))
+		for i, p := range of {
+			labels[i] = fmt.Sprintf("%q", p.label)
+		}
+		if len(labels) == 1 {
+			return mcp.Refusef("%q is the name of a val, not of a project. Call `join` with project %s.", named, labels[0])
+		}
+		return mcp.Refusef("%q is the name of a val, not of a project, and there is one with that name in each of these projects: %s. Call `join` with project set to the one you mean.", named, strings.Join(labels, ", "))
+	}
+	return mcp.Refusef("project %q is not open to Claude Desktop. The val of a project opens it with `cab-bridge desktop open`. %s", named, a.renderOpenProjects(open))
+}
+
+// projectsOfVal is the open projects that have a val with this name.
+func projectsOfVal(open []openProject, valName string) []openProject {
+	var of []openProject
+	for _, p := range open {
+		for _, v := range p.vals {
+			if v.name == valName {
+				of = append(of, p)
+				break
+			}
+		}
+	}
+	return of
+}
+
+// renderOpenProjects is what `join` prints for a reader who has seen nothing else. A
+// project line puts the project under the key of the argument it fills (`project:
+// "name"`) and the val under its own key, because a name in a bare `repo: VAL-cowork`
+// was taken for the project's by two fresh conversations out of two.
 func (a *mcpApp) renderOpenProjects(open []openProject) string {
 	if len(open) == 0 {
 		return "No project is open to Claude Desktop right now. The val of a project opens it with `cab-bridge desktop open`: ask them."
 	}
 	now := a.mgr.NowUTC()
 	var b strings.Builder
-	fmt.Fprintf(&b, "Projects open to you (%d). Join one with `join` and its name:\n", len(open))
+	fmt.Fprintf(&b, "Projects open to you (%d). Call `join` with `project` set to a name after \"project:\". The val after \"val:\" is who you will talk to there: it is not a project name.\n", len(open))
 	for _, p := range open {
+		key := "val"
+		if len(p.vals) > 1 {
+			key = "vals"
+		}
 		names := make([]string, len(p.vals))
 		for i, v := range p.vals {
-			names[i] = fmt.Sprintf("%s (open for another %s)", v.name, v.expires.Sub(now).Round(time.Minute))
+			names[i] = describeVal(v, now)
 		}
-		fmt.Fprintf(&b, "- %s: %s\n", p.label, strings.Join(names, ", "))
+		fmt.Fprintf(&b, "- project: %q; %s: %s\n", p.label, key, strings.Join(names, ", "))
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func describeVal(v openVal, now time.Time) string {
+	return fmt.Sprintf("%s (bridge open for another %s)", v.name, v.expires.Sub(now).Round(time.Minute))
 }
 
 func (a *mcpApp) renderJoined(p *mcpProject, op openProject, already bool) string {
@@ -92,7 +135,7 @@ func (a *mcpApp) renderJoined(p *mcpProject, op openProject, already bool) strin
 	}
 	b.WriteString("You can talk to the val of this project, and only to it:\n")
 	for _, v := range op.vals {
-		fmt.Fprintf(&b, "- %s (bridge open for another %s)\n", v.name, v.expires.Sub(now).Round(time.Minute))
+		fmt.Fprintf(&b, "- %s\n", describeVal(v, now))
 	}
 	b.WriteString("What the val sends arrives with `next`. `ask` expects an answer, `tell` does not; `reply` answers an ask you received.")
 	return b.String()

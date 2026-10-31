@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 
@@ -226,4 +227,109 @@ func TestMCPJoin_IsCalledWithoutProjectBeforeAnyToolNeedsOne(t *testing.T) {
 	app, _ := e.start(coworkClient)
 	_, err := app.projectFor("")
 	require.ErrorIs(t, err, errNoProjectJoined)
+}
+
+// The list is read once by a model that has seen nothing else, and it is the first
+// thing every Desktop conversation does. A real Cowork took the val's name for the
+// project's twice out of two when the line read `- repo: VAL-cowork (...)`.
+var projectToken = regexp.MustCompile(`project: "([^"]+)"`)
+
+func TestMCPJoin_TheListGivesEachProjectUnderTheKeyOfTheArgumentItFills(t *testing.T) {
+	e := newMCPEnv(t)
+	e.val("valrepo01", "VAL-cowork", "/home/alan/repo", time.Hour)
+	e.val("valdemo01", "VAL-demo-a", "/repo/demo", 2*time.Hour)
+	e.val("valdemo02", "VAL-demo-b", "/repo/demo", time.Hour)
+	_, c := e.start(coworkClient)
+
+	list := c.call("join", nil).Text()
+	tokens := projectToken.FindAllStringSubmatch(list, -1)
+	require.Len(t, tokens, 2, list)
+	assert.ElementsMatch(t, []string{"demo", "repo"}, []string{tokens[0][1], tokens[1][1]})
+	for _, name := range []string{"VAL-cowork", "VAL-demo-a", "VAL-demo-b"} {
+		for _, tk := range tokens {
+			assert.NotContains(t, tk[1], name, "a val's name is never where the project's goes")
+		}
+	}
+	assert.Contains(t, list, `project: "repo"; val: VAL-cowork (bridge open for another 1h0m0s)`)
+	assert.Contains(t, list, `project: "demo"; vals: VAL-demo-a (bridge open for another 2h0m0s), VAL-demo-b (bridge open for another 1h0m0s)`)
+	assert.Contains(t, list, "it is not a project name", "and the text says what the second key is")
+
+	for _, tk := range tokens {
+		res := c.call("join", map[string]any{"project": tk[1]})
+		assert.False(t, res.IsError, "the token after project: is what join takes (%s): %s", tk[1], res.Text())
+	}
+}
+
+func TestMCPJoin_AValsNameIsRefusedWithTheProjectItBelongsTo(t *testing.T) {
+	e := newMCPEnv(t)
+	e.val("valrepo01", "VAL-cowork", "/home/alan/repo", time.Hour)
+	e.val("valdemo01", "VAL-demo", "/repo/demo", time.Hour)
+	_, c := e.start(coworkClient)
+
+	res := c.call("join", map[string]any{"project": "VAL-cowork"})
+	require.True(t, res.IsError)
+	assert.Contains(t, res.Text(), `"VAL-cowork" is the name of a val, not of a project`)
+	assert.Contains(t, res.Text(), `Call `+"`join`"+` with project "repo"`)
+	assert.NotContains(t, res.Text(), "VAL-demo", "it names the one project, it does not print the list again")
+	assert.NotContains(t, res.Text(), "Projects open to you")
+	assert.Empty(t, architects(t, e), "a refusal registers nothing")
+
+	again := c.call("join", map[string]any{"project": "repo"})
+	assert.False(t, again.IsError, "and what it names is what joins: %s", again.Text())
+}
+
+func TestMCPJoin_ANameThatTwoProjectsHaveAValUnderNamesBothAndPicksNone(t *testing.T) {
+	e := newMCPEnv(t)
+	e.val("vala0001", "VAL-same", "/repo/alpha", time.Hour)
+	e.val("valb0001", "VAL-same", "/repo/beta", time.Hour)
+	_, c := e.start(coworkClient)
+
+	res := c.call("join", map[string]any{"project": "VAL-same"})
+	require.True(t, res.IsError)
+	assert.Contains(t, res.Text(), `"alpha", "beta"`)
+	assert.Empty(t, architects(t, e), "it does not choose between them")
+}
+
+func TestMCPJoin_TwoOpenValsOfOneProjectWithTheSameNameNameItOnce(t *testing.T) {
+	e := newMCPEnv(t)
+	e.val("valc0001", "VAL-dup", "/repo/gamma", time.Hour)
+	e.val("vald0001", "VAL-dup", "/repo/gamma", time.Hour)
+	_, c := e.start(coworkClient)
+
+	res := c.call("join", map[string]any{"project": "VAL-dup"})
+	require.True(t, res.IsError)
+	assert.Contains(t, res.Text(), `Call `+"`join`"+` with project "gamma".`, "one project, so one name and no choice to make")
+}
+
+func TestMCPJoin_TheToolsOwnTextSendsTheReaderToTheKeyTheListUses(t *testing.T) {
+	e := newMCPEnv(t)
+	e.val("valrepo01", "VAL-cowork", "/home/alan/repo", time.Hour)
+	app, c := e.start(coworkClient)
+
+	assert.Contains(t, c.call("join", nil).Text(), `after "project:"`)
+	assert.Contains(t, c.call("join", nil).Text(), `project: "repo"`)
+	var described int
+	for _, tool := range app.tools() {
+		props, _ := tool.InputSchema["properties"].(map[string]any)
+		prop, ok := props["project"].(map[string]any)
+		if !ok {
+			continue
+		}
+		described++
+		assert.Contains(t, prop["description"], `"project:"`, "%s: the argument's description names the key of the list", tool.Name)
+		assert.Contains(t, prop["description"], "val", "%s: and says a val's name is not a project", tool.Name)
+	}
+	assert.Equal(t, 7, described, "join, next, ack, read, ask, tell, reply all take the project")
+}
+
+func TestMCPJoin_ANameThatIsNeitherAProjectNorAValGetsTheListInTheNewFormat(t *testing.T) {
+	e := newMCPEnv(t)
+	e.val("valrepo01", "VAL-cowork", "/home/alan/repo", time.Hour)
+	_, c := e.start(coworkClient)
+
+	res := c.call("join", map[string]any{"project": "nothing-by-that-name"})
+	require.True(t, res.IsError)
+	assert.Contains(t, res.Text(), `project "nothing-by-that-name" is not open`)
+	assert.Contains(t, res.Text(), `project: "repo"; val: VAL-cowork`, "the refusal shares the list's format")
+	assert.NotContains(t, res.Text(), "is the name of a val")
 }
