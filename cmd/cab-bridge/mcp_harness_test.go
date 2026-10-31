@@ -244,3 +244,20 @@ func (c *mcpClient) call(tool string, args map[string]any) toolResult {
 	c.t.Helper()
 	return c.callAsync(tool, args)()
 }
+
+// strayLines are the lines the server wrote that are not JSON-RPC 2.0 messages. The
+// protocol owns stdout: one such line breaks the framing for the client.
+func (c *mcpClient) strayLines() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var stray []string
+	for _, line := range c.wire {
+		var env struct {
+			JSONRPC string `json:"jsonrpc"`
+		}
+		if err := json.Unmarshal([]byte(line), &env); err != nil || env.JSONRPC != "2.0" {
+			stray = append(stray, line)
+		}
+	}
+	return stray
+}

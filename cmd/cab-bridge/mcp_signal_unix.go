@@ -30,3 +30,12 @@ func swallowSIGPIPE() (stop func()) {
 		close(done)
 	}
 }
+
+// mcpStopSignals are the signals that end the server tidily: its sessions are marked
+// done and its identity locks given up. Desktop's normal exit is the end of its input,
+// which needs no signal; these are for a terminal and for a supervisor.
+var mcpStopSignals = []os.Signal{syscall.SIGINT, syscall.SIGTERM}
+
+// mcpPlatformCheck says whether the server can run here. On Unix it can: the identity
+// lock is a kernel flock.
+func mcpPlatformCheck() error { return nil }

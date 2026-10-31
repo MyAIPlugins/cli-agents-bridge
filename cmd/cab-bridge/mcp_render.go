@@ -50,9 +50,14 @@ type nextView struct {
 	visible   []visibleMessage // oldest first
 	held      []withheld
 	corrupt   int
-	now       time.Time
-	budget    int // the whole response line, in bytes
+	// bridgeClosed says that no val of the project has the bridge open now. An empty
+	// `next` would otherwise read as "the inbox is empty" when it is "you cannot see".
+	bridgeClosed bool
+	now          time.Time
+	budget       int // the whole response line, in bytes
 }
+
+const bridgeClosedNotice = "No val of this project has the bridge open right now, so nothing from a val is shown and nothing can be sent. A val reopens it with `cab-bridge desktop open`."
 
 // jsonLen is the size of a string once serialized as a JSON string.
 func jsonLen(s string) int {
@@ -124,6 +129,9 @@ func renderNext(pl *mcp.Planner, v nextView) mcp.Result {
 
 	header := fmt.Sprintf("Bridge: project %s, you are %s. %d message(s) open for you.", v.project, v.agentName, len(v.visible))
 	notices := noticeBlock(v.held, v.corrupt)
+	if v.bridgeClosed {
+		notices = strings.TrimSpace(bridgeClosedNotice + "\n" + notices)
+	}
 	// Everything that is in the result whatever the messages are, counted from the
 	// texts themselves: five blocks at most (header, pointer block, "more" line,
 	// notices, footer), each with its own overhead, and the worst case of the "more" count.

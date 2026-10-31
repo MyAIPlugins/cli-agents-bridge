@@ -59,7 +59,7 @@ func (a *mcpApp) toolNext(ctx context.Context, raw json.RawMessage) (mcp.Result,
 			return mcp.Result{}, err
 		}
 		if a.hasNew(p, cur) || look >= maxLooks || !time.Now().Before(deadline) {
-			return a.renderPass(p, cur), nil
+			return a.renderPass(p, cur)
 		}
 		select {
 		case <-ctx.Done():
@@ -108,14 +108,19 @@ func (a *mcpApp) hasNew(p *mcpProject, cur pass) bool {
 	return p.planner.CountNew(ids) > 0
 }
 
-func (a *mcpApp) renderPass(p *mcpProject, cur pass) mcp.Result {
+func (a *mcpApp) renderPass(p *mcpProject, cur pass) (mcp.Result, error) {
+	vals, err := a.grantingVals(p.scope)
+	if err != nil {
+		return mcp.Result{}, fmt.Errorf("could not tell whether the bridge is open: %w", err)
+	}
 	return renderNext(p.planner, nextView{
-		project:   p.label,
-		agentName: p.name,
-		visible:   cur.visible,
-		held:      cur.held,
-		corrupt:   cur.corrupt,
-		now:       a.mgr.NowUTC(),
-		budget:    a.cfg.MCPMaxResultBytes,
-	})
+		project:      p.label,
+		agentName:    p.name,
+		visible:      cur.visible,
+		held:         cur.held,
+		corrupt:      cur.corrupt,
+		bridgeClosed: len(vals) == 0,
+		now:          a.mgr.NowUTC(),
+		budget:       a.cfg.MCPMaxResultBytes,
+	}), nil
 }

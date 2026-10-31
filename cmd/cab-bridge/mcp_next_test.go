@@ -260,3 +260,22 @@ func TestMCPNext_AScanThatCannotFinishIsAnErrorNotAPartialInbox(t *testing.T) {
 	assert.Contains(t, res.Text(), "could not be read within the time")
 	assert.NotContains(t, res.Raw, "should not appear partially")
 }
+
+// An empty result must not read as "the inbox is empty" when the truth is "you cannot
+// see": with no val holding the bridge open, `next` says so.
+func TestMCPNext_SaysWhenNoValHasTheBridgeOpen(t *testing.T) {
+	j := newJoinedDemo(t)
+	assert.NotContains(t, j.next(0).Text(), "No val of this project has the bridge open", "open: no such notice")
+
+	require.NoError(t, j.e.manager().CloseDesktopGrant(j.valSID))
+	res := j.next(0)
+	require.False(t, res.IsError, res.Text())
+	assert.Contains(t, res.Text(), "No val of this project has the bridge open right now")
+	assert.Contains(t, res.Text(), "0 message(s) open for you")
+	assert.Contains(t, res.Text(), "desktop open")
+
+	_, err := j.e.manager().OpenDesktopGrant(j.valSID, time.Hour)
+	require.NoError(t, err)
+	j.e.clock.advance(2 * time.Hour)
+	assert.Contains(t, j.next(0).Text(), "No val of this project has the bridge open right now", "expired counts the same")
+}
