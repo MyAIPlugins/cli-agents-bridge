@@ -139,6 +139,12 @@ func (a *authorizer) decide(from string) verdict {
 	return verdict{name: mf.AgentName}
 }
 
+// allows says whether this pass lets the session `id` be spoken to or listened to: a
+// val of this project whose bridge is open. It is the same judgement as for an author,
+// asked about a recipient, so that what Desktop may read and whom it may write to cannot
+// drift apart.
+func (a *authorizer) allows(id string) bool { return a.judge(id).reason == "" }
+
 // authorizeEntries splits a scan into what may be shown and what is held back, in
 // the order given.
 func (a *authorizer) authorizeEntries(entries []mailboxEntry) (visible []visibleMessage, held []withheld) {

@@ -111,6 +111,18 @@ func (a *mcpApp) tools() []mcp.Tool {
 			}, "to", "message"),
 			Handler: a.toolSend("tell"),
 		},
+		{
+			Name: "reply",
+			Description: "Answer one ask you received, by its id (`next` printed it). The ask is closed and the val sees your answer as the response to it. " +
+				"Only an ask is answered this way; a tell or a response is handled with `ack`. " +
+				"If an earlier reply of yours was left unfinished, this call finishes that one first and tells you; then call again for the new one.",
+			InputSchema: objectSchema(map[string]any{
+				"project": stringProp(projectArgDesc),
+				"ask_id":  stringProp("The id of the ask to answer, as `next` printed it."),
+				"message": stringProp("Your answer. Plain text."),
+			}, "ask_id", "message"),
+			Handler: a.toolReply,
+		},
 	}
 }
 
