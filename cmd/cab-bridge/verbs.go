@@ -571,6 +571,13 @@ func runSendVerb(verb, msgType string, args []string, stdin io.Reader, stdout, s
 // orchestrating when its own waiter died. Exempting the state would have
 // silenced the exact case that produced the finding.
 func warnNotListening(mgr *session.Manager, sid string, stderr io.Writer) {
+	// The architect speaks through the MCP server, which by design never waits as a
+	// listener: its mail is read with the `next` tool, which reads and claims nothing.
+	// For the model on Claude Desktop the note would be false and misleading, a hint
+	// that the val is not there when the val is exactly where it was.
+	if me, lerr := mgr.LoadManifest(sid); lerr == nil && me.Role == session.RoleArchitect {
+		return
+	}
 	owner, ok, err := mgr.ReadListener(sid)
 	if err != nil {
 		// Pure observability: a damaged record is not worth a line here, and a

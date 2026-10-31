@@ -211,6 +211,7 @@ func TestMCPWithTheRealBinary(t *testing.T) {
 		res = srv.client.call("ask", map[string]any{"to": "VAL-real", "message": "QUESTION-ONE: is the plan sound?"})
 		require.False(t, res.IsError, res.Text())
 		assert.Contains(t, res.Text(), "open until they reply")
+		assert.NotContains(t, res.Text(), "no next is listening", "that note is about a listener, and over MCP there is none by design")
 		out, err := sb.cli(valSID, "next")
 		require.NoError(t, err, out)
 		assert.Contains(t, out, "QUESTION-ONE")
