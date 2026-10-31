@@ -1,0 +1,23 @@
+cmd/cab-bridge/mcp_realbin_test.go
+  s_ecb5fdcb0207f6::t_4d7043fd4a14ca 214
+cmd/cab-bridge/verbs.go
+  s_ecb5fdcb0207f6::t_f44ca8e7f5ea9e 574-580
+cmd/cab-bridge/warn_architect_test.go
+  s_ecb5fdcb0207f6::t_41690dfba41bda 1-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f4bd640486a1ecf09ea85cb43579039f9a8f74da",
+  "prompts": {},
+  "sessions": {
+    "s_ecb5fdcb0207f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32afad43-c9ed-4676-bf4d-bee1f17ec8c0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
