@@ -106,14 +106,14 @@ func (a *mcpApp) replySelector(p *mcpProject, auth *authorizer, askID, content s
 		case loc.archived:
 			return nil, errReplyAskArchived
 		}
-		m, size, err := loadMessageAt(loc.path, a.cfg.MaxMessageBytes)
+		m, err := loadMessageAt(loc.path, a.cfg.MaxMessageBytes)
 		if err != nil {
 			return nil, errReplyUnreadable
 		}
 		if m.Type != message.TypeQuery {
 			return nil, errReplyNotAnAsk
 		}
-		if _, held := auth.authorize(m, size); held != nil {
+		if _, held := auth.authorize(m); held != nil {
 			return nil, errReplyAskHeld
 		}
 		return &session.ReplyTxn{

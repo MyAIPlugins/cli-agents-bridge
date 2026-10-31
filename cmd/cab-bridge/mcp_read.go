@@ -44,11 +44,11 @@ func (a *mcpApp) toolRead(ctx context.Context, raw json.RawMessage) (mcp.Result,
 	case err != nil:
 		return mcp.Result{}, mcp.Refuse("this is not a valid message id")
 	}
-	m, size, err := loadMessageAt(loc.path, a.cfg.MaxMessageBytes)
+	m, err := loadMessageAt(loc.path, a.cfg.MaxMessageBytes)
 	if err != nil {
 		return mcp.Result{}, mcp.Refuse("the message could not be read")
 	}
-	v, held := newAuthorizer(a.mgr, p.scope, a.mgr.NowUTC()).authorize(m, size)
+	v, held := newAuthorizer(a.mgr, p.scope, a.mgr.NowUTC()).authorize(m)
 	if held != nil {
 		return mcp.Result{}, mcp.Refusef("this message is held back (%s) and cannot be read from here", held.Reason)
 	}

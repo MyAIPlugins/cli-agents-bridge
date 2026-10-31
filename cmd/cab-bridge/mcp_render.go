@@ -100,8 +100,11 @@ func previewOf(s string) string {
 	return string(r[:previewRunes]) + "..."
 }
 
+// label is the header of a message. Its size is the size of the TEXT, in bytes: the
+// unit `read` cuts in (content bytes a-b of N) and the CLI shows. It used to be the
+// size of the file in the inbox, envelope included, so a text of 83 bytes said 668.
 func label(v visibleMessage, now time.Time) string {
-	return fmt.Sprintf("id %s | from %s | %s | %s | %d bytes", v.ID(), v.AuthorName(), kindOf(v.Type()), age(v.Timestamp(), now), v.Bytes())
+	return fmt.Sprintf("id %s | from %s | %s | %s | %d bytes", v.ID(), v.AuthorName(), kindOf(v.Type()), age(v.Timestamp(), now), len(v.Content()))
 }
 
 func kindOf(t string) string {

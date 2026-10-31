@@ -119,16 +119,16 @@ func locateMessage(sessionDir, id string) (located, error) {
 }
 
 // loadMessageAt reads and decodes one message file, verifying it belongs to this user.
-func loadMessageAt(path string, maxContentBytes int) (*message.Message, int, error) {
+func loadMessageAt(path string, maxContentBytes int) (*message.Message, error) {
 	data, err := security.ReadOwnedFile(path)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	m, err := message.DecodeLenient(data, maxContentBytes)
 	if err != nil {
-		return nil, 0, fmt.Errorf("decode %s: %w", filepath.Base(path), err)
+		return nil, fmt.Errorf("decode %s: %w", filepath.Base(path), err)
 	}
-	return m, len(data), nil
+	return m, nil
 }
 
 // ackOutcome is what happened to one id of an ack.
@@ -153,7 +153,7 @@ type ackResult struct {
 // ackCheck decides whether the message in the inbox may be archived by an ack. It is
 // where the caller puts "visible to Desktop" and "not an ask": it receives the
 // decoded message and the size of its file.
-type ackCheck func(m *message.Message, size int) error
+type ackCheck func(m *message.Message) error
 
 // archiveBatch archives exactly the named messages, in two phases.
 //
@@ -191,13 +191,13 @@ func archiveBatch(sessionDir string, ids []string, maxContentBytes int, check ac
 		case loc.archived:
 			results[i].Outcome = ackAlreadyArchived
 		default:
-			m, size, lerr := loadMessageAt(loc.path, maxContentBytes)
+			m, lerr := loadMessageAt(loc.path, maxContentBytes)
 			if lerr != nil {
 				results[i].Outcome, results[i].Detail = ackRefused, "the message could not be read"
 				allOK = false
 				break
 			}
-			if cerr := check(m, size); cerr != nil {
+			if cerr := check(m); cerr != nil {
 				results[i].Outcome, results[i].Detail = ackRefused, cerr.Error()
 				allOK = false
 				break

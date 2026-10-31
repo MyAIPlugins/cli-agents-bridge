@@ -21,7 +21,7 @@ func vis(id, typ, content string, minutesAgo int) visibleMessage {
 	return visibleMessage{
 		id: id, typ: typ, from: "valrender1", authorName: "VAL-render",
 		timestamp: renderNow.Add(-time.Duration(minutesAgo) * time.Minute).Format(time.RFC3339),
-		content:   content, bytes: len(content),
+		content:   content,
 	}
 }
 

@@ -68,7 +68,6 @@ type visibleMessage struct {
 	authorName string
 	timestamp  string
 	content    string
-	bytes      int
 }
 
 func (v visibleMessage) ID() string         { return v.id }
@@ -77,7 +76,6 @@ func (v visibleMessage) From() string       { return v.from }
 func (v visibleMessage) AuthorName() string { return v.authorName }
 func (v visibleMessage) Timestamp() string  { return v.timestamp }
 func (v visibleMessage) Content() string    { return v.content }
-func (v visibleMessage) Bytes() int         { return v.bytes }
 
 // verdict is what one pass decided about one author.
 type verdict struct {
@@ -100,14 +98,14 @@ func newAuthorizer(deps authDeps, scope string, now time.Time) *authorizer {
 }
 
 // authorize returns the message as visible, or a notice that it is withheld.
-func (a *authorizer) authorize(m *message.Message, size int) (visibleMessage, *withheld) {
+func (a *authorizer) authorize(m *message.Message) (visibleMessage, *withheld) {
 	v := a.judge(m.From)
 	if v.reason != "" {
 		return visibleMessage{}, &withheld{ID: m.ID, Reason: v.reason}
 	}
 	return visibleMessage{
 		id: m.ID, typ: m.Type, from: m.From, authorName: v.name,
-		timestamp: m.Timestamp, content: m.Content, bytes: size,
+		timestamp: m.Timestamp, content: m.Content,
 	}, nil
 }
 
@@ -157,7 +155,7 @@ func (a *authorizer) allows(id string) bool { return a.judge(id).reason == "" }
 // the order given.
 func (a *authorizer) authorizeEntries(entries []mailboxEntry) (visible []visibleMessage, held []withheld) {
 	for _, e := range entries {
-		v, w := a.authorize(e.msg, e.bytes)
+		v, w := a.authorize(e.msg)
 		if w != nil {
 			held = append(held, *w)
 			continue

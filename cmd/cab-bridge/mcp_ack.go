@@ -39,11 +39,11 @@ func (a *mcpApp) toolAck(ctx context.Context, raw json.RawMessage) (mcp.Result, 
 	defer p.mu.Unlock()
 
 	auth := newAuthorizer(a.mgr, p.scope, a.mgr.NowUTC())
-	check := func(m *message.Message, size int) error {
+	check := func(m *message.Message) error {
 		if m.Type == message.TypeQuery {
 			return errors.New("an ask is closed by `reply`, not by ack")
 		}
-		if _, held := auth.authorize(m, size); held != nil {
+		if _, held := auth.authorize(m); held != nil {
 			return errors.New("this message is held back, so it cannot be acknowledged from here")
 		}
 		return nil

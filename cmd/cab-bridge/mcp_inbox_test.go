@@ -22,7 +22,7 @@ var inboxT0 = time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
 
 func sessionDirOf(dataDir string) string { return filepath.Join(dataDir, "sessions", inboxSID) }
 
-func allowAll(*message.Message, int) error { return nil }
+func allowAll(*message.Message) error { return nil }
 
 func TestScanInboxWithin_ReadsDeclaresCorruptAndDropsReceipts(t *testing.T) {
 	t.Parallel()
@@ -114,7 +114,7 @@ func TestLocateMessage(t *testing.T) {
 	}
 }
 
-func queryRefused(m *message.Message, _ int) error {
+func queryRefused(m *message.Message) error {
 	if m.Type == message.TypeQuery {
 		return errors.New("an ask is closed with reply, not with ack")
 	}
@@ -206,7 +206,7 @@ func TestArchiveBatch_ACallerCheckThatRefusesStopsTheBatch(t *testing.T) {
 	dataDir := t.TempDir()
 	plantInboxAt(t, dataDir, inboxSID, "msg-aaaaaaaaaaaa", "valinbox1", message.TypeNotify, "held back", inboxT0)
 	res, ok := archiveBatch(sessionDirOf(dataDir), []string{"msg-aaaaaaaaaaaa"}, 65536,
-		func(*message.Message, int) error { return errors.New("not visible to Desktop") }, moveToProcessed)
+		func(*message.Message) error { return errors.New("not visible to Desktop") }, moveToProcessed)
 	require.False(t, ok)
 	assert.Equal(t, ackRefused, res[0].Outcome)
 	assert.True(t, inboxHas(dataDir, "msg-aaaaaaaaaaaa"), "Desktop cannot archive what it was never shown")

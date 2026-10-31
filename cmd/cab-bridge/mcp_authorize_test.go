@@ -60,7 +60,7 @@ func TestAuthorizer_AnOpenValOfThisProjectIsVisibleUnderItsManifestName(t *testi
 	env.plant("valauth1", session.RoleVal, "VAL-real", authScope)
 	env.open("valauth1", time.Hour)
 
-	v, w := newAuthorizer(env.mgr, authScope, authT0).authorize(msgFrom("msg-aaaaaaaaaaaa", "valauth1", "val", "VAL-FORGED", "brief"), 5)
+	v, w := newAuthorizer(env.mgr, authScope, authT0).authorize(msgFrom("msg-aaaaaaaaaaaa", "valauth1", "val", "VAL-FORGED", "brief"))
 	require.Nil(t, w)
 	assert.Equal(t, "VAL-real", v.AuthorName(), "the name on the manifest, not the one the message claims")
 	assert.Equal(t, "brief", v.Content())
@@ -97,7 +97,7 @@ func TestAuthorizer_EveryOtherCaseIsWithheldWithAReasonAndNothingElse(t *testing
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			// The message LIES: it says val, with a plausible name.
-			v, w := newAuthorizer(env.mgr, authScope, tc.now).authorize(msgFrom("msg-bbbbbbbbbbbb", tc.from, "val", "VAL-lie", "SENTINEL-BODY"), 13)
+			v, w := newAuthorizer(env.mgr, authScope, tc.now).authorize(msgFrom("msg-bbbbbbbbbbbb", tc.from, "val", "VAL-lie", "SENTINEL-BODY"))
 			require.NotNil(t, w)
 			assert.Equal(t, tc.want, w.Reason)
 			assert.Equal(t, "msg-bbbbbbbbbbbb", w.ID)
@@ -115,7 +115,7 @@ func TestAuthorizer_EveryOtherCaseIsWithheldWithAReasonAndNothingElse(t *testing
 func TestAuthorizer_AFileCannotBeUsedToReadAPathThroughTheAuthorField(t *testing.T) {
 	t.Parallel()
 	deps := &countingDeps{}
-	_, w := newAuthorizer(deps, authScope, authT0).authorize(msgFrom("msg-cccccccccccc", "../../outside", "val", "x", "y"), 1)
+	_, w := newAuthorizer(deps, authScope, authT0).authorize(msgFrom("msg-cccccccccccc", "../../outside", "val", "x", "y"))
 	require.NotNil(t, w)
 	assert.Equal(t, reasonUnresolvable, w.Reason)
 	assert.Zero(t, deps.loads, "an invalid session id is refused BEFORE it builds a path")
@@ -258,7 +258,7 @@ func TestAuthorizer_TheAuthorIsTheSessionIDTheMessageCarriesNotWhoWroteIt(t *tes
 	env.open("valsigned", time.Hour)
 
 	m := msgFrom("msg-dddddddddddd", "valsigned", "esc", "ESC-who-really-wrote-it", "written by an executor, signed as the val")
-	v, w := newAuthorizer(env.mgr, authScope, authT0).authorize(m, 7)
+	v, w := newAuthorizer(env.mgr, authScope, authT0).authorize(m)
 	require.Nil(t, w, "the id decides, and the id is the val's")
 	assert.Equal(t, "VAL-signed", v.AuthorName(), "and the name shown is the manifest's, never the claimed one")
 }
