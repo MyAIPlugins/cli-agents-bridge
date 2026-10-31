@@ -45,7 +45,7 @@ func TestDesktopGrant_OpenReadRoundtripAndValidity(t *testing.T) {
 
 	info, err := os.Stat(mgr.desktopGrantPath(sid))
 	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	assertPOSIXPerm(t, info.Mode().Perm(), 0o600, "desktop-grant.json")
 
 	assert.True(t, got.ValidAt(t0))
 	assert.True(t, got.ValidAt(t0.Add(8*time.Hour-time.Nanosecond)))
