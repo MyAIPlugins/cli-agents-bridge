@@ -256,6 +256,137 @@ func TestMakefile_Skills(t *testing.T) {
 		assert.Equal(t, "alpha for codex\n", readFile(t, installed(fx, ".codex", "alpha", "SKILL.md")), "and the missing one is installed")
 	})
 
+	// What each install leaves in a skill's folder is a record of what it installed, and
+	// it is what tells a copy that is merely behind the repo from one somebody edited:
+	// without it every update would need FORCE=1 and the protection would be a habit.
+	const record = ".cab-installed"
+	repoSkill := func(fx skillsFixture, file string) string {
+		return filepath.Join(fx.skills, "claude", "alpha", file)
+	}
+	install := func(t *testing.T, fx skillsFixture, extra ...string) string {
+		t.Helper()
+		out, code := fx.make(t, repoRoot, "install-skills", extra...)
+		require.Equal(t, 0, code, out)
+		return out
+	}
+
+	t.Run("a copy that is only behind the repo is updated without FORCE, and check says it is behind", func(t *testing.T) {
+		fx := newSkillsFixture(t)
+		install(t, fx)
+		write(t, repoSkill(fx, "SKILL.md"), "alpha for claude, newer\n")
+		write(t, repoSkill(fx, "refs/new.md"), "a new file\n")
+
+		out, code := fx.make(t, repoRoot, "skills-check")
+		assert.NotEqual(t, 0, code, out)
+		assert.Contains(t, out, "different  claude/alpha  (behind the repo")
+		assert.NotContains(t, out, "locally modified")
+
+		out = install(t, fx)
+		assert.Contains(t, out, "updated    claude/alpha: SKILL.md")
+		assert.Contains(t, out, "updated    claude/alpha: refs/new.md")
+		assert.NotContains(t, out, "overwrote")
+		assert.Equal(t, "alpha for claude, newer\n", readFile(t, installed(fx, ".claude", "alpha", "SKILL.md")))
+		assert.Equal(t, "a new file\n", readFile(t, installed(fx, ".claude", "alpha", "refs/new.md")))
+
+		out, code = fx.make(t, repoRoot, "skills-check")
+		assert.Equal(t, 0, code, out)
+
+		// The update renewed the record: the next one is an update again, not an edit.
+		write(t, repoSkill(fx, "SKILL.md"), "alpha for claude, newer still\n")
+		assert.Contains(t, install(t, fx), "updated    claude/alpha: SKILL.md")
+	})
+
+	t.Run("a copy edited since the last install is refused even when the repo moved too", func(t *testing.T) {
+		fx := newSkillsFixture(t)
+		install(t, fx)
+		write(t, installed(fx, ".claude", "alpha", "SKILL.md"), "alpha for claude\nMY EDIT\n")
+		write(t, repoSkill(fx, "SKILL.md"), "alpha for claude, newer\n")
+
+		out, code := fx.make(t, repoRoot, "skills-check")
+		assert.NotEqual(t, 0, code, out)
+		assert.Contains(t, out, "different  claude/alpha  (locally modified")
+		assert.Contains(t, out, "changed since the last install: SKILL.md")
+
+		out, code = fx.make(t, repoRoot, "install-skills")
+		assert.NotEqual(t, 0, code, out)
+		assert.Contains(t, out, "refused")
+		assert.Contains(t, out, "changed since the last install: SKILL.md")
+		assert.Equal(t, "alpha for claude\nMY EDIT\n", readFile(t, installed(fx, ".claude", "alpha", "SKILL.md")), "the edit is still there")
+
+		out = install(t, fx, "FORCE=1")
+		assert.Contains(t, out, "overwrote  claude/alpha: SKILL.md")
+		assert.Equal(t, "alpha for claude, newer\n", readFile(t, installed(fx, ".claude", "alpha", "SKILL.md")))
+	})
+
+	t.Run("a copy with no record is taken as edited, and the first FORCE is the last", func(t *testing.T) {
+		fx := newSkillsFixture(t)
+		// What is on the machine today: a copy somebody put there, different from the repo's.
+		write(t, installed(fx, ".claude", "alpha", "SKILL.md"), "an old alpha\n")
+
+		out, code := fx.make(t, repoRoot, "skills-check")
+		assert.NotEqual(t, 0, code, out)
+		assert.Contains(t, out, "different  claude/alpha  (locally modified")
+		assert.Contains(t, out, "no record of the last install")
+
+		out, code = fx.make(t, repoRoot, "install-skills")
+		assert.NotEqual(t, 0, code, out)
+		assert.Contains(t, out, "no record of the last install")
+		assert.Equal(t, "an old alpha\n", readFile(t, installed(fx, ".claude", "alpha", "SKILL.md")))
+
+		install(t, fx, "FORCE=1")
+		assert.FileExists(t, installed(fx, ".claude", "alpha", record), "the install records what it installed")
+
+		write(t, repoSkill(fx, "SKILL.md"), "alpha for claude, newer\n")
+		out = install(t, fx)
+		assert.Contains(t, out, "updated    claude/alpha: SKILL.md", "no FORCE the second time")
+	})
+
+	t.Run("a copy identical to the repo is adopted, and a check never writes the record", func(t *testing.T) {
+		fx := newSkillsFixture(t)
+		write(t, installed(fx, ".claude", "alpha", "SKILL.md"), "alpha for claude\n")
+		write(t, installed(fx, ".claude", "alpha", "refs/guide.md"), "guide\n")
+
+		out, _ := fx.make(t, repoRoot, "skills-check") // exits 1: the codex copy is not installed, which is not what this is about
+		assert.Contains(t, out, "ok         claude/alpha")
+		assert.NoFileExists(t, installed(fx, ".claude", "alpha", record), "a check touches nothing")
+
+		out = install(t, fx)
+		assert.Contains(t, out, "adopted    claude/alpha")
+		assert.FileExists(t, installed(fx, ".claude", "alpha", record))
+		assert.Contains(t, install(t, fx), "unchanged  claude/alpha")
+
+		// A record that no longer says what the copy is, on a copy that is the repo's.
+		write(t, installed(fx, ".claude", "alpha", record), "1 2 SKILL.md\n")
+		assert.Contains(t, install(t, fx), "adopted    claude/alpha", "it is rewritten")
+
+		write(t, repoSkill(fx, "SKILL.md"), "alpha for claude, newer\n")
+		assert.Contains(t, install(t, fx), "updated    claude/alpha: SKILL.md", "and the adopted copy updates without FORCE")
+	})
+
+	t.Run("a file the record lists and the copy lost counts as an edit", func(t *testing.T) {
+		fx := newSkillsFixture(t)
+		install(t, fx)
+		require.NoError(t, os.Remove(installed(fx, ".claude", "alpha", "refs/guide.md")))
+		write(t, repoSkill(fx, "SKILL.md"), "alpha for claude, newer\n")
+
+		out, code := fx.make(t, repoRoot, "skills-check")
+		assert.NotEqual(t, 0, code, out)
+		assert.Contains(t, out, "locally modified")
+		assert.Contains(t, out, "changed since the last install: refs/guide.md")
+		out, code = fx.make(t, repoRoot, "install-skills")
+		assert.NotEqual(t, 0, code, out)
+	})
+
+	t.Run("the record is no part of any comparison and is never named as an extra", func(t *testing.T) {
+		fx := newSkillsFixture(t)
+		out := install(t, fx)
+		assert.NotContains(t, out, record)
+		check, code := fx.make(t, repoRoot, "skills-check")
+		assert.Equal(t, 0, code, check)
+		assert.NotContains(t, check, record)
+		assert.NotContains(t, check, "only in the installed copy")
+	})
+
 	t.Run("a file only in the installed copy is listed and never deleted", func(t *testing.T) {
 		fx := newSkillsFixture(t)
 		out, code := fx.make(t, repoRoot, "install-skills")

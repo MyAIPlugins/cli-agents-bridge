@@ -12,9 +12,12 @@
 #     of a runtime's skills directory is the user's and is not read, listed or changed;
 #   - it never deletes: a file that is in the installed copy and not in the repo is
 #     listed and left alone;
-#   - a copy that differs from the repo's is never overwritten without FORCE=1, and with
-#     it every overwritten file is named. A difference does not say which side is newer,
-#     so it is the person who decides, with the list in front of them;
+#   - a copy that was edited since the last install is never overwritten without FORCE=1,
+#     and with it every overwritten file is named. A difference from the repo does not
+#     say which side is newer, so each install leaves a record of what it installed
+#     (.cab-installed, in the skill's folder): a copy that still matches its record is
+#     only behind the repo and is updated; one that does not match it was edited; one
+#     with no record (never installed by this, or put there by hand) is taken as edited;
 #   - all or nothing: if one copy would be refused, no skill is copied;
 #   - a runtime that is not on this machine (no ~/.codex) is skipped, with a line.
 #
@@ -37,6 +40,12 @@ force=${FORCE:-}
 
 runtimes="claude codex antigravity claude-desktop"
 
+# The record of the last install, in the installed copy of a skill: one line per file,
+# "<crc> <size> <path>" as POSIX cksum says it. It tells an edit by hand from a copy that
+# is merely behind the repo. It is not a security control (cksum catches an edit, not
+# someone hiding one), and it is not part of any comparison.
+RECORD=.cab-installed
+
 # The directory a runtime keeps its configuration in. If it does not exist the runtime
 # is not installed here.
 runtime_root() {
@@ -52,31 +61,80 @@ installed_copy() {
 	echo "$(runtime_root "$1")/skills/$2"
 }
 
+# The files of a skill, as paths relative to its folder, sorted. The record is not one.
+files_of() {
+	(cd "$1" && find . -type f ! -name .DS_Store ! -name "$RECORD" ! -name "$RECORD.tmp" | sed 's|^\./||' | sort)
+}
+
 # One line per finding between a skill of the repo ($1) and its installed copy ($2):
 #   D file   in both, and different
 #   M file   in the repo, not in the installed copy
 #   X file   in the installed copy, not in the repo (never a difference: it is left alone)
 compare() {
-	(cd "$1" && find . -type f ! -name .DS_Store | sed 's|^\./||' | sort) | while IFS= read -r f; do
+	files_of "$1" | while IFS= read -r f; do
 		if [ ! -e "$2/$f" ]; then
 			printf 'M %s\n' "$f"
 		elif ! cmp -s "$1/$f" "$2/$f"; then
 			printf 'D %s\n' "$f"
 		fi
 	done
-	(cd "$2" && find . -type f ! -name .DS_Store | sed 's|^\./||' | sort) | while IFS= read -r f; do
+	files_of "$2" | while IFS= read -r f; do
 		[ -e "$1/$f" ] || printf 'X %s\n' "$f"
 	done
 }
 
+# The record a skill of the repo gives its copy when it is installed.
+manifest() {
+	files_of "$1" | while IFS= read -r f; do
+		printf '%s %s\n' "$(cksum <"$1/$f")" "$f"
+	done
+}
+
+# Replaced whole or not at all, so a record cut short cannot vouch for files it no
+# longer lists.
+write_record() {
+	manifest "$1" >"$2/$RECORD.tmp"
+	mv -f "$2/$RECORD.tmp" "$2/$RECORD"
+}
+
+# The files of an installed copy that are no longer what its record says, one per line.
+# A file the record lists and the copy no longer has is one of them.
+edited_since_install() {
+	while IFS= read -r line; do
+		crc=${line%% *}
+		rest=${line#* }
+		size=${rest%% *}
+		path=${rest#* }
+		if [ ! -f "$1/$path" ] || [ "$(cksum <"$1/$path")" != "$crc $size" ]; then
+			echo "$path"
+		fi
+	done <"$1/$RECORD"
+}
+
+# ok       the copy is the repo's (files only in the copy do not count)
+# missing  the skill is not installed
+# behind   it differs from the repo and matches its record: only the repo moved
+# edited   it differs from the repo and does not match its record, or has none
 status_of() {
 	if [ ! -d "$2" ]; then
 		echo missing
-	elif [ -n "$(compare "$1" "$2" | grep -v '^X ' || true)" ]; then
-		echo different
-	else
+	elif [ -z "$(compare "$1" "$2" | grep -v '^X ' || true)" ]; then
 		echo ok
+	elif [ -f "$2/$RECORD" ] && [ -z "$(edited_since_install "$2")" ]; then
+		echo behind
+	else
+		echo edited
 	fi
+}
+
+show_why_edited() {
+	if [ ! -f "$1/$RECORD" ]; then
+		echo "    no record of the last install, so the copy is taken as edited"
+		return 0
+	fi
+	edited_since_install "$1" | while IFS= read -r f; do
+		printf '    changed since the last install: %s\n' "$f"
+	done
 }
 
 show_findings() {
@@ -148,8 +206,14 @@ report() {
 		printf 'missing    %s/%s  (%s)\n' "$2" "$3" "$5"
 		bad=1
 		;;
-	different)
-		printf 'different  %s/%s  (%s)\n' "$2" "$3" "$5"
+	behind)
+		printf 'different  %s/%s  (behind the repo; %s)\n' "$2" "$3" "$5"
+		show_findings "$4" "$5"
+		bad=1
+		;;
+	edited)
+		printf 'different  %s/%s  (locally modified; %s)\n' "$2" "$3" "$5"
+		show_why_edited "$5"
 		show_findings "$4" "$5"
 		bad=1
 		;;
@@ -167,13 +231,14 @@ conflicts=0
 desktop=0
 plan() {
 	case $1 in
-	different)
+	edited)
 		conflicts=$((conflicts + 1))
 		[ "$force" = 1 ] && return 0
 		if [ "$conflicts" -eq 1 ]; then
-			echo "refused: an installed copy differs from the repo's, and copying would overwrite it. Nothing was copied." >&2
+			echo "refused: an installed copy was edited since the last install, and copying would overwrite the edit. Nothing was copied." >&2
 		fi
 		printf '  %s/%s  (%s)\n' "$2" "$3" "$5" >&2
+		show_why_edited "$5" >&2
 		show_findings "$4" "$5" >&2
 		;;
 	manual) desktop=$((desktop + 1)) ;;
@@ -182,7 +247,7 @@ plan() {
 
 each_skill plan
 if [ "$conflicts" -gt 0 ] && [ "$force" != 1 ]; then
-	echo "  Run 'make skills-check' to see them again. A difference does not say which side is newer: if the repo's copy is the one to keep, run again with FORCE=1, which prints every file it overwrites." >&2
+	echo "  Run 'make skills-check' to see them again. If the repo's copy is the one to keep, run again with FORCE=1, which prints every file it overwrites." >&2
 	exit 1
 fi
 if [ "$desktop" -gt 0 ] && ! command -v zip >/dev/null 2>&1; then
@@ -198,21 +263,44 @@ zip_skill() {
 	printf 'zipped     claude-desktop/%s -> %s\n' "$2" "$out"
 }
 
+# One line per file the install is about to replace: $1 is the word for it, then the
+# skill's runtime and name, its folder in the repo and its installed copy.
+say_replaced() {
+	compare "$4" "$5" | while IFS= read -r line; do
+		case $line in D\ * | M\ *) printf '%-11s%s/%s: %s\n' "$1" "$2" "$3" "${line#? }" ;; esac
+	done
+}
+
 apply() {
 	case $1 in
 	skipped) printf 'skipped    %s/%s  (%s does not exist)\n' "$2" "$3" "$(runtime_root "$2")" ;;
 	manual) zip_skill "$4" "$3" ;;
-	ok) printf 'unchanged  %s/%s\n' "$2" "$3" ;;
+	ok)
+		# Identical to the repo's, so it is certain nothing was edited: that is what
+		# the record is for, and it is written when it is missing or stale.
+		if [ -f "$5/$RECORD" ] && manifest "$4" | cmp -s - "$5/$RECORD"; then
+			printf 'unchanged  %s/%s\n' "$2" "$3"
+		else
+			write_record "$4" "$5"
+			printf 'adopted    %s/%s  (identical to the repo: recorded as installed)\n' "$2" "$3"
+		fi
+		;;
 	missing)
 		mkdir -p "$5"
 		cp -R "$4/." "$5/"
+		write_record "$4" "$5"
 		printf 'installed  %s/%s -> %s\n' "$2" "$3" "$5"
 		;;
-	different)
-		compare "$4" "$5" | while IFS= read -r line; do
-			case $line in D\ * | M\ *) printf 'overwrote  %s/%s: %s\n' "$2" "$3" "${line#? }" ;; esac
-		done
+	behind)
+		say_replaced updated "$2" "$3" "$4" "$5"
 		cp -R "$4/." "$5/"
+		write_record "$4" "$5"
+		show_extras "$4" "$5"
+		;;
+	edited)
+		say_replaced overwrote "$2" "$3" "$4" "$5"
+		cp -R "$4/." "$5/"
+		write_record "$4" "$5"
 		show_extras "$4" "$5"
 		;;
 	esac
