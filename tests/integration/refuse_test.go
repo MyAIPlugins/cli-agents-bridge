@@ -22,17 +22,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mcp.Refusef builds the text that reaches Claude Desktop's model, and an error given
-// to it would put its own text there: a path of the machine, a session id. The
-// signature is `...any` on purpose (go vet checks each format against its arguments
-// only through it), so the compiler cannot refuse an error. This does, for every call
-// in the module: each argument is a string or an integer, and none is, or is made
-// from, an error (`err`, `err.Error()`, `fmt.Sprint(err)`). Reading a field of an
-// error (`typeErr.Field`) is not using the error.
+// mcp.Refuse and mcp.Refusef build the text that reaches Claude Desktop's model, and an
+// error given to either would put its own text there: a path of the machine, a session
+// id. The signature of Refusef is `...any` on purpose (go vet checks each format against
+// its arguments only through it), and Refuse takes any string, so the compiler cannot
+// refuse an error. This does, for every call in the module: the format of Refusef, and
+// the text of Refuse, is a constant; each argument of Refusef is a string or an integer;
+// and none is, or is made from, an error (`err`, `err.Error()`, `fmt.Sprint(err)`).
+// Reading a field of an error (`typeErr.Field`) is not using the error.
 //
-// Not covered, and said so: a string made from an error somewhere else and passed in
-// through a variable; and a call in a file this GOOS does not compile, which the test
-// does not look at but does find (it reads the excluded files for the name).
+// Not covered, and said so. The limit is not only a variable: it is every indirection.
+// A string made from an error somewhere else and passed in through a variable, a helper
+// that takes a string and forwards it to Refusef or Refuse, a function value that holds
+// one of them: the test sees the call it can see, and what reaches that call by another
+// road is a constant only if the road is short. And a call in a file this GOOS does not
+// compile, which the test does not look at but does find (it reads the excluded files
+// for the names).
 
 type listedPackage struct {
 	ImportPath     string
@@ -87,13 +92,14 @@ func typeCheck(t *testing.T, fset *token.FileSet, imp types.Importer, path strin
 	return files, info
 }
 
-func isRefusef(obj types.Object, mcpPath string) bool {
+// isRefusal says whether obj is mcp.Refuse or mcp.Refusef.
+func isRefusal(obj types.Object, mcpPath string) bool {
 	fn, ok := obj.(*types.Func)
-	return ok && fn.Name() == "Refusef" && fn.Pkg() != nil && fn.Pkg().Path() == mcpPath
+	return ok && (fn.Name() == "Refuse" || fn.Name() == "Refusef") && fn.Pkg() != nil && fn.Pkg().Path() == mcpPath
 }
 
-// refusefProblems returns every way the calls of mcp.Refusef in the files break the
-// rule, and how many calls there were.
+// refusefProblems returns every way the calls of mcp.Refuse and mcp.Refusef in the files
+// break the rule, and how many calls there were.
 func refusefProblems(files []*ast.File, info *types.Info, mcpPath string) ([]refusefProblem, int) {
 	errIface := types.Universe.Lookup("error").Type().Underlying().(*types.Interface)
 	var problems []refusefProblem
@@ -113,7 +119,7 @@ func refusefProblems(files []*ast.File, info *types.Info, mcpPath string) ([]ref
 			case *ast.SelectorExpr:
 				id = fun.Sel
 			}
-			if id == nil || !isRefusef(info.Uses[id], mcpPath) {
+			if id == nil || !isRefusal(info.Uses[id], mcpPath) {
 				return true
 			}
 			callees[id] = true
@@ -123,8 +129,8 @@ func refusefProblems(files []*ast.File, info *types.Info, mcpPath string) ([]ref
 		})
 	}
 	for id, obj := range info.Uses {
-		if isRefusef(obj, mcpPath) && !callees[id] {
-			problems = append(problems, refusefProblem{id.Pos(), "Refusef is used as a value, so its calls cannot be checked"})
+		if isRefusal(obj, mcpPath) && !callees[id] {
+			problems = append(problems, refusefProblem{id.Pos(), id.Name + " is used as a value, so its calls cannot be checked"})
 		}
 	}
 	return problems, calls
@@ -140,7 +146,7 @@ func argumentProblems(call *ast.CallExpr, info *types.Info, errIface *types.Inte
 		return problems
 	}
 	if info.Types[call.Args[0]].Value == nil {
-		add(call.Args[0], "the format is not a constant")
+		add(call.Args[0], "the format (the text, for Refuse) is not a constant")
 	}
 	for i, arg := range call.Args {
 		if i > 0 && !isPlainValue(info.TypeOf(arg)) {
@@ -210,9 +216,11 @@ func fine(s string, n int, k named, typeErr *json.UnmarshalTypeError) {
 	_ = mcp.Refusef("a field of an error is not the error: %%q", typeErr.Field)
 	_ = mcp.Refusef("a %%s", fmt.Sprintf("%%d", n))
 	_ = mcp.Refusef("joined: %%s", strings.Join([]string{s}, ", "))
+	_ = mcp.Refuse("a sentence written for the model")
+	_ = mcp.Refuse("a sentence " + "in two constant parts")
 }
 
-func broken(err error, typeErr *json.UnmarshalTypeError, anything any, list []string, format string) {
+func broken(err error, typeErr *json.UnmarshalTypeError, anything any, list []string, format, text string) {
 	_ = mcp.Refusef("%%v", err) // BAD
 	_ = mcp.Refusef("%%s", err.Error()) // BAD
 	_ = mcp.Refusef("%%s", fmt.Sprint(err)) // BAD
@@ -222,12 +230,43 @@ func broken(err error, typeErr *json.UnmarshalTypeError, anything any, list []st
 	_ = mcp.Refusef("%%v", list) // BAD
 	_ = mcp.Refusef(format) // BAD
 	_ = mcp.Refusef // BAD
+	_ = mcp.Refuse(err.Error()) // BAD
+	_ = mcp.Refuse(fmt.Sprint(err)) // BAD
+	_ = mcp.Refuse(text) // BAD
+	_ = mcp.Refuse // BAD
+}
+
+// forward is a helper that hands a string to Refuse: the call inside it is flagged,
+// because its argument is not a constant. What the helper's callers pass it is not
+// followed, and this is the limit written down: the next line is NOT flagged.
+func forward(s string) {
+	_ = mcp.Refuse(s) // BAD
+}
+
+func limit(err error) {
+	forward(err.Error())
 }
 `
 
 func lineOf(fset *token.FileSet, pos token.Pos) int { return fset.Position(pos).Line }
 
-func TestRefusefIsNeverGivenAnError(t *testing.T) {
+// callsInExcludedFiles names the files, among the ones this GOOS does not compile, that
+// mention a call of Refuse or Refusef: the checker cannot type-check what the compiler
+// does not read, so it reads the text for the names instead.
+func callsInExcludedFiles(t *testing.T, dir string, excluded []string) []string {
+	t.Helper()
+	var found []string
+	for _, f := range excluded {
+		data, err := os.ReadFile(filepath.Join(dir, f))
+		require.NoError(t, err)
+		if strings.Contains(string(data), "Refuse(") || strings.Contains(string(data), "Refusef(") {
+			found = append(found, f)
+		}
+	}
+	return found
+}
+
+func TestRefuseAndRefusefAreNeverGivenAnError(t *testing.T) {
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go not available")
 	}
@@ -263,7 +302,18 @@ func TestRefusefIsNeverGivenAnError(t *testing.T) {
 			}
 		}
 		assert.Equal(t, want, flagged, "the lines flagged are the lines marked BAD")
-		assert.Equal(t, 13, calls, "every call was seen, the fine ones too: 5 allowed and 8 broken (the BAD value that is not a call is not counted)")
+		assert.Equal(t, 19, calls, "every call was seen, the fine ones too: 7 allowed and 12 broken (the BAD values that are not calls are not counted)")
+	})
+
+	t.Run("a call in a file this GOOS does not compile is found by its text", func(t *testing.T) {
+		dir := t.TempDir()
+		write := func(name, content string) {
+			require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600))
+		}
+		write("a_windows.go", "package x\n// mcp.Refuse(err.Error())\n")
+		write("b_plan9.go", "package x\n// mcp.Refusef(\"%v\", err)\n")
+		write("c_other.go", "package x\n// nothing to see\n")
+		assert.Equal(t, []string{"a_windows.go", "b_plan9.go"}, callsInExcludedFiles(t, dir, []string{"a_windows.go", "b_plan9.go", "c_other.go"}))
 	})
 
 	t.Run("the module", func(t *testing.T) {
@@ -285,17 +335,13 @@ func TestRefusefIsNeverGivenAnError(t *testing.T) {
 			for _, pr := range problems {
 				t.Errorf("%s: %s", fset.Position(pr.pos), pr.msg)
 			}
-			for _, f := range p.IgnoredGoFiles {
-				data, rerr := os.ReadFile(filepath.Join(p.Dir, f))
-				require.NoError(t, rerr)
-				assert.NotContains(t, string(data), "Refusef(", "%s is not compiled for this GOOS, so a call in it is not checked", f)
-			}
+			assert.Empty(t, callsInExcludedFiles(t, p.Dir, p.IgnoredGoFiles), "files this GOOS does not compile, so a call in them is not checked")
 			if calls > 0 {
 				scanned = append(scanned, p.ImportPath)
 			}
 		}
 		sort.Strings(scanned)
-		assert.Contains(t, scanned, module+"/cmd/cab-bridge", "the premise: the consumer of Refusef was found, and its calls counted")
+		assert.Contains(t, scanned, module+"/cmd/cab-bridge", "the premise: the consumer of Refuse and Refusef was found, and its calls counted")
 		assert.Contains(t, scanned, mcpPath, "and so was DecodeArgs's package")
 	})
 }

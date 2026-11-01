@@ -169,13 +169,19 @@ func (a *mcpApp) joinProject(op openProject, surface string) (*mcpProject, bool,
 	return p, false, nil
 }
 
+// identityLockUnsupportedText is what the model is told where the platform has no kernel
+// lock, written here: the text of session.ErrIdentityLockUnsupported is the operator's,
+// and a Refuse takes only words written for the model (the test that scans every call
+// of it holds the line).
+const identityLockUnsupportedText = "identity locks are not supported on this platform, so a project cannot be joined from here"
+
 func identityLockError(err error) error {
 	var held *session.HeldError
 	switch {
 	case errors.As(err, &held):
 		return mcp.Refusef("another Claude Desktop process is already speaking as this identity (pid %d): only one process at a time can hold a project through a surface (chat, or Cowork), and every conversation of that surface shares it. Quit the other Claude Desktop, or wait for its process to end", held.PID)
 	case errors.Is(err, session.ErrIdentityLockUnsupported):
-		return mcp.Refuse(session.ErrIdentityLockUnsupported.Error())
+		return mcp.Refuse(identityLockUnsupportedText)
 	}
 	return fmt.Errorf("could not take the identity of this project: %w", err)
 }
