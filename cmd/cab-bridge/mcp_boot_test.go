@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -20,18 +21,25 @@ func home(path string, err error) func() (string, error) {
 
 func TestMCPPreflight(t *testing.T) {
 	t.Parallel()
+	// Absolute on the operating system the test runs on: "/Users/alan" is not an
+	// absolute path on Windows (no drive), which made the cases that need a good home
+	// fail there, and made "a relative CAB_DATA_DIR is refused even with a good home"
+	// pass for the wrong reason (the home was refused first).
+	goodHome := filepath.Join(t.TempDir(), "home")
+	absDataDir := filepath.Join(t.TempDir(), "bridge")
+	require.True(t, filepath.IsAbs(goodHome) && filepath.IsAbs(absDataDir), "the premise of the cases below: these two are absolute HERE")
 	cases := []struct {
 		name    string
 		home    func() (string, error)
 		env     map[string]string
 		wantErr string // substring; empty means it must pass
 	}{
-		{"a normal environment", home("/Users/alan", nil), nil, ""},
-		{"an absolute data dir is fine", home("/Users/alan", nil), map[string]string{"CAB_DATA_DIR": "/var/bridge"}, ""},
+		{"a normal environment", home(goodHome, nil), nil, ""},
+		{"an absolute data dir is fine", home(goodHome, nil), map[string]string{"CAB_DATA_DIR": absDataDir}, ""},
 		{"no home (F-145: the case that built a private bridge in the cwd)", home("", errors.New("$HOME is not defined")), nil, "no home directory"},
 		{"a relative home", home("relative/home", nil), nil, "not an absolute path"},
-		{"a relative CAB_DATA_DIR", home("/Users/alan", nil), map[string]string{"CAB_DATA_DIR": ".claude/bridge"}, "CAB_DATA_DIR"},
-		{"a relative CAB_DATA_DIR is refused even with a good home", home("/Users/alan", nil), map[string]string{"CAB_DATA_DIR": "bridge"}, "not an absolute path"},
+		{"a relative CAB_DATA_DIR", home(goodHome, nil), map[string]string{"CAB_DATA_DIR": ".claude/bridge"}, "CAB_DATA_DIR"},
+		{"a relative CAB_DATA_DIR is refused even with a good home", home(goodHome, nil), map[string]string{"CAB_DATA_DIR": "bridge"}, `CAB_DATA_DIR="bridge" is not an absolute path`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

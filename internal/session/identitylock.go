@@ -17,10 +17,6 @@ import (
 // identityLockDir holds one lock file per identity, directly under the data dir.
 const identityLockDir = "mcp-owners"
 
-// maxFlockAttempts bounds the retry on EINTR: a signal landing during the syscall
-// is not a reason to give up, and not a reason to loop forever either.
-const maxFlockAttempts = 5
-
 // ErrIdentityHeld is returned when another live process already holds the identity.
 var ErrIdentityHeld = errors.New("identity is held by another process")
 
