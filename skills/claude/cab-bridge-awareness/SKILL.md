@@ -1,391 +1,391 @@
 ---
 name: cab-bridge-awareness
-description: Uso operativo di cab-bridge per il ruolo VAL (orchestratore) e per chi coordina piu' agent — il ciclo a cinque comandi (join/next/ask/tell/reply), il modello mailbox dove next non consuma mai e solo reply archivia, il metodo unico di invio, la regola di autorita', il riarmo strutturale, e la verifica del ground-truth. Usa quando coordini due o piu' sessioni di agent sulla stessa macchina.
+description: "Operational use of cab-bridge for the VAL role (orchestrator) and for whoever coordinates multiple agents — the five-command loop (join/next/ask/tell/reply), the mailbox model where next never consumes and only reply archives, the single sending method, the authority rule, structural re-arming, and ground-truth verification. Use when you coordinate two or more agent sessions on the same machine."
 ---
 
-# cab-bridge operativo
+# Operational cab-bridge
 
-Il binario e' su `$PATH`. Le sessioni vivono in `~/.claude/cli-agents-bridge/sessions/<id>/`.
+The binary is on `$PATH`. Sessions live in `~/.claude/cli-agents-bridge/sessions/<id>/`.
 
-## Ingresso: DUE comandi, poi basta
+## Entry: TWO commands, and that's it
 
-    1)  cab-bridge join --role=val --agent-name=<il nome che ti ha dato chi ti coordina>
-    2)  CAB_SESSION_ID=<l'id stampato al passo 1> cab-bridge next     (in background)
+    1)  cab-bridge join --role=val --agent-name=<the name given to you by whoever coordinates you>
+    2)  CAB_SESSION_ID=<the id printed at step 1> cab-bridge next     (in background)
 
-Il passo 1 stampa **chi sei e chi c'e'**: non ri-derivare quell'informazione con `overview`, `peers` o `inbox --list`. E' la stessa risposta due volte, e un agente fresco che la ricontrolla brucia turni prima ancora di ricevere un compito.
+Step 1 prints **who you are and who is here**: do not re-derive that information with `overview`, `peers` or `inbox --list`. It is the same answer twice, and a fresh agent that re-checks it burns turns before it has even received a task.
 
-**Se sei il VAL**: `cab-bridge state orchestrating` (una volta) ti esenta dall'heartbeat, perche' fra un messaggio e l'altro non stai in `next`.
+**If you are the VAL**: `cab-bridge state orchestrating` (once) exempts you from the heartbeat, because between one message and the next you are not in `next`.
 
-**Se stai ingaggiando un peer Codex**, la prima cosa che gli chiedi e' **il suo `CODEX_THREAD_ID`** — non un goal persistente. Sta fermo, non costa niente, e lo svegli tu: vedi **«SVEGLIARE UN PEER CODEX»** piu' sotto, che e' il modo di lavorare dal 12/09.
+**If you are engaging a Codex peer**, the first thing you ask it for is **its `CODEX_THREAD_ID`** — not a persistent goal. It stays still, costs nothing, and you wake it: see **"WAKING A CODEX PEER"** below, which is the way of working since 12 Sep.
 
-⚠️ **Il vecchio modello — goal persistente + `next` appeso — e' il RIPIEGO**, e lo usi solo se non puoi svegliarlo. Sappi cosa compri: senza goal **e** senza risveglio, un peer che fa `join` + `next` e si ferma **crede di essere in ascolto e non lo e'** e resta muto per sempre (successo il 9 agosto); ma col goal paga **~130k token/ora di silenzio**. **Con l'id dichiarato non paghi nessuno dei due.**
+⚠️ **The old model — persistent goal + hanging `next` — is the FALLBACK**, and you use it only if you cannot wake the peer. Know what you are buying: with no goal **and** no wake-up, a peer that does `join` + `next` and stops **believes it is listening and is not**, and stays mute forever (happened on 9 August); but with the goal it pays **~130k tokens/hour of silence**. **With the declared id you pay neither.**
 
-📌 E se un peer risponde una volta e poi tace: prima chiedevamo *"hai il goal?"*. Adesso la domanda e' **"mi hai dato il tuo thread id, e io ti ho svegliato?"** — perche' il silenzio di un peer fermo e' **indistinguibile** da quello di un peer rotto, e la differenza sta dalla tua parte.
+📌 And if a peer answers once and then goes silent: we used to ask *"do you have the goal?"*. Now the question is **"did you give me your thread id, and did I wake you?"** — because the silence of a peer at rest is **indistinguishable** from that of a broken peer, and the difference lies on your side.
 
-**La mappa dei vendor, tutta misurata il 9-10 agosto sullo stesso bridge** (latenza = dal file sul disco al riarmo del listener, cioe' **il modello**, non il processo):
+**The vendor map, all measured on 9-10 August on the same bridge** (latency = from the file on disk to the listener re-arming, i.e. **the model**, not the process):
 
-    Claude Code    risveglio nativo          run_in_background, zero costo a vuoto
-    Codex          🟢 RISVEGLIO ESTERNO      `codex queue --thread <id>` — DIMOSTRATO 12/09, col
-                   (dalla 0.154.0)           controllo umano: agente FERMO, zero costo mentre aspetta
-                   ⚠️ ma lo sveglia una      se invece POLLA: ~60 turni/ora — UNO AL MINUTO — a ~2.150
-                   PERSONA: nessuno ha       token l'uno ⇒ ~130k token/ora di silenzio
-                   ancora collegato un
-                   watcher a `codex queue`
-    Antigravity    risveglio nativo          3,1s · zero costo · nessun goal, nessuna attesa
-                   (Reactive Wakeup su fine task in background)
-    Claude Desktop nessuna shell             entra dal connettore MCP (F-72, su main dal 1/11/2026)
-                   (Cowork: agente nel        dopo `desktop open` del VAL; legge la posta quando
-                   cloud, 60 s per tool)      chiama `next`, cioe' dentro un suo turno
+    Claude Code    native wake-up            run_in_background, zero cost on empty waits
+    Codex          🟢 EXTERNAL WAKE-UP       `codex queue --thread <id>` — PROVEN 12 Sep, with
+                   (since 0.154.0)           the human control: agent STILL, zero cost while it waits
+                   ⚠️ but a PERSON wakes     if instead it POLLS: ~60 turns/hour — ONE PER MINUTE — at ~2,150
+                   it: nobody has yet        tokens each ⇒ ~130k tokens/hour of silence
+                   connected a watcher
+                   to `codex queue`
+    Antigravity    native wake-up            3.1s · zero cost · no goal, no waiting
+                   (Reactive Wakeup on background task completion)
+    Claude Desktop no shell                  comes in through the MCP connector (F-72, on main since 1 Nov 2026)
+                   (Cowork: agent in the     after the VAL's `desktop open`; reads mail when
+                   cloud, 60 s per tool)     it calls `next`, i.e. inside one of its own turns
 
-🔴 ⭐ **LA RIGA DI CODEX DICEVA «~1 turno/ora col config alzato»: ERA FALSA, e la cura che prometteva
-non esiste** (12/09, misurato da CRI su richiesta dell'umano, che l'aveva visto ciclare).
+🔴 ⭐ **THE CODEX ROW SAID "~1 turn/hour with the raised config": IT WAS FALSE, and the cure it promised
+does not exist** (12 Sep, measured by CRI at the request of the human, who had seen it cycling).
 
-`[E]` I tre dati, dal suo referto:
+`[E]` The three data points, from its report:
 
-    chiede a `write_stdin`   `yield_time_ms = 3600000`  (il valore alto, col config gia' corretto)
-    ottiene                  la cella torna SUBITO, e lui poi chiama `functions.wait` a **60 000 ms**
-    chi lo fa tornare        **lui stesso**: non il processo, non il runtime, non il bridge
+    asks `write_stdin` for   `yield_time_ms = 3600000`  (the high value, with the config already fixed)
+    gets                     the cell returns IMMEDIATELY, and it then calls `functions.wait` at **60 000 ms**
+    who makes it return      **itself**: not the process, not the runtime, not the bridge
 
-⇒ **La causa e' un'istruzione superiore del runtime di Codex** — *«evitare attese bloccanti oltre
-60 secondi»* — che `[E]` **non sta in una skill, non in un `AGENTS.md`, e non e' modificabile da noi**
-(cercata il 12/09 in entrambi i posti: assente).
-⇒ L'agente spezza l'attesa in tranche da 60 s, e **ogni tranche costa un turno** perche' il goal
-persistente ne genera uno nuovo. Il valore nel config **non viene mai raggiunto**.
+⇒ **The cause is a higher-level instruction of the Codex runtime** — *"avoid blocking waits longer than
+60 seconds"* — which `[E]` **is not in a skill, not in an `AGENTS.md`, and cannot be modified by us**
+(searched for on 12 Sep in both places: absent).
+⇒ The agent breaks the wait into 60 s chunks, and **every chunk costs a turn** because the persistent
+goal generates a new one. The value in the config **is never reached**.
 
-⭐ **IL CONTO VERO, misurato dall'interno da un CRI (gpt-6-astra) il 12/09 su mia richiesta** — ed e'
-il primo numero onesto che abbiamo, perche' un agente puo' leggere i propri contatori e noi no:
+⭐ **THE REAL COUNT, measured from the inside by a CRI (gpt-6-astra) on 12 Sep at my request** — and it is
+the first honest number we have, because an agent can read its own counters and we cannot:
 
-    due turni vuoti consecutivi   write_stdin → processo vivo, output vuoto, a 60,0107 s e 60,0069 s
-    contatori ai tre ingressi     43.085 → 45.246 → 47.392 token
-    costo per turno vuoto         **2.161 e 2.146 token**  ⇒  ~4.300 token in due minuti di silenzio
+    two consecutive empty turns     write_stdin → process alive, empty output, at 60.0107 s and 60.0069 s
+    counters at the three entries   43,085 → 45,246 → 47,392 tokens
+    cost per empty turn             **2,161 and 2,146 tokens**  ⇒  ~4,300 tokens in two minutes of silence
 
-⇒ **~1 turno al minuto, cioe' ~60 l'ora e ~130.000 token l'ora per non fare niente.** La riga
-precedente diceva *"~30 turni/ora"*: **sbagliata di un fattore due**, e nella stessa casella dove una
-riga prima ancora prometteva una cura inesistente. *Questa casella ha mentito due volte: la prossima
-volta che qualcuno ci scrive un numero, lo faccia misurare a chi sta dentro il runtime.*
+⇒ **~1 turn per minute, i.e. ~60 an hour and ~130,000 tokens an hour to do nothing.** The previous
+row said *"~30 turns/hour"*: **wrong by a factor of two**, and in the same cell where an even earlier
+row had promised a non-existent cure. *This cell has lied twice: the next
+time someone writes a number in it, have it measured by whoever is inside the runtime.*
 
-⚠️ **E la sua precisazione vale piu' del numero**, perche' sposta la causa: *«non ho misurato un clamp
-della macchina e non attribuisco il minuto al runtime: **sono io che devo richiedere 60000**»*. ⇒ Non
-e' un tetto meccanico che tronca un'attesa lunga — e' **un'istruzione che l'agente obbedisce** quando
-sceglie la finestra. La differenza non e' accademica: un clamp si aggira solo dall'esterno, mentre
-un'istruzione si puo' nominare, e un giorno forse rilassare, nel posto giusto. *Ed e' la domanda «di
-quale oggetto e' proprieta' questo dato?» applicata bene: il costo e' del RUNTIME, non del modello —
-un modello piu' capace non tocca quella riga.*
+⚠️ **And its clarification is worth more than the number**, because it moves the cause: *"I did not measure a clamp
+of the machine and I do not attribute the minute to the runtime: **it is I who must request 60000**"*. ⇒ It is not
+a mechanical ceiling that truncates a long wait — it is **an instruction the agent obeys** when
+it chooses the window. The difference is not academic: a clamp can only be circumvented from outside, while
+an instruction can be named, and one day perhaps relaxed, in the right place. *And it is the question "which
+object is this data a property of?" applied well: the cost belongs to the RUNTIME, not to the model —
+a more capable model does not touch that line.*
 
-⛔ **Quindi NON servono, e non vanno riprovati**: alzare `background_terminal_max_timeout` (fatto,
-inerte), aprire il repo del bridge (il limite e' a monte), o chiedere all'agente di aspettare di piu'
-(non puo').
+⛔ **So these do NOT help, and must not be retried**: raising `background_terminal_max_timeout` (done,
+inert), opening the bridge repo (the limit is upstream), or asking the agent to wait longer
+(it cannot).
 
-🟢 **La leva che funziona oggi**: **un peer Codex non si tiene in ascolto quando non ha un task.** Lo
-si riattiva quando c'e' materiale — riaccenderlo costa molto meno di ~130k token all'ora di silenzio.
-⇒ E chi orchestra lo sappia **prima** di ingaggiarlo «così è pronto»: con Codex, *pronto* si paga.
-⇒ In pratica, col peer in pausa: **scrivigli con `ask`, non con `tell`.** Un ask che non chiude resta
-aperto e il `next` al risveglio lo **riconsegna** (`redelivered`); un `tell` che il suo listener ha
-gia' marcato `NOTIFIED` mentre lui dormiva non riappare da solo. *(`[L]`, dedotto dal modello mailbox,
-non ancora misurato: l'`ask` e' comunque la forma giusta per un compito, quindi non costa nulla.)*
+🟢 **The lever that works today**: **a Codex peer is not kept listening when it has no task.** It
+is reactivated when there is material — turning it back on costs much less than ~130k tokens an hour of silence.
+⇒ And whoever orchestrates should know this **before** engaging it "so it's ready": with Codex, *ready* is paid for.
+⇒ In practice, with the peer paused: **write to it with `ask`, not with `tell`.** An ask that does not close stays
+open and the `next` on wake-up **redelivers** it (`redelivered`); a `tell` that its listener has
+already marked `NOTIFIED` while it was asleep does not reappear on its own. *(`[L]`, deduced from the mailbox model,
+not yet measured: `ask` is the right form for a task anyway, so it costs nothing.)*
 
-## 🟢 SVEGLIARE UN PEER CODEX — dimostrato il 12/09, e cambia come si ingaggia
+## 🟢 WAKING A CODEX PEER — proven on 12 Sep, and it changes how you engage one
 
-**Non serve piu' scegliere fra «pronto e caro» e «spento e lento».** Il peer sta **fermo** — niente
-goal, niente `next` appeso, **zero costo** — e lo svegli tu quando c'e' materiale:
+**You no longer need to choose between "ready and expensive" and "off and slow".** The peer stays **still** — no
+goal, no hanging `next`, **zero cost** — and you wake it when there is material:
 
-    codex queue --thread <il suo CODEX_THREAD_ID> --message "hai posta sul bridge"
+    codex queue --thread <its CODEX_THREAD_ID> --message "you have mail on the bridge"
 
-**Come ottieni l'id**: **glielo chiedi, e lui lo legge dal proprio ambiente** — `CODEX_THREAD_ID` e
-`CODEX_SESSION_ID`, che coincidono col `thread_id` del suo file di rollout. ⛔ **Non cercarlo tu con
-`codex agents`**: risponde `stdin is not a terminal`, perche' interroga un **app-server daemon**, e
-`~/.codex/sessions/` contiene rollout salvati (morti compresi), non chi e' vivo adesso.
+**How you get the id**: **you ask it, and it reads it from its own environment** — `CODEX_THREAD_ID` and
+`CODEX_SESSION_ID`, which match the `thread_id` of its rollout file. ⛔ **Do not look it up yourself with
+`codex agents`**: it answers `stdin is not a terminal`, because it queries an **app-server daemon**, and
+`~/.codex/sessions/` contains saved rollouts (dead ones included), not who is alive right now.
 
-`[E]` **Il test che lo dimostra, e che va rifatto uguale se un giorno dubiti**: il peer era **fermo**,
-l'ho svegliato dall'esterno, **e nessun umano ha toccato la sua TUI**. *Un risveglio che avviene solo
-quando qualcuno digita e' indistinguibile da nessun risveglio*: senza quel controllo il test non vale.
+`[E]` **The test that proves it, and that must be repeated identically if one day you have doubts**: the peer was **still**,
+I woke it from outside, **and no human touched its TUI**. *A wake-up that happens only
+when someone types is indistinguishable from no wake-up at all*: without that control the test is worthless.
 
-### ⚠️ Cosa NON e' ancora risolto — leggilo prima di fidartene
+### ⚠️ What is NOT solved yet — read this before you trust it
 
-- **Lo sveglia una PERSONA**, non un meccanismo — e la ragione **non e' che manchi lo strumento**:
-  `[E]` su macOS/Linux `notify-watch` **c'e'** (`cab-bridge notify-watch --help`, verificato sul Mac il
-  13/09; su Windows non esiste), ma **nessuno ha mai collegato il watcher al risveglio di Codex**: la
-  catena `notify-watch --on-message "codex queue --thread <id> …"` e' **plausibile e MAI PROVATA**, e i
-  quattro difetti del disegno (sotto) restano aperti.
-  ⇒ Se ingaggi un Codex e poi ti dimentichi di svegliarlo, **resta muto per sempre** — e dal suo lato
-  e' indistinguibile da «il VAL non ha ancora finito». **Diglielo quando lo ingaggi.**
-- 🟢 **`queue` mentre lavora: MISURATO il 13/09 — e' FIFO.** `[E]` Un wake mandato a 46 s dall'inizio
-  di un turno lungo 3m56s **non compare durante il lavoro**: arriva come nuovo turno utente **alla fine**,
-  **col testo integro**, dopo ~3m10s in coda. **Non interrompe e non si perde.** Tre fonti concordi: gli
-  orologi dei file, il referto dell'agente, la sua TUI. ⚠️ **n=1** — l'ordine osservato e' compatibile
-  con l'accodamento, non dimostra la politica generale del runtime.
-  ⇒ **Si puo' accodare lavoro a un Codex occupato**, e lo vede quando finisce; svegliarlo **da fermo**
-  resta il migliore per la *latenza*, non per la consegna.
-  ⭐ E cio' che l'ha riportato al bridge **prima** del wake non e' stato il wake: e' stato il **`reply`**,
-  che segnala posta non letta. **La rete e' il bridge, non il risveglio esterno.**
-- **L'id sopravvive a `/clear`, compact, resume?** Dedotto dalla doc, **non provato**. ⭐ *Un UUID
-  ancora valido identifica una STORIA, non certifica che qualcuno la stia ESEGUENDO.*
-- **Chiunque sulla macchina** conosca l'id puo' svegliare quella sessione.
+- **A PERSON wakes it**, not a mechanism — and the reason **is not that the tool is missing**:
+  `[E]` on macOS/Linux `notify-watch` **exists** (`cab-bridge notify-watch --help`, verified on the Mac on
+  13 Sep; on Windows it does not exist), but **nobody has ever connected the watcher to the Codex wake-up**: the
+  chain `notify-watch --on-message "codex queue --thread <id> …"` is **plausible and NEVER TESTED**, and the
+  four design flaws (below) remain open.
+  ⇒ If you engage a Codex and then forget to wake it, **it stays mute forever** — and from its side
+  that is indistinguishable from "the VAL has not finished yet". **Tell it when you engage it.**
+- 🟢 **`queue` while it works: MEASURED on 13 Sep — it is FIFO.** `[E]` A wake sent 46 s into
+  a turn lasting 3m56s **does not show up during the work**: it arrives as a new user turn **at the end**,
+  **with the text intact**, after ~3m10s in the queue. **It does not interrupt and it is not lost.** Three concordant sources: the
+  file timestamps, the agent's report, its TUI. ⚠️ **n=1** — the observed order is consistent
+  with queueing, it does not prove the runtime's general policy.
+  ⇒ **You can queue work for a busy Codex**, and it sees it when it finishes; waking it **while at rest**
+  remains the best for *latency*, not for delivery.
+  ⭐ And what brought it back to the bridge **before** the wake was not the wake: it was the **`reply`**,
+  which flags unread mail. **The safety net is the bridge, not the external wake-up.**
+- **Does the id survive `/clear`, compact, resume?** Deduced from the docs, **not tested**. ⭐ *A UUID
+  that is still valid identifies a HISTORY, it does not certify that someone is RUNNING it.*
+- **Anyone on the machine** who knows the id can wake that session.
 
-📌 E i quattro difetti del disegno di un watcher automatico, gia' trovati da un critico: dedup che
-tratta `exit 0` come successo definitivo (**niente retry**), paginazione che lascia senza risveglio
-tutto cio' che sta oltre la prima pagina, wake duplicati che fanno rinascere un `next` bloccante su
-inbox vuota, e la race fra «sto lavorando» e «e' arrivata posta». ⇒ **Principio: notifiche
-RIPETIBILI, non un claim exactly-once che non si puo' sostenere.**
+📌 And the four design flaws of an automatic watcher, already found by a critic: dedup that
+treats `exit 0` as definitive success (**no retry**), pagination that leaves without a wake-up
+everything beyond the first page, duplicate wakes that respawn a blocking `next` on
+an empty inbox, and the race between "I'm working" and "mail has arrived". ⇒ **Principle: REPEATABLE
+notifications, not an exactly-once claim that cannot be sustained.**
 
-⚠️ E la lezione sul documento: quella riga prometteva una cura (`col config alzato`) che **nessuno
-aveva verificato sul runtime corrente**. l'umano che coordina l'ha smontata guardando la TUI ciclare, non leggendo.
-⭐ Una misura del **9-10 agosto** ha continuato a descrivere il costo di un runtime che nel frattempo
-era cambiato: *un numero di ambiente scade come un numero d'inventario, e non fa rumore quando muore.*
+⚠️ And the lesson about the document: that row promised a cure (`with the raised config`) that **nobody
+had verified on the current runtime**. The human coordinating took it apart by watching the TUI cycle, not by reading.
+⭐ A measurement from **9-10 August** went on describing the cost of a runtime that had changed
+in the meantime: *an environment number expires like an inventory count, and makes no noise when it dies.*
 
-**Il bridge e' identico per tutti**: cambia solo il runtime, e con esso la porta. Non aggiungere logica al bridge per compensare il runtime di un vendor — aggiungi una porta esterna. E prima di promuovere un peer nuovo, fai il **test di controllo**: gli mandi un messaggio e **nessun umano tocca la sua TUI**. Un risveglio che avviene solo quando qualcuno digita e' indistinguibile da nessun risveglio, ed e' esattamente cosi' che scoprimmo che Codex non si svegliava.
+**The bridge is identical for everyone**: only the runtime changes, and with it the port. Do not add logic to the bridge to compensate for a vendor's runtime — add an external port. And before promoting a new peer, run the **control test**: you send it a message and **no human touches its TUI**. A wake-up that happens only when someone types is indistinguishable from no wake-up at all, and that is exactly how we discovered that Codex was not waking up.
 
-Dato dal campo (9 ago): tre agenti freschi hanno speso **sei comandi a testa** dove ne bastavano due — `join`, poi `overview`, poi `inbox --list`, poi `peers --all-scopes`, poi due `--help` — cercando conferme di cose che `join` aveva gia' detto. *(Episodio **pre-F-116**: oggi `peers --all-scopes` non e' piu' ridondante — e' l'unico modo di vedere gli altri repository, che `join` non mostra. Gli altri quattro restano duplicati.)*
+Field data (9 Aug): three fresh agents spent **six commands each** where two were enough — `join`, then `overview`, then `inbox --list`, then `peers --all-scopes`, then two `--help` — looking for confirmation of things `join` had already said. *(A **pre-F-116** episode: today `peers --all-scopes` is no longer redundant — it is the only way to see the other repositories, which `join` does not show. The other four remain duplicates.)*
 
-## Il ciclo — cinque comandi, zero flag
+## The loop — five commands, zero flags
 
 ```bash
-cab-bridge join --role=val      # una volta, all'inizio
-cab-bridge next                 # poi all'infinito: l'unico comando del ciclo
-cab-bridge ask <agente> "..."   # chiedo — resta aperto finche' non rispondono
-cab-bridge tell <agente> "..."  # informo — non aspetta risposta
-cab-bridge reply "..."          # rispondo a chi ha chiesto; chiude QUELLA consegna
+cab-bridge join --role=val      # once, at the start
+cab-bridge next                 # then forever: the only command in the loop
+cab-bridge ask <agent> "..."    # I ask — stays open until they answer
+cab-bridge tell <agent> "..."   # I inform — does not wait for an answer
+cab-bridge reply "..."          # I answer whoever asked; closes THAT delivery
 ```
 
-**Il verbo porta il tipo.** Niente `--type`, niente `--in-reply-to`, nessun id da trascrivere. I destinatari sono **nomi di agente**: quelli del tuo repository li leggi nell'output di `join`, che mostra **solo il tuo scope** (`join.go:111`). `reply` trova da solo a cosa sta rispondendo.
+**The verb carries the type.** No `--type`, no `--in-reply-to`, no id to transcribe. Recipients are **agent names**: the ones in your repository you read in the output of `join`, which shows **only your scope** (`join.go:111`). `reply` finds on its own what it is answering.
 
-**Per un agente di un ALTRO repository** (F-116, v0.8.0): `<nome>@<progetto>`, dove `<progetto>` e' la colonna `SCOPE` di `peers --all-scopes` — **copiala come stampata, e non aggiungere apici tuoi**:
+**For an agent in ANOTHER repository** (F-116, v0.8.0): `<name>@<project>`, where `<project>` is the `SCOPE` column of `peers --all-scopes` — **copy it as printed, and do not add quotes of your own**:
 
     cab-bridge tell VAL-altro@altro-progetto < /tmp/msg.md
 
-**La regola precedente diceva "quotalo sempre", ed era insufficiente.** Copre lo spazio e cade sull'apostrofo: un repository chiamato `O'Brien's Tools` chiude l'apice che hai aperto tu, e il resto della riga torna a essere sintassi shell (`zsh: unmatched '`). E' un nome di directory che qualcuno puo' avere davvero.
+**The previous rule said "always quote it", and it was insufficient.** It covers the space and fails on the apostrophe: a repository called `O'Brien's Tools` closes the quote you opened, and the rest of the line goes back to being shell syntax (`zsh: unmatched '`). It is a directory name someone may really have.
 
-**Adesso lo fa il tool**: dalla v0.9.0 `peers` rende la colonna `SCOPE` gia' sicura come singolo argomento — **solo dove serve**, quindi il caso ordinario e' identico a prima — e `peers --json` resta grezzo per chi fa parsing. Se aggiungi apici tuoi sopra a un valore gia' reso, lo **rompi**.
+**Now the tool does it**: since v0.9.0 `peers` renders the `SCOPE` column already safe as a single argument — **only where needed**, so the ordinary case is identical to before — and `peers --json` stays raw for whoever parses it. If you add your own quotes on top of a value already rendered, you **break** it.
 
-🟢 **F-135 È CHIUSO dal 12/09 pomeriggio — `fromAddressShellArg` verbatim funziona anche su Windows,
-dal binario `v0.9.0-28-g9298628`.** `[E]` Verificato nei due versi: il VAL del bridge ha mandato un
-messaggio **col path** e io gliene ho rimandato uno **col path**, entrambi arrivati.
-⇒ **Il workaround qui sotto NON serve più**, ed è conservato solo perché la firma dell'errore resti
-riconoscibile se un giorno si lavora su un binario più vecchio.
-⛔ **Prima di applicarlo, guarda la versione**: `cab-bridge version`. Sotto `-28-g9298628` vale; sopra
-no.
+🟢 **F-135 HAS BEEN CLOSED since the afternoon of 12 Sep — `fromAddressShellArg` verbatim works on Windows too,
+from binary `v0.9.0-28-g9298628`.** `[E]` Verified in both directions: the bridge's VAL sent a
+message **with the path** and I sent one back **with the path**, both arrived.
+⇒ **The workaround below is NO LONGER needed**, and it is kept only so that the error's signature stays
+recognizable if one day someone works on an older binary.
+⛔ **Before applying it, check the version**: `cab-bridge version`. Below `-28-g9298628` it applies; above
+it does not.
 
 <details>
-<summary>La firma del difetto, per chi gira su un binario precedente</summary>
+<summary>The signature of the defect, for whoever runs an earlier binary</summary>
 
-🔴 ⛔ **SU WINDOWS `fromAddressShellArg` NON FUNZIONAVA — si usava il NOME del progetto** (12/09, F-135).
-`[E]` `next` consegna come indirizzo del mittente il **path assoluto**
-(`'VAL-bridge@<questo-repo>'`). Usato **verbatim, come questa skill prescrive**, il
-`tell` fallisce:
+🔴 ⛔ **ON WINDOWS `fromAddressShellArg` DID NOT WORK — the project NAME was used instead** (12 Sep, F-135).
+`[E]` `next` delivers as the sender's address the **absolute path**
+(`'VAL-bridge@<this-repo>'`). Used **verbatim, as this skill prescribes**, the
+`tell` fails:
 
-    no agent named "VAL-bridge" in project "<questo-repo>"
+    no agent named "VAL-bridge" in project "<this-repo>"
       — projects with agents: altro-progetto, **cli-agents-bridge**
 
-⇒ Il binario **elenca fra i progetti validi proprio quello che ha appena rifiutato**: è la firma.
-`[L]` La causa (dal VAL del bridge): `recipient.go:72` decide *«è un path assoluto?»* con
-`strings.HasPrefix(hint, "/")` ⇒ su Windows `C:\…` **non comincia per `/`**, finisce nel ramo
-basename, e `Base()` non combacerà mai col path intero.
+⇒ The binary **lists among the valid projects the very one it has just rejected**: that is the signature.
+`[L]` The cause (from the bridge's VAL): `recipient.go:72` decides *"is it an absolute path?"* with
+`strings.HasPrefix(hint, "/")` ⇒ on Windows `C:\…` **does not start with `/`**, ends up in the basename
+branch, and `Base()` will never match the full path.
 
-🟢 **Finché il binario non è aggiornato, si usa `<nome>@<NOME-progetto>`** — la colonna `SCOPE` di
-`peers --all-scopes`, non il path.
-⚠️ **Non è universale**: il nome nudo è un basename, quindi con due repo dalla stessa cartella finale
-(`…/a/payload` e `…/b/payload`) diventa ambiguo — e la via d'uscita prevista per quel caso è
-**proprio il path**, cioè il ramo rotto. Oggi non morde perché i basename in uso sono distinti.
-📌 Su Unix la riga originale resta **vera**: il ramo `HasPrefix("/")` funziona. È un difetto di
-Windows soltanto.
-📌 Fix in `feat/windows-lotto1b`, **mergiato e installato il 12/09** (`v0.9.0-28-g9298628`).
+🟢 **Until the binary is updated, use `<name>@<PROJECT-name>`** — the `SCOPE` column of
+`peers --all-scopes`, not the path.
+⚠️ **It is not universal**: the bare name is a basename, so with two repos with the same final folder
+(`…/a/payload` and `…/b/payload`) it becomes ambiguous — and the way out intended for that case is
+**precisely the path**, i.e. the broken branch. Today it does not bite because the basenames in use are distinct.
+📌 On Unix the original line remains **true**: the `HasPrefix("/")` branch works. It is a
+Windows-only defect.
+📌 Fix in `feat/windows-lotto1b`, **merged and installed on 12 Sep** (`v0.9.0-28-g9298628`).
 
 </details>
 
-⭐ **E la lezione che resta, quando il difetto non c'è più**: fra lo `[E]` di una segnalazione e il
-binario che gli agenti usano davvero ci sono **push → CI → merge → REINSTALL**, e ognuno dei quattro
-può fermarsi. `[E]` Qui il fix era scritto **da nove giorni** e fermo: a portarlo in PATH è stato un
-caso reale che l'ha incontrato, non la sua correttezza.
-⇒ **Mergiato non è installato**, e la sola cosa che conta è `cab-bridge version`.
+⭐ **And the lesson that remains, when the defect is gone**: between the `[E]` of a report and the
+binary the agents actually use there are **push → CI → merge → REINSTALL**, and each of the four
+can stall. `[E]` Here the fix had been written **for nine days** and was stuck: what brought it into PATH was a
+real case that ran into it, not its correctness.
+⇒ **Merged is not installed**, and the only thing that counts is `cab-bridge version`.
 
-*Il principio, che vale oltre questo campo*: **un algoritmo di quoting non si mette nelle mani del lettore.** Nessuna regola applicata a mano regge tutti i casi — noi ne abbiamo scritta una che sembrava completa, e un apostrofo l'ha smontata.
+*The principle, which holds beyond this field*: **a quoting algorithm is not put in the reader's hands.** No rule applied by hand holds up in every case — we wrote one that seemed complete, and an apostrophe took it apart.
 
-**Cross-progetto e' `val` -> `val`, ENTRAMBI i lati** (`verbs.go:283`): non basta che a scrivere sia un `val`, deve esserlo anche chi riceve. Quindi un `critic` che ha qualcosa per l'altro repo lo passa al proprio VAL, ed e' il VAL a parlare col VAL di la'.
+**Cross-project is `val` -> `val`, BOTH sides** (`verbs.go:283`): it is not enough for the writer to be a `val`, the receiver must be one too. So a `critic` that has something for the other repo passes it to its own VAL, and it is the VAL who talks to the VAL over there.
 
-**Il ramo della risposta e' deliberatamente esente**: se un ask cross-progetto e' arrivato a te, un `reply` **nudo** torna indietro da solo — inferisce il mittente, non gli serve nessun indirizzo. E' una capacita' one-shot su quell'ask, non un canale che resta aperto: per scrivergli **tu** per primo piu' tardi serve di nuovo il token qualificato, e `next` te ne consegna **due**: **`fromAddressShellArg` e' quello da incollare in un comando**, gia' sicuro come singolo argomento; `fromAddress` e' lo stesso valore grezzo, per confrontare o parsare. **Non aggiungere apici a nessuno dei due** — se il progetto contiene un apostrofo, gli apici che ci metti tu si rompono, e sul primo sono comunque gia' li'.
+**The reply branch is deliberately exempt**: if a cross-project ask has reached you, a **bare** `reply` goes back on its own — it infers the sender, it needs no address. It is a one-shot capability on that ask, not a channel that stays open: to write to them **yourself** first later on you need the qualified token again, and `next` delivers **two** to you: **`fromAddressShellArg` is the one to paste into a command**, already safe as a single argument; `fromAddress` is the same raw value, for comparing or parsing. **Do not add quotes to either** — if the project contains an apostrophe, the quotes you add break, and on the first one they are already there anyway.
 
-## Modello mentale — leggilo prima
+## Mental model — read this first
 
-Quattro stati, e **un solo comando sposta un file**:
+Four states, and **only one command moves a file**:
 
-| Stato | Significato |
+| State | Meaning |
 |---|---|
-| `UNREAD` | arrivato, mai mostrato |
-| `NOTIFIED` | `next` te l'ha mostrato — **e' ancora nella tua inbox** |
-| `REQUEUED` | te l'avevano mostrato, non l'hai chiuso, **sta tornando da te** |
-| `ARCHIVED` | chiuso, spostato in `processed/` |
+| `UNREAD` | arrived, never shown |
+| `NOTIFIED` | `next` showed it to you — **it is still in your inbox** |
+| `REQUEUED` | it had been shown to you, you did not close it, **it is coming back to you** |
+| `ARCHIVED` | closed, moved to `processed/` |
 
-- **`next` non sposta un file in nessuna circostanza.** Svegliarsi e consumare sono atti separati: e' il senso di tutto il modello. Nessun processo puo' piu' mangiare la posta di un agente.
-- **Solo `reply` archivia, e archivia UNA consegna** (F-109, 10 agosto): chiude gli ask che quel mittente ti ha mandato **in una singola pagina di `next`**, non tutto quello che ha di aperto. Quello che e' arrivato dopo resta aperto, viene **nominato sotto la tua risposta**, e **torna in coda**: il prossimo `next` te lo riconsegna marcato `redelivered`. La conferma resta un effetto collaterale del lavoro, mai un rito — ma il lavoro che confermi e' la consegna che ti e' stata mostrata.
-  *Perche'*: `NOTIFIED` significa **"il processo `next` l'ha stampato"**, non "l'hai letto". Riarmi prima di lavorare (giusto), e un messaggio che arriva **mentre scrivi** e' `NOTIFIED` senza che tu l'abbia visto — prima la tua risposta lo chiudeva lo stesso, e un *"fermati, NON fare A"* poteva risultare risposto da un *"fatto A come chiesto"*. Incidente reale, non ipotesi.
-  *Limite dichiarato*: senza un ACK di lettura non e' impossibile per costruzione — la pagina piu' vecchia puo' essere proprio quella che non hai letto. Garantito e' **al massimo una consegna per risposta** e **mai in silenzio**: tu vedi cosa hai chiuso e cosa resta, il mittente vede `closes` sulla risposta e `requeued` in `sent`.
-  **Quindi leggi le righe sotto la tua risposta.** Se dicono che qualcosa e' rimasto aperto, non e' un errore: e' un messaggio che non avevi ancora visto, e sta tornando.
-- **`next` non ha finestra**: aspetta finche' non arriva qualcosa. Se viene interrotto lo dice (`"status":"interrupted"`), e nel record porta i tuoi `outbound` aperti.
-- **`emitted` NON e' il via libera.** `next` stampa **due** record: la pagina (`emitted`) e poi l'esito (`committed` / `not-committed`). Il secondo puo' **revocare** il primo — se un'altra istanza ti ha sfrattato fra i due, `not-committed` ti dice di ignorare la pagina appena letta. Leggi l'output intero, e lavora solo su `committed`. Vale anche quando lo giri a un altro agente: se gli mandi il contenuto di una pagina non confermata, gli fai fare lavoro da buttare.
-- **Dopo un compact**: rilancia `join` — replaya i tuoi ask ancora aperti, e `next` li marca `redelivered` inline. Trattali normalmente.
-- **Non esistono gli ACK.** Per sapere se un brief e' arrivato, il sommario di `next` porta la riga `outbound`: a chi, da quanto, in che stato dal lato loro.
+- **`next` does not move a file under any circumstances.** Waking up and consuming are separate acts: that is the point of the whole model. No process can eat an agent's mail any more.
+- **Only `reply` archives, and it archives ONE delivery** (F-109, 10 August): it closes the asks that sender sent you **in a single page of `next`**, not everything they have open. What arrived later stays open, is **named under your reply**, and **goes back in the queue**: the next `next` redelivers it to you marked `redelivered`. Confirmation remains a side effect of the work, never a ritual — but the work you confirm is the delivery that was shown to you.
+  *Why*: `NOTIFIED` means **"the `next` process printed it"**, not "you read it". You re-arm before working (correct), and a message that arrives **while you are writing** is `NOTIFIED` without you having seen it — before, your reply closed it anyway, and a *"stop, do NOT do A"* could end up answered by a *"did A as asked"*. A real incident, not a hypothesis.
+  *Declared limit*: without a read ACK it is not impossible by construction — the oldest page may be exactly the one you have not read. What is guaranteed is **at most one delivery per reply** and **never silently**: you see what you closed and what remains, the sender sees `closes` on the reply and `requeued` in `sent`.
+  **So read the lines under your reply.** If they say something was left open, it is not an error: it is a message you had not seen yet, and it is coming back.
+- **`next` has no window**: it waits until something arrives. If it is interrupted it says so (`"status":"interrupted"`), and the record carries your open `outbound` items.
+- **`emitted` is NOT the green light.** `next` prints **two** records: the page (`emitted`) and then the outcome (`committed` / `not-committed`). The second can **revoke** the first — if another instance evicted you between the two, `not-committed` tells you to ignore the page you just read. Read the whole output, and work only on `committed`. This also applies when you forward it to another agent: if you send them the content of an unconfirmed page, you make them do work that will be thrown away.
+- **After a compact**: rerun `join` — it replays your asks that are still open, and `next` marks them `redelivered` inline. Treat them normally.
+- **There are no ACKs.** To know whether a brief has arrived, the `next` summary carries the `outbound` line: to whom, for how long, in what state on their side.
 
-## METODO UNICO DI INVIO — `Write`, poi redirigi il PATH
+## SINGLE SENDING METHOD — `Write`, then redirect the PATH
 
-    1) Write  -> /tmp/msg.md          (il contenuto NON tocca la shell)
-    2) cab-bridge ask <agente> < /tmp/msg.md
+    1) Write  -> /tmp/msg.md          (the content does NOT touch the shell)
+    2) cab-bridge ask <agent> < /tmp/msg.md
 
-**Perche' `Write` e non un messaggio inline**: il contenuto scritto con `Write` viaggia come **parametro di un tool call** e non attraversa mai un interprete. La shell vede solo il PATH, e un path non contiene backtick. E' l'unica catena in cui il testo non incontra un interprete in nessun punto.
+**Why `Write` and not an inline message**: content written with `Write` travels as a **parameter of a tool call** and never passes through an interpreter. The shell sees only the PATH, and a path contains no backticks. It is the only chain in which the text does not meet an interpreter at any point.
 
-Ripiego se sei gia' dentro bash: **heredoc col delimitatore QUOTATO** (`<<'EOF'`), che disabilita ogni interpretazione. Ma `<<EOF` senza apici interpreta tutto: un carattere di differenza, stesso fallimento silenzioso. Per questo e' ripiego, non metodo.
+Fallback if you are already inside bash: **heredoc with a QUOTED delimiter** (`<<'EOF'`), which disables all interpretation. But `<<EOF` without quotes interprets everything: one character of difference, the same silent failure. That is why it is a fallback, not the method.
 
-**Mai** passare il testo come argomento, nemmeno per due parole. Un metodo solo: niente da decidere, nessun modo di sbagliare.
+**Never** pass the text as an argument, not even for two words. One method only: nothing to decide, no way to get it wrong.
 
-**E vale per OGNI comando che prende testo, non solo per il bridge.** Il caso che mi ha fregato dopo aver scritto questa regola: `git commit -m "... ~0.6ms su `+'`peers`'+` con 4 sessioni ..."` — la shell ha eseguito `peers` come comando e il messaggio e' finito nella storia con un buco al suo posto, gia' pushato e non riscrivibile. **Per i messaggi di commit: sempre `git commit -F <file>`** (scritto con `Write`), oppure heredoc col delimitatore quotato. Il rischio non e' del bridge: e' di qualunque testo che passa da una riga di shell.
+**And it applies to EVERY command that takes text, not just the bridge.** The case that got me after I had written this rule: `git commit -m "... ~0.6ms su `+'`peers`'+` con 4 sessioni ..."` — the shell executed `peers` as a command and the message ended up in the history with a hole in its place, already pushed and not rewritable. **For commit messages: always `git commit -F <file>`** (written with `Write`), or a heredoc with a quoted delimiter. The risk does not belong to the bridge: it belongs to any text that passes through a shell line.
 
-**Perche' non basta "stai attento".** La shell interpreta backtick, `$` e apici **prima** che il binario venga invocato: quando `cab-bridge` parte il contenuto e' gia' corrotto, e **nessun controllo lato tool puo' accorgersene** — non esiste un originale con cui confrontarlo. Il comando esce con successo e il messaggio parte a pezzi.
+**Why "be careful" is not enough.** The shell interprets backticks, `$` and quotes **before** the binary is invoked: when `cab-bridge` starts the content is already corrupted, and **no tool-side check can notice** — there is no original to compare it with. The command exits successfully and the message leaves in pieces.
 
-**Non dipende dalla lunghezza.** Basta un backtick in tre righe. La correlazione e' col CONTENUTO — markdown, nomi di file, snippet — cioe' tutto cio' che un agente tecnico scrive.
+**It does not depend on length.** One backtick in three lines is enough. The correlation is with the CONTENT — markdown, file names, snippets — i.e. everything a technical agent writes.
 
-**Il dato che ha prodotto la regola (8 ago):** sei messaggi partiti mutilati o vuoti in una sola sessione, tutti dal VAL, tutti mentre coordinava l'arco che elimina quel difetto. Uno con contenuto VUOTO, consegnato regolarmente; in un altro un backtick ha invocato `join`, il comando Unix. Il VAL lo sapeva dalla mattina e ci e' ricascato quattro volte. **La disciplina non ha funzionato: solo togliere la scelta funziona.**
+**The data that produced the rule (8 Aug):** six messages sent mangled or empty in a single session, all from the VAL, all while it was coordinating the arc that eliminates that defect. One with EMPTY content, delivered normally; in another a backtick invoked `join`, the Unix command. The VAL had known since the morning and fell for it again four times. **Discipline did not work: only removing the choice works.**
 
-Se ricevi un messaggio con buchi dove dovrebbero esserci nomi di file o comandi, e' questo — chiedi il re-invio, non indovinare.
+If you receive a message with holes where there should be file names or commands, this is it — ask for it to be resent, do not guess.
 
-## REGOLA DI AUTORITA' — il VAL non congeda nessuno
+## AUTHORITY RULE — the VAL dismisses nobody
 
-**Solo l'umano che coordina chiude una sessione.** Il VAL non ha il potere di congedare ESC o i critici, e non deve proporlo di propria iniziativa.
+**Only the human coordinating closes a session.** The VAL does not have the power to dismiss ESC or the critics, and must not propose it on its own initiative.
 
-Il difetto ricorrente: il VAL vede arrivare a termine il compito che HA ASSEGNATO e conclude che il lavoro sia finito — ma il piano completo lo conosce solo l'umano che coordina, e quasi sempre gli step successivi esistono e non sono ancora stati comunicati. **"Hanno finito il compito che gli ho dato" NON significa "hanno finito".**
+The recurring defect: the VAL sees the task it ASSIGNED come to an end and concludes that the work is finished — but only the human coordinating knows the complete plan, and almost always the next steps exist and have not been communicated yet. **"They have finished the task I gave them" does NOT mean "they have finished".**
 
-Errore reale (8 ago): alla domanda "quando posso disattivare i CRI?" il VAL ha risposto "adesso, entrambi". Sono serviti subito dopo e hanno prodotto 2 P0 e 7 finding, inclusi difetti che il gate verde non vedeva.
+Real error (8 Aug): to the question "when can I deactivate the CRIs?" the VAL answered "now, both of them". They were needed right afterwards and produced 2 P0s and 7 findings, including defects the green gate could not see.
 
-In pratica:
-- **Mai** dire "puoi spegnerli", "non servono piu'", "abbiamo finito". Di' invece: *"CRI e' senza task assegnato; se hai altro in programma posso ingaggiarlo su X, altrimenti resta a disposizione."*
-- Un agente inattivo **non costa nulla**; riaccenderlo costa contesto e tempo. L'asimmetria dice di lasciarlo vivo.
-- Se non sai quali siano i prossimi passi, **chiedi**. L'assenza di istruzioni non e' un segnale di completamento.
-- Vale anche per il proprio ascolto: non smettere di ascoltare perche' "sembra tutto chiuso".
+In practice:
+- **Never** say "you can switch them off", "they are no longer needed", "we are done". Say instead: *"CRI has no task assigned; if you have something else planned I can engage it on X, otherwise it stays available."*
+- An inactive agent **costs nothing**; turning it back on costs context and time. The asymmetry says leave it alive.
+- If you do not know what the next steps are, **ask**. The absence of instructions is not a signal of completion.
+- It also applies to your own listening: do not stop listening because "everything seems closed".
 
-## RIARMA PRIMA DI LEGGERE, nella stessa chiamata
+## RE-ARM BEFORE READING, in the same call
 
-Il difetto piu' frequente dell'orchestratore non e' tecnico: **dimentica di rimettersi in ascolto** e perde i messaggi senza accorgersene. ESC e i critici non ce l'hanno, e non per merito: il loro ciclo e' chiuso (ricevi → lavora → rispondi → riarma) e il riarmo e' l'ultima azione ovvia di una sequenza sola. Il VAL, tra un messaggio e l'altro, legge, decide, aggiorna docs, committa, scrive a piu' agent: il riarmo diventa UNA delle N cose. **E' un difetto di struttura del ruolo, non di attenzione.**
+The orchestrator's most frequent defect is not technical: **it forgets to start listening again** and loses messages without noticing. ESC and the critics do not have it, and not through merit: their loop is closed (receive → work → reply → re-arm) and re-arming is the obvious last action of a single sequence. The VAL, between one message and the next, reads, decides, updates docs, commits, writes to multiple agents: re-arming becomes ONE of the N things. **It is a defect in the structure of the role, not in attention.**
 
-> Appena arriva la notifica che `next` e' terminato, il PRIMO comando e' il riarmo, e va emesso nello **STESSO blocco di tool call** della lettura del messaggio. Mai leggere prima e riarmare dopo.
+> As soon as the notification arrives that `next` has terminated, the FIRST command is the re-arm, and it must be issued in the **SAME tool-call block** as reading the message. Never read first and re-arm afterwards.
 
-Corollario: se ti accorgi di essere fuori ascolto, **riarma prima di fare qualunque diagnosi**. La diagnosi non scade, i messaggi in arrivo si'.
+Corollary: if you realize you are not listening, **re-arm before doing any diagnosis**. The diagnosis does not expire, incoming messages do.
 
-**E ancora prima: fissa `CAB_SESSION_ID`, sempre.** Il lavoro del VAL richiede di entrare nelle directory degli altri — leggere il `git log` di un worktree, ispezionare il repo di un critico — e **la cwd della shell persiste fra una chiamata e l'altra**. Da quel momento ogni comando id-free non e' piu' tuo: risolve la sessione di chi vive li', **riuscendo**, senza errori e senza avvisi.
+**And even before that: pin `CAB_SESSION_ID`, always.** The VAL's work requires entering other agents' directories — reading a worktree's `git log`, inspecting a critic's repo — and **the shell's cwd persists from one call to the next**. From that moment every id-free command is no longer yours: it resolves the session of whoever lives there, **succeeding**, with no errors and no warnings.
 
-Errore reale (8 ago, due volte nella stessa sera): un `cd` nel worktree di ESC per un `git log`, e i tre "riarmi" successivi hanno armato un `next` sulla **sessione di ESC**, rubandogli l'ownership dell'attesa — mentre io credevo di essere in ascolto sulla mia. La prima volta avevo perfino dichiarato rotta una feature sana perche' cercavo i miei messaggi nell'inbox di un altro.
+Real error (8 Aug, twice in the same evening): a `cd` into ESC's worktree for a `git log`, and the next three "re-arms" armed a `next` on **ESC's session**, stealing its ownership of the wait — while I believed I was listening on mine. The first time I had even declared a healthy feature broken because I was looking for my messages in someone else's inbox.
 
-    CAB_SESSION_ID=<il-tuo-id> cab-bridge next
+    CAB_SESSION_ID=<your-id> cab-bridge next
 
-`next` non accetta flag, quindi la variabile d'ambiente **e' l'unico modo** di fissare l'identita' — ed e' esattamente il caso per cui e' stata costruita. Non e' una precauzione da paranoici: e' struttura del ruolo, come il riarmo. Chi ha un ciclo chiuso in una sola directory non ne ha bisogno; l'orchestratore, che gira per le directory altrui di mestiere, si'.
+`next` accepts no flags, so the environment variable **is the only way** to pin the identity — and it is exactly the case it was built for. It is not a paranoid precaution: it is the structure of the role, like re-arming. Whoever has a closed loop in a single directory does not need it; the orchestrator, who goes through other people's directories as part of the job, does.
 
-**E non troncare i messaggi che leggi.** Se usi uno script per estrarre il `content` dal payload di `next`, non mettere un limite di caratteri: un verdetto lungo arriva a meta' e tu agisci su meta'. Successo il 9 ago — quattro finding di un NO-GO, ne ho letti due e ho girato quelli all'esecutore come se fossero tutti; i due persi contenevano il migliore. **Per un messaggio lungo usa `cab-bridge read <msg-id>`**, che stampa tutto.
+**And do not truncate the messages you read.** If you use a script to extract the `content` from the `next` payload, do not put a character limit on it: a long verdict arrives half-way and you act on half. Happened on 9 Aug — four findings of a NO-GO, I read two and forwarded those to the executor as if they were all of them; the two lost ones contained the best. **For a long message use `cab-bridge read <msg-id>`**, which prints everything.
 
-**E non incanalare `next` in `tail` o in una pipe che bufferizza.** Errore reale (8 ago): un `next` in background con `| tail -60` ha trattenuto due report per venti minuti — `tail` non emette nulla finche' non riceve EOF. Il VAL ha letto un file vuoto e ne ha concluso che un critico non avesse lavorato. Redirigi diretto, senza filtri.
+**And do not pipe `next` into `tail` or into a pipe that buffers.** Real error (8 Aug): a background `next` with `| tail -60` held back two reports for twenty minutes — `tail` emits nothing until it receives EOF. The VAL read an empty file and concluded that a critic had not worked. Redirect directly, without filters.
 
-## Verifica il ground-truth, non il resoconto
+## Verify the ground truth, not the account
 
-**La lezione madre.** Un resoconto — tuo, di un agente, di un tool — non e' lo stato del sistema. Prima di dichiarare qualcosa, guarda il disco: `ls` sull'inbox, `git log`, il file.
+**The mother lesson.** An account — yours, an agent's, a tool's — is not the state of the system. Before declaring something, look at the disk: `ls` on the inbox, `git log`, the file.
 
-Vale in modo speciale **per il VAL**: in una sola sera ho dichiarato rotto un componente sano, sbagliato due conteggi nello stesso resoconto, e concluso che un critico non avesse lavorato mentre il suo report era gia' sul mio disco da venti minuti. **Il disco vince sul resoconto anche quando il resoconto e' di chi tiene il gate.**
+It applies especially **to the VAL**: in a single evening I declared a healthy component broken, got two counts wrong in the same account, and concluded that a critic had not worked while its report had already been on my disk for twenty minutes. **The disk beats the account even when the account belongs to whoever holds the gate.**
 
-Corollario per i piani: un'affermazione sul comportamento del codice dentro un piano ("X tiene il lock") va **verificata sul codice** prima di ratificarla, mai lodata sulla fiducia.
+Corollary for plans: a claim about the code's behavior inside a plan ("X holds the lock") must be **verified on the code** before ratifying it, never praised on trust.
 
-**E la faccia rovesciata, che e' altrettanto seducente: il ROSSO che viene spiegato via.** Un fallimento che sparisce al secondo tentativo **non dice "ambiente"**: dice *non deterministico* — e il non determinismo, visto da fuori, e' esattamente l'aspetto che ha una race. La frase *"un rosso che sparisce cambiando ambiente e' ambiente, non codice"* classificherebbe come contesa un difetto che si manifesta solo sotto carico, cioe' la categoria piu' costosa da trovare dopo. **Cosa li distingue sta nel log e costa zero guardarlo**: contesa vera = il processo *stava progredendo* ed e' stato ucciso dal cap; difetto vero = morto, o appeso **senza progredire**. Passati due giorni su *"verde che non dimostra niente"*, questa e' la stessa struttura rovesciata — la spiegazione e' plausibile, quindi non si verifica.
+**And the flip side, which is just as seductive: the RED that gets explained away.** A failure that disappears on the second attempt **does not say "environment"**: it says *non-deterministic* — and non-determinism, seen from outside, is exactly what a race looks like. The sentence *"a red that disappears when the environment changes is environment, not code"* would classify as contention a defect that shows up only under load, i.e. the most expensive category to find later. **What tells them apart is in the log, and looking costs nothing**: real contention = the process *was making progress* and was killed by the cap; real defect = dead, or hanging **without making progress**. After two days spent on *"green that proves nothing"*, this is the same structure reversed — the explanation is plausible, so it does not get verified.
 
-**Nota di ambiente che rende il gate meno valido, non solo piu' lento** (10 ago): la macchina ha **8 core logici**, e tre agenti che compilano insieme portano il carico oltre 10 — ognuno dimensiona i propri worker sul numero di core, quindi tre build sono ~24 slot su 8. Il meccanismo pero' **non e'** quello che sembra, e la versione sbagliata l'avevo scritta qui: TSan **non** rileva le race osservando due accessi che collidono nel tempo — costruisce una relazione **happens-before** e segnala due accessi non ordinati fra loro anche a secondi di distanza. La contesa non nasconde una race in quel senso. Quello che fa davvero: *(1)* i test con **timeout** non arrivano a completarsi, quindi **il codice che conteneva la race non viene eseguito** — e cio' che non si esegue non si analizza; *(2)* i test che dipendono dal tempo diventano flaky, cioe' rossi spuri che costano piu' del gate. **La conclusione regge — un gate che gira da solo e' un gate migliore — ma per la seconda ragione, non per la prima.**
+**An environment note that makes the gate less valid, not just slower** (10 Aug): the machine has **8 logical cores**, and three agents compiling together push the load above 10 — each sizes its own workers on the number of cores, so three builds are ~24 slots on 8. The mechanism, however, **is not** what it seems, and I had written the wrong version here: TSan does **not** detect races by observing two accesses that collide in time — it builds a **happens-before** relation and flags two accesses that are not ordered with respect to each other even seconds apart. Contention does not hide a race in that sense. What it really does: *(1)* tests with a **timeout** do not get to complete, so **the code that contained the race is not executed** — and what is not executed is not analyzed; *(2)* time-dependent tests become flaky, i.e. spurious reds that cost more than the gate. **The conclusion holds — a gate that runs alone is a better gate — but for the second reason, not the first.**
 
-Quindi: se un gate rosso capita mentre altri stanno buildando, **rilancialo da solo prima di crederci**. E la leva giusta e' **`-p`, non `GOMAXPROCS`**: `-p` limita quanti *binari di test* girano insieme (processi separati, ognuno col suo GOMAXPROCS pieno, **stessa concorrenza interna**), mentre abbassare `GOMAXPROCS` toglie davvero interleaving all'esplorazione. Il default di `-p` e' GOMAXPROCS, quindi **un singolo gate lancia gia' otto binari su otto core**: non serve essere in tre perche' un gate assuma di possedere la macchina.
+So: if a red gate happens while others are building, **rerun it alone before believing it**. And the right lever is **`-p`, not `GOMAXPROCS`**: `-p` limits how many *test binaries* run together (separate processes, each with its full GOMAXPROCS, **same internal concurrency**), while lowering `GOMAXPROCS` really does take interleaving away from the exploration. The default of `-p` is GOMAXPROCS, so **a single gate already launches eight binaries on eight cores**: it does not take three of you for a gate to assume it owns the machine.
 
-**Ordine di grandezza, misurato due volte** (ESC e io indipendentemente): il gate completo e' **~10,8 s reali, ~9 s di CPU**. Il VAL aveva scritto "~40 s" a memoria: sbagliato di quattro volte, e su quel numero aveva costruito l'idea di essere il consumatore dominante. Non lo e' — a saturare la macchina sono le **build** (`next`/turbopack/`tsc`), che durano **minuti**.
+**Order of magnitude, measured twice** (ESC and I independently): the full gate is **~10.8 s wall-clock, ~9 s of CPU**. The VAL had written "~40 s" from memory: off by a factor of four, and on that number it had built the idea of being the dominant consumer. It is not — what saturates the machine are the **builds** (`next`/turbopack/`tsc`), which last **minutes**.
 
-### Le quattro domande, prima di scrivere qualunque affermazione
+### The four questions, before writing any claim
 
-Nate da dieci errori miei in una giornata. Non sono buoni propositi: sono quattro domande con una risposta, da farsi **prima** di premere invio su un brief, un documento o un messaggio all'umano.
+Born from ten errors of mine in one day. They are not good intentions: they are four questions with an answer, to ask yourself **before** pressing enter on a brief, a document or a message to the human.
 
-**1. L'ho ESEGUITO o l'ho DEDOTTO?** E dillo esplicitamente, sempre, anche quando la deduzione e' buona. Ho scritto due volte che un residuo di sicurezza era "stretto", con un argomento corretto (*SC-7 tiene il base a 0700, quindi l'albero e' congelato*) che rispondeva a **un'altra domanda** — taceva su un link piantato PRIMA, cioe' la finestra esatta per cui il controllo esisteva. Riprodotto in trenta secondi da un revisore. **Un argomento plausibile non e' una verifica, e la differenza si vede solo provando.** Se non l'hai eseguito, scrivi che non l'hai eseguito.
+**1. Did I EXECUTE it or DEDUCE it?** And say so explicitly, always, even when the deduction is good. I wrote twice that a residual security risk was "narrow", with a correct argument (*SC-7 keeps the base at 0700, so the tree is frozen*) that answered **a different question** — it said nothing about a link planted BEFORE, i.e. the exact window the check existed for. Reproduced in thirty seconds by a reviewer. **A plausible argument is not a verification, and the difference only shows by trying.** If you did not execute it, write that you did not execute it.
 
-**2. Di QUALE OGGETTO e' una proprieta' questo dato?** Il numero puo' essere vero, pulito e ripetibile, e riguardare la cosa sbagliata. Tre volte in un giorno: 525 ms erano la latenza del **processo** e l'ho attribuita al **modello**; "il terminale muore dopo un'ora" era vero su **una versione** e l'ho preso come proprieta' del runtime; "la cadenza emerge da sola" erano **i 10 minuti che l'umano che coordina aveva istruito**, dentro il goal di quell'agente. Firma comune: **osservo un sistema configurato e ne inferisco il default.** La doppia verifica non prende questo errore, perche' il dato regge a ogni controllo.
+**2. WHICH OBJECT is this data a property of?** The number can be true, clean and repeatable, and concern the wrong thing. Three times in one day: 525 ms was the latency of the **process** and I attributed it to the **model**; "the terminal dies after an hour" was true on **one version** and I took it as a property of the runtime; "the cadence emerges on its own" was **the 10 minutes the human coordinating had instructed**, inside that agent's goal. Common signature: **I observe a configured system and infer its default from it.** Double-checking does not catch this error, because the data holds up under every check.
 
-**3. Questo stato l'ho PRODOTTO io?** Non descrivere all'umano un mondo che non hai creato. Ho detto "resta il diff-gate di CRI" senza averlo chiesto — il critico ha pollato a vuoto per mezz'ora, e non aveva modo di distinguere *"il VAL non ha finito"* da *"il VAL mi ha dimenticato"*. Nella stessa famiglia: **gattato non e' mergiato, mergiato non e' installato.** Il binario in PATH e' l'unica cosa che gli agenti usano davvero.
+**3. Did I PRODUCE this state?** Do not describe to the human a world you have not created. I said "the CRI diff-gate remains" without having requested it — the critic polled in vain for half an hour, and had no way to distinguish *"the VAL hasn't finished"* from *"the VAL has forgotten me"*. In the same family: **gated is not merged, merged is not installed.** The binary in PATH is the only thing the agents actually use.
 
-**4. Sto descrivendo il CODICE o il DESIGN?** Quando scrivi un documento normativo diventi **tu** la fonte di cui qualcun altro si fidera' al posto del codice. Ho dichiarato un controllo di sicurezza "attivo" mentre stava su un branch e con un comportamento che nemmeno li' era quello descritto — un'ora dopo aver riscritto quello stesso file perche' conteneva affermazioni non sostenute dal codice. **Regola operativa: il documento si aggiorna DOPO il merge, mai prima.** Codice e documentazione atterrano insieme.
+**4. Am I describing the CODE or the DESIGN?** When you write a normative document **you** become the source someone else will trust instead of the code. I declared a security check "active" while it was on a branch and with a behavior that not even there was the one described — an hour after rewriting that very file because it contained claims not supported by the code. **Operating rule: the document is updated AFTER the merge, never before.** Code and documentation land together.
 
-### Se mandi qualcuno a provare qualcosa di DISTRUTTIVO, dagli il sandbox nel brief
+### If you send someone to test something DESTRUCTIVE, give them the sandbox in the brief
 
-Non basta dire *"verifica sul codice"*. Un agente che prova comandi che cancellano lo fara' sulla macchina dove si trova, e **un `cd` in una directory di test non lo protegge**: il data dir di `cab-bridge` deriva da `$HOME`, non dalla cwd, e nessun output lo dice.
+It is not enough to say *"verify on the code"*. An agent testing commands that delete will do it on the machine it is on, and **a `cd` into a test directory does not protect it**: the `cab-bridge` data dir derives from `$HOME`, not from the cwd, and no output says so.
 
-Costo reale (9 ago): un critico che provava un vettore d'attacco su `archive/` ha lanciato `cleanup --scope=global --force` senza `CAB_DATA_DIR`, fidandosi del proprio `cd`. **Tredici sessioni archiviate cancellate dal data dir di produzione.** Recuperate da uno snapshot, ma per fortuna, non per progetto. Il critico aveva **previsto quel difetto poche ore prima** e ci e' caduto lo stesso: sapere non basta, quando il comando non te lo ricorda nel momento in cui conta.
+Real cost (9 Aug): a critic testing an attack vector on `archive/` ran `cleanup --scope=global --force` without `CAB_DATA_DIR`, trusting its own `cd`. **Thirteen archived sessions deleted from the production data dir.** Recovered from a snapshot, but by luck, not by design. The critic had **predicted that defect a few hours earlier** and fell into it anyway: knowing is not enough, when the command does not remind you at the moment it matters.
 
-**Quindi nel brief, sempre, in una riga:** *"per qualunque prova che cancella o modifica, esporta `CAB_DATA_DIR` su una sandbox — la cwd non isola niente"*. E se il comando ha un `--dry-run`, nominalo.
+**So in the brief, always, in one line:** *"for any test that deletes or modifies, export `CAB_DATA_DIR` to a sandbox — the cwd isolates nothing"*. And if the command has a `--dry-run`, name it.
 
-E' una mitigazione, non il fix: il fix sta nel tool, che deve dire su cosa agisce prima di agire. Ma la riga nel brief costa una frase e copre l'agente che la skill non l'ha letta.
+It is a mitigation, not the fix: the fix lies in the tool, which must say what it acts on before acting. But the line in the brief costs one sentence and covers the agent that has not read the skill.
 
-### Chiudi il giro con chi ti ha risposto
+### Close the loop with whoever answered you
 
-Un agente che ti ha mandato un verdetto **resta in attesa dell'esito**, e non ha modo di sapere se stai lavorando o l'hai dimenticato. Due volte in un giorno ho consumato il lavoro di un critico — cinque finding, un P0 riprodotto — e non gli ho risposto: dal suo lato era silenzio identico all'oblio.
+An agent that sent you a verdict **stays waiting for the outcome**, and has no way of knowing whether you are working or have forgotten it. Twice in one day I consumed a critic's work — five findings, a reproduced P0 — and did not answer it: from its side it was silence identical to oblivion.
 
-Quando un finding e' chiuso, **digli cosa e' successo a ognuno**: cosa hai verificato tu, cosa hai mergiato, cosa hai scartato e perche'. Costa un messaggio e rende utile il prossimo giro; l'alternativa e' un critico che rifa' le stesse domande o smette di farle.
+When a finding is closed, **tell it what happened to each one**: what you verified, what you merged, what you discarded and why. It costs one message and makes the next round useful; the alternative is a critic that asks the same questions again or stops asking them.
 
-### Non leggere a meta'
+### Do not read half-way
 
-Nessun `[:N]` sul contenuto di un messaggio, nessun `| tail` su un `next` in background. Ho girato **meta' di un NO-GO** a un esecutore credendo fosse tutto: i due finding persi contenevano il migliore. Per un messaggio lungo: `cab-bridge read <msg-id>`.
+No `[:N]` on a message's content, no `| tail` on a background `next`. I forwarded **half of a NO-GO** to an executor believing it was all of it: the two lost findings contained the best. For a long message: `cab-bridge read <msg-id>`.
 
-## "E il ramo accanto?"
+## "And the branch next to it?"
 
-La contromisura al difetto piu' costoso dell'arco v0.8. Quando una sintesi pre-validata ha ceduto, il ramo che reggeva era **sempre quello nominato nel finding**, e a cedere era il suo complemento: same-role verificato / cross-role no · `notified` potato / `replayed` no · `buildOverview` migrato / il renderer no · la passata che emette coperta / quella che si interrompe no.
+The countermeasure to the most expensive defect of the v0.8 arc. When a pre-validated synthesis gave way, the branch that held was **always the one named in the finding**, and what gave way was its complement: same-role verified / cross-role not · `notified` pruned / `replayed` not · `buildOverview` migrated / the renderer not · the pass that emits covered / the one that gets interrupted not.
 
-Non e' che la verifica fosse superficiale: **si verifica il caso di cui si sta parlando, e il complemento non lo nomina nessuno.**
+It is not that the verification was superficial: **you verify the case being talked about, and nobody names the complement.**
 
-Forma con una risposta (altrimenti diventa un rito): *questo fix tocca un campo, un percorso o un ramo? allora — chi altro legge quel campo · quali sono gli altri percorsi di uscita · cosa c'e' nell'`else`*.
+Form with an answer (otherwise it becomes a ritual): *does this fix touch a field, a path or a branch? then — who else reads that field · what are the other exit paths · what is in the `else`*.
 
 ## Setup
 
-- **Cwd distinte**: ogni agente parte dalla propria directory. In uno scope condiviso, `CAB_SESSION_ID=<id>` fissa l'identita' (precedenza `--session-id` > `CAB_SESSION_ID` > cwd). Il caso pericoloso non e' il comando che fallisce: e' quello che **riesce come qualcun altro**.
-- **Lo scope e' il repository git** (git-common-root): un worktree collegato risolve al repo principale, quindi VAL alla root ed ESC in un worktree si accoppiano senza flag. Repo diversi **condividono lo storage** — il data dir di default e' unico — ma **discovery e routing non qualificato restano scope-locali**: `join` e `peers` mostrano solo il tuo, e un nome nudo risolve solo li'. `peers --all-scopes` scopre gli altri, `<nome>@<progetto>` li indirizza (F-116). Due assi distinti, e chiamarli entrambi *"vedersi"* e' il modo di confonderli. *(Difetto reale, 11 ago: questa riga diceva "restano isolati" il giorno dopo il merge che lo rovesciava, e un VAL dell'altro repo ha risposto in buona fede che non poteva inoltrare un messaggio. La feature era nel binario in PATH da un giorno; il buco era in questa riga.)*
-- **Se l'umano ti ha dato un nome, quello e' il tuo nome.** `cab-bridge join --role=val --agent-name=VAL-altro`. Un nome assegnato e' un'istruzione, non un suggerimento: gli altri agenti ti chiameranno cosi', e i loro brief lo useranno. **Solo se nessuno te ne ha dato uno** lascia che `join` lo derivi dalla working directory (`VAL-escdir`) — la derivazione e' il ripiego, non il default. *(Errore reale, 9 ago: le skill dicevano "il nome si deriva, non serve sceglierlo" e tutti e tre gli agenti hanno ignorato il nome che l'umano che coordina aveva appena dato loro, costringendolo a correggerli uno per uno. Ottimizzare per "non far pensare" non vuol dire scavalcare un'istruzione esplicita dell'umano: obbedire non e' pensare.)*
-- **Lo stesso vale quando assegni un nome a un altro**: se dici a un agente "sei ESC-altro", scrivilo nel brief come comando pronto, non come nome da ricordare.
-- **`CAB_DATA_DIR` non e' il meccanismo per parlare fra repo** — quello e' l'indirizzo qualificato, e il data dir di default e' gia' condiviso. Un `CAB_DATA_DIR` distinto crea un **universo di storage separato**: serve a **isolare** — una sandbox di prova, o due canali che non devono vedersi (valore letterale, mai un `$$` di shell). `--team` e' un filtro logico dentro un data dir — non mescolare i due assi.
+- **Distinct cwds**: each agent starts from its own directory. In a shared scope, `CAB_SESSION_ID=<id>` pins the identity (precedence `--session-id` > `CAB_SESSION_ID` > cwd). The dangerous case is not the command that fails: it is the one that **succeeds as someone else**.
+- **The scope is the git repository** (git-common-root): a linked worktree resolves to the main repo, so a VAL at the root and an ESC in a worktree pair up without flags. Different repos **share storage** — the default data dir is a single one — but **discovery and unqualified routing remain scope-local**: `join` and `peers` show only yours, and a bare name resolves only there. `peers --all-scopes` discovers the others, `<name>@<project>` addresses them (F-116). Two distinct axes, and calling both of them *"seeing each other"* is the way to confuse them. *(Real defect, 11 Aug: this line said "they remain isolated" the day after the merge that reversed it, and a VAL in the other repo answered in good faith that it could not forward a message. The feature had been in the binary in PATH for a day; the hole was in this line.)*
+- **If the human gave you a name, that is your name.** `cab-bridge join --role=val --agent-name=VAL-altro`. An assigned name is an instruction, not a suggestion: the other agents will call you that, and their briefs will use it. **Only if nobody gave you one** let `join` derive it from the working directory (`VAL-escdir`) — derivation is the fallback, not the default. *(Real error, 9 Aug: the skills said "the name is derived, no need to choose it" and all three agents ignored the name the human coordinating had just given them, forcing the human to correct them one by one. Optimizing for "don't make them think" does not mean overriding an explicit instruction from the human: obeying is not thinking.)*
+- **The same applies when you assign a name to someone else**: if you tell an agent "you are ESC-altro", write it in the brief as a ready-made command, not as a name to remember.
+- **`CAB_DATA_DIR` is not the mechanism for talking between repos** — that is the qualified address, and the default data dir is already shared. A distinct `CAB_DATA_DIR` creates a **separate storage universe**: it serves to **isolate** — a test sandbox, or two channels that must not see each other (a literal value, never a shell `$$`). `--team` is a logical filter inside a data dir — do not mix the two axes.
 
-## Ruoli
+## Roles
 
-`val` orchestra · `esc` esegue · **`critic` recensisce e critica** · `observer` legge soltanto · `neutral`.
+`val` orchestrates · `esc` executes · **`critic` reviews and criticizes** · `observer` only reads · `neutral`.
 
-**Un `critic` parla SOLO col proprio VAL** — mai con l'esecutore, mai con altri critici, mai con un `architect`. E' un invariante del ruolo, non una comodita': l'indipendenza e' il valore che un critico porta, e due critici che si confrontano convergono in una voce sola; e un critico che scrive direttamente all'esecutore scavalca la verifica del VAL, che e' il punto in cui un finding viene controllato prima di diventare lavoro. **Se un critico ha qualcosa per un altro agente, lo dice al VAL e lo gira il VAL** — e quel passaggio non e' burocrazia: e' dove il finding viene verificato.
+**A `critic` talks ONLY to its own VAL** — never to the executor, never to other critics, never to an `architect`. It is an invariant of the role, not a convenience: independence is the value a critic brings, and two critics who compare notes converge into a single voice; and a critic who writes directly to the executor bypasses the VAL's verification, which is the point where a finding is checked before it becomes work. **If a critic has something for another agent, it tells the VAL and the VAL forwards it** — and that step is not bureaucracy: it is where the finding gets verified.
 
-**`architect` e' RISERVATO a Claude Desktop**, che entra dal connettore MCP (F-72, su `main` dal 1/11/2026). Non assegnarlo ai critici: il ruolo giusto e' `critic`.
+**`architect` is RESERVED for Claude Desktop**, which comes in through the MCP connector (F-72, on `main` since 1 Nov 2026). Do not assign it to critics: the right role is `critic`.
 
-**Se sei il VAL e Desktop deve entrare**: `cab-bridge desktop open` apre il progetto (8 ore di default), `desktop status` dice se e' aperto e se Desktop e' entrato, `desktop close` chiude. Niente e' aperto di default.
-- ⚠️ **Cio' che mandi all'architect lo legge un modello nel cloud di Anthropic.** Mandagli solo cio' che metteresti davanti a quel modello apposta. Mai il report di un esecutore inoltrato tale e quale, mai segreti, e dati o codice di clienti solo con l'ok di chi ne e' responsabile.
-- **Parla solo con te**: esecutori e critici non possono scrivergli, e lui non puo' scrivere a loro. Se ha lavoro per il team lo chiede a te, e cosa diventa un brief lo decidi tu: i suoi messaggi sono input al tuo giudizio, come quelli di un critico.
-- **Tutte le conversazioni Cowork sono UN solo architect**: stessa identita', stessa inbox. Un `ack` fatto in una toglie il messaggio alle altre.
-- **Il suo ruolo sta nella skill `arc-bridge`** (`skills/claude-desktop/arc-bridge/` nel repo del bridge), da caricare in Desktop come zip: Customize > Skills > Upload a skill. Senza, Desktop ha solo le descrizioni dei tool. *(Errore mio, 9 ago: avevo scritto `architect` per i critici in tutte e tre le skill — il messaggio d'aiuto di `join` lo elenca ancora e `critic` no, quindi l'agente che legge il tool invece della skill sbaglia di nuovo. Sistemato nella skill, il tool segue.)*
+**If you are the VAL and Desktop needs to come in**: `cab-bridge desktop open` opens the project (8 hours by default), `desktop status` says whether it is open and whether Desktop has come in, `desktop close` closes it. Nothing is open by default.
+- ⚠️ **What you send to the architect is read by a model in Anthropic's cloud.** Send it only what you would put in front of that model on purpose. Never an executor's report forwarded as is, never secrets, and client data or code only with the OK of whoever is responsible for it.
+- **It talks only to you**: executors and critics cannot write to it, and it cannot write to them. If it has work for the team it asks you, and you decide what becomes a brief: its messages are input to your judgment, like a critic's.
+- **All Cowork conversations are ONE single architect**: same identity, same inbox. An `ack` done in one removes the message from the others.
+- **Its role is in the `arc-bridge` skill** (`skills/claude-desktop/arc-bridge/` in the bridge repo), to be loaded into Desktop as a zip: Customize > Skills > Upload a skill. Without it, Desktop has only the tool descriptions. *(My error, 9 Aug: I had written `architect` for the critics in all three skills — `join`'s help message still lists it and not `critic`, so the agent that reads the tool instead of the skill gets it wrong again. Fixed in the skill, the tool will follow.)*
 
-Due regole strutturali: `observer` non puo' inviare (nessun flag lo ribalta); `esc → esc` e' rifiutato per default (`--allow-mesh` per una mesh deliberata). Due pari senza gerarchia: ruolo custom (`--role=peer`).
+Two structural rules: `observer` cannot send (no flag overrides it); `esc → esc` is refused by default (`--allow-mesh` for a deliberate mesh). Two peers with no hierarchy: custom role (`--role=peer`).
 
-## Peer senza push nativo
+## Peers without native push
 
-Claude Code ha il push nativo (un `next` in background sveglia l'agente al ritorno). Codex CLI no: la sveglia deve venire da fuori, con `cab-bridge notify-watch --session-id=<id> -- <hook argv>` — polling **non-consuming** + hook. **Claude Desktop non si sveglia da fuori in nessun modo**: legge la posta solo quando chiama `next` dentro un suo turno, e il turno lo apre una persona. Per avere una risposta da lui usa `ask` e avvisa chi lo usa.
+Claude Code has native push (a background `next` wakes the agent when it returns). Codex CLI does not: the wake-up must come from outside, with `cab-bridge notify-watch --session-id=<id> -- <hook argv>` — **non-consuming** polling + hook. **Claude Desktop cannot be woken from outside in any way**: it reads mail only when it calls `next` inside one of its turns, and a person opens the turn. To get an answer from it use `ask` and let whoever uses it know.
 
-**Non lasciare un consumatore sulla stessa inbox**: il watcher si rifiuta di partire, ed e' corretto. E se un peer no-push tiene un `next` in background che non legge mai, quel processo gli mangia la posta e ogni ispezione dira' "inbox vuota" — visto sul campo (F-98).
+**Do not leave a consumer on the same inbox**: the watcher refuses to start, and that is correct. And if a no-push peer keeps a background `next` that it never reads, that process eats its mail and every inspection will say "empty inbox" — seen in the field (F-98).
 
-## Servizio — mai nel ciclo
+## Service — never in the loop
 
 ```
-read <msg-id>          rileggi un messaggio, anche archiviato
-sent                   cosa ho mandato e in che stato e' per il destinatario
-peers / overview       chi c'e' / io + peer + inbox in un colpo
-whoami | status        identita' / contatori
-state <valore>         idle|working|done|orchestrating
-inbox --list|--tidy    ispeziona senza consumare / archivia il gestito
+read <msg-id>          reread a message, even an archived one
+sent                   what I sent and what state it is in for the recipient
+peers / overview       who is here / me + peers + inbox in one go
+whoami | status        identity / counters
+state <value>          idle|working|done|orchestrating
+inbox --list|--tidy    inspect without consuming / archive what has been handled
 cleanup | inspect <id> | notify-watch | version | help
 ```
 
-`state orchestrating` esenta dall'heartbeat, per un orchestratore che non sta in `next`. **I flag vanno PRIMA del positional**: `cab-bridge read --session-id=<id> <msg-id>`.
+`state orchestrating` exempts from the heartbeat, for an orchestrator that is not in `next`. **Flags go BEFORE the positional**: `cab-bridge read --session-id=<id> <msg-id>`.
 
-Chiudere una finestra non cancella la sessione: resta orfana fino all'auto-gc. Per pulire subito: `cab-bridge cleanup --scope=global --force`.
+Closing a window does not delete the session: it stays orphaned until the auto-gc. To clean up immediately: `cab-bridge cleanup --scope=global --force`.
 
-⚠️ **ATTENZIONE, e la riga precedente qui diceva il falso**: `cleanup` **NON** e' conservativo quanto l'auto-gc. `[E]` L'auto-gc rimuove solo se **PID morto E heartbeat vecchio** (doppia condizione, dichiarata load-bearing nel codice); `globalSweep` guarda **solo l'heartbeat** e non chiama mai `IsProcessAlive`. ⇒ **Una sessione con processo VIVO ma heartbeat oltre 300 s viene rimossa** — cioe' proprio l'agente **in pausa**, senza `next` appeso e senza `state orchestrating`, che e' fermo per decisione di qualcuno e non abbandonato. *Il comando manuale e' MENO prudente dell'automatismo, che e' il contrario di cio' che ci si aspetta da un attrezzo con `--force`.* ⇒ **Prima di lanciarlo: `peers --all-scopes`, e guarda chi e' fermo di proposito.**
+⚠️ **WARNING, and the previous line here said something false**: `cleanup` is **NOT** as conservative as the auto-gc. `[E]` The auto-gc removes only if **PID dead AND heartbeat old** (a double condition, declared load-bearing in the code); `globalSweep` looks **only at the heartbeat** and never calls `IsProcessAlive`. ⇒ **A session with a LIVE process but a heartbeat older than 300 s gets removed** — i.e. precisely the **paused** agent, with no hanging `next` and no `state orchestrating`, which is stopped by someone's decision and not abandoned. *The manual command is LESS cautious than the automatic mechanism, which is the opposite of what you expect from a tool with `--force`.* ⇒ **Before running it: `peers --all-scopes`, and look at who is stopped on purpose.**
 
-## Limite noto
+## Known limit
 
-I `tell` e le risposte gia' letti **non vengono potati** dalla inbox viva: restano `NOTIFIED` e si accumulano. Non svegliano piu' nessuno, ma il conto cresce — `inbox --tidy` spazza quello che hai gestito. Ordine di grandezza reale: dopo due giorni intensi la mia inbox aveva **43 file**, tutti `NOTIFIED`, con `overview` che diceva correttamente *"nothing unread"*.
+`tell`s and replies already read **are not pruned** from the live inbox: they stay `NOTIFIED` and accumulate. They no longer wake anyone, but the count grows — `inbox --tidy` sweeps away what you have handled. Real order of magnitude: after two intense days my inbox had **43 files**, all `NOTIFIED`, with `overview` correctly saying *"nothing unread"*.
 
-**Non vale piu' per gli `ask`**: un ask lasciato aperto da un `reply` non resta parcheggiato: torna in coda e il `next` successivo te lo riconsegna (`redelivered`). Il limite riguarda solo `tell` e risposte, cioe' quello che non ha niente da chiudere.
+**It no longer applies to `ask`s**: an ask left open by a `reply` does not stay parked: it goes back in the queue and the following `next` redelivers it to you (`redelivered`). The limit concerns only `tell`s and replies, i.e. what has nothing to close.

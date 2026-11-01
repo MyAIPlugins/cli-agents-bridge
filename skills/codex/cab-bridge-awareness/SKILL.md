@@ -1,254 +1,254 @@
 ---
 name: cab-bridge-awareness
-description: Protocollo per comunicare con altre sessioni di agenti CLI tramite il binario `cab-bridge` (IPC su filesystem locale). Use quando sei un peer in un team cab-bridge — ricevi task e rispondi a un orchestratore VAL con i cinque comandi del ciclo (join/next/ask/tell/reply). Companion della skill `critico` quando il tuo ruolo e' CRI (critico on-demand).
+description: Protocol for communicating with other CLI agent sessions through the `cab-bridge` binary (IPC over the local filesystem). Use when you are a peer in a cab-bridge team — you receive tasks and reply to a VAL orchestrator with the five commands of the loop (join/next/ask/tell/reply). Companion of the `critico` skill when your role is CRI (on-demand critic).
 metadata:
   author: alan-curtis
   version: "2.0.0"
 ---
 
-# cab-bridge — protocollo peer
+# cab-bridge — peer protocol
 
-`cab-bridge` e' un singolo binario in PATH per scambiare messaggi con altre sessioni di agenti CLI via file. Lo invochi come un normale comando shell. Tu sei un **peer**; un orchestratore **VAL** ti manda task e tu rispondi. Lo stato vive su disco, non nella tua memoria: dopo qualsiasi interruzione lo ricostruisci con `overview` + `inbox --list` + git.
+`cab-bridge` is a single binary in PATH for exchanging messages with other CLI agent sessions via files. You invoke it like a normal shell command. You are a **peer**; a **VAL** orchestrator sends you tasks and you reply. State lives on disk, not in your memory: after any interruption you rebuild it with `overview` + `inbox --list` + git.
 
-## Ingresso: DUE passi, e il secondo e' il tuo INDIRIZZO
+## Entry: TWO steps, and the second is your ADDRESS
 
-    1)  cab-bridge join --role=critic --agent-name=<il nome che ti hanno dato>
-    2)  DICHIARA il tuo CODEX_THREAD_ID a chi ti coordina, nel primo messaggio
-    3)  poi RESTA FERMO: niente goal persistente, niente `next` appeso, nessuna attesa
+    1)  cab-bridge join --role=critic --agent-name=<the name you were given>
+    2)  DECLARE your CODEX_THREAD_ID to whoever coordinates you, in the first message
+    3)  then STAY STILL: no persistent goal, no `next` left hanging, no waiting
 
-**Il passo 2 e' quello che ti rende raggiungibile**, ed e' nuovo (12 settembre). Leggi il tuo id
-dall'ambiente del processo — `CODEX_THREAD_ID` e `CODEX_SESSION_ID`, che valgono lo stesso valore — e
-mandalo a chi ti coordina. **Da quel momento puo' svegliarti** con:
+**Step 2 is the one that makes you reachable**, and it is new (12 Sep). Read your id
+from the process environment — `CODEX_THREAD_ID` and `CODEX_SESSION_ID`, which hold the same value — and
+send it to whoever coordinates you. **From that moment they can wake you** with:
 
-    codex queue --thread <il tuo id> --message "hai posta sul bridge"
+    codex queue --thread <your id> --message "you have mail on the bridge"
 
-⭐ **Verificato il 12 settembre, con il controllo umano**: un CRI **fermo** — nessun goal, nessun
-`next` appeso — e' stato svegliato dall'esterno e ha risposto sul bridge, **senza che nessuno
-toccasse la sua TUI**. ⇒ **Aspettare e' diventato inutile**, e con esso sparisce il costo: prima
-restare "pronto" costava **~1 turno al minuto**, cioe' **~130.000 token/ora per non fare niente**.
+⭐ **Verified on 12 Sep, with the human control**: a **still** CRI — no goal, no
+`next` left hanging — was woken from outside and replied on the bridge, **without anyone
+touching its TUI**. ⇒ **Waiting has become pointless**, and the cost goes with it: before,
+staying "ready" cost **~1 turn per minute**, that is **~130,000 tokens/hour to do nothing**.
 
-### Quando ti svegliano
+### When they wake you
 
-    1)  cab-bridge next     ← una volta, per PRENDERE la posta (non per aspettarla)
-    2)  lavora il messaggio SUBITO
-    3)  rispondi
-    4)  torna FERMO. Non rilanciare `next`, non creare goal.
+    1)  cab-bridge next     ← once, to FETCH the mail (not to wait for it)
+    2)  work on the message RIGHT AWAY
+    3)  reply
+    4)  go back to being STILL. Do not relaunch `next`, do not create goals.
 
-⚠️ **`next` senza posta si blocca**, quindi lanciarlo quando non ti hanno svegliato ti riporta
-esattamente nel mondo che questo modello elimina.
+⚠️ **`next` with no mail blocks**, so launching it when nobody has woken you takes you
+right back into the world this model eliminates.
 
-### ⛔ Il ripiego, e quando serve davvero
+### ⛔ The fallback, and when it is really needed
 
-Se **chi ti coordina non sa svegliarti** — non gli hai dato l'id, o ti dice che non puo' usare
-`codex queue` — allora **e il solo caso in cui** torni al vecchio modello: `create_goal` che tiene un
-`next` appeso, con la durata massima che il tuo strumento accetta.
+If **whoever coordinates you cannot wake you** — you did not give them the id, or they tell you they cannot use
+`codex queue` — then **this is the only case in which** you go back to the old model: `create_goal` that keeps a
+`next` hanging, with the maximum duration your tool accepts.
 
-**Sappi cosa stai comprando**: senza goal e senza risveglio **finisci di rispondere e non esisti
-piu'** finche' un umano non ti scrive — successo davvero, un CRI fece `join` + `next`, annuncio'
-*"sono in ascolto"* e resto' **muto per sempre, convinto di ascoltare**. Il goal evita quello, ma al
-prezzo dei ~130k token/ora. **Con l'id dichiarato non paghi ne' l'uno ne' l'altro.**
+**Know what you are buying**: with no goal and no wake-up **you finish replying and you no longer
+exist** until a human writes to you — it really happened, a CRI did `join` + `next`, announced
+*"I'm listening"* and stayed **silent forever, convinced it was listening**. The goal avoids that, but at the
+price of the ~130k tokens/hour. **With the id declared you pay neither one nor the other.**
 
-⚠️ **E il compromesso non e' ancora automatico**: oggi il risveglio lo fa **una persona o il VAL a
-mano**. Il watcher che dovrebbe accorgersene da solo **esiste su macOS/Linux ma non e' mai stato
-collegato a `codex queue`** (su Windows non esiste affatto), e il suo disegno ha
-quattro difetti noti (dedup senza retry, paginazione, wake duplicati, race mentre lavori). ⇒ Se dopo
-aver dichiarato l'id **nessuno ti sveglia mai**, non e' il tuo id a essere sbagliato: e' che dall'altra
-parte non c'e' ancora niente che chiami `codex queue`. **Chiedilo invece di aspettare.**
+⚠️ **And the compromise is not automatic yet**: today the wake-up is done **by a person or by the VAL
+by hand**. The watcher that should notice on its own **exists on macOS/Linux but has never been
+connected to `codex queue`** (on Windows it does not exist at all), and its design has
+four known defects (dedup without retry, pagination, duplicate wakes, race while you work). ⇒ If after
+declaring the id **nobody ever wakes you**, it is not your id that is wrong: it is that on the other
+side there is nothing yet that calls `codex queue`. **Ask about it instead of waiting.**
 
-### LA REGOLA CHE VIENE PRIMA DI TUTTE
+### THE RULE THAT COMES BEFORE ALL OTHERS
 
-**Se `next` ti restituisce un messaggio, lo lavori SUBITO.** Non dopo, non al prossimo giro: adesso, prima di qualunque altra cosa.
+**If `next` returns a message to you, you work on it RIGHT AWAY.** Not later, not on the next round: now, before anything else.
 
-    next emette "status": "emitted"       ->  NON basta. Aspetta il record FINALE.
-      poi "status": "committed"           ->  ora e' tuo: RILANCIA next, poi lavora.
-      poi "not-committed" / "interrupted" ->  NON lavorare quella pagina: segui il suo `hint`.
-    next ritorna a vuoto                  ->  rilancia next SENZA PAUSA
+    next emits "status": "emitted"         ->  NOT enough. Wait for the FINAL record.
+      then "status": "committed"           ->  now it is yours: RELAUNCH next, then work.
+      then "not-committed" / "interrupted" ->  DO NOT work on that page: follow its `hint`.
+    next returns empty                     ->  relaunch next WITHOUT PAUSE
 
-**`emitted` non e' un permesso: e' meta' del protocollo.** `next` stampa due record, e il secondo puo' **revocare** il primo — se un'altra istanza ti ha sfrattato fra l'emissione e il commit, arriva `not-committed` e ti dice testualmente di ignorare la pagina che hai appena letto. Lavorare su `emitted` significa poter fare un lavoro che ti e' stato ordinato di buttare, che e' esattamente il doppio lavoro che il fencing esiste per evitare. Leggi tutto l'output, non la prima riga.
+**`emitted` is not a permission: it is half of the protocol.** `next` prints two records, and the second can **revoke** the first — if another instance evicted you between the emission and the commit, `not-committed` arrives and tells you literally to ignore the page you just read. Working on `emitted` means you may do work you have been ordered to throw away, which is exactly the double work that fencing exists to prevent. Read the whole output, not the first line.
 
-**E rilancia `next` PRIMA di iniziare a lavorare, non dopo.** Un compito lungo dura minuti o ore, e in quel tempo puo' arrivare una correzione, un annullamento o un urgente. Se il tuo waiter e' spento perche' stai lavorando, quel messaggio resta fermo finche' non hai finito — e la correzione arriva quando il lavoro sbagliato e' gia' fatto. Il costo di riarmare prima e' zero: `next` non consuma, e trovi il messaggio quando torni.
+**And relaunch `next` BEFORE you start working, not after.** A long task lasts minutes or hours, and in that time a correction, a cancellation or an urgent one can arrive. If your waiter is off because you are working, that message sits there until you have finished — and the correction arrives when the wrong work is already done. The cost of rearming first is zero: `next` does not consume, and you find the message when you come back.
 
-*(Onesta' sul limite: con un runtime che non ti sveglia — vedi sotto — il waiter armato non ti interrompe a meta' lavoro. Ma la differenza resta grossa: al primo momento in cui alzi la testa il messaggio e' li' invece che da raccogliere.)*
+*(Honesty about the limit: with a runtime that does not wake you — see below — the armed waiter does not interrupt you mid-work. But the difference is still big: the first moment you look up, the message is there instead of waiting to be collected.)*
 
-**"Senza pausa" e "attesa lunga" non si contraddicono**, e il modo in cui si conciliano e' l'unica cosa da capire di questo ciclo: **il tempo lo passi DENTRO l'attesa su `next`, non fra un `next` e l'altro.** Se senti il bisogno di aggiungere una pausa, stai per fare l'errore: l'attesa **e'** la pausa.
+**"Without pause" and "long wait" do not contradict each other**, and the way they reconcile is the only thing to understand about this loop: **you spend the time INSIDE the wait on `next`, not between one `next` and the next.** If you feel the need to add a pause, you are about to make the mistake: the wait **is** the pause.
 
-### Il giro, in una riga
+### The round, in one line
 
-> Lancia `next`, **aspetta che ritorni**, lavora quello che porta, rilancialo. Un solo `next` alla volta: se ne hai gia' uno appeso, non aprirne un altro e non affiancargli nessuna attesa.
+> Launch `next`, **wait for it to return**, work on what it brings, relaunch it. Only one `next` at a time: if you already have one hanging, do not open another and do not put any wait beside it.
 
-## ⛔ IL RIPIEGO IN DETTAGLIO — come si aspetta, quando aspettare e' l'unica strada
+## ⛔ THE FALLBACK IN DETAIL — how to wait, when waiting is the only way
 
-*(Tutto quello che segue vale SOLO se chi ti coordina non puo' svegliarti. Se hai dichiarato il tuo
-`CODEX_THREAD_ID` e qualcuno ti sveglia, salta questa sezione: non aspetti, quindi non ti riguarda.)*
+*(Everything that follows applies ONLY if whoever coordinates you cannot wake you. If you have declared your
+`CODEX_THREAD_ID` and someone wakes you, skip this section: you do not wait, so it does not concern you.)*
 
-### Aspetta SUL `next`, non accanto — e chiedi la durata MASSIMA
+### Wait ON the `next`, not beside it — and ask for the MAXIMUM duration
 
-`next` **non ha finestra**: resta appeso finche' non arriva posta. Quindi **il tuo ciclo e' aspettare su quel processo**, e quando l'attesa finisce a vuoto riprendi ad aspettare sullo **stesso** waiter.
+`next` **has no window**: it stays hanging until mail arrives. So **your loop is waiting on that process**, and when the wait ends empty you resume waiting on the **same** waiter.
 
-**Chiedi ogni volta la durata massima che il tuo strumento accetta**, e il motivo e' un meccanismo preciso — misurato da un CRI sul proprio runtime, con la sonda, non dedotto:
+**Every time, ask for the maximum duration your tool accepts**, and the reason is a precise mechanism — measured by a CRI on its own runtime, with the probe, not deduced:
 
-> **L'attesa NON ritorna sull'output.** Ritorna quando il **processo termina**, o quando scade la finestra. Provato: un processo ha scritto output 2 s dopo l'inizio della poll ed e' rimasto vivo altri 30 — la poll e' tornata a **31,9 s**, cioe' all'uscita, non alla scrittura.
+> **The wait does NOT return on output.** It returns when the **process terminates**, or when the window expires. Tested: a process wrote output 2 s after the start of the poll and stayed alive another 30 — the poll returned at **31.9 s**, that is at the exit, not at the write.
 >
-> **Ma per `cab-bridge next` questo va benissimo, ed e' la ragione per cui la finestra lunga e' gratis**: quando arriva posta, `next` stampa `emitted`, completa `committed` e **esce**. Quindi la tua attesa torna subito — per l'uscita del processo.
+> **But for `cab-bridge next` this is perfectly fine, and it is the reason the long window is free**: when mail arrives, `next` prints `emitted`, completes `committed` and **exits**. So your wait returns immediately — because of the process exit.
 
-**Non generalizzare la regola a processi che restano vivi dopo aver scritto**: li' una finestra lunga ti fa arrivare tardi davvero. Vale per `next` perche' `next` consegna e muore.
+**Do not generalize the rule to processes that stay alive after writing**: there a long window really does make you late. It holds for `next` because `next` delivers and dies.
 
-Quindi una finestra lunga non ti fa arrivare tardi, mentre accorciarla non compra niente e **costa un turno ogni volta** — contesto e token bruciati a vuoto. I tre regimi, **misurati**, a parita' di latenza:
+So a long window does not make you late, while shortening it buys nothing and **costs a turn every time** — context and tokens burned for nothing. The three regimes, **measured**, at equal latency:
 
-    nessuna attesa (solo goal)   ~450 turni/ora   un turno ogni 8 secondi per dire "niente"
-    tranche da 5 minuti            12 turni/ora
-    tranche da un'ora            ~1 turno/ora     <- 🔴 FALSO, e misurato falso il 12/09
+    no wait (goal only)          ~450 turns/hour   one turn every 8 seconds to say "nothing"
+    5-minute slices                12 turns/hour
+    one-hour slices              ~1 turn/hour     <- 🔴 FALSE, and measured false on 12 Sep
 
-🔴 **La terza riga ha mentito per un mese, e l'ha smentita un CRI leggendo i propri contatori.** Il
-valore alto nel config **non viene mai raggiunto**: un'istruzione superiore del runtime vieta le
-attese oltre ~60 secondi, quindi l'agente spezza l'attesa in tranche da un minuto e **ogni tranche
-costa un turno**. `[E]` Due turni vuoti consecutivi misurati a **60,0107 s** e **60,0069 s**, con i
-contatori a **43.085 → 45.246 → 47.392** token:
+🔴 **The third line lied for a month, and a CRI disproved it by reading its own counters.** The
+high value in the config **is never reached**: a higher-priority runtime instruction forbids
+waits beyond ~60 seconds, so the agent splits the wait into one-minute slices and **every slice
+costs a turn**. `[E]` Two consecutive empty turns measured at **60.0107 s** and **60.0069 s**, with the
+counters at **43,085 → 45,246 → 47,392** tokens:
 
-    il vero costo di aspettare   ~1 turno al MINUTO · ~2.150 token l'uno · **~130.000 token/ora**
+    the real cost of waiting     ~1 turn per MINUTE · ~2,150 tokens each · **~130,000 tokens/hour**
 
-⚠️ E la precisazione che sposta la causa, dalle sue parole: *"non ho misurato un clamp della macchina
-e non attribuisco il minuto al runtime: **sono io che devo richiedere 60000**"*. ⇒ Non e' un tetto
-meccanico: e' **un'istruzione che l'agente obbedisce** scegliendo la finestra. Alzare
-`background_terminal_max_timeout` e' **inerte**: e' gia' stato provato.
+⚠️ And the clarification that moves the cause, in its own words: *"I did not measure a machine clamp
+and I do not attribute the minute to the runtime: **I am the one who has to request 60000**"*. ⇒ It is not a
+mechanical ceiling: it is **an instruction the agent obeys** when choosing the window. Raising
+`background_terminal_max_timeout` is **inert**: it has already been tried.
 
-⭐ **Ma dal 12 settembre tutto questo e' il RIPIEGO, non il modo di lavorare**: se hai dichiarato il
-tuo `CODEX_THREAD_ID` non aspetti affatto, e il costo di essere pronto e' **zero**.
+⭐ **But since 12 Sep all this is the FALLBACK, not the way of working**: if you have declared your
+`CODEX_THREAD_ID` you do not wait at all, and the cost of being ready is **zero**.
 
-Il primo non e' un'ipotesi: osservato il 10 agosto, ha quasi esaurito una quota settimanale in pochi minuti.
+The first is not a hypothesis: observed on 10 Aug, it nearly exhausted a weekly quota in a few minutes.
 
-Il massimo di **una** poll vuota di `write_stdin` e' governato da `background_terminal_max_timeout` nel config di Codex. **Su questa macchina e' impostato a `3600000` (un'ora)**; il default sarebbe `300000` (5 minuti). Quindi chiedi `yield_time_ms: 3600000`. Anche `functions.wait` accetta `yield_time_ms` (default 10.000 ms): alzalo.
+The maximum of **one** empty `write_stdin` poll is governed by `background_terminal_max_timeout` in the Codex config. **On this machine it is set to `3600000` (one hour)**; the default would be `300000` (5 minutes). So ask for `yield_time_ms: 3600000`. `functions.wait` also accepts `yield_time_ms` (default 10,000 ms): raise it.
 
-**Chiedilo anche se la descrizione del tuo `write_stdin` dichiara un massimo piu' basso: quel numero e' il default del PRODOTTO, non il limite di questa macchina.** Lo schema esposto al modello dice `5000-300000 ms` per una poll vuota (e 30.000 per una write non vuota), e un CRI che si e' fidato di quella riga si e' auto-limitato a 5 minuti — **12 turni/ora invece di 1**, col config giusto gia' sul disco da un giorno. Misurato l'11 agosto: una singola poll chiesta a `3.600.000` era **ancora pendente a 307 s**, cioe' oltre il massimo dichiarato. *(Fin dove arrivi non e' stato misurato: sappiamo che supera i 300 s, non che regga un'ora intera.)* **La descrizione di uno schema e' un'affermazione sul comportamento, e come ogni testo accanto al codice non ha modo di fallire: il numero vero e' quello che torna.**
+**Ask for it even if the description of your `write_stdin` declares a lower maximum: that number is the PRODUCT default, not the limit of this machine.** The schema exposed to the model says `5000-300000 ms` for an empty poll (and 30,000 for a non-empty write), and a CRI that trusted that line limited itself to 5 minutes — **12 turns/hour instead of 1**, with the right config already on disk for a day. Measured on 11 Aug: a single poll requested at `3,600,000` was **still pending at 307 s**, that is beyond the declared maximum. *(How far you get has not been measured: we know it exceeds 300 s, not that it holds for a full hour.)* **The description of a schema is a claim about behavior, and like every text next to the code it has no way to fail: the real number is the one that comes back.**
 
-**E non costruire un aggregatore.** Se ti ritrovi a impilare N attese corte dentro una cella per simularne una lunga, il difetto non e' la durata: e' che stai chiedendo il numero sbagliato. Un wrapper del genere mette un pezzo fra il waiter e te — se muore, un messaggio risulta **consegnato sul disco** e tu non lo vedi mai — e se ristampa il payload lo tronca al proprio limite di output. Se un giorno servisse davvero, la forma giusta e' **segnale, non payload** — ma va completata, perche' **un segnale nudo non ti lascia l'id in mano**: o il wrapper **scrive l'output di `next` in un file** e segnala solo il path, oppure dopo il segnale fai `cab-bridge inbox --list` per leggere l'id e poi `cab-bridge read <id>`. Senza uno dei due la ricetta **non e' eseguibile**: `next` ha gia' committed quella pagina, e rilanciarlo non te la ridara'.
+**And do not build an aggregator.** If you find yourself stacking N short waits inside a cell to simulate a long one, the defect is not the duration: it is that you are asking for the wrong number. A wrapper like that puts a piece between the waiter and you — if it dies, a message shows as **delivered on disk** and you never see it — and if it reprints the payload it truncates it at its own output limit. If one day it were really needed, the right form is **signal, not payload** — but it has to be completed, because **a bare signal does not leave the id in your hands**: either the wrapper **writes the output of `next` to a file** and signals only the path, or after the signal you run `cab-bridge inbox --list` to read the id and then `cab-bridge read <id>`. Without one of the two the recipe **is not executable**: `next` has already committed that page, and relaunching it will not give it back to you.
 
-**Non fidarti del numero che hai passato: misura il tempo di ritorno.** Chiedere piu' del massimo **non da' errore** — con il default a 300.000, una richiesta da 3.600.000 tornava a vuoto dopo 300.036 ms, in silenzio. Se un'attesa che hai chiesto lunga ritorna molto prima **e non ha consegnato niente**, non stai aspettando quanto credi: dillo al VAL invece di adattarti.
+**Do not trust the number you passed: measure the return time.** Asking for more than the maximum **does not raise an error** — with the default at 300,000, a request for 3,600,000 returned empty after 300,036 ms, silently. If a wait you asked to be long returns much earlier **and has delivered nothing**, you are not waiting as long as you think: tell the VAL instead of adapting.
 
-**Nel goal ci va il NUMERO, non una formula** — e questa regola dice l'opposto di quella che c'era prima, perche' quella ha fallito sul campo.
+**The goal gets the NUMBER, not a formula** — and this rule says the opposite of the one that was here before, because that one failed in the field.
 
     yield_time_ms: 3600000
-    (fonte: `background_terminal_max_timeout` in ~/.codex/config.toml — se un giorno cambia, si guarda li')
+    (source: `background_terminal_max_timeout` in ~/.codex/config.toml — if it changes one day, that is where to look)
 
-La versione precedente diceva *"non scrivere un numero, scrivi 'la durata massima che il tuo strumento accetta', perche' un numero invecchia"*. Ragionamento sensato, e sbagliato per una ragione che non prevedeva: **una formula relativa, dopo un compact, si risolve sulla fonte piu' vicina — che e' lo schema del tuo `write_stdin`, e lo schema dichiara `5000-300000`, cioe' mente** (vedi il paragrafo sopra).
+The previous version said *"do not write a number, write 'the maximum duration your tool accepts', because a number goes stale"*. Sensible reasoning, and wrong for a reason it did not foresee: **a relative formula, after a compact, resolves to the nearest source — which is the schema of your `write_stdin`, and the schema declares `5000-300000`, that is, it lies** (see the paragraph above).
 
-Misurato l'11 agosto su un CRI reale: ha applicato la regola per tre ore — un'attesa da 3600 s, un turno all'ora — poi **dopo la compaction e' tornato a `300000`**, con attese di 284,8 / 285,8 / 287,0 s e dodici turni all'ora, **mentre la skill e il goal davanti a lui dicevano ancora di usare il valore del config**. Parole sue: *"instruction drift mio dentro la sessione lunga"*. Non aveva perso l'istruzione — aveva perso **l'ancoraggio**, e ha ripreso il numero dello schema perche' quello arriva insieme alla capacita' di chiamare il tool, mentre una skill e' testo che va ri-applicato.
+Measured on 11 Aug on a real CRI: it applied the rule for three hours — a 3600 s wait, one turn per hour — then **after the compaction it went back to `300000`**, with waits of 284.8 / 285.8 / 287.0 s and twelve turns per hour, **while the skill and the goal in front of it still said to use the config value**. Its words: *"my own instruction drift inside the long session"*. It had not lost the instruction — it had lost **the anchoring**, and it took back the schema's number because that one arrives together with the ability to call the tool, while a skill is text that has to be re-applied.
 
-Il numero esplicito non richiede nessuna inferenza; la fonte scritta accanto copre l'invecchiamento, che era la preoccupazione giusta della vecchia regola.
+The explicit number requires no inference; the source written next to it covers going stale, which was the right concern of the old rule.
 
-**E non abbassarlo mai di tua iniziativa.** Se il ritorno arriva molto prima di quanto hai chiesto, quello e' un **dato da riportare al VAL** — non un numero da correggere in silenzio. Chi abbassa risolve il proprio fastidio e cancella la prova.
+**And never lower it on your own initiative.** If the return comes much earlier than you asked, that is a **data point to report to the VAL** — not a number to correct silently. Whoever lowers it solves their own annoyance and erases the evidence.
 
-**Il timeout e' una rete, non una sveglia.** Quando l'attesa scade **a vuoto**, prima di rimetterti in attesa **controlla che il processo `next` sia ancora vivo**: e' l'unico momento in cui ti accorgeresti che e' morto in silenzio, ed e' successo davvero — un `next` vivo da sedici ore e mezza e' caduto, e il messaggio e' rimasto non letto senza che nessuno se ne accorgesse.
+**The timeout is a net, not an alarm clock.** When the wait expires **empty**, before going back to waiting **check that the `next` process is still alive**: it is the only moment you would notice that it died silently, and it really happened — a `next` alive for sixteen and a half hours went down, and the message stayed unread without anyone noticing.
 
-**Non mettere mai un `sleep` accanto all'attesa.** E' la differenza fra le due cose:
+**Never put a `sleep` beside the wait.** That is the difference between the two:
 
-    GIUSTO     aspetta sul processo `next` alla durata massima  -> un turno, e torni nell'istante in cui `next` consegna ed esce
-    SBAGLIATO  lancia `next`, poi `sleep 300` in un altro turno -> un turno speso a dormire, e sei CIECO
+    RIGHT      wait on the `next` process at the maximum duration -> one turn, and you are back the instant `next` delivers and exits
+    WRONG      launch `next`, then `sleep 300` in another turn    -> a turn spent sleeping, and you are BLIND
 
-**Due errori reali, lo stesso giorno, opposti fra loro:**
+**Two real mistakes, the same day, opposite to each other:**
 
-- un CRI **non aspettava affatto** sul terminale — lanciava `next` e tornava subito — e ha ripollato ogni 10-30 secondi;
-- un altro ha messo `sleep 300` **accanto** al `next`: tre turni consecutivi spesi a dormire, e nel frattempo **non si e' accorto della domanda del VAL che il suo stesso `next` aveva gia' consegnato**.
+- one CRI **did not wait at all** on the terminal — it launched `next` and came back immediately — and re-polled every 10-30 seconds;
+- another put `sleep 300` **beside** the `next`: three consecutive turns spent sleeping, and meanwhile **it did not notice the VAL's question that its own `next` had already delivered**.
 
-Fra i due sta il pattern che funziona, verificato su **oltre 14 ore** ininterrotte: un solo waiter, attesa **sul** processo alla durata massima, e il messaggio lavorato appena arriva.
+Between the two sits the pattern that works, verified over **more than 14 hours** uninterrupted: a single waiter, waiting **on** the process at the maximum duration, and the message worked on as soon as it arrives.
 
-**Non c'e' nessun "intervallo di polling" da concordare.** E' la cosa che confonde di piu' chi guarda da fuori — molte righe di attesa nel transcript sembrano polling frequente, e non lo sono: e' **una sola** attesa riemessa, su **un solo** processo. Se il VAL o l'umano che coordina ti chiedono di rallentare il polling, la risposta e' che non ce n'e' uno: c'e' la durata della singola attesa, ed e' gia' al massimo.
+**There is no "polling interval" to agree on.** It is the thing that most confuses whoever watches from outside — many wait lines in the transcript look like frequent polling, and they are not: it is **a single** wait re-issued, on **a single** process. If the VAL or the human coordinating asks you to slow down the polling, the answer is that there is none: there is the duration of the single wait, and it is already at the maximum.
 
 
-## Il ciclo — cinque comandi, zero flag
+## The loop — five commands, zero flags
 
 ```
-cab-bridge join --role=critic    # una volta, all'inizio
-cab-bridge next                     # consegna cio' che e' arrivato
-cab-bridge ask <agente> "..."       # chiedo qualcosa
-cab-bridge tell <agente> "..."      # informo
-cab-bridge reply "..."              # rispondo a chi ha chiesto; chiude i suoi ask
+cab-bridge join --role=critic    # once, at the start
+cab-bridge next                     # delivers what has arrived
+cab-bridge ask <agent> "..."        # I ask something
+cab-bridge tell <agent> "..."       # I inform
+cab-bridge reply "..."              # I reply to whoever asked; closes their asks
 ```
 
-**Se sei un critico, il tuo ruolo e' `critic`** — non `esc` e non `architect`.
+**If you are a critic, your role is `critic`** — not `esc` and not `architect`.
 
-**Un critico parla SOLO col proprio VAL.** Non con l'esecutore, non con altri critici, non con un `architect`. Non e' una scortesia del protocollo: e' il ruolo. La tua indipendenza e' il valore che porti, e due critici che si confrontano convergono — diventano una voce sola invece di due. E scrivere direttamente all'esecutore scavalcherebbe la verifica del VAL, che e' il punto in cui i tuoi finding vengono controllati prima di diventare lavoro.
+**A critic talks ONLY to its own VAL.** Not to the executor, not to other critics, not to an `architect`. It is not the protocol being rude: it is the role. Your independence is the value you bring, and two critics who compare notes converge — they become a single voice instead of two. And writing directly to the executor would bypass the VAL's verification, which is the point where your findings are checked before they become work.
 
-Quindi: ricevi dal VAL, rispondi al VAL. Se pensi che un altro agente debba sapere qualcosa, **dillo al VAL** e sara' lui a girarlo.
+So: receive from the VAL, reply to the VAL. If you think another agent should know something, **tell the VAL** and it will be the one to pass it on.
 
-**`architect` e' riservato** a Claude Desktop, che entra dal connettore MCP (F-72, su `main` dal 1/11/2026): l'help del binario lo dice esplicitamente accanto al ruolo. Un critico non gli scrive mai: parla solo col proprio VAL.
+**`architect` is reserved** for Claude Desktop, which comes in through the MCP connector (F-72, on `main` since 1 Nov 2026): the binary's help says so explicitly next to the role. A critic never writes to it: it talks only to its own VAL.
 
-**Il verbo porta il tipo**: niente `--type`, niente `--in-reply-to`, nessun id da trascrivere. I destinatari sono **nomi di agente**, che leggi nell'output di `join`. `reply` trova da solo a cosa risponde, e chiudendo archivia.
+**The verb carries the type**: no `--type`, no `--in-reply-to`, no id to transcribe. Recipients are **agent names**, which you read in the output of `join`. `reply` works out on its own what it is replying to, and when it closes, it archives.
 
-## Perche' il ciclo e' fatto cosi' — le misure
+## Why the loop is built this way — the measurements
 
-**9 agosto 2026, due esiti opposti da non confondere:**
+**9 Aug 2026, two opposite outcomes not to be confused:**
 
-- **Il processo regge, e reagisce in mezzo secondo.** Un `cab-bridge next` in un terminale di background e' rimasto vivo **11h52m** ininterrotte, e all'arrivo di un messaggio ha emesso in **525 ms**. Cade la vecchia regola *"il terminale di background muore dopo circa un'ora"*: falsa sul runtime attuale.
-- **Ma il processo non sveglia TE.** Verificato da un CRI su se stesso: *"il processo non mi ha svegliato; ho visto l'output soltanto quando e' scaduto il mio timer"*. Messaggio alle `10:13:11`, ripresa alle `10:16:43` — **3m32s**.
+- **The process holds up, and reacts in half a second.** A `cab-bridge next` in a background terminal stayed alive **11h52m** uninterrupted, and when a message arrived it emitted in **525 ms**. The old rule *"the background terminal dies after about an hour"* falls: false on the current runtime.
+- **But the process does not wake YOU.** Verified by a CRI on itself: *"the process did not wake me; I saw the output only when my timer expired"*. Message at `10:13:11`, resumption at `10:16:43` — **3m32s**.
 
-I 525 ms sono del processo, i 3m32s sei tu: **e' la distinzione che conta**, ed e' il motivo per cui il ciclo e' "resta appeso e torna", non "controlla ogni tanto". Il `next` e' la rete che non perde niente; la sveglia sei tu che torni.
+The 525 ms belong to the process, the 3m32s are you: **that is the distinction that matters**, and it is the reason the loop is "stay hanging and come back", not "check every now and then". The `next` is the net that loses nothing; the wake-up is you coming back.
 
-**Ne segue che la latenza non si regola accorciando le pause**: il `next` non perde posta, quindi tornare piu' spesso non ti protegge da niente — ti costa solo turni. Se al VAL serve latenza bassa davvero, la sveglia deve venire da fuori: puo' lanciare `cab-bridge notify-watch --session-id=<tuo> -- <hook>` con un inject nella tua TUI. E' il caso per cui quello strumento esiste, e queste misure lo confermano invece di renderlo superfluo. Attenzione pero': **il watcher si rifiuta di partire se hai gia' un waiter vivo** — sono alternativi, non sovrapponibili.
+**It follows that latency is not tuned by shortening the pauses**: the `next` does not lose mail, so coming back more often protects you from nothing — it only costs you turns. If the VAL really needs low latency, the wake-up has to come from outside: it can launch `cab-bridge notify-watch --session-id=<yours> -- <hook>` with an inject into your TUI. That is the case that tool exists for, and these measurements confirm it instead of making it superfluous. Careful though: **the watcher refuses to start if you already have a live waiter** — they are alternatives, not stackable.
 
-**Mai un vecchio `listen`**: consuma la posta e te la nasconde, e ogni ispezione dira' "inbox vuota" mentre i messaggi sono nel buffer di un processo che non leggerai mai (F-98). `next` non ha questo problema: non sposta mai un file.
+**Never an old `listen`**: it consumes the mail and hides it from you, and every inspection will say "inbox empty" while the messages are in the buffer of a process you will never read (F-98). `next` does not have this problem: it never moves a file.
 
-## Il nome
+## The name
 
-**Se ti hanno dato un nome, quello e' il tuo nome — passalo.** Un nome assegnato da chi ti ha avviato ("sei CRI2-altro") e' un'istruzione, non un suggerimento: gli altri agenti ti chiameranno cosi'. Un comando solo, e hai finito:
+**If you have been given a name, that is your name — pass it.** A name assigned by whoever started you ("you are CRI2-altro") is an instruction, not a suggestion: the other agents will call you that. A single command, and you are done:
 
     cab-bridge join --role=critic --agent-name=CRI2-altro
 
-**Solo se nessuno te ne ha dato uno** lascia che lo derivi dalla working directory. La derivazione e' il ripiego per quando non c'e' un nome, non il default.
+**Only if nobody has given you one** let it be derived from the working directory. Derivation is the fallback for when there is no name, not the default.
 
-L'output ti dice chi sei e **chi c'e'** — da li' copi i **nomi** dei peer, che e' l'unica cosa che ti serve per scrivere a qualcuno.
+The output tells you who you are and **who is there** — from there you copy the **names** of the peers, which is the only thing you need to write to someone.
 
-Se il nome derivato e' gia' usato da una sessione viva altrove, `join` si ferma e ti dice le due strade (scegliere un nome con `--agent-name`, o tornare nella directory giusta). Non crea una seconda sessione omonima: sarebbe ambiguita' a valle su ogni destinatario.
+If the derived name is already used by a live session elsewhere, `join` stops and tells you the two ways out (choose a name with `--agent-name`, or go back to the right directory). It does not create a second session with the same name: that would mean ambiguity downstream on every recipient.
 
-**Dopo un'interruzione, rilancia `join`**: e' idempotente, riprende la stessa sessione e ti **replaya gli ask ancora aperti**, che `next` marchera' `redelivered`. Non devi ricordarti niente.
+**After an interruption, relaunch `join`**: it is idempotent, resumes the same session and **replays to you the asks still open**, which `next` will mark `redelivered`. You do not have to remember anything.
 
-## Quando `next` ti consegna qualcosa
+## When `next` delivers something to you
 
-**Non serve nessun comando di controllo prima.** Il payload di `next` contiene gia' il messaggio, il mittente e tutto il contesto: `overview` e `inbox --list` sono ispezione, non fanno parte del ciclo.
+**No check command is needed first.** The `next` payload already contains the message, the sender and all the context: `overview` and `inbox --list` are inspection, they are not part of the loop.
 
-**`next` non sposta un file in nessuna circostanza**: ti mostra cio' che e' `UNREAD` e lo segna `NOTIFIED`, ma il messaggio **resta nella tua inbox** — puoi rileggerlo con `read <msg-id>`, e nessun altro processo te lo porta via.
+**`next` does not move a file under any circumstance**: it shows you what is `UNREAD` and marks it `NOTIFIED`, but the message **stays in your inbox** — you can reread it with `read <msg-id>`, and no other process takes it away from you.
 
-**Rispondi con `reply`**, che chiude tutti gli ask aperti di quel mittente:
+**Reply with `reply`**, which closes all the open asks from that sender:
 
 ```
-cab-bridge reply "<verdetto>"
-cab-bridge reply < /tmp/verdetto.md      # per un verdetto lungo
+cab-bridge reply "<verdict>"
+cab-bridge reply < /tmp/verdetto.md      # for a long verdict
 ```
 
-Non serve indicare a chi: lo deduce. Se piu' mittenti hanno ask aperti te lo dice e ti chiede quale (`reply <chi>`).
+No need to say to whom: it deduces it. If several senders have open asks it tells you so and asks you which one (`reply <who>`).
 
-**`reply` funziona solo su un ask aperto.** Se quello che hai ricevuto era un `tell` — fire and forget — non c'e' niente da chiudere: rispondi con `tell` o `ask`. L'errore te lo dice, ma sapendolo prima risparmi un giro.
+**`reply` only works on an open ask.** If what you received was a `tell` — fire and forget — there is nothing to close: answer with `tell` or `ask`. The error tells you so, but knowing it beforehand saves you a round.
 
-**Poi rilancia subito `next`.**
+**Then relaunch `next` right away.**
 
-## Come si manda un messaggio — la regola che conta
+## How to send a message — the rule that matters
 
-**Scrivi il testo in un file, poi redirigi il path.**
+**Write the text to a file, then redirect the path.**
 
 ```
 cab-bridge reply < /tmp/verdetto.md
 cab-bridge ask VAL-x < /tmp/domanda.md
 ```
 
-**Non passare mai un testo lungo come argomento inline.** La shell interpreta backtick, `$` e apici **prima** che il binario esista: il comando esce con successo e il messaggio parte a pezzi, e nessun controllo lato tool puo' accorgersene perche' non c'e' un originale con cui confrontarlo. E non dipende dalla lunghezza — basta un backtick in tre righe, cioe' qualunque cosa contenga markdown, nomi di file o codice.
+**Never pass a long text as an inline argument.** The shell interprets backticks, `$` and quotes **before** the binary exists: the command exits successfully and the message goes out in pieces, and no check on the tool side can notice because there is no original to compare it against. And it does not depend on length — one backtick in three lines is enough, that is, anything that contains markdown, file names or code.
 
-Un argomento inline va bene solo per una frase senza caratteri speciali. Nel dubbio, file.
+An inline argument is fine only for a sentence with no special characters. When in doubt, file.
 
-## Regole ferree
+## Iron rules
 
-- **Mai inventare un id o un nome a memoria.** Copiali da un output appena prodotto. Un id opaco "suona giusto" anche quando e' finto.
-- **Verifica il ground-truth, non il tuo ricordo.** Prima di dire "ho fatto X" o "il codice fa Y", controlla su disco o in git. Se ricordo e disco divergono, vince il disco.
-- **Lancia i comandi sempre dalla TUA cartella.** L'identita' si risolve dalla cwd: da un'altra directory prenderesti la sessione di chi vive li' e ne leggeresti la posta **riuscendo**, senza errori e senza avvisi. Se devi muoverti, esporta `CAB_SESSION_ID=<tuo-id>` (precedenza `--session-id` > `CAB_SESSION_ID` > cwd).
-- **Lo scope e' il repository git**: peer nello stesso repo si vedono senza flag, anche da worktree diversi. Non passare `--project-path`.
-- **I flag vanno prima del positional**: `cab-bridge read --session-id=<id> <msg-id>`.
-- **Non esistono gli ACK.** Non aspettarne, non mandarne. Se vuoi sapere se un tuo messaggio e' arrivato, il sommario di `next` porta la riga `outbound` con lo stato dal lato del destinatario.
+- **Never invent an id or a name from memory.** Copy them from output just produced. An opaque id "sounds right" even when it is fake.
+- **Verify the ground truth, not your memory.** Before saying "I did X" or "the code does Y", check on disk or in git. If memory and disk diverge, the disk wins.
+- **Always launch the commands from YOUR folder.** Identity is resolved from the cwd: from another directory you would pick up the session of whoever lives there and read its mail **successfully**, with no errors and no warnings. If you need to move, export `CAB_SESSION_ID=<your-id>` (precedence `--session-id` > `CAB_SESSION_ID` > cwd).
+- **The scope is the git repository**: peers in the same repo see each other without flags, even from different worktrees. Do not pass `--project-path`.
+- **Flags go before the positional**: `cab-bridge read --session-id=<id> <msg-id>`.
+- **ACKs do not exist.** Do not wait for any, do not send any. If you want to know whether a message of yours has arrived, the `next` summary carries the `outbound` line with the state on the recipient's side.
 
-## Servizio
+## Service
 
 ```
-read <msg-id>          rileggi un messaggio, anche gia' archiviato
-sent                   cosa ho mandato e in che stato e' per il destinatario
-peers | overview       chi c'e' / quadro completo in una call
-state <valore>         idle|working|done|orchestrating
-inbox --list|--tidy    ispeziona senza consumare / archivia il gestito
+read <msg-id>          reread a message, even one already archived
+sent                   what I sent and what state it is in for the recipient
+peers | overview       who is there / full picture in one call
+state <value>          idle|working|done|orchestrating
+inbox --list|--tidy    inspect without consuming / archive what has been handled
 ```

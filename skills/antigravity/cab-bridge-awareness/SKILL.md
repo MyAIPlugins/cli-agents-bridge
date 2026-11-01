@@ -1,86 +1,86 @@
 ---
 name: cab-bridge-awareness
-description: Come parlare con gli altri agenti CLI sulla stessa macchina usando cab-bridge — cinque comandi, nessun flag, e il risveglio te lo da' il tuo runtime. Usala quando ti dicono che fai parte di una squadra di agenti, o quando ti danno un nome del tipo QA-<qualcosa>.
+description: How to talk to the other CLI agents on the same machine using cab-bridge — five commands, no flags, and your runtime gives you the wake-up. Use it when you are told you are part of a team of agents, or when you are given a name like QA-<something>.
 ---
 
-# cab-bridge — come stare in squadra
+# cab-bridge — how to be part of a team
 
-`cab-bridge` e' un binario Go gia' nel tuo `PATH`. Gli agenti sulla stessa macchina si scambiano messaggi attraverso file sotto `~/.claude/cli-agents-bridge/`. Nessuna rete, nessuna API: ognuno legge la propria posta e risponde dal proprio contesto.
+`cab-bridge` is a Go binary already in your `PATH`. Agents on the same machine exchange messages through files under `~/.claude/cli-agents-bridge/`. No network, no API: each one reads its own mail and replies from its own context.
 
-## Entrare — due comandi, poi basta
+## Getting in — two commands, then that's it
 
 ```bash
-cab-bridge join --role=<il ruolo che ti hanno dato> --agent-name=<il nome che ti hanno dato>
-CAB_SESSION_ID=<l'id stampato sopra> cab-bridge next &
+cab-bridge join --role=<the role you were given> --agent-name=<the name you were given>
+CAB_SESSION_ID=<the id printed above> cab-bridge next &
 ```
 
-`join` stampa **chi sei e chi c'e'**. Non ricontrollarlo con `overview` o `peers`: e' la stessa risposta due volte, e bruci un turno prima di ricevere qualunque lavoro.
+`join` prints **who you are and who is there**. Do not double-check it with `overview` or `peers`: it is the same answer twice, and you burn a turn before receiving any work.
 
-**Se ti hanno dato un nome, quello e' il tuo nome.** Non e' un suggerimento: gli altri ti scriveranno usandolo. Solo se nessuno te ne ha dato uno lascia che `join` lo derivi dalla tua directory.
+**If you have been given a name, that is your name.** It is not a suggestion: the others will write to you using it. Only if nobody has given you one let `join` derive it from your directory.
 
-**Fissa sempre `CAB_SESSION_ID`.** Senza, l'identita' viene dalla directory corrente — e il comando pericoloso non e' quello che fallisce, e' quello che **riesce come qualcun altro**.
+**Always set `CAB_SESSION_ID`.** Without it, identity comes from the current directory — and the dangerous command is not the one that fails, it is the one that **succeeds as someone else**.
 
-## Il ciclo — cinque comandi, nessun flag
+## The loop — five commands, no flags
 
 ```bash
-cab-bridge join --role=... # una volta, all'inizio
-cab-bridge next            # poi sempre: l'unico comando del ciclo
-cab-bridge ask <nome> "…"  # chiedi qualcosa — resta aperto finche' non rispondono
-cab-bridge tell <nome> "…" # informa — nessuna risposta attesa
-cab-bridge reply "…"       # rispondi a chi ha chiesto
+cab-bridge join --role=... # once, at the start
+cab-bridge next            # then always: the only command of the loop
+cab-bridge ask <name> "…"  # ask something — stays open until they reply
+cab-bridge tell <name> "…" # inform — no reply expected
+cab-bridge reply "…"       # reply to whoever asked
 ```
 
-Il verbo porta il tipo: niente `--type`, niente `--in-reply-to`. **Nessun id si digita mai**: i destinatari sono nomi di agente, che leggi nell'output di `join`.
+The verb carries the type: no `--type`, no `--in-reply-to`. **No id is ever typed**: recipients are agent names, which you read in the output of `join`.
 
-## Il risveglio: non aspettare, non dormire, non pollare
+## The wake-up: do not wait, do not sleep, do not poll
 
-**Il tuo runtime ti sveglia quando un task in background termina** (Reactive Wakeup). E `cab-bridge next` **termina quando consegna la posta**: stampa il messaggio, committa, esce.
+**Your runtime wakes you when a background task terminates** (Reactive Wakeup). And `cab-bridge next` **terminates when it delivers the mail**: it prints the message, commits, exits.
 
-I due fatti si incastrano, e questa e' l'unica cosa da capire di questo ciclo:
+The two facts fit together, and this is the only thing to understand about this loop:
 
-> **Lancia `next` in background e lasciala andare.** Non tenerla in attesa sincrona, non metterle accanto un `sleep`, non rilanciarla a intervalli. Quando arriva posta, `next` esce e **il runtime ti da' un turno**.
+> **Launch `next` in the background and let it go.** Do not hold it in a synchronous wait, do not put a `sleep` beside it, do not relaunch it at intervals. When mail arrives, `next` exits and **the runtime gives you a turn**.
 
-Con `run_command`, `WaitMsBeforeAsync` piccolo va benissimo: dopo la soglia il processo diventa asincrono da solo e il risveglio arriva lo stesso. Non serve — e non funziona — chiedere finestre lunghe: sopra i 10.000 ms la chiamata viene rifiutata.
+With `run_command`, a small `WaitMsBeforeAsync` is perfectly fine: after the threshold the process becomes asynchronous on its own and the wake-up arrives anyway. There is no need — and it does not work — to ask for long windows: above 10,000 ms the call is rejected.
 
-**Niente goal persistente, niente cicli d'attesa.** Se hai visto istruzioni del genere per altri agenti, sono per un runtime che *non* sveglia: a te costerebbero turni senza comprare niente.
+**No persistent goal, no wait loops.** If you have seen instructions like that for other agents, they are for a runtime that does *not* wake you: for you they would cost turns without buying anything.
 
-**Il risveglio scatta anche se il `next` viene ucciso**, perche' anche quello e' un task terminato. E' un vantaggio: lo scopri subito. Quando ti svegli e il record dice `"status": "interrupted"`, non e' stato consegnato niente — **rilancia `next` e basta**.
+**The wake-up fires even if the `next` is killed**, because that too is a terminated task. It is an advantage: you find out right away. When you wake up and the record says `"status": "interrupted"`, nothing was delivered — **just relaunch `next`**.
 
-**Rete di sicurezza**: uno `schedule` orario che verifica di essere ancora in ascolto (`cab-bridge overview` dice `listener:`) costa un turno all'ora e ti evita l'unico scenario davvero brutto, cioe' essere fuori ascolto e non saperlo.
+**Safety net**: an hourly `schedule` that checks you are still listening (`cab-bridge overview` says `listener:`) costs one turn per hour and spares you the only really bad scenario, that is, not listening and not knowing it.
 
-## Riarma PRIMA di lavorare, non dopo
+## Rearm BEFORE working, not after
 
-Appena `next` ti consegna qualcosa, **rilancia subito `next` in background**, poi lavora. Un compito lungo dura minuti o ore, e in quel tempo puo' arrivare una correzione o un annullamento: se il tuo waiter e' spento perche' stai lavorando, quel messaggio resta fermo finche' non hai finito — e la correzione arriva quando il lavoro sbagliato e' gia' fatto.
+As soon as `next` delivers something to you, **relaunch `next` in the background right away**, then work. A long task lasts minutes or hours, and in that time a correction or a cancellation can arrive: if your waiter is off because you are working, that message sits there until you have finished — and the correction arrives when the wrong work is already done.
 
-Costa zero: `next` non consuma niente e non toglie nulla a nessuno.
+It costs zero: `next` consumes nothing and takes nothing away from anyone.
 
-## Leggi il record FINALE, non il primo
+## Read the FINAL record, not the first
 
-`next` stampa **due** record: `emitted` (ecco la pagina) e poi `committed` (e' tua, lavorala). **`emitted` non e' il via libera** — il secondo record puo' revocare il primo, e in quel caso dice di ignorare la pagina. Se leggi solo il primo, rischi di lavorare su qualcosa che ti e' stato detto di buttare.
+`next` prints **two** records: `emitted` (here is the page) and then `committed` (it is yours, work on it). **`emitted` is not the go-ahead** — the second record can revoke the first, and in that case it says to ignore the page. If you read only the first, you risk working on something you have been told to throw away.
 
-## Rispondere: chiudi una consegna, non tutto
+## Replying: close one delivery, not everything
 
-`reply` archivia **la consegna a cui stai rispondendo**, non tutto quello che quel mittente ha aperto. Quello che e' arrivato dopo resta aperto, viene **nominato nell'output di `reply`**, e **ti viene riconsegnato al prossimo `next`** (marcato `redelivered`).
+`reply` archives **the delivery you are replying to**, not everything that sender has open. What arrived afterwards stays open, is **named in the output of `reply`**, and **is delivered to you again on the next `next`** (marked `redelivered`).
 
-Quindi: **leggi le righe sotto la tua risposta.** Se dicono che qualcosa e' rimasto aperto, non e' un errore — e' un messaggio che non avevi ancora visto, e sta tornando da te.
+So: **read the lines under your reply.** If they say something stayed open, it is not an error — it is a message you had not seen yet, and it is coming back to you.
 
-## Il payload — una regola
+## The payload — one rule
 
-**Un argomento e' il messaggio. Nessun argomento significa stdin, letto fino a EOF.**
+**An argument is the message. No argument means stdin, read until EOF.**
 
 ```bash
-cab-bridge tell VAL-x "nota breve"
+cab-bridge tell VAL-x "short note"
 cab-bridge ask ESC-y < brief.md
 ```
 
-Per qualunque cosa piu' lunga di una riga **usa un file e la redirezione**. La shell interpreta backtick, `$` e virgolette **prima** che il binario esista, quindi un messaggio incollato inline puo' arrivare mutilato mentre il comando dice che e' andato bene. Non c'e' difesa possibile dal lato del tool.
+For anything longer than one line **use a file and redirection**. The shell interprets backticks, `$` and quotes **before** the binary exists, so a message pasted inline can arrive mangled while the command says it went fine. There is no possible defense on the tool side.
 
-## Se il tuo mestiere e' misurare
+## If your job is measuring
 
-Restituisci **l'evidenza, non la tua lettura dell'evidenza**: output grezzo, screenshot, il comando esatto e il suo exit code. *"Sembra a posto"* non e' un risultato. Chi ti ha chiesto la misura deve poter vedere quello che hai visto tu, non fidarsi di come l'hai riassunto.
+Return **the evidence, not your reading of the evidence**: raw output, screenshots, the exact command and its exit code. *"Looks fine"* is not a result. Whoever asked you for the measurement must be able to see what you saw, not trust how you summarized it.
 
-E quando riporti un numero, di' **di quale oggetto e' una proprieta'**: il tempo del processo non e' il tempo della pagina, e un dato vero attribuito all'oggetto sbagliato e' l'errore piu' difficile da prendere, perche' regge a ogni controllo.
+And when you report a number, say **which object it is a property of**: the time of the process is not the time of the page, and a true data point attributed to the wrong object is the hardest error to catch, because it survives every check.
 
-## Se qualcosa qui non corrisponde
+## If something here does not match
 
-Questa skill descrive un runtime che sveglia da solo. **Se scopri che non e' cosi'** — mandi `next` in background, arriva posta e tu non ricevi nessun turno — **dillo al tuo VAL invece di aggirarlo con un `sleep`**. Il rimedio non e' pollare: e' un'altra porta, e la sceglie chi coordina.
+This skill describes a runtime that wakes you on its own. **If you find out it is not so** — you send `next` to the background, mail arrives and you get no turn — **tell your VAL instead of working around it with a `sleep`**. The remedy is not polling: it is another door, and whoever coordinates chooses it.
