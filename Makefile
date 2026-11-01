@@ -51,7 +51,11 @@ GO_FLAGS    := -trimpath -ldflags="-s -w -X main.version=$(VERSION)"
 # Override on an idle machine: make test-race GO_TEST_PARALLEL=8
 GO_TEST_PARALLEL ?= 4
 
-.PHONY: help build test test-race cross-compile-all install-dev install-plugin lint clean
+# The skills the agents load are the repo's: one copy, in skills/<runtime>/<name>/.
+# SKILLS_DIR is overridable only so a test can point at a fixture.
+SKILLS_DIR ?= skills
+
+.PHONY: help build test test-race cross-compile-all install-dev install-plugin install-skills skills-check lint clean
 
 help: ## Show this help
 	@echo "cli-agents-bridge — make targets"
@@ -161,6 +165,20 @@ install-plugin: build ## Copy binary into plugins/cli-agents-bridge/bin/ for mar
 	@# this is the same mistake in the other command that reaches the agents.
 	@echo "  /plugin marketplace add $(CURDIR)"
 	@echo "  /plugin install cli-agents-bridge@cli-agents-bridge-marketplace"
+
+# The logic is scripts/skills.sh (POSIX sh): a loop over runtimes and skills is not
+# something to write with a backslash at the end of every line. Paths are quoted, and
+# the script is found through $(CURDIR) so `make -C` works from anywhere.
+#
+# It never deletes and never overwrites a copy that differs without FORCE=1: a
+# difference says the two sides are not the same, not which one is newer. FORCE reaches
+# the script as it is: make exports a variable given on its command line or in its
+# environment, and the script reads it.
+install-skills: ## Copy the repo's skills into each runtime; refuses a differing copy unless FORCE=1. POSIX sh: not for Windows
+	@SKILLS_DIR="$(SKILLS_DIR)" BIN_DIR="$(BIN_DIR)" sh "$(CURDIR)/scripts/skills.sh" install
+
+skills-check: ## Compare the repo's skills with the installed copies (ok/missing/different, exit 1 if not all ok); touches nothing. POSIX sh: not for Windows
+	@SKILLS_DIR="$(SKILLS_DIR)" BIN_DIR="$(BIN_DIR)" sh "$(CURDIR)/scripts/skills.sh" check
 
 # STATICCHECK IS REQUIRED, and looked for where `go install` actually puts it.
 #

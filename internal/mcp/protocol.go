@@ -66,11 +66,23 @@ type ToolError struct{ text string }
 
 func (e *ToolError) Error() string { return e.text }
 
-// Refuse builds an error whose text is meant for the model.
+// Refuse builds an error whose text is meant for the model: a sentence written for it,
+// never the text of another error (the sentinel of another package, a library's complaint),
+// which would put a path or an id of the machine in front of it. A test holds that line:
+// see Refusef.
 func Refuse(text string) *ToolError { return &ToolError{text: text} }
 
 // Refusef is Refuse with a format. It has no %w: the text it builds is a sentence of
 // its own, and wrapping another error in it is exactly what it exists to prevent.
+//
+// An error must not be an argument either, with %v or any other verb: that copies its
+// text, a path included, into what the model reads. The signature stays `...any` so
+// that `go vet` keeps checking each format against its arguments, which a narrower
+// signature would stop it doing; what refuses an error is
+// tests/integration/refuse_test.go, which type-checks every call of Refuse and Refusef
+// in the module and fails on a format or text that is not a constant, an argument that is
+// not a string or an integer, or one that is, or is made from, an error. It is a test and
+// not the compiler: it runs with `go test ./...`.
 func Refusef(format string, args ...any) *ToolError {
 	return &ToolError{text: fmt.Sprintf(format, args...)}
 }
@@ -140,8 +152,7 @@ func DecodeArgs(raw json.RawMessage, dst any) error {
 	dec := json.NewDecoder(bytes.NewReader(trimmed))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
-		// The decoder's words name the caller's own keys and Go types, nothing else.
-		return Refusef("invalid arguments: %v", err)
+		return refuseArgs(err)
 	}
 	if dec.More() {
 		return Refuse("invalid arguments: trailing data after the object")

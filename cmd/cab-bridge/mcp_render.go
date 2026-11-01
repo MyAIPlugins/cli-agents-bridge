@@ -54,6 +54,17 @@ func moreLine(n int) string {
 const nextFooter = "To answer an ask use `reply` with ask_id set to its id. To clear a tell or a response you have handled use `ack` with their ids. " +
 	"Nothing leaves the inbox until you do one of the two. A pointer line (no body) means the message was already shown on this Claude Desktop surface (perhaps in another conversation) or is too large: `read` with its id gives it."
 
+// footerOf is the footer of a `next` result, or nothing when there is no message to act
+// on (a closed bridge shows none, and neither does a wait that found nothing). The
+// budget is counted on this text and the result is written with it, so the two cannot
+// disagree about whether the footer is there.
+func footerOf(v nextView) string {
+	if len(v.visible) == 0 {
+		return ""
+	}
+	return nextFooter
+}
+
 // nextView is everything one `next` result is made of.
 type nextView struct {
 	project   string
@@ -149,7 +160,8 @@ func renderNext(pl *mcp.Planner, v nextView) mcp.Result {
 	// Everything that is in the result whatever the messages are, counted from the
 	// texts themselves: five blocks at most (header, pointer block, "more" line,
 	// notices, footer), each with its own overhead, and the worst case of the "more" count.
-	fixed := envelopeSlack + 5*blockOverhead + jsonLen(header) + jsonLen(nextFooter) + jsonLen(notices) +
+	footer := footerOf(v)
+	fixed := envelopeSlack + 5*blockOverhead + jsonLen(header) + jsonLen(footer) + jsonLen(notices) +
 		jsonLen(pointerTitle) + jsonLen(moreLine(len(v.visible)))
 
 	budget := v.budget - fixed
@@ -198,10 +210,8 @@ func renderNext(pl *mcp.Planner, v nextView) mcp.Result {
 	if notices != "" {
 		blocks = append(blocks, after(notices))
 	}
-	// The footer is how to act on a message: with none to act on (a closed bridge shows
-	// none, and neither does a wait that found nothing) it is noise.
-	if len(v.visible) > 0 {
-		blocks = append(blocks, after(nextFooter))
+	if footer != "" {
+		blocks = append(blocks, after(footer))
 	}
 	return mcp.Result{Content: blocks}
 }

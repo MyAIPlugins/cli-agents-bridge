@@ -140,7 +140,11 @@ type nextMessage struct {
 	FromRole            string `json:"fromRole,omitempty"`
 	Type                string `json:"type"`
 	Timestamp           string `json:"timestamp"`
-	Bytes               int    `json:"bytes"`
+	// Bytes is the size of the TEXT of the message, the unit of the `[83 B]` that
+	// `ask`/`tell` echo and of the MCP header. It used to be the size of the file in
+	// the inbox, envelope included, so the same text said two numbers. It stays set
+	// when Oversize omits Content: it is how big the body is that bodyFile points to.
+	Bytes int `json:"bytes"`
 	// Content is the message body, omitted when Oversize is set.
 	Content string `json:"content,omitempty"`
 	// BodyFile is the on-disk PATH of the message, emitted INSTEAD of Content
@@ -246,7 +250,6 @@ func withName(rec nextCommitRecord, name string) nextCommitRecord {
 type mailboxEntry struct {
 	msg      *message.Message
 	path     string
-	bytes    int
 	when     time.Time
 	replayed bool
 }
@@ -675,7 +678,7 @@ func newNextMessage(e mailboxEntry, oversize bool, myScope string) nextMessage {
 		FromRole:      e.msg.FromRole,
 		Type:          e.msg.Type,
 		Timestamp:     e.msg.Timestamp,
-		Bytes:         e.bytes,
+		Bytes:         len(e.msg.Content),
 		Closes:        e.msg.Closes,
 	}
 	// Only when it differs, and only when the sender stated it: an empty field
@@ -771,10 +774,9 @@ func readMailbox(inboxDir string, maxContentBytes int) ([]mailboxEntry, []string
 			continue
 		}
 		entries = append(entries, mailboxEntry{
-			msg:   m,
-			path:  full,
-			bytes: len(data),
-			when:  parseMessageTime(m.Timestamp),
+			msg:  m,
+			path: full,
+			when: parseMessageTime(m.Timestamp),
 		})
 	}
 	sort.Strings(corrupt)
