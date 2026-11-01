@@ -1,0 +1,33 @@
+skills/claude/cab-bridge-awareness/SKILL.md
+  s_f8849908940048::t_0f22255a05712a 358-359
+  s_f8849908940048::t_d5df924058b94e 105-109
+  s_f8849908940048::t_470f6598fb39c2 31-33
+skills/codex/critico/SKILL.md
+  s_f8849908940048::t_9c3fdad88c0203 3,7,16-36,40-41
+skills/claude-desktop/arc-bridge/SKILL.md
+  s_f8849908940048::t_08ff7fd3305cf6 1-9,13-39,42-67
+  s_f8849908940048::t_a751dec9d59aec 10-12
+  s_f8849908940048::t_2232ff3066b3ac 40-41
+skills/claude/critico/SKILL.md
+  s_f8849908940048::t_9c3fdad88c0203 3,16-36
+skills/codex/cab-bridge-awareness/SKILL.md
+  s_f8849908940048::t_278fb903b637f7 52-53
+README.md
+  s_f8849908940048::t_9dc0e9573f070e 220
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6dbf8f5bdb398a46d988f695f774b8ea1cb0960e",
+  "prompts": {},
+  "sessions": {
+    "s_f8849908940048": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "37bcf92a-1982-4e9a-a4d3-17eecb17eeb9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
