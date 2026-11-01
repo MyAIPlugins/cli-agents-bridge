@@ -1,0 +1,29 @@
+Makefile
+  s_ecb5fdcb0207f6::t_7ba742ca62347e 54-58,169-173,177,179-181
+  s_ecb5fdcb0207f6::t_96abe4870e1b4f 174-176,178
+  s_ecb5fdcb0207f6::t_67872932c5caac 182
+tests/integration/makefile_skills_test.go
+  s_ecb5fdcb0207f6::t_1b3302e3aadadc 61-67,206,220-234,290
+  s_ecb5fdcb0207f6::t_9451ab0545a9d5 1-32,34-51,53-60,68-79,81-85,92-100,103-116,136-187,195-205,207-219,235-289,291,293-295,297-308,310-313,315-340
+  s_ecb5fdcb0207f6::t_795f700e91e140 33,52,80,86-91,101-102
+  s_ecb5fdcb0207f6::t_d8f7ab1b7e87af 117-135,188-194,292,296,309,314
+scripts/skills.sh
+  s_ecb5fdcb0207f6::t_64e4fde3cd3995 1-59,61-66,68-170,174-224
+  s_ecb5fdcb0207f6::t_7ba742ca62347e 60,67,171-173
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cd8d816f3b5682774cc1f62b2f9a835bae30ecfa",
+  "prompts": {},
+  "sessions": {
+    "s_ecb5fdcb0207f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32afad43-c9ed-4676-bf4d-bee1f17ec8c0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
