@@ -49,7 +49,8 @@ piu'** finche' un umano non ti scrive — successo davvero, un CRI fece `join` +
 prezzo dei ~130k token/ora. **Con l'id dichiarato non paghi ne' l'uno ne' l'altro.**
 
 ⚠️ **E il compromesso non e' ancora automatico**: oggi il risveglio lo fa **una persona o il VAL a
-mano**. Il watcher che dovrebbe accorgersene da solo **non esiste su Windows**, e il suo disegno ha
+mano**. Il watcher che dovrebbe accorgersene da solo **esiste su macOS/Linux ma non e' mai stato
+collegato a `codex queue`** (su Windows non esiste affatto), e il suo disegno ha
 quattro difetti noti (dedup senza retry, paginazione, wake duplicati, race mentre lavori). ⇒ Se dopo
 aver dichiarato l'id **nessuno ti sveglia mai**, non e' il tuo id a essere sbagliato: e' che dall'altra
 parte non c'e' ancora niente che chiami `codex queue`. **Chiedilo invece di aspettare.**

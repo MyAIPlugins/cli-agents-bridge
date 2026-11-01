@@ -28,8 +28,9 @@ Il passo 1 stampa **chi sei e chi c'e'**: non ri-derivare quell'informazione con
     Codex          🟢 RISVEGLIO ESTERNO      `codex queue --thread <id>` — DIMOSTRATO 12/09, col
                    (dalla 0.154.0)           controllo umano: agente FERMO, zero costo mentre aspetta
                    ⚠️ ma lo sveglia una      se invece POLLA: ~60 turni/ora — UNO AL MINUTO — a ~2.150
-                   PERSONA: il watcher non   token l'uno ⇒ ~130k token/ora di silenzio
-                   esiste su Windows
+                   PERSONA: nessuno ha       token l'uno ⇒ ~130k token/ora di silenzio
+                   ancora collegato un
+                   watcher a `codex queue`
     Antigravity    risveglio nativo          3,1s · zero costo · nessun goal, nessuna attesa
                    (Reactive Wakeup su fine task in background)
     Claude Desktop nessuna shell             entra dal connettore MCP (F-72, su main dal 1/11/2026)
@@ -101,7 +102,11 @@ quando qualcuno digita e' indistinguibile da nessun risveglio*: senza quel contr
 
 ### ⚠️ Cosa NON e' ancora risolto — leggilo prima di fidartene
 
-- **Lo sveglia una PERSONA**, non un meccanismo: il watcher (`notify-watch`) **non esiste su Windows**.
+- **Lo sveglia una PERSONA**, non un meccanismo — e la ragione **non e' che manchi lo strumento**:
+  `[E]` su macOS/Linux `notify-watch` **c'e'** (`cab-bridge notify-watch --help`, verificato sul Mac il
+  13/09; su Windows non esiste), ma **nessuno ha mai collegato il watcher al risveglio di Codex**: la
+  catena `notify-watch --on-message "codex queue --thread <id> …"` e' **plausibile e MAI PROVATA**, e i
+  quattro difetti del disegno (sotto) restano aperti.
   ⇒ Se ingaggi un Codex e poi ti dimentichi di svegliarlo, **resta muto per sempre** — e dal suo lato
   e' indistinguibile da «il VAL non ha ancora finito». **Diglielo quando lo ingaggi.**
 - 🟢 **`queue` mentre lavora: MISURATO il 13/09 — e' FIFO.** `[E]` Un wake mandato a 46 s dall'inizio
@@ -350,7 +355,8 @@ Forma con una risposta (altrimenti diventa un rito): *questo fix tocca un campo,
 **Se sei il VAL e Desktop deve entrare**: `cab-bridge desktop open` apre il progetto (8 ore di default), `desktop status` dice se e' aperto e se Desktop e' entrato, `desktop close` chiude. Niente e' aperto di default.
 - ⚠️ **Cio' che mandi all'architect lo legge un modello nel cloud di Anthropic.** Mandagli solo cio' che metteresti davanti a quel modello apposta. Mai il report di un esecutore inoltrato tale e quale, mai segreti, e dati o codice di clienti solo con l'ok di chi ne e' responsabile.
 - **Parla solo con te**: esecutori e critici non possono scrivergli, e lui non puo' scrivere a loro. Se ha lavoro per il team lo chiede a te, e cosa diventa un brief lo decidi tu: i suoi messaggi sono input al tuo giudizio, come quelli di un critico.
-- **Tutte le conversazioni Cowork sono UN solo architect**: stessa identita', stessa inbox. Un `ack` fatto in una toglie il messaggio alle altre. *(Errore mio, 9 ago: avevo scritto `architect` per i critici in tutte e tre le skill — il messaggio d'aiuto di `join` lo elenca ancora e `critic` no, quindi l'agente che legge il tool invece della skill sbaglia di nuovo. Sistemato nella skill, il tool segue.)*
+- **Tutte le conversazioni Cowork sono UN solo architect**: stessa identita', stessa inbox. Un `ack` fatto in una toglie il messaggio alle altre.
+- **Il suo ruolo sta nella skill `arc-bridge`** (`skills/claude-desktop/arc-bridge/` nel repo del bridge), da caricare in Desktop come zip: Customize > Skills > Upload a skill. Senza, Desktop ha solo le descrizioni dei tool. *(Errore mio, 9 ago: avevo scritto `architect` per i critici in tutte e tre le skill — il messaggio d'aiuto di `join` lo elenca ancora e `critic` no, quindi l'agente che legge il tool invece della skill sbaglia di nuovo. Sistemato nella skill, il tool segue.)*
 
 Due regole strutturali: `observer` non puo' inviare (nessun flag lo ribalta); `esc → esc` e' rifiutato per default (`--allow-mesh` per una mesh deliberata). Due pari senza gerarchia: ruolo custom (`--role=peer`).
 

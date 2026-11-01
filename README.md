@@ -217,7 +217,7 @@ cab-bridge desktop status   Is it open, until when, and has a Desktop session jo
 cab-bridge desktop close    Close it now
 ```
 
-Desktop joins with its `join` tool (without arguments it lists the projects open to it), appears in `peers` as role `architect`, and can talk **only to a val** of that project. A message from anyone else, from another project, or after the bridge is closed is held back: Desktop is told that something is withheld and why, never what it says.
+Desktop joins with its `join` tool (without arguments it lists the projects open to it), appears in `peers` as role `architect`, and can talk **only to a val** of that project. Its role and rules are in the `arc-bridge` skill (`skills/claude-desktop/arc-bridge/`): zip that folder and upload it in Desktop under Customize > Skills. A message from anyone else, from another project, or after the bridge is closed is held back: Desktop is told that something is withheld and why, never what it says.
 
 **Seven tools**: `join`, `next`, `ack`, `read`, `ask`, `tell`, `reply`. As in the CLI, `next` never consumes: `ack` archives a tell or a response, `reply` closes an ask. `next` waits at most `mcp_next_max_wait_seconds` (40 by default) so that a call ends inside Cowork's 60-second cap. A message too large for one result (`mcp_max_result_bytes`, 24 KiB) arrives as a pointer line, and `read` returns it in pieces.
 
