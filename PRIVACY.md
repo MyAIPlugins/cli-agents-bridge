@@ -2,7 +2,7 @@
 
 `cli-agents-bridge` is a **local-only single-user** IPC tool. This document describes what data is stored on disk, where, for how long, and how to remove it.
 
-**TL;DR**: No data leaves your machine. Zero telemetry, zero analytics, zero network calls. All state is plaintext JSON in `~/.claude/cli-agents-bridge/` with Unix permissions 600 (file) / 700 (directory).
+**TL;DR**: The binary makes zero network calls: zero telemetry, zero analytics. All state is plaintext JSON in `~/.claude/cli-agents-bridge/` with Unix permissions 600 (file) / 700 (directory). **One exception, and you open it yourself**: while a val keeps a project open to Claude Desktop (`cab-bridge desktop open`), the messages between that val and Desktop are read by a Claude model that runs in Anthropic's cloud. See [Claude Desktop](#claude-desktop-the-one-flow-that-leaves-the-machine).
 
 ---
 
@@ -18,6 +18,8 @@
 | PID lock | `~/.claude/cli-agents-bridge/sessions/<id>/lock` | `register` | session exit / `cleanup` |
 | Config | `~/.claude/cli-agents-bridge/config.json` | user (optional) | manual `rm` |
 | Migration backup | `~/.claude/cli-agents-bridge/migration-backup-<ts>/` | `migrate-from-patil` | manual `rm` (user retains audit copy) |
+| Desktop grant | `~/.claude/cli-agents-bridge/sessions/<val-id>/desktop-grant.json` | `desktop open` | `desktop close` / `cleanup` of that session (an expired grant stays on disk, inert) |
+| Desktop identity lock | `~/.claude/cli-agents-bridge/mcp-owners/*.lock` | `cab-bridge mcp` at `join` | the lock ends with the server process; the file, holding the last holder's pid, stays until a manual `rm` |
 
 ---
 
@@ -55,7 +57,7 @@ rm -rf ~/.claude/cli-agents-bridge/
 
 ### GDPR-3 Data localization
 
-No data leaves your machine. The binary makes zero network connections. Verifiable with `lsof -p <pid>` or `tcpdump` while a session is active — no sockets opened beyond the standard process tooling.
+The binary makes zero network connections. Verifiable with `lsof -p <pid>` or `tcpdump` while a session is active — no sockets opened beyond the standard process tooling. The data that does leave the machine leaves through Claude Desktop, not through the binary, and only for a project a val has opened: see below.
 
 ### GDPR-4 Logging is opt-in
 
@@ -64,6 +66,18 @@ Persistent transcripts (proposal feature for v0.3.0) will be **off by default**.
 ### GDPR-5 Trasparency
 
 This document plus [SECURITY.md](./SECURITY.md) describe the complete data lifecycle. No DPA is required for a single-user developer tool.
+
+---
+
+## Claude Desktop: the one flow that leaves the machine
+
+`cab-bridge mcp` runs on your machine, but the Claude model that calls its tools from Cowork runs in Anthropic's cloud. So anything a tool returns is sent there. The data flow, stated as it is:
+
+- **What goes out**: the text of every message a val of an open project sends to Desktop, and of the replies Desktop writes, plus the agent names and project labels in the tool results. A message from an executor, a critic or another project is never in a result: Desktop gets an id and a reason, not the text.
+- **Who decides**: the val, per project and for a limited time (`desktop open`, `mcp_grant_ttl_minutes`, 480 minutes by default). `desktop close` stops it at once, and the grant expires on its own. Nothing is open by default.
+- **What does not go out**: paths, usernames and error details of the machine. Errors are fixed sentences chosen by the server, and the details go to the server log. One exception, by design: when two open projects share a folder name, the project label is the full path, so that Desktop can tell them apart.
+- **What stays on the host**: Desktop keeps the server's stderr in its own logs (on macOS `~/Library/Logs/Claude/mcp-server-<name>.log`). The server writes there tool names, durations, sizes and error details, **never message text**. Verified on a real run: none of the test messages appeared in either log.
+- **Where it goes from there**: under Anthropic's terms for Claude Desktop, not this project's. If the bridge carries code or data of third parties, opening a project to Desktop sends that material to Anthropic, and doing that is a decision for whoever is responsible for that data.
 
 ---
 

@@ -196,6 +196,39 @@ A pair in the same repo isolates itself **automatically**: the scope is derived 
 
 ---
 
+## Claude Desktop
+
+Claude Desktop has no shell on your machine: in Cowork the agent runs in Anthropic's cloud and reaches the Mac only through tool calls, each capped at 60 seconds. It joins the bridge through `cab-bridge mcp`, a stdio MCP server that Desktop starts on the host. **macOS and Linux only**: on Windows `cab-bridge mcp` refuses to start, because the exclusive identity lock it needs is not available there.
+
+**Install once, for every repository.** Add one entry under `mcpServers` in `claude_desktop_config.json`, with the absolute path of the binary, then quit Desktop (Cmd-Q) and reopen it:
+
+```json
+"cab-bridge": {
+  "command": "/absolute/path/to/cab-bridge",
+  "args": ["mcp"]
+}
+```
+
+The entry names no project. Desktop starts the server with cwd `/`; which project it can reach is decided by the val of that project, from its terminal:
+
+```
+cab-bridge desktop open     Open this project to Claude Desktop, for mcp_grant_ttl_minutes (480 by default)
+cab-bridge desktop status   Is it open, until when, and has a Desktop session joined
+cab-bridge desktop close    Close it now
+```
+
+Desktop joins with its `join` tool (without arguments it lists the projects open to it), appears in `peers` as role `architect`, and can talk **only to a val** of that project. A message from anyone else, from another project, or after the bridge is closed is held back: Desktop is told that something is withheld and why, never what it says.
+
+**Seven tools**: `join`, `next`, `ack`, `read`, `ask`, `tell`, `reply`. As in the CLI, `next` never consumes: `ack` archives a tell or a response, `reply` closes an ask. `next` waits at most `mcp_next_max_wait_seconds` (40 by default) so that a call ends inside Cowork's 60-second cap. A message too large for one result (`mcp_max_result_bytes`, 24 KiB) arrives as a pointer line, and `read` returns it in pieces.
+
+**One surface, many conversations.** Desktop starts one server per surface (chat, Cowork), and every conversation of that surface shares it: the joined project, the `architect` identity and the inbox are the same in all of them. An `ack` in one conversation removes the message from the others, and a message already shown in one arrives in another as a pointer, with a preview and `read`.
+
+**Settings.** The `mcp_*` keys of `config/default.json` can go in `config.json` or, as `CAB_MCP_*` variables, in the `env` of the Desktop entry. A `cab-bridge` older than this feature rejects unknown keys in `config.json` and then fails **every** command, so while an older binary is still on the machine, set them only in the Desktop entry.
+
+What travels to Anthropic and what stays on the host: [PRIVACY.md](./PRIVACY.md) and [SECURITY.md](./SECURITY.md).
+
+---
+
 ## Features
 
 | Feature | cli-agents-bridge | Patil upstream |
@@ -246,6 +279,8 @@ cab-bridge inbox --list|--tidy  Inspect without consuming, or archive what is ha
 cab-bridge register             Lower-level registration (join is the way in)
 cab-bridge connect <peer-id>    Refresh own heartbeat + check a peer is reachable
 cab-bridge notify-watch -- <hook>  Run <hook> when mail arrives, for peers with no native push
+cab-bridge desktop open|close|status  Open this project to Claude Desktop, close it, or say if it is open (a val runs it)
+cab-bridge mcp                  The MCP server Claude Desktop starts (see "Claude Desktop"); not run by hand
 cab-bridge cleanup              Remove own session, or --scope=global
 cab-bridge inspect <id>         Print a session manifest
 cab-bridge migrate-from-patil   Migrate ~/.claude/session-bridge/ sessions to the v2 namespace
@@ -288,6 +323,8 @@ For threat model + security controls see [SECURITY.md](./SECURITY.md). For GDPR 
 - **v0.8.0**: **the mailbox model** — five commands with no flags (`join`/`next`/`ask`/`tell`/`reply`); `next` never consumes and only `reply` archives, one delivery at a time, requeueing whatever arrived later; four explicit message states; cross-repository addressing `<name>@<project>` between orchestrators
 - **v0.9.0**: **the token surface** — an agent-name grammar (one shell word, rejected otherwise, derived reversibly from a directory name); every path and address the bridge prints is rendered as one shell argument by the tool (`peers` `SCOPE` column, `next`'s `fromAddressShellArg`, every remediation) instead of asking the reader to quote it; `register --resume` resumes by identity, not by name; lock errors state facts and no remedy; this README rewritten around the binary and validated black-box; Makefile and CI made as strict as the local gate
 - **v0.10.0** (current): **three platforms** — Windows joins macOS and Linux, with a fifth release archive (`cab-bridge_<version>_windows_amd64.zip`) and a PowerShell install path that was executed rather than written; `windows/arm64` is excluded on purpose, because nobody here can run that artifact. The gate runs on `windows-latest` beside `ubuntu-latest`, and `vet` + `staticcheck` run **once per GOOS** — five seconds that closed a hole as old as the repository, since build constraints hide per-OS files from the analyser. Three product defects came out of that gate: a qualified address that could not resolve on Windows (F-135), a rename that was not atomic there (F-133), and a cross-device branch whose comment promised what the code never did (F-137). Releases are now created as **drafts**: a tag prepares a release instead of publishing one
+
+**On `main`, not yet released**: Claude Desktop joins from Cowork through `cab-bridge mcp` (see [Claude Desktop](#claude-desktop)).
 
 **Next**: attestation of the installed copy against the versioned source, and a black-box check that a fresh agent following this README ends up with a working bridge.
 

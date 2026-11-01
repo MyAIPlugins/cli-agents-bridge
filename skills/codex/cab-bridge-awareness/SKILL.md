@@ -170,7 +170,7 @@ cab-bridge reply "..."              # rispondo a chi ha chiesto; chiude i suoi a
 
 Quindi: ricevi dal VAL, rispondi al VAL. Se pensi che un altro agente debba sapere qualcosa, **dillo al VAL** e sara' lui a girarlo.
 
-**`architect` e' riservato** a Claude Desktop, che entrera' dal connettore MCP — l'help del binario lo dice esplicitamente accanto al ruolo.
+**`architect` e' riservato** a Claude Desktop, che entra dal connettore MCP (F-72, su `main` dal 1/11/2026): l'help del binario lo dice esplicitamente accanto al ruolo. Un critico non gli scrive mai: parla solo col proprio VAL.
 
 **Il verbo porta il tipo**: niente `--type`, niente `--in-reply-to`, nessun id da trascrivere. I destinatari sono **nomi di agente**, che leggi nell'output di `join`. `reply` trova da solo a cosa risponde, e chiudendo archivia.
 

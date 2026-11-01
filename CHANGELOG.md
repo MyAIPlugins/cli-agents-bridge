@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+**Claude Desktop joins the bridge from Cowork** (F-72). Desktop has no shell on the machine: in Cowork the model runs in Anthropic's cloud and calls tools on the host, 60 seconds at most per call. So the way in is a port on the host, not a change to the mailbox: `next`, `reply` and the four message states work exactly as before.
+
+### Added
+- **`cab-bridge mcp`**, a stdio MCP server that Desktop starts from one entry in `claude_desktop_config.json`, the same entry for every repository. It has seven tools: `join`, `next`, `ack`, `read`, `ask`, `tell`, `reply`. Desktop appears in `peers` as role `architect` and talks only to a val. `next` waits at most 40 seconds, so that a call ends inside Cowork's cap. A message too large for one result arrives as a pointer line, and `read` returns it in pieces.
+- **`cab-bridge desktop open|close|status`**: the val of a project opens it to Desktop for `mcp_grant_ttl_minutes` (480 by default), closes it, or asks whether it is open. Nothing is open by default.
+- **Six `mcp_*` settings** in `config/default.json`, each with a `CAB_MCP_*` override.
+
+### Security and privacy
+- Each message is judged when it is shown, not when it arrives: only a val of the same project with an open grant gets its text through. Anything else reaches Desktop as an id and a reason. Errors are sentences chosen by the server, and nothing of a child command's stderr leaves the host. Details, and the limits that remain, in SECURITY.md (*Claude Desktop connector*) and PRIVACY.md, which now names the one flow that leaves the machine.
+
+### How it was found to work
+- Two critics from different families, one on the design and one on the diff, and a gate by the val at every delta. Then a smoke test with the real Desktop in Cowork found three texts that no test could catch. In two fresh conversations out of two, the model read the list of projects backwards and passed the val's name to `join`. The size in a message header was the file's, not the text's. And three texts attributed to *this conversation* state that belongs to the Desktop surface, which every Cowork conversation shares. After the fixes, two fresh conversations out of two joined at the first call.
+- The first merge left `main` red on Linux and Windows, because the branch had never been through CI. Fixed with three test corrections and a constant moved to the only file that uses it, all verified on CI before returning to `main`.
+
+### Known limits
+- **macOS and Linux only**: on Windows `cab-bridge mcp` refuses to start.
+- A binary older than this one rejects the new keys in `config.json` and then fails every command. While an older binary is still in `PATH`, set the `mcp_*` settings as `CAB_MCP_*` in the Desktop entry.
+- A process of the same user that sets a val's `CAB_SESSION_ID` is that val for Desktop: the same-UID limit of the threat model, reproduced by a test.
+
 ## [0.10.0] — 2026-09-12
 
 **Windows is a supported platform now**, and the reason it took a full day is that almost nothing was wrong with the product. The gate had never run on Windows, the linter had never opened a `_windows.go` file, and the release built only darwin and linux — so the port could be verified and still reach nobody. Three product defects came out of it; the rest of the day was spent on the tools that decide whether the product is good.

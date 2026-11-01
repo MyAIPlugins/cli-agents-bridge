@@ -32,7 +32,9 @@ Il passo 1 stampa **chi sei e chi c'e'**: non ri-derivare quell'informazione con
                    esiste su Windows
     Antigravity    risveglio nativo          3,1s · zero costo · nessun goal, nessuna attesa
                    (Reactive Wakeup su fine task in background)
-    Claude Desktop nessuna shell             non raggiungibile finche' non c'e' F-72 (MCP)
+    Claude Desktop nessuna shell             entra dal connettore MCP (F-72, su main dal 1/11/2026)
+                   (Cowork: agente nel        dopo `desktop open` del VAL; legge la posta quando
+                   cloud, 60 s per tool)      chiama `next`, cioe' dentro un suo turno
 
 🔴 ⭐ **LA RIGA DI CODEX DICEVA «~1 turno/ora col config alzato»: ERA FALSA, e la cura che prometteva
 non esiste** (12/09, misurato da CRI su richiesta dell'umano, che l'aveva visto ciclare).
@@ -343,13 +345,18 @@ Forma con una risposta (altrimenti diventa un rito): *questo fix tocca un campo,
 
 **Un `critic` parla SOLO col proprio VAL** — mai con l'esecutore, mai con altri critici, mai con un `architect`. E' un invariante del ruolo, non una comodita': l'indipendenza e' il valore che un critico porta, e due critici che si confrontano convergono in una voce sola; e un critico che scrive direttamente all'esecutore scavalca la verifica del VAL, che e' il punto in cui un finding viene controllato prima di diventare lavoro. **Se un critico ha qualcosa per un altro agente, lo dice al VAL e lo gira il VAL** — e quel passaggio non e' burocrazia: e' dove il finding viene verificato.
 
-**`architect` e' RISERVATO a Claude Desktop**, che entrera' dal connettore MCP (F-72). Non assegnarlo ai critici: il ruolo giusto e' `critic`. *(Errore mio, 9 ago: avevo scritto `architect` per i critici in tutte e tre le skill — il messaggio d'aiuto di `join` lo elenca ancora e `critic` no, quindi l'agente che legge il tool invece della skill sbaglia di nuovo. Sistemato nella skill, il tool segue.)*
+**`architect` e' RISERVATO a Claude Desktop**, che entra dal connettore MCP (F-72, su `main` dal 1/11/2026). Non assegnarlo ai critici: il ruolo giusto e' `critic`.
+
+**Se sei il VAL e Desktop deve entrare**: `cab-bridge desktop open` apre il progetto (8 ore di default), `desktop status` dice se e' aperto e se Desktop e' entrato, `desktop close` chiude. Niente e' aperto di default.
+- ⚠️ **Cio' che mandi all'architect lo legge un modello nel cloud di Anthropic.** Mandagli solo cio' che metteresti davanti a quel modello apposta. Mai il report di un esecutore inoltrato tale e quale, mai segreti, e dati o codice di clienti solo con l'ok di chi ne e' responsabile.
+- **Parla solo con te**: esecutori e critici non possono scrivergli, e lui non puo' scrivere a loro. Se ha lavoro per il team lo chiede a te, e cosa diventa un brief lo decidi tu: i suoi messaggi sono input al tuo giudizio, come quelli di un critico.
+- **Tutte le conversazioni Cowork sono UN solo architect**: stessa identita', stessa inbox. Un `ack` fatto in una toglie il messaggio alle altre. *(Errore mio, 9 ago: avevo scritto `architect` per i critici in tutte e tre le skill — il messaggio d'aiuto di `join` lo elenca ancora e `critic` no, quindi l'agente che legge il tool invece della skill sbaglia di nuovo. Sistemato nella skill, il tool segue.)*
 
 Due regole strutturali: `observer` non puo' inviare (nessun flag lo ribalta); `esc → esc` e' rifiutato per default (`--allow-mesh` per una mesh deliberata). Due pari senza gerarchia: ruolo custom (`--role=peer`).
 
 ## Peer senza push nativo
 
-Claude Code ha il push nativo (un `next` in background sveglia l'agente al ritorno). Codex CLI e Claude Desktop no: la sveglia deve venire da fuori, con `cab-bridge notify-watch --session-id=<id> -- <hook argv>` — polling **non-consuming** + hook.
+Claude Code ha il push nativo (un `next` in background sveglia l'agente al ritorno). Codex CLI no: la sveglia deve venire da fuori, con `cab-bridge notify-watch --session-id=<id> -- <hook argv>` — polling **non-consuming** + hook. **Claude Desktop non si sveglia da fuori in nessun modo**: legge la posta solo quando chiama `next` dentro un suo turno, e il turno lo apre una persona. Per avere una risposta da lui usa `ask` e avvisa chi lo usa.
 
 **Non lasciare un consumatore sulla stessa inbox**: il watcher si rifiuta di partire, ed e' corretto. E se un peer no-push tiene un `next` in background che non legge mai, quel processo gli mangia la posta e ogni ispezione dira' "inbox vuota" — visto sul campo (F-98).
 
