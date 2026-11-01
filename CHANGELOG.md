@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A binary older than this one rejects the new keys in `config.json` and then fails every command. While an older binary is still in `PATH`, set the `mcp_*` settings as `CAB_MCP_*` in the Desktop entry.
 - A process of the same user that sets a val's `CAB_SESSION_ID` is that val for Desktop: the same-UID limit of the threat model, reproduced by a test.
 - `TestMCPSend_*` can time out under heavy load, because its fixture gives the child command 2 seconds (F-153). It fails the same way on the code before this release.
+- **On Windows, a read of a file the bridge owns can be refused for an instant** (`Access is denied`) while another process replaces or removes it (F-154, seen once in six CI runs). It comes from the `Lstat` that precedes the open, not from the open itself. Every reader of the Desktop grant treats the error as closed, never as open; `desktop status` prints it as unreadable. A probe on the Windows runner will tell which state of the file causes it before a fix is chosen.
 
 ## [0.10.0] — 2026-09-12
 
