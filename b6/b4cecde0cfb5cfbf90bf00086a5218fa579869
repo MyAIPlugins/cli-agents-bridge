@@ -1,0 +1,23 @@
+cmd/cab-bridge/next_size_test.go
+  s_ecb5fdcb0207f6::t_449e501b9bb800 1-64
+cmd/cab-bridge/next.go
+  s_ecb5fdcb0207f6::t_458145cd33da41 681
+  s_ecb5fdcb0207f6::t_9696cde9b6994c 143-147
+  s_ecb5fdcb0207f6::t_62b1331a9f5fd8 777-779
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b6b4cecde0cfb5cfbf90bf00086a5218fa579869",
+  "prompts": {},
+  "sessions": {
+    "s_ecb5fdcb0207f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32afad43-c9ed-4676-bf4d-bee1f17ec8c0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
