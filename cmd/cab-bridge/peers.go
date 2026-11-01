@@ -211,6 +211,14 @@ func scopeColumn(peers []peerSummary) map[string]string {
 // way out of an ambiguity (CRI diff-gate P1-2). The remediation was the trap,
 // again, three lines under a comment saying it must not be.
 func scopeLabels(scopes []string) map[string]string {
+	return labelScopes(scopes, func(scope string) string { return scope })
+}
+
+// labelScopes is scopeLabels with the way out of an ambiguity left to the caller: a
+// scope whose basename another scope of the set shares is labelled by whenAmbiguous,
+// every other one by its basename. The CLI answers with the whole path, because a path
+// is what resolves there; a surface that must not print a path answers otherwise.
+func labelScopes(scopes []string, whenAmbiguous func(scope string) string) map[string]string {
 	byBase := map[string]map[string]bool{}
 	for _, s := range scopes {
 		if s == "" {
@@ -230,7 +238,7 @@ func scopeLabels(scopes []string) map[string]string {
 		}
 		base := filepath.Base(s)
 		if len(byBase[base]) > 1 {
-			labels[s] = s // ambiguous within this set: only the whole path resolves
+			labels[s] = whenAmbiguous(s) // ambiguous within this set: the basename alone resolves nothing
 			continue
 		}
 		labels[s] = base

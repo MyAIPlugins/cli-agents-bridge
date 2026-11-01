@@ -36,7 +36,8 @@ const (
 	clientPrefixCowork    = "local-agent-mode"
 	virtualProjectDirName = ".cab-desktop"
 	architectNamePrefix   = "ARC"
-	scopeTagBytes         = 2 // hex-encoded: 4 characters
+	scopeTagChars         = 4  // hex characters of the scope's hash that tell two projects of one name apart
+	maxScopeTagChars      = 64 // all of a sha256 in hex: the bound of the search for a tag that is long enough
 )
 
 // surfaceOf names the surface from the client's own account of itself. An unknown
@@ -144,7 +145,31 @@ func (a *mcpApp) projectFor(named string) (*mcpProject, error) {
 			return p, nil
 		}
 	}
+	if p, err := a.joinedUnderTheListsName(all, named); p != nil || err != nil {
+		return p, err
+	}
 	return nil, mcp.Refusef("project %q is not joined on this Claude Desktop surface (a join is shared by all its conversations): call `join` with it first", named)
+}
+
+// joinedUnderTheListsName finds a joined project by the label `join` prints for it NOW,
+// which is not always the one it was joined under: a second project of the same
+// basename that has opened since turns "demo" into "demo-3fa2" in the list. The name
+// the list prints must reach the project it names.
+func (a *mcpApp) joinedUnderTheListsName(joined []*mcpProject, named string) (*mcpProject, error) {
+	open, err := a.openProjects()
+	if err != nil {
+		return nil, err
+	}
+	op, ok := pickProject(open, named)
+	if !ok {
+		return nil, nil
+	}
+	for _, p := range joined {
+		if session.SameProject(p.scope, op.scope) {
+			return p, nil
+		}
+	}
+	return nil, nil
 }
 
 // sessionManifests reads every manifest in the data dir. A session that cannot be
@@ -222,7 +247,16 @@ func (a *mcpApp) openProjects() ([]openProject, error) {
 		scopes = append(scopes, s)
 	}
 	sort.Strings(scopes)
-	labels := scopeLabels(scopes)
+	// The projects already joined take part in the naming even when their bridge is
+	// closed now: a label must not be one that a joined project already answers to.
+	named := append([]string(nil), scopes...)
+	for _, p := range a.joinedProjects() {
+		named = append(named, p.scope)
+	}
+	labels, err := projectLabels(named)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]openProject, 0, len(scopes))
 	for _, s := range scopes {
 		p := byScope[s]
@@ -249,9 +283,41 @@ func (a *mcpApp) grantingVals(scope string) ([]openVal, error) {
 }
 
 // scopeTag is four hex characters that tell two projects of the same name apart.
-func scopeTag(scope string) string {
+func scopeTag(scope string) string { return scopeTagOf(scope, scopeTagChars) }
+
+// scopeTagOf is the first chars hex characters of the hash of the scope.
+func scopeTagOf(scope string, chars int) string {
 	sum := sha256.Sum256([]byte(scope))
-	return hex.EncodeToString(sum[:scopeTagBytes])
+	return hex.EncodeToString(sum[:])[:chars]
+}
+
+// projectLabels names each project for the model. A project is its basename; two that
+// share one are the basename with a tag of the hash of the path (`demo-3fa2`), so the
+// model never reads a path, which can hold a user's or a client's name. A name it is
+// given is a name it can pass back, so the labels must be distinct: the tag grows until
+// they are (two paths can share four hex characters, or a tagged label can be another
+// project's basename), up to the whole hash.
+func projectLabels(scopes []string) (map[string]string, error) {
+	for chars := scopeTagChars; chars <= maxScopeTagChars; chars++ {
+		labels := labelScopes(scopes, func(scope string) string {
+			return filepath.Base(scope) + "-" + scopeTagOf(scope, chars)
+		})
+		if distinctLabels(labels) {
+			return labels, nil
+		}
+	}
+	return nil, fmt.Errorf("could not give %d projects distinct names", len(scopes))
+}
+
+func distinctLabels(labels map[string]string) bool {
+	seen := make(map[string]bool, len(labels))
+	for _, l := range labels {
+		if seen[l] {
+			return false
+		}
+		seen[l] = true
+	}
+	return true
 }
 
 // close ends every identity this process holds: the sessions are marked done (only
