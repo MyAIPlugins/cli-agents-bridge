@@ -16,8 +16,9 @@
 #     and with it every overwritten file is named. A difference from the repo does not
 #     say which side is newer, so each install leaves a record of what it installed
 #     (.cab-installed, in the skill's folder): a copy that still matches its record is
-#     only behind the repo and is updated; one that does not match it was edited; one
-#     with no record (never installed by this, or put there by hand) is taken as edited;
+#     only behind the repo and is updated; one that does not match it was edited, or has
+#     a file added by hand that the repo now has with other content; one with no record
+#     (never installed by this, or put there by hand) is taken as edited;
 #   - it never writes through a symbolic link: a skill's folder, or anything inside the
 #     copy, that is a link is refused with its path (FORCE does not override it), and so
 #     is a link inside the repo's skill. The `skills` folder of a runtime may itself be a
@@ -112,8 +113,12 @@ write_record() {
 	mv -f "$2/$RECORD.tmp" "$2/$RECORD"
 }
 
-# The files of an installed copy that are no longer what its record says, one per line.
-# A file the record lists and the copy no longer has is one of them.
+# What was done to an installed copy ($1) since its record was written, one finding per
+# line, against the repo's skill ($2):
+#   C file   the record lists it and it is changed, or gone
+#   A file   somebody added it, and the repo has a file of that name now with other
+#            content: copying would replace it
+# A file only in the copy, that the repo does not have, is neither: it is left alone.
 edited_since_install() {
 	while IFS= read -r line; do
 		crc=${line%% *}
@@ -121,9 +126,15 @@ edited_since_install() {
 		size=${rest%% *}
 		path=${rest#* }
 		if [ ! -f "$1/$path" ] || [ "$(cksum <"$1/$path")" != "$crc $size" ]; then
-			echo "$path"
+			echo "C $path"
 		fi
 	done <"$1/$RECORD"
+	recorded=$(sed 's/^[0-9]* [0-9]* //' "$1/$RECORD")
+	files_of "$1" | while IFS= read -r f; do
+		if [ -e "$2/$f" ] && ! printf '%s\n' "$recorded" | grep -qxF -- "$f" && ! cmp -s "$1/$f" "$2/$f"; then
+			echo "A $f"
+		fi
+	done
 }
 
 # ok       the copy is the repo's (files only in the copy do not count)
@@ -135,20 +146,24 @@ status_of() {
 		echo missing
 	elif [ -z "$(compare "$1" "$2" | grep -v '^X ' || true)" ]; then
 		echo ok
-	elif [ -f "$2/$RECORD" ] && [ -z "$(edited_since_install "$2")" ]; then
+	elif [ -f "$2/$RECORD" ] && [ -z "$(edited_since_install "$2" "$1")" ]; then
 		echo behind
 	else
 		echo edited
 	fi
 }
 
+# $1 is the installed copy, $2 the repo's skill.
 show_why_edited() {
 	if [ ! -f "$1/$RECORD" ]; then
 		echo "    no record of the last install, so the copy is taken as edited"
 		return 0
 	fi
-	edited_since_install "$1" | while IFS= read -r f; do
-		printf '    changed since the last install: %s\n' "$f"
+	edited_since_install "$1" "$2" | while IFS= read -r line; do
+		case $line in
+		C\ *) printf '    changed since the last install: %s\n' "${line#? }" ;;
+		A\ *) printf '    added by hand, and the repo now has another one: %s\n' "${line#? }" ;;
+		esac
 	done
 }
 
@@ -244,7 +259,7 @@ report() {
 		;;
 	edited)
 		printf 'different  %s/%s  (locally modified; %s)\n' "$2" "$3" "$5"
-		show_why_edited "$5"
+		show_why_edited "$5" "$4"
 		show_findings "$4" "$5"
 		bad=1
 		;;
@@ -278,7 +293,7 @@ plan() {
 			echo "refused: an installed copy was edited since the last install, and copying would overwrite the edit. Nothing was copied." >&2
 		fi
 		printf '  %s/%s  (%s)\n' "$2" "$3" "$5" >&2
-		show_why_edited "$5" >&2
+		show_why_edited "$5" "$4" >&2
 		show_findings "$4" "$5" >&2
 		;;
 	manual) desktop=$((desktop + 1)) ;;

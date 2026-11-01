@@ -377,6 +377,58 @@ func TestMakefile_Skills(t *testing.T) {
 		assert.NotEqual(t, 0, code, out)
 	})
 
+	// A file somebody ADDED to the copy is not in its record. When the repo then acquires
+	// a file of the same name, copying would replace the one written by hand: that is an
+	// edit, and it is lost without FORCE unless the record's silence about it counts.
+	t.Run("a file added by hand that the repo then acquires with other content is an edit", func(t *testing.T) {
+		fx := newSkillsFixture(t)
+		install(t, fx)
+		write(t, installed(fx, ".claude", "alpha", "notes.md"), "my notes\n")
+		write(t, repoSkill(fx, "notes.md"), "the repo's notes\n")
+
+		out, code := fx.make(t, repoRoot, "skills-check")
+		assert.NotEqual(t, 0, code, out)
+		assert.Contains(t, out, "different  claude/alpha  (locally modified")
+		assert.NotContains(t, out, "behind the repo")
+		assert.Contains(t, out, "added by hand, and the repo now has another one: notes.md")
+
+		out, code = fx.make(t, repoRoot, "install-skills")
+		assert.NotEqual(t, 0, code, out)
+		assert.Contains(t, out, "added by hand, and the repo now has another one: notes.md")
+		assert.Equal(t, "my notes\n", readFile(t, installed(fx, ".claude", "alpha", "notes.md")), "the file written by hand is still there")
+
+		out = install(t, fx, "FORCE=1")
+		assert.Contains(t, out, "overwrote  claude/alpha: notes.md")
+		assert.Equal(t, "the repo's notes\n", readFile(t, installed(fx, ".claude", "alpha", "notes.md")))
+	})
+
+	t.Run("a file added by hand that the repo does not have stays, and does not make the copy edited", func(t *testing.T) {
+		fx := newSkillsFixture(t)
+		install(t, fx)
+		write(t, installed(fx, ".claude", "alpha", "mine.md"), "only mine\n")
+		write(t, repoSkill(fx, "SKILL.md"), "alpha for claude, newer\n")
+
+		out := install(t, fx)
+		assert.Contains(t, out, "updated    claude/alpha: SKILL.md", "only behind: no FORCE")
+		assert.Contains(t, out, "only in the installed copy, left alone: mine.md")
+		assert.Equal(t, "only mine\n", readFile(t, installed(fx, ".claude", "alpha", "mine.md")))
+	})
+
+	t.Run("a file added by hand that is the very file the repo acquires is nothing to lose", func(t *testing.T) {
+		fx := newSkillsFixture(t)
+		install(t, fx)
+		write(t, installed(fx, ".claude", "alpha", "notes.md"), "the repo's notes\n")
+		write(t, repoSkill(fx, "notes.md"), "the repo's notes\n")
+		write(t, repoSkill(fx, "SKILL.md"), "alpha for claude, newer\n")
+
+		out, code := fx.make(t, repoRoot, "skills-check")
+		assert.NotEqual(t, 0, code, out)
+		assert.Contains(t, out, "behind the repo")
+		out = install(t, fx)
+		assert.Contains(t, out, "updated    claude/alpha: SKILL.md")
+		assert.NotContains(t, out, "overwrote")
+	})
+
 	// "It touches only the folders of the skills the repo has" has to hold through a link
 	// too: cp follows a symbolic link in the destination and writes into its target.
 	// A target is planted outside everything the install may touch, and each case checks
