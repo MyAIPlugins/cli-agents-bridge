@@ -4,7 +4,7 @@ Robust multi-peer IPC bridge between CLI agent sessions (Claude Code, Codex, Aid
 
 Fork of [`PatilShreyas/claude-code-session-bridge`](https://github.com/PatilShreyas/claude-code-session-bridge) v0.1.0 (MIT) with 9 confirmed upstream bugs fixed structurally, role-based routing, namespace-isolated storage, security baseline, and a single Go binary distribution.
 
-**Status**: v0.10.0 (shipped). See [CHANGELOG.md](./CHANGELOG.md) and [Releases](https://github.com/MyAIPlugins/cli-agents-bridge/releases) for details.
+**Status**: v0.11.0 (shipped). See [CHANGELOG.md](./CHANGELOG.md) and [Releases](https://github.com/MyAIPlugins/cli-agents-bridge/releases) for details.
 
 ---
 
@@ -108,6 +108,17 @@ From a Claude Code session:
 ```
 
 This installs the `bridge-workflow` skill and the `/cli-agents-bridge:cab` command. Both call the binary you installed in step 1 — the plugin alone is not enough.
+
+### 4. Install the agent skills (optional, from a clone, macOS and Linux)
+
+`skills/` holds the role skills for each runtime: the VAL and critic skills for Claude Code and Codex, the Antigravity ones, and `arc-bridge` for Claude Desktop. From a clone of this repository:
+
+```
+make skills-check      # what differs between the repository and your installed copies
+make install-skills    # install them into ~/.claude/skills, ~/.codex/skills, ~/.gemini/config/skills
+```
+
+`install-skills` touches only the skills the repository has. It refuses to overwrite a copy that was edited by hand unless you pass `FORCE=1`, and it never deletes files you added or writes through a symbolic link. A copy that is only behind the repository is updated without `FORCE`. Claude Desktop takes its skill as a zip: `install-skills` builds `bin/arc-bridge.zip`, and you upload it under Customize > Skills.
 
 ---
 
@@ -322,9 +333,8 @@ For threat model + security controls see [SECURITY.md](./SECURITY.md). For GDPR 
 - **v0.7.0**: feedback-driven hardening from real multi-agent runs
 - **v0.8.0**: **the mailbox model** — five commands with no flags (`join`/`next`/`ask`/`tell`/`reply`); `next` never consumes and only `reply` archives, one delivery at a time, requeueing whatever arrived later; four explicit message states; cross-repository addressing `<name>@<project>` between orchestrators
 - **v0.9.0**: **the token surface** — an agent-name grammar (one shell word, rejected otherwise, derived reversibly from a directory name); every path and address the bridge prints is rendered as one shell argument by the tool (`peers` `SCOPE` column, `next`'s `fromAddressShellArg`, every remediation) instead of asking the reader to quote it; `register --resume` resumes by identity, not by name; lock errors state facts and no remedy; this README rewritten around the binary and validated black-box; Makefile and CI made as strict as the local gate
-- **v0.10.0** (current): **three platforms** — Windows joins macOS and Linux, with a fifth release archive (`cab-bridge_<version>_windows_amd64.zip`) and a PowerShell install path that was executed rather than written; `windows/arm64` is excluded on purpose, because nobody here can run that artifact. The gate runs on `windows-latest` beside `ubuntu-latest`, and `vet` + `staticcheck` run **once per GOOS** — five seconds that closed a hole as old as the repository, since build constraints hide per-OS files from the analyser. Three product defects came out of that gate: a qualified address that could not resolve on Windows (F-135), a rename that was not atomic there (F-133), and a cross-device branch whose comment promised what the code never did (F-137). Releases are now created as **drafts**: a tag prepares a release instead of publishing one
-
-**On `main`, not yet released**: Claude Desktop joins from Cowork through `cab-bridge mcp` (see [Claude Desktop](#claude-desktop)).
+- **v0.10.0**: **three platforms** — Windows joins macOS and Linux, with a fifth release archive (`cab-bridge_<version>_windows_amd64.zip`) and a PowerShell install path that was executed rather than written; `windows/arm64` is excluded on purpose, because nobody here can run that artifact. The gate runs on `windows-latest` beside `ubuntu-latest`, and `vet` + `staticcheck` run **once per GOOS** — five seconds that closed a hole as old as the repository, since build constraints hide per-OS files from the analyser. Three product defects came out of that gate: a qualified address that could not resolve on Windows (F-135), a rename that was not atomic there (F-133), and a cross-device branch whose comment promised what the code never did (F-137). Releases are now created as **drafts**: a tag prepares a release instead of publishing one
+- **v0.11.0** (current): **Claude Desktop joins the bridge** — from Cowork, through `cab-bridge mcp`, opened per project by the val with `cab-bridge desktop open` and judged message by message (see [Claude Desktop](#claude-desktop)). The agent skills are in English, one copy in `skills/`, installed with `make install-skills`. `next`'s JSON `bytes` now counts the text, not the file.
 
 **Next**: attestation of the installed copy against the versioned source, and a black-box check that a fresh agent following this README ends up with a working bridge.
 

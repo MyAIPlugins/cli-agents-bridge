@@ -133,6 +133,7 @@ Two rules are invoked by name in source comments; they constrain the code, so th
 
 - **No implicit fallbacks.** A fallback must be explicit in the code, documented, and tested. Silent degradation is a defect: when an operation cannot do what it says, it returns an error rather than quietly doing something else. Cited by `internal/message/validate.go`, `internal/routing/role.go`, `internal/transport/fs/atomic.go`, `internal/transport/fs/process.go`.
 - **Zero runtime dependencies.** The bridge ships as a single static Go binary: no jq, no Python, no Node, no cgo. A design that needs a runtime dependency is rejected or reworked, not shipped with an install note.
+- **Shell only as Makefile glue, with one named exception.** Product logic is Go. `scripts/skills.sh`, behind `make install-skills` and `make skills-check`, is a development tool written in POSIX `sh`: a double loop over runtimes and skills with per-file comparisons does not fit in recipe lines without the quoting errors this repository has already paid for (paths with spaces). It never ships in the binary, it is tested from `tests/integration/makefile_skills_test.go` under both bash and dash, and it is not for Windows. A second script needs the same justification, written here.
 
 ---
 

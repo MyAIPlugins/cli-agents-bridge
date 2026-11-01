@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.11.0] — 2026-11-01
 
 **Claude Desktop joins the bridge from Cowork** (F-72). Desktop has no shell on the machine: in Cowork the model runs in Anthropic's cloud and calls tools on the host, 60 seconds at most per call. So the way in is a port on the host, not a change to the mailbox: `next`, `reply` and the four message states work exactly as before.
 
@@ -13,9 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`cab-bridge mcp`**, a stdio MCP server that Desktop starts from one entry in `claude_desktop_config.json`, the same entry for every repository. It has seven tools: `join`, `next`, `ack`, `read`, `ask`, `tell`, `reply`. Desktop appears in `peers` as role `architect` and talks only to a val. `next` waits at most 40 seconds, so that a call ends inside Cowork's cap. A message too large for one result arrives as a pointer line, and `read` returns it in pieces.
 - **`cab-bridge desktop open|close|status`**: the val of a project opens it to Desktop for `mcp_grant_ttl_minutes` (480 by default), closes it, or asks whether it is open. Nothing is open by default.
 - **Six `mcp_*` settings** in `config/default.json`, each with a `CAB_MCP_*` override.
+- **The agent skills, in English, one copy** (`skills/`): the VAL and critic skills for Claude Code and Codex, the Antigravity skills, and the new `arc-bridge`, the role of Claude Desktop in a bridge. Before the translation the repository copies and the installed ones had drifted apart in both directions; they were aligned first, and a critic compared every translated line with the Italian original.
+- **`make install-skills` and `make skills-check`** (macOS and Linux). `install-skills` copies only the skills the repository has, and never overwrites a copy edited by hand without `FORCE=1`. Each install writes a record (`.cab-installed`), so a copy that is only behind the repository is updated without `FORCE`. Files added by hand are never deleted, and they count as an edit if the repository later gets a file with the same name. Symbolic links inside a skill are refused, even with `FORCE=1`. For Claude Desktop it builds `bin/arc-bridge.zip` to upload.
+
+### Changed
+- **`bytes` in the JSON of `next` counts the text, not the file** (F-151). It was the size of the message file, envelope included: a 14-byte text said 316. Now it is the UTF-8 length of `content`, the same unit as the `[N B]` the CLI prints, also when `content` is omitted for an oversize message. Same name, type and presence; the value is always lower than or equal to the old one. Anyone sizing a read of `bodyFile` from it would now underestimate: nothing in the repository does.
+- **Two open projects with the same folder name are told apart by a tag, never by their path** (F-152). The label becomes `repo-3fa2`, and the tag grows if two tags collide. A project already joined keeps counting when the other is named, even with its bridge closed. Before, a twin opened later could take the joined project's name, and an `ask` or `tell` from Desktop could reach the wrong val.
 
 ### Security and privacy
-- Each message is judged when it is shown, not when it arrives: only a val of the same project with an open grant gets its text through. Anything else reaches Desktop as an id and a reason. Errors are sentences chosen by the server, and nothing of a child command's stderr leaves the host. Details, and the limits that remain, in SECURITY.md (*Claude Desktop connector*) and PRIVACY.md, which now names the one flow that leaves the machine.
+- Each message is judged when it is shown, not when it arrives: only a val of the same project with an open grant gets its text through. Anything else reaches Desktop as an id and a reason. Errors are sentences chosen by the server, and nothing of a child command's stderr leaves the host. A test on the sources keeps every error out of `Refuse` and `Refusef` (F-152), and argument errors name the caller's key instead of quoting the decoder. Details, and the limits that remain, in SECURITY.md (*Claude Desktop connector*) and PRIVACY.md, which now names the one flow that leaves the machine.
 
 ### How it was found to work
 - Two critics from different families, one on the design and one on the diff, and a gate by the val at every delta. Then a smoke test with the real Desktop in Cowork found three texts that no test could catch. In two fresh conversations out of two, the model read the list of projects backwards and passed the val's name to `join`. The size in a message header was the file's, not the text's. And three texts attributed to *this conversation* state that belongs to the Desktop surface, which every Cowork conversation shares. After the fixes, two fresh conversations out of two joined at the first call.
@@ -25,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **macOS and Linux only**: on Windows `cab-bridge mcp` refuses to start.
 - A binary older than this one rejects the new keys in `config.json` and then fails every command. While an older binary is still in `PATH`, set the `mcp_*` settings as `CAB_MCP_*` in the Desktop entry.
 - A process of the same user that sets a val's `CAB_SESSION_ID` is that val for Desktop: the same-UID limit of the threat model, reproduced by a test.
+- `TestMCPSend_*` can time out under heavy load, because its fixture gives the child command 2 seconds (F-153). It fails the same way on the code before this release.
 
 ## [0.10.0] — 2026-09-12
 
