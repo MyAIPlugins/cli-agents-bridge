@@ -1,0 +1,20 @@
+internal/session/zz_probe_desktopgrant_windows_test.go
+  s_ecb5fdcb0207f6::t_0d8186ca8f589a 17,54-58,105,113,116,140-142
+  s_ecb5fdcb0207f6::t_b6dda8cd8c84be 1-16,18-53,59-104,106-112,114-115,117-139,143-236
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "42ff714106a5dd49ad6f33350c8bf37014b21a7e",
+  "prompts": {},
+  "sessions": {
+    "s_ecb5fdcb0207f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32afad43-c9ed-4676-bf4d-bee1f17ec8c0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
