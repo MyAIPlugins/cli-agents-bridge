@@ -71,6 +71,14 @@ func Refuse(text string) *ToolError { return &ToolError{text: text} }
 
 // Refusef is Refuse with a format. It has no %w: the text it builds is a sentence of
 // its own, and wrapping another error in it is exactly what it exists to prevent.
+//
+// An error must not be an argument either, with %v or any other verb: that copies its
+// text, a path included, into what the model reads. The signature stays `...any` so
+// that `go vet` keeps checking each format against its arguments, which a narrower
+// signature would stop it doing; what refuses an error is
+// tests/integration/refusef_test.go, which type-checks every call in the module and
+// fails on an argument that is not a string or an integer, or that is, or is made from,
+// an error. It is a test and not the compiler: it runs with `go test ./...`.
 func Refusef(format string, args ...any) *ToolError {
 	return &ToolError{text: fmt.Sprintf(format, args...)}
 }
@@ -140,8 +148,7 @@ func DecodeArgs(raw json.RawMessage, dst any) error {
 	dec := json.NewDecoder(bytes.NewReader(trimmed))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
-		// The decoder's words name the caller's own keys and Go types, nothing else.
-		return Refusef("invalid arguments: %v", err)
+		return refuseArgs(err)
 	}
 	if dec.More() {
 		return Refuse("invalid arguments: trailing data after the object")
