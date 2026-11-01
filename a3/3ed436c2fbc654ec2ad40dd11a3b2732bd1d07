@@ -1,0 +1,26 @@
+internal/mcp/protocol.go
+  s_ecb5fdcb0207f6::t_2be0cce116e69f 69-72,82-85
+cmd/cab-bridge/mcp_join.go
+  s_ecb5fdcb0207f6::t_3ead7d0a5260f6 172-177,184
+tests/integration/refuse_test.go
+  s_ecb5fdcb0207f6::t_9a47f4ac2e5763 1-218,221-222,224-232,237,249-252,270-304,317-337,339-343,345-347
+  s_ecb5fdcb0207f6::t_fec32d7edd5a8d 253-268,306-316,338
+  s_ecb5fdcb0207f6::t_2beb5f028607dc 219-220,223,233-236,238-248,269,344
+  s_ecb5fdcb0207f6::t_3ead7d0a5260f6 305
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a33ed436c2fbc654ec2ad40dd11a3b2732bd1d07",
+  "prompts": {},
+  "sessions": {
+    "s_ecb5fdcb0207f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32afad43-c9ed-4676-bf4d-bee1f17ec8c0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
