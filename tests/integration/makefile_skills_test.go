@@ -377,6 +377,121 @@ func TestMakefile_Skills(t *testing.T) {
 		assert.NotEqual(t, 0, code, out)
 	})
 
+	// "It touches only the folders of the skills the repo has" has to hold through a link
+	// too: cp follows a symbolic link in the destination and writes into its target.
+	// A target is planted outside everything the install may touch, and each case checks
+	// it is exactly as it was, with and without FORCE=1.
+	outside := func(t *testing.T) (dir string, before map[string]string) {
+		t.Helper()
+		dir = filepath.Join(t.TempDir(), "somewhere else")
+		write(t, filepath.Join(dir, "keep.md"), "not the install's to touch\n")
+		write(t, filepath.Join(dir, "SKILL.md"), "not the install's either\n")
+		return dir, tree(t, dir)
+	}
+	refusedThroughLink := func(t *testing.T, fx skillsFixture, link string, elsewhere string, before map[string]string) {
+		t.Helper()
+		for _, extra := range [][]string{nil, {"FORCE=1"}} {
+			out, code := fx.make(t, repoRoot, "install-skills", extra...)
+			assert.NotEqual(t, 0, code, "%v: %s", extra, out)
+			assert.Contains(t, out, "refused", "%v", extra)
+			assert.Contains(t, out, link, "the path of the link is named: %v", extra)
+			assert.Equal(t, before, tree(t, elsewhere), "nothing was written through it: %v", extra)
+			assert.NoDirExists(t, filepath.Join(fx.home, ".codex", "skills", "alpha"), "and nothing else was copied: %v", extra)
+		}
+		out, code := fx.make(t, repoRoot, "skills-check")
+		assert.NotEqual(t, 0, code, out)
+		assert.Contains(t, out, "linked     ")
+		assert.Contains(t, out, link)
+		assert.Equal(t, before, tree(t, elsewhere), "a check does not read through it either")
+	}
+
+	t.Run("a skill folder that is a symbolic link is refused, with or without FORCE", func(t *testing.T) {
+		fx := newSkillsFixture(t)
+		elsewhere, before := outside(t)
+		link := filepath.Join(fx.home, ".claude", "skills", "alpha")
+		require.NoError(t, os.Symlink(elsewhere, link))
+		refusedThroughLink(t, fx, link, elsewhere, before)
+	})
+
+	t.Run("a check where only a link is wrong still exits non-zero", func(t *testing.T) {
+		fx := newSkillsFixture(t)
+		install(t, fx)
+		out, code := fx.make(t, repoRoot, "skills-check")
+		require.Equal(t, 0, code, "the premise: everything is ok: %s", out)
+		elsewhere, _ := outside(t)
+		copyOfAlpha := filepath.Join(fx.home, ".claude", "skills", "alpha")
+		require.NoError(t, os.RemoveAll(copyOfAlpha))
+		require.NoError(t, os.Symlink(elsewhere, copyOfAlpha))
+
+		out, code = fx.make(t, repoRoot, "skills-check")
+		assert.NotEqual(t, 0, code, out)
+		assert.Contains(t, out, "linked     claude/alpha")
+	})
+
+	t.Run("a dangling link where the skill folder should be is refused, not created through", func(t *testing.T) {
+		fx := newSkillsFixture(t)
+		gone := filepath.Join(t.TempDir(), "not there")
+		link := filepath.Join(fx.home, ".claude", "skills", "alpha")
+		require.NoError(t, os.Symlink(gone, link))
+		out, code := fx.make(t, repoRoot, "install-skills", "FORCE=1")
+		assert.NotEqual(t, 0, code, out)
+		assert.Contains(t, out, "symbolic link", "it is the link that is named, not an accident of mkdir")
+		assert.Contains(t, out, link)
+		assert.NoDirExists(t, gone, "the target of the link was not created")
+	})
+
+	t.Run("a symbolic link in a skill for Claude Desktop is refused before it is zipped", func(t *testing.T) {
+		fx := newSkillsFixture(t).withDesktopSkill(t)
+		elsewhere, before := outside(t)
+		link := filepath.Join(fx.skills, "claude-desktop", "gamma", "outside.md")
+		require.NoError(t, os.Symlink(filepath.Join(elsewhere, "keep.md"), link))
+		out, code := fx.make(t, repoRoot, "install-skills")
+		assert.NotEqual(t, 0, code, out)
+		assert.Contains(t, out, link)
+		assert.NoFileExists(t, filepath.Join(fx.bin, "gamma.zip"))
+		assert.Equal(t, before, tree(t, elsewhere))
+	})
+
+	t.Run("a file inside the installed copy that is a symbolic link is refused", func(t *testing.T) {
+		fx := newSkillsFixture(t)
+		elsewhere, before := outside(t)
+		write(t, installed(fx, ".claude", "alpha", "refs/guide.md"), "guide\n")
+		link := installed(fx, ".claude", "alpha", "SKILL.md")
+		require.NoError(t, os.Symlink(filepath.Join(elsewhere, "SKILL.md"), link))
+		refusedThroughLink(t, fx, link, elsewhere, before)
+	})
+
+	t.Run("a folder inside the installed copy that is a symbolic link is refused", func(t *testing.T) {
+		fx := newSkillsFixture(t)
+		elsewhere, before := outside(t)
+		write(t, installed(fx, ".claude", "alpha", "SKILL.md"), "alpha for claude\n")
+		link := installed(fx, ".claude", "alpha", "refs")
+		require.NoError(t, os.Symlink(elsewhere, link))
+		refusedThroughLink(t, fx, link, elsewhere, before)
+	})
+
+	t.Run("a symbolic link in the repo's own skill is refused too", func(t *testing.T) {
+		fx := newSkillsFixture(t)
+		elsewhere, before := outside(t)
+		link := repoSkill(fx, "refs/linked.md")
+		require.NoError(t, os.Symlink(filepath.Join(elsewhere, "keep.md"), link))
+		refusedThroughLink(t, fx, link, elsewhere, before)
+		assert.NoDirExists(t, filepath.Join(fx.home, ".claude", "skills", "alpha"))
+	})
+
+	t.Run("the skills folder of a runtime being a link is the user's arrangement and works", func(t *testing.T) {
+		fx := newSkillsFixture(t)
+		dotfiles := filepath.Join(t.TempDir(), "dotfiles", "skills")
+		write(t, filepath.Join(dotfiles, "personal", "SKILL.md"), "the user's own\n")
+		require.NoError(t, os.RemoveAll(filepath.Join(fx.home, ".claude", "skills")))
+		require.NoError(t, os.Symlink(dotfiles, filepath.Join(fx.home, ".claude", "skills")))
+
+		out := install(t, fx)
+		assert.Contains(t, out, "installed  claude/alpha")
+		assert.Equal(t, "alpha for claude\n", readFile(t, filepath.Join(dotfiles, "alpha", "SKILL.md")), "under the link, in the skill's own folder")
+		assert.Equal(t, "the user's own\n", readFile(t, filepath.Join(dotfiles, "personal", "SKILL.md")))
+	})
+
 	t.Run("the record is no part of any comparison and is never named as an extra", func(t *testing.T) {
 		fx := newSkillsFixture(t)
 		out := install(t, fx)

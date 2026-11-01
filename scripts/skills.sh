@@ -18,6 +18,10 @@
 #     (.cab-installed, in the skill's folder): a copy that still matches its record is
 #     only behind the repo and is updated; one that does not match it was edited; one
 #     with no record (never installed by this, or put there by hand) is taken as edited;
+#   - it never writes through a symbolic link: a skill's folder, or anything inside the
+#     copy, that is a link is refused with its path (FORCE does not override it), and so
+#     is a link inside the repo's skill. The `skills` folder of a runtime may itself be a
+#     link: that is the user's own arrangement, and what is under it is the skill's folder;
 #   - all or nothing: if one copy would be refused, no skill is copied;
 #   - a runtime that is not on this machine (no ~/.codex) is skipped, with a line.
 #
@@ -59,6 +63,17 @@ runtime_root() {
 # Claude Desktop has no folder to copy into: it takes a zip uploaded by hand.
 installed_copy() {
 	echo "$(runtime_root "$1")/skills/$2"
+}
+
+# Every symbolic link at $1 or inside it, one path per line. A link is neither followed
+# nor looked inside.
+links_in() {
+	if [ -L "$1" ]; then
+		echo "$1"
+	elif [ -d "$1" ]; then
+		find "$1" -type l
+	fi
+	return 0
 }
 
 # The files of a skill, as paths relative to its folder, sorted. The record is not one.
@@ -155,8 +170,9 @@ show_extras() {
 }
 
 # Calls $1 for every skill of the repo with: status runtime name source installed-copy.
-# The status is skipped (the runtime is not here), manual (Claude Desktop), or what
-# status_of says.
+# The status is skipped (the runtime is not here), manual (Claude Desktop), linked (a
+# symbolic link in the repo's skill or in the installed copy; the sixth argument lists
+# them), or what status_of says.
 each_skill() {
 	for rdir in "$skills_dir"/*/; do
 		[ -d "$rdir" ] || continue
@@ -173,7 +189,12 @@ each_skill() {
 			src=${sdir%/}
 			name=$(basename "$src")
 			if [ "$runtime" = claude-desktop ]; then
-				"$1" manual "$runtime" "$name" "$src" ""
+				links=$(links_in "$src")
+				if [ -n "$links" ]; then
+					"$1" linked "$runtime" "$name" "$src" "" "$links"
+				else
+					"$1" manual "$runtime" "$name" "$src" ""
+				fi
 				continue
 			fi
 			if [ ! -d "$(runtime_root "$runtime")" ]; then
@@ -181,6 +202,11 @@ each_skill() {
 				continue
 			fi
 			dst=$(installed_copy "$runtime" "$name")
+			links=$(links_in "$src"; links_in "$dst")
+			if [ -n "$links" ]; then
+				"$1" linked "$runtime" "$name" "$src" "$dst" "$links"
+				continue
+			fi
 			"$1" "$(status_of "$src" "$dst")" "$runtime" "$name" "$src" "$dst"
 		done
 	done
@@ -206,6 +232,11 @@ report() {
 		printf 'missing    %s/%s  (%s)\n' "$2" "$3" "$5"
 		bad=1
 		;;
+	linked)
+		printf 'linked     %s/%s  (a symbolic link: nothing is read or written through it)\n' "$2" "$3"
+		printf '    %s\n' "$6"
+		bad=1
+		;;
 	behind)
 		printf 'different  %s/%s  (behind the repo; %s)\n' "$2" "$3" "$5"
 		show_findings "$4" "$5"
@@ -229,8 +260,17 @@ fi
 
 conflicts=0
 desktop=0
+linked=0
 plan() {
 	case $1 in
+	linked)
+		linked=$((linked + 1))
+		if [ "$linked" -eq 1 ]; then
+			echo "refused: a symbolic link is in the way, and copying would write through it, outside the folder of the skill. FORCE does not change that. Nothing was copied." >&2
+		fi
+		printf '  %s/%s\n' "$2" "$3" >&2
+		printf '    %s\n' "$6" >&2
+		;;
 	edited)
 		conflicts=$((conflicts + 1))
 		[ "$force" = 1 ] && return 0
@@ -246,6 +286,9 @@ plan() {
 }
 
 each_skill plan
+if [ "$linked" -gt 0 ]; then
+	exit 1
+fi
 if [ "$conflicts" -gt 0 ] && [ "$force" != 1 ]; then
 	echo "  Run 'make skills-check' to see them again. If the repo's copy is the one to keep, run again with FORCE=1, which prints every file it overwrites." >&2
 	exit 1
