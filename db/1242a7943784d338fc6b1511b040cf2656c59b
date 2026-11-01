@@ -1,0 +1,37 @@
+skills/codex/cab-bridge-awareness/SKILL.md
+  s_f8849908940048::t_a64aceb0bb2943 173
+README.md
+  s_f8849908940048::t_ea7dca5c22e47c 327-328
+  s_f8849908940048::t_86670d75db12a9 199-231,282-283
+CHANGELOG.md
+  s_f8849908940048::t_b442e2c26447b9 8-28
+ROADMAP.md
+  s_f8849908940048::t_7cef487196d7ad 8,10-30
+skills/claude/cab-bridge-awareness/SKILL.md
+  s_f8849908940048::t_66f6fd23700865 35-37
+  s_f8849908940048::t_9d172d75d34647 359
+  s_f8849908940048::t_df30d56710b50f 348-353
+plugins/cli-agents-bridge/skills/bridge-workflow/SKILL.md
+  s_f8849908940048::t_555e3cddd969bf 95-103
+SECURITY.md
+  s_f8849908940048::t_614389446f2600 58-75
+  s_f8849908940048::t_de14976eb50d18 18-19
+PRIVACY.md
+  s_f8849908940048::t_0f1fb1b0547242 5,21-22,60,72-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "db1242a7943784d338fc6b1511b040cf2656c59b",
+  "prompts": {},
+  "sessions": {
+    "s_f8849908940048": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "37bcf92a-1982-4e9a-a4d3-17eecb17eeb9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
