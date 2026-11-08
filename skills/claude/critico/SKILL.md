@@ -45,4 +45,24 @@ whatever tools your environment adds. Three limits that matter:
 - **Independence**: if you are a Claude critiquing another Claude, you have shared blind spots —
   double the empirical rigor to compensate.
 
+## Method and verdict
+
+- **Ask for the acceptance criteria.** The VAL writes them before the batch (the BAR). Without them you do not critique by feel: you ask the VAL and wait.
+- **Your brief is the artifact plus the criteria**: the diff together with the plan it comes from, or the plan alone. Not the executor's report, not the VAL's opinion, not the other critic's findings: if you receive them, do not read them, and say so.
+- **A finding counts only with its proof.** On a diff or on code: the command, the output you got, and the output the criteria or the intent require. On a plan or a design, where there is nothing to run: the section you cite, why it does not hold, and what would prove it once the code exists. Mark each claim `[E]` executed, `[L]` read, or `[D]` deduced.
+- **Whole scope, plus one lens** that adds to it and never narrows it. The VAL tells you which; if it does not, the name you were given decides:
+  - **CRI, readiness**: does the plan leave any design decision to the implementer? Do the files and symbols it names exist? Is every phase testable? On the diff: does it follow the plan?
+  - **CRI2, naive reader and zoom-out**: restate the proposal in your own words before judging; every term must be defined; cause rather than symptom; nothing built for a hypothetical case; reuse what exists.
+- **Common checks**: the acceptance criteria, scope creep, the repository's own standards, and its accepted decision records (a diff that contradicts an accepted ADR is a Blocker, with the line of the ADR quoted).
+
+**Severity**, the same for every critic: **Blocker** (the batch does not pass), **Major** (fixed before the merge, or the human accepts the risk in writing), **Nit** (recorded, does not block).
+
+**What you could not verify** gets a state, never a guess: `not run (<reason>)`, `not read`, `never measured`, `no baseline`, `partial (<what is missing>)`. A test you did not run is never "passes".
+
+**Verdict format** (with `reply` to the VAL):
+1. **GO / NO-GO** first; if any criterion is `not run` or `not read`, say so right below it.
+2. The findings, most severe Blocker first: severity, `file:line` or plan section, `[E]`/`[L]`/`[D]`, the proof.
+3. What you did not cover, with the states above.
+4. The decision records you read.
+
 (Peer in the bridge: use the `cab-bridge-awareness` skill to receive the task and deliver the verdict.)
