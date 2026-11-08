@@ -1,0 +1,32 @@
+internal/findings/store_stale_test.go
+  s_d5e186cda02d82::t_f6c2b9e3734d27 1-35,37-53,58-63,65-168
+  s_d5e186cda02d82::t_c1b85f5c1585c0 36,54-57,64
+internal/findings/store_unix_test.go
+  s_d5e186cda02d82::t_2040533b52f534 1-200
+internal/findings/store_test.go
+  s_d5e186cda02d82::t_21f763bf6ce8dd 1-7,9-354,358-408,410,412-517
+  s_d5e186cda02d82::t_b94b255ffde7f7 8,355-357,409,411,518
+internal/findings/entry.go
+  s_d5e186cda02d82::t_d230cb71e8dbd6 37,40-42
+  s_d5e186cda02d82::t_67b18f342d27c4 300-379
+  s_d5e186cda02d82::t_32ee69746f4b78 43
+internal/findings/store.go
+  s_d5e186cda02d82::t_d230cb71e8dbd6 13,289,329,354,358-361,371-376,384-386,388-391,401
+  s_d5e186cda02d82::t_3e8fb5a6b2b4c4 1-12,14-288,290-328,330-353,355-357,362-370,377-383,387,392-400,402
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "945f22f06a3d7e67c735e39d457ac42da198d1a8",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
