@@ -35,8 +35,8 @@ TUI** — and neither of them had misread. The previous version said "declare th
 (to whoever is talking to you, **or** to the VAL via cab-bridge)": it did not name the channel, and that "or" authorized the
 window. *The thread id reached the VAL because the human copied it by hand.*
 
-When you have a target, explore as you see fit — you have read/grep/test/git and the subagents (file-detective,
-security-sentinel, deep-searcher) to dig. Three limits that matter:
+When you have a target, explore as you see fit — you have file reading, grep, tests and git, plus
+whatever tools your environment adds. Three limits that matter:
 
 - **Verify on the code, not on the reports** (F-16): claims must be checked before you accept them.
   Cite `file:line`.

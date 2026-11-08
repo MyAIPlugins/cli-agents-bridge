@@ -120,6 +120,8 @@ make install-skills    # install them into ~/.claude/skills, ~/.codex/skills, ~/
 
 `install-skills` touches only the skills the repository has. It refuses to overwrite a copy that was edited by hand unless you pass `FORCE=1`, and it never deletes files you added or writes through a symbolic link. A copy that is only behind the repository is updated without `FORCE`. Claude Desktop takes its skill as a zip: `install-skills` builds `bin/arc-bridge.zip`, and you upload it under Customize > Skills.
 
+The skills need nothing but the binary. To give the roles more tools (subagents, MCP servers, a knowledge base) without losing those protections, see [docs/customizing-roles.md](./docs/customizing-roles.md).
+
 ---
 
 ## Quickstart
