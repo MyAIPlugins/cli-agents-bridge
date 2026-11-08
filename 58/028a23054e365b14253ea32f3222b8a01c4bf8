@@ -1,0 +1,19 @@
+README.md
+  s_f8849908940048::t_2d9e5b42aba651 114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "58028a23054e365b14253ea32f3222b8a01c4bf8",
+  "prompts": {},
+  "sessions": {
+    "s_f8849908940048": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "37bcf92a-1982-4e9a-a4d3-17eecb17eeb9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
