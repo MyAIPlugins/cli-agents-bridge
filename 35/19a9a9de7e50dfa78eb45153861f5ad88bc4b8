@@ -1,0 +1,29 @@
+Makefile
+  s_d5e186cda02d82::t_3aa20c4f135a51 54-55
+tests/integration/makefile_skills_shared_test.go
+  s_d5e186cda02d82::t_e97cf01344160b 157,166
+  s_d5e186cda02d82::t_16b3feeb7f170c 1-156,158-165,167-265
+scripts/skills.sh
+  s_d5e186cda02d82::t_3c04b805267486 2-3
+  s_d5e186cda02d82::t_940d6595663a2b 55-59
+  s_d5e186cda02d82::t_db3dac66b6a2bf 271-299
+  s_d5e186cda02d82::t_02f058bf944c97 199-200,204-230,250
+  s_d5e186cda02d82::t_addc0769a606fb 231-249,255,262
+  s_d5e186cda02d82::t_aa74e0ffd4f673 11-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3519a9a9de7e50dfa78eb45153861f5ad88bc4b8",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
