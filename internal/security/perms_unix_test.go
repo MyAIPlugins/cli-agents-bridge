@@ -168,3 +168,74 @@ func TestReadOwnedFile_RefusesNonRegularFiles(t *testing.T) {
 		t.Fatal("ReadOwnedFile blocked on a FIFO instead of refusing it")
 	}
 }
+
+// OpenOwned must refuse a symlink the way ReadOwnedFile does, valid or broken:
+// it is the same function underneath, and the lock file of the findings registry
+// depends on it to lock the file it checked and not a link's target. A broken
+// link is the case that matters for creation: it must NOT read as "missing",
+// or the caller would create the file the link points at.
+func TestOpenOwned_RefusesASymlinkValidOrBroken(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	target := filepath.Join(dir, "real")
+	require.NoError(t, os.WriteFile(target, []byte("x"), 0o600))
+
+	valid := filepath.Join(dir, "valid-link")
+	require.NoError(t, os.Symlink(target, valid))
+	broken := filepath.Join(dir, "broken-link")
+	require.NoError(t, os.Symlink(filepath.Join(dir, "missing"), broken))
+
+	for name, link := range map[string]string{"valid": valid, "broken": broken} {
+		f, err := OpenOwned(link)
+		if f != nil {
+			_ = f.Close()
+		}
+		require.Error(t, err, name)
+		assert.ErrorIs(t, err, ErrOwnershipMismatch, name)
+		assert.NotErrorIs(t, err, os.ErrNotExist, "%s: a refused link is not a missing file", name)
+	}
+}
+
+func TestOpenOwned_RefusesAFifoWithoutBlocking(t *testing.T) {
+	t.Parallel()
+	fifo := filepath.Join(t.TempDir(), "fifo")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Skipf("mkfifo unavailable: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		f, err := OpenOwned(fifo)
+		if f != nil {
+			_ = f.Close()
+		}
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrOwnershipMismatch)
+	case <-time.After(5 * time.Second):
+		t.Fatal("OpenOwned blocked on a FIFO instead of refusing it")
+	}
+}
+
+func TestOpenOwned_RefusesAnotherUsersFile(t *testing.T) {
+	t.Parallel()
+	if os.Getuid() == 0 {
+		t.Skip("running as root: the check is deliberately skipped for root")
+	}
+	info, err := os.Stat("/etc/hosts")
+	if err != nil {
+		t.Skip("/etc/hosts not available on this platform")
+	}
+	sys, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || int(sys.Uid) == os.Getuid() {
+		t.Skip("/etc/hosts is not owned by another uid here")
+	}
+	f, err := OpenOwned("/etc/hosts")
+	if f != nil {
+		_ = f.Close()
+	}
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrOwnershipMismatch)
+}
