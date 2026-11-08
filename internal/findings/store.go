@@ -409,21 +409,32 @@ func (s *Store) Stale(days int) (StaleResult, error) {
 // staleRows keeps the current row (the last in file order) of every key whose
 // esito is open and whose first_seen is strictly older than days days.
 //
+// A key's state is its last row; its age is counted from its FIRST row, the same
+// definition Add uses when it writes first_seen. Add keeps the column equal
+// across the rows of a key, so the two only differ in a registry edited by hand,
+// which the reader accepts. The row that is returned carries that first date, so
+// the age that qualified it, the order and the column all say the same thing.
+//
 // parseRegistry already validated every first_seen, so the error below cannot
 // happen for a registry that came from loadRegistry; it is returned, not
 // swallowed, so that a future change to the validation cannot turn into
 // findings silently missing from the list.
 func staleRows(rows []Row, now time.Time, days int) ([]Row, error) {
 	current := make(map[string]Row, len(rows))
+	born := make(map[string]string, len(rows))
 	for _, r := range rows {
+		if _, seen := born[r.Chiave]; !seen {
+			born[r.Chiave] = r.FirstSeen
+		}
 		current[r.Chiave] = r
 	}
 	limit := time.Duration(days) * 24 * time.Hour
 	var out []Row
-	for _, r := range current {
+	for key, r := range current {
 		if r.Esito != outcomeOpen {
 			continue
 		}
+		r.FirstSeen = born[key]
 		firstSeen, err := parseTimestamp(r.FirstSeen)
 		if err != nil {
 			return nil, fmt.Errorf("the first_seen of key %s is not a timestamp: %w", r.Chiave, err)

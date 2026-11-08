@@ -166,3 +166,39 @@ func TestStale_RowsAreReturnedAsStored(t *testing.T) {
 	stored := strings.Split(strings.TrimSuffix(string(readFile(t, s.RegistryPath())), "\n"), "\n")[1]
 	assert.Equal(t, stored+"\n", res.Rows[0].line())
 }
+
+// Diff gate round 1 (CRI M3). A key's age is counted from its FIRST row, the
+// definition Add uses to write first_seen; its state is the LAST row's. Add keeps
+// the column equal across the rows of a key, so the two only differ in a registry
+// edited by hand, which the reader accepts. Each key below crosses the 7-day
+// threshold the other way round under the old rule (the last row's date).
+func TestStale_AgeComesFromTheFirstRowOfTheKeyAndStateFromTheLast(t *testing.T) {
+	s, _ := newTestStore(t) // now = t0
+	at := func(d time.Duration) string { return formatTimestamp(t0.Add(d)) }
+	row := func(chiave, esito, firstSeen, finding string) string {
+		in := inputFor(chiave)
+		in.Esito, in.Finding = esito, finding
+		return newRow(in, at(-time.Hour), firstSeen).line()
+	}
+	registry := header +
+		// born 10 days ago, its last row says 1: listed (the old rule: not listed)
+		row("born-old", "aperto", at(-10*day), "first") + row("born-old", "aperto", at(-day), "last") +
+		// born 1 day ago, its last row says 30: not listed (the old rule: listed)
+		row("born-young", "aperto", at(-day), "first") + row("born-young", "aperto", at(-30*day), "last") +
+		// born old but closed by its last row: not listed
+		row("closed-last", "aperto", at(-10*day), "first") + row("closed-last", "chiuso", at(-day), "last") +
+		// born 9 days ago, its last row says 40: listed AFTER born-old (the old order: before)
+		row("born-later", "aperto", at(-9*day), "first") + row("born-later", "aperto", at(-40*day), "last")
+	require.NoError(t, os.MkdirAll(s.Dir, 0o700))
+	require.NoError(t, os.WriteFile(s.RegistryPath(), []byte(registry), 0o600))
+
+	res, err := s.Stale(7)
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"born-old", "born-later"}, staleKeys(res))
+	require.Len(t, res.Rows, 2)
+	assert.Equal(t, at(-10*day), res.Rows[0].FirstSeen, "the row carries the date of the key's first row")
+	assert.Equal(t, at(-9*day), res.Rows[1].FirstSeen)
+	assert.Equal(t, "last", res.Rows[0].Finding, "and everything else comes from the last row")
+	assert.Equal(t, "last", res.Rows[1].Finding)
+}
