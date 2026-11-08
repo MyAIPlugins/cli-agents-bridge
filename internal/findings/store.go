@@ -237,6 +237,25 @@ func (s *Store) checkExistingDir() error {
 	return checkDir(s.Dir, info)
 }
 
+// checkDirForRead is what Stale does where Add calls ensureDir: the same checks
+// (checkDir) and no creation. A missing directory is not an error, it means
+// there is no registry yet. Without this, Stale opened the registry by its path
+// and followed a `.handover` that was a link to a registry somewhere else, and a
+// broken link read as "no registry".
+func (s *Store) checkDirForRead() (exists bool, err error) {
+	info, err := os.Lstat(s.Dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("findings: %s: %w", s.Dir, err)
+	}
+	if err := checkDir(s.Dir, info); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // finishNewDir pins the mode of a directory this process just created and writes
 // its .gitignore. If either fails the empty directory is removed, so that a
 // retry creates it again and the .gitignore is not skipped for good.
@@ -251,9 +270,11 @@ func (s *Store) finishNewDir() error {
 	return nil
 }
 
+// checkDir is what both commands require of the directory: not a link (Lstat
+// does not follow, so a broken link is a link too), a directory, ours.
 func checkDir(dir string, info fs.FileInfo) error {
 	if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("findings: %s: is a symbolic link, refusing to write through it", dir)
+		return fmt.Errorf("findings: %s: is a symbolic link, refusing to follow it", dir)
 	}
 	if !info.IsDir() {
 		return fmt.Errorf("findings: %s: exists and is not a directory", dir)
@@ -359,6 +380,13 @@ func (s *Store) Stale(days int) (StaleResult, error) {
 		return StaleResult{}, fmt.Errorf("findings: days must be between 1 and %d", MaxStaleDays)
 	}
 	path := s.RegistryPath()
+	dirExists, err := s.checkDirForRead()
+	if err != nil {
+		return StaleResult{}, err
+	}
+	if !dirExists {
+		return StaleResult{Notes: []string{"no registry yet at " + path}}, nil
+	}
 	reg, err := loadRegistry(path, s.maxBytes())
 	if err != nil {
 		return StaleResult{}, err

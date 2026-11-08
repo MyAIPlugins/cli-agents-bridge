@@ -226,3 +226,56 @@ func TestAdd_RefusesALinkInPlaceOfTheDirectoryTheRegistryOrTheLock(t *testing.T)
 		assert.Equal(t, "untouched", string(readFile(t, secret)))
 	})
 }
+
+// Diff gate round 1 (CRI B2). Stale used to open the registry by its path, so a
+// `.handover` that is a link to another folder was followed and the registry
+// there was read; a broken link read as "no registry yet". Add refused both. The
+// premise is asserted: the registry the link points at is one Stale would list.
+func TestStale_RefusesADirectoryThatIsALinkOrNotADirectory(t *testing.T) {
+	elsewhere, clock := newTestStore(t)
+	addAt(t, elsewhere, clock, -30*day, "leaked-if-followed", "aperto")
+	clock.now = t0
+	res, err := elsewhere.Stale(7)
+	require.NoError(t, err)
+	require.Equal(t, []string{"leaked-if-followed"}, staleKeys(res), "premise: that registry has a finding Stale would list")
+	listing := dirNames(t, elsewhere.Dir)
+
+	newStore := func(t *testing.T) *Store {
+		s, _ := newTestStore(t)
+		s.Now = clock.Now
+		return s
+	}
+
+	t.Run("valid link", func(t *testing.T) {
+		s := newStore(t)
+		require.NoError(t, os.Symlink(elsewhere.Dir, s.Dir))
+		res, err := s.Stale(7)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "symbolic link")
+		assert.Empty(t, res.Rows, "nothing of the registry behind the link")
+		assert.Empty(t, res.Notes)
+		assert.Equal(t, listing, dirNames(t, elsewhere.Dir), "and nothing was written there")
+	})
+	t.Run("broken link is a link, not an absent registry", func(t *testing.T) {
+		s := newStore(t)
+		require.NoError(t, os.Symlink(filepath.Join(t.TempDir(), "missing"), s.Dir))
+		res, err := s.Stale(7)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "symbolic link")
+		assert.Empty(t, res.Notes, "it must not say that there is no registry yet")
+	})
+	t.Run("a regular file", func(t *testing.T) {
+		s := newStore(t)
+		require.NoError(t, os.WriteFile(s.Dir, []byte("x"), 0o600))
+		_, err := s.Stale(7)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not a directory")
+	})
+	t.Run("a directory that really is absent is still no registry, and stays absent", func(t *testing.T) {
+		s := newStore(t)
+		res, err := s.Stale(7)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"no registry yet at " + s.RegistryPath()}, res.Notes)
+		assert.NoDirExists(t, s.Dir)
+	})
+}

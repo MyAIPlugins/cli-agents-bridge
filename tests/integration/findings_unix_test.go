@@ -5,6 +5,7 @@ package integration
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -141,4 +142,65 @@ func TestFindings_StaleNeverWritesThroughTheBinary(t *testing.T) {
 	bytesAfter, err := os.ReadFile(r.registry())
 	require.NoError(t, err)
 	assert.Equal(t, bytesBefore, bytesAfter)
+}
+
+const oldTimestamp = "2026-01-01T00:00:00.000Z"
+
+// oldRegistryBytes is a valid registry with one open finding that is long past
+// any threshold: a real `add` in a throwaway repository, with the two dates
+// rewritten (the binary has no clock to set).
+func oldRegistryBytes(t *testing.T, finding string) []byte {
+	t.Helper()
+	r := newFindingsRepo(t)
+	_, stderr, exit := r.run(t, findingJSON(t, map[string]string{"finding": finding}), "findings", "add")
+	require.Equal(t, 0, exit, stderr)
+	data, err := os.ReadFile(r.registry())
+	require.NoError(t, err)
+	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+	require.Len(t, lines, 2)
+	fields := strings.Split(lines[1], "\t")
+	fields[0], fields[5] = oldTimestamp, oldTimestamp
+	return []byte(lines[0] + "\n" + strings.Join(fields, "\t") + "\n")
+}
+
+// Diff gate round 1 (CRI B2), the real binary, both commands: a `.handover` that
+// is a link to a folder holding a valid, old registry is refused, and none of
+// that registry reaches stdout. Premise asserted: the same file in a real
+// `.handover` is listed by `stale`.
+func TestFindings_BothCommandsRefuseASymlinkedDirectoryAndStaleLeaksNothing(t *testing.T) {
+	const finding = "synthetic external finding"
+	registry := oldRegistryBytes(t, finding)
+
+	control := newFindingsRepo(t)
+	require.NoError(t, os.Mkdir(control.handover(), 0o700))
+	require.NoError(t, os.WriteFile(control.registry(), registry, 0o600))
+	stdout, stderr, exit := control.run(t, "", "findings", "stale", "--days=1")
+	require.Equal(t, 0, exit, stderr)
+	require.Contains(t, stdout, finding, "premise: in a real folder this registry is listed")
+
+	outside := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "findings.tsv"), registry, 0o600))
+	listing := dirListing(t, outside)
+
+	for name, target := range map[string]string{"valid link": outside, "broken link": filepath.Join(outside, "missing")} {
+		for _, args := range [][]string{{"findings", "stale", "--days=1"}, {"findings", "add"}} {
+			r := newFindingsRepo(t)
+			require.NoError(t, os.Symlink(target, r.handover()))
+			stdout, stderr, exit := r.run(t, findingJSON(t, nil), args...)
+
+			assert.Equal(t, 1, exit, "%s %v: %s", name, args, stderr)
+			assert.Empty(t, stdout, "%s %v: nothing of the registry behind the link", name, args)
+			assert.Contains(t, stderr, "symbolic link", "%s %v", name, args)
+			assert.NotContains(t, stderr, "no registry yet", "%s %v: a link is not an absent registry", name, args)
+			assert.NotContains(t, stdout+stderr, finding)
+		}
+	}
+	assert.Equal(t, listing, dirListing(t, outside), "nothing was written through either link")
+
+	file := newFindingsRepo(t)
+	require.NoError(t, os.WriteFile(file.handover(), []byte("x"), 0o600))
+	stdout, stderr, exit = file.run(t, "", "findings", "stale")
+	assert.Equal(t, 1, exit)
+	assert.Empty(t, stdout)
+	assert.Contains(t, stderr, "not a directory")
 }
