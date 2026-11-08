@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"os"
@@ -117,11 +118,22 @@ func secretCases() []secretCase {
 		{"openai-key", "sk-" + "proj-" + body, body},
 		{"slack-token", "xo" + "xb-" + rep("4", 12), rep("4", 12)},
 		{"pem-private-key", "-----BEGIN " + "RSA PRIVATE KEY-----", "RSA PRIVATE KEY"},
-		{"jwt", "ey" + "Jhbgci." + "ey" + "Jzdwii." + "Zr4Tq9", "Jhbgci.eyJzdwii.Zr4Tq9"},
+		jwtSecretCase(),
 		{"secret-assignment", "pass" + "word=" + "hunter22", "hunter22"},
 		{"url", "https://" + "example.com/x", "example.com/x"},
 		{"email", "a.b@" + "example.org", "a.b@example.org"},
 	}
+}
+
+// jwtSecretCase is a real token built at run time: the JWT rule decides by
+// structure, so a string that merely looks like one does not count. The header is
+// public (every token starts with the same one); the payload and the signature
+// are the part that must never come back.
+func jwtSecretCase() secretCase {
+	enc := base64.RawURLEncoding.EncodeToString
+	header := enc([]byte(`{"alg":"HS256","typ":"JWT"}`))
+	payload := enc([]byte(`{"sub":"x1"}`)) + "." + strings.Repeat("Zr4Tq9", 7)
+	return secretCase{"jwt", header + "." + payload, payload}
 }
 
 func windowsOf(s string, n int) []string {
