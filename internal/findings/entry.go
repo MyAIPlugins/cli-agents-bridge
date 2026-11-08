@@ -34,8 +34,12 @@ var (
 	gates      = []string{"piano", "diff"}
 	severities = []string{"Blocker", "Major", "Nit", "fuori-scala"}
 	decisions  = []string{"PROPOSE-FIX", "CONTEST", "DECLINE", "ESCALATE"}
-	outcomes   = []string{"aperto", "chiuso", "respinto"}
+	outcomes   = []string{outcomeOpen, "chiuso", "respinto"}
 )
+
+// outcomeOpen is the esito of a finding that is still to be dealt with: the only
+// one `stale` looks at.
+const outcomeOpen = "aperto"
 
 var (
 	identPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
@@ -292,4 +296,84 @@ func parseTimestamp(s string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("not canonical")
 	}
 	return t, nil
+}
+
+// registryError locates a structural problem in an existing registry. The
+// reason is a fixed text and never holds the content of the line.
+type registryError struct {
+	Line   int
+	Reason string
+}
+
+func (e *registryError) Error() string {
+	return fmt.Sprintf("line %d: %s", e.Line, e.Reason)
+}
+
+// parseRegistry checks an existing registry against D7 and returns its rows.
+// Empty data is an empty registry. It checks structure only: header equal to the
+// literal, a final newline, 15 columns per row, no carriage return, and the
+// columns the reader relies on (the enums, the key, the two timestamps).
+// Content rules (secrets, names) are not re-run: they passed at write time, and
+// a rule added later must not make an old registry unreadable.
+func parseRegistry(data []byte) ([]Row, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+	text := string(data)
+	if !strings.HasSuffix(text, "\n") {
+		return nil, &registryError{Line: strings.Count(text, "\n") + 1, Reason: "the last line does not end with a newline"}
+	}
+	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
+	if lines[0]+"\n" != header {
+		return nil, &registryError{Line: 1, Reason: "the header is not the expected one"}
+	}
+	rows := make([]Row, 0, len(lines)-1)
+	for i, line := range lines[1:] {
+		row, reason := parseRow(line)
+		if reason != "" {
+			return nil, &registryError{Line: i + 2, Reason: reason}
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
+}
+
+func parseRow(line string) (Row, string) {
+	if strings.Contains(line, "\r") {
+		return Row{}, "the line contains a carriage return"
+	}
+	fields := strings.Split(line, "\t")
+	if len(fields) != numColumns {
+		return Row{}, fmt.Sprintf("the line has %d columns, expected %d", len(fields), numColumns)
+	}
+	row := rowFromFields(fields)
+	return row, structuralProblem(row)
+}
+
+// structuralProblem returns the fixed reason a stored row cannot be relied on,
+// or "" if it can.
+func structuralProblem(r Row) string {
+	for _, c := range []struct {
+		name string
+		ok   bool
+		what string
+	}{
+		{"ts", isTimestamp(r.Ts), "is not a UTC timestamp with milliseconds"},
+		{"gate", contains(gates, r.Gate), "has a value outside its list"},
+		{"chiave", slugPattern.MatchString(r.Chiave) && len(r.Chiave) <= 64, "is not a valid key"},
+		{"first_seen", isTimestamp(r.FirstSeen), "is not a UTC timestamp with milliseconds"},
+		{"severita", contains(severities, r.Severita), "has a value outside its list"},
+		{"decisione", contains(decisions, r.Decisione), "has a value outside its list"},
+		{"esito", contains(outcomes, r.Esito), "has a value outside its list"},
+	} {
+		if !c.ok {
+			return fmt.Sprintf("column %s %s", c.name, c.what)
+		}
+	}
+	return ""
+}
+
+func isTimestamp(s string) bool {
+	_, err := parseTimestamp(s)
+	return err == nil
 }
