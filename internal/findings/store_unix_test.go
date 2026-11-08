@@ -19,6 +19,34 @@ func modeOf(t *testing.T, path string) os.FileMode {
 	return info.Mode().Perm()
 }
 
+// The cap is checked on the size Lstat reports, BEFORE the file is read: that is
+// what keeps a huge registry out of memory. A registry over the cap that cannot
+// even be opened tells them apart: refused for its size, not for its permissions.
+// Without the early check the read comes first and the error is "permission denied".
+func TestAdd_OversizedRegistryIsRefusedBeforeItIsRead(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root opens files whatever their mode: the premise of this test does not hold")
+	}
+	s, _ := newTestStore(t)
+	mustAdd(t, s, inputFor("k"))
+	path := s.RegistryPath()
+	before := readFile(t, path)
+	s.MaxBytes = int64(len(before)) - 1
+
+	require.NoError(t, os.Chmod(path, 0o000))
+	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
+	_, openErr := os.Open(path)
+	require.Error(t, openErr, "premise: the registry cannot be opened")
+
+	_, err := s.Add(inputFor("k2"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "is larger than")
+	assert.NotContains(t, err.Error(), "permission denied", "the size was judged before any read was attempted")
+
+	require.NoError(t, os.Chmod(path, 0o600))
+	assert.Equal(t, before, readFile(t, path), "a refused add leaves the registry as it was")
+}
+
 // BAR 9, creation: the directory is 0700, the registry and the lock 0600, and
 // the .gitignore `*` keeps the folder out of the repository.
 func TestAdd_CreatesTheDirectoryAndFilesWithTheRightModes(t *testing.T) {

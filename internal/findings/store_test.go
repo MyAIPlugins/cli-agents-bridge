@@ -355,6 +355,9 @@ func TestRegistry_StructuralProblemsAreRefusedByAddAndStale(t *testing.T) {
 		{"14 columns", func(_ []byte, f []string) []byte {
 			return []byte(header + strings.Join(f[:14], "\t") + "\n")
 		}, "line 2: the line has 14 columns, expected 15"},
+		{"16 columns (a stray tab)", func(_ []byte, f []string) []byte {
+			return []byte(header + strings.Join(append(f, "extra"), "\t") + "\n")
+		}, "line 2: the line has 16 columns, expected 15"},
 		{"carriage return in a row", rowWith(func(f []string) { f[6] += "\r" }), "line 2: the line contains a carriage return"},
 		{"gate outside its list", rowWith(func(f []string) { f[2] = "Piano" }), "line 2: column gate has a value outside its list"},
 		{"severita outside its list", rowWith(func(f []string) { f[7] = "major" }), "line 2: column severita has a value outside its list"},
