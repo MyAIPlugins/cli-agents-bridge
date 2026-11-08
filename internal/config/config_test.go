@@ -173,3 +173,102 @@ func TestLoad_DedupWindowSecondsEnvOverride(t *testing.T) {
 		t.Errorf("DedupWindowSeconds = %d, want 0 (env must disable, overriding default 10)", cfg.DedupWindowSeconds)
 	}
 }
+
+// TestDefaultConfig_FindingsStaleDays pins the F-156 default: a finding is
+// stale after 7 days, in code and in the reference config/default.json.
+func TestDefaultConfig_FindingsStaleDays(t *testing.T) {
+	if got := DefaultConfig().FindingsStaleDays; got != 7 {
+		t.Errorf("default FindingsStaleDays = %d, want 7", got)
+	}
+	if got := DefaultConfig().FindingsDeniedNames; len(got) != 0 {
+		t.Errorf("default FindingsDeniedNames = %q, want empty (names are not checked until configured)", got)
+	}
+}
+
+// TestLoad_FindingsKeys covers where the two F-156 keys come from: the stale
+// days from the file and from CAB_FINDINGS_STALE_DAYS (env wins, and a value
+// below 1 is passed through so `findings stale` can refuse it by name), the
+// denied names from config.json only.
+func TestLoad_FindingsKeys(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.FindingsStaleDays != 7 || len(cfg.FindingsDeniedNames) != 0 {
+		t.Fatalf("no file: FindingsStaleDays = %d, FindingsDeniedNames = %q, want 7 and empty", cfg.FindingsStaleDays, cfg.FindingsDeniedNames)
+	}
+
+	if err := os.WriteFile(filepath.Join(dataDir, "config.json"),
+		[]byte(`{"findings_stale_days": 3, "findings_denied_names": ["Marta", "Niccolò"]}`), 0o600); err != nil {
+		t.Fatalf("write user config.json: %v", err)
+	}
+	cfg, _, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.FindingsStaleDays != 3 {
+		t.Errorf("FindingsStaleDays = %d, want 3 from config.json", cfg.FindingsStaleDays)
+	}
+	if len(cfg.FindingsDeniedNames) != 2 || cfg.FindingsDeniedNames[0] != "Marta" || cfg.FindingsDeniedNames[1] != "Niccolò" {
+		t.Errorf("FindingsDeniedNames = %q, want [Marta Niccolò] from config.json", cfg.FindingsDeniedNames)
+	}
+
+	t.Setenv("CAB_FINDINGS_STALE_DAYS", "14")
+	cfg, _, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.FindingsStaleDays != 14 {
+		t.Errorf("FindingsStaleDays = %d, want 14 (env overrides the file)", cfg.FindingsStaleDays)
+	}
+
+	t.Setenv("CAB_FINDINGS_STALE_DAYS", "0")
+	cfg, _, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.FindingsStaleDays != 0 {
+		t.Errorf("FindingsStaleDays = %d, want 0 passed through (the command refuses it, the loader does not hide it)", cfg.FindingsStaleDays)
+	}
+}
+
+// TestLoad_FindingsDeniedNamesHaveNoEnvOverride: the list of names is not read
+// from the environment, whatever the variable is called.
+func TestLoad_FindingsDeniedNamesHaveNoEnvOverride(t *testing.T) {
+	t.Setenv("CAB_DATA_DIR", t.TempDir())
+	t.Setenv("CAB_FINDINGS_DENIED_NAMES", "Marta")
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.FindingsDeniedNames) != 0 {
+		t.Errorf("FindingsDeniedNames = %q, want empty: no env override exists", cfg.FindingsDeniedNames)
+	}
+}
+
+// TestLoad_DefaultJSONCarriesTheFindingsDefault: the reference file is what a
+// user copies, so the F-156 default must be in it and must load.
+func TestLoad_DefaultJSONCarriesTheFindingsDefault(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("CAB_DATA_DIR", dataDir)
+	src, err := os.ReadFile(filepath.Join("..", "..", "config", "default.json"))
+	if err != nil {
+		t.Fatalf("read repo default.json: %v", err)
+	}
+	if !strings.Contains(string(src), `"findings_stale_days": 7`) {
+		t.Fatal("config/default.json must carry findings_stale_days: 7")
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "config.json"), src, 0o600); err != nil {
+		t.Fatalf("write user config.json: %v", err)
+	}
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatalf("Load must accept default.json copied as config.json, got: %v", err)
+	}
+	if cfg.FindingsStaleDays != 7 {
+		t.Errorf("FindingsStaleDays = %d, want 7 from the copied default.json", cfg.FindingsStaleDays)
+	}
+}

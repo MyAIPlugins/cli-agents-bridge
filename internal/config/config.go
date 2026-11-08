@@ -159,6 +159,16 @@ type Config struct {
 	// character result ("exceeds maximum allowed tokens") and the real threshold has
 	// not been measured. Env override: CAB_MCP_MAX_RESULT_BYTES.
 	MCPMaxResultBytes int `json:"mcp_max_result_bytes"`
+
+	// FindingsStaleDays is how many days a finding may stay open before
+	// `cab-bridge findings stale` lists it (F-156). Must be >= 1; `stale`
+	// refuses a smaller value. Default 7. Env override: CAB_FINDINGS_STALE_DAYS.
+	FindingsStaleDays int `json:"findings_stale_days"`
+	// FindingsDeniedNames lists the person names `cab-bridge findings add`
+	// refuses to record, whole word and case-insensitive (F-156). Empty = names
+	// are NOT checked, and `add` says so every time. config.json only: no env
+	// override, because a list of names in the environment ends up in `ps`.
+	FindingsDeniedNames []string `json:"findings_denied_names,omitempty"`
 }
 
 // DefaultConfig returns the source-of-truth default values. The DataDir is
@@ -185,6 +195,8 @@ func DefaultConfig() Config {
 		MCPScanBudgetSeconds:      5,
 		MCPChildTimeoutSeconds:    20,
 		MCPMaxResultBytes:         24576,
+
+		FindingsStaleDays: 7,
 	}
 }
 
@@ -314,6 +326,12 @@ func applyUserFile(cfg *Config, path string) error {
 	if override.MCPMaxResultBytes != 0 {
 		cfg.MCPMaxResultBytes = override.MCPMaxResultBytes
 	}
+	if override.FindingsStaleDays != 0 {
+		cfg.FindingsStaleDays = override.FindingsStaleDays
+	}
+	if len(override.FindingsDeniedNames) > 0 {
+		cfg.FindingsDeniedNames = override.FindingsDeniedNames
+	}
 	return nil
 }
 
@@ -370,6 +388,7 @@ func applyEnv(cfg *Config) []string {
 		{"CAB_MCP_SCAN_BUDGET_SECONDS", &cfg.MCPScanBudgetSeconds},
 		{"CAB_MCP_CHILD_TIMEOUT_SECONDS", &cfg.MCPChildTimeoutSeconds},
 		{"CAB_MCP_MAX_RESULT_BYTES", &cfg.MCPMaxResultBytes},
+		{"CAB_FINDINGS_STALE_DAYS", &cfg.FindingsStaleDays},
 	} {
 		if w := envInt(e.name, e.dst); w != "" {
 			warnings = append(warnings, w)
