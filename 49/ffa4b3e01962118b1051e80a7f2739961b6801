@@ -1,0 +1,29 @@
+internal/findings/store.go
+  s_d5e186cda02d82::t_9d74047fc1ea4b 155-158,172-174,266-283,427,437-444
+  s_d5e186cda02d82::t_3534e914c57a69 423-426
+  s_d5e186cda02d82::t_79e505b31ae76c 284
+internal/findings/store_unix_test.go
+  s_d5e186cda02d82::t_cef5782798808b 282-292
+internal/findings/store_gitignore_test.go
+  s_d5e186cda02d82::t_cef5782798808b 1-77
+cmd/cab-bridge/findings_test.go
+  s_d5e186cda02d82::t_633bcb85ef6e2f 478-499
+tests/integration/findings_unix_test.go
+  s_d5e186cda02d82::t_cef5782798808b 28,40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "49ffa4b3e01962118b1051e80a7f2739961b6801",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
