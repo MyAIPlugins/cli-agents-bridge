@@ -25,6 +25,7 @@ func TestFindings_DirAndFileModes(t *testing.T) {
 	r := newFindingsRepo(t)
 	_, stderr, exit := r.run(t, findingJSON(t, nil), "findings", "add")
 	require.Equal(t, 0, exit, stderr)
+	assert.NotContains(t, stderr, "has no .gitignore", "the creator wrote one")
 
 	assert.Equal(t, os.FileMode(0o700), modeOfPath(t, r.handover()))
 	assert.Equal(t, os.FileMode(0o600), modeOfPath(t, r.registry()))
@@ -36,6 +37,7 @@ func TestFindings_DirAndFileModes(t *testing.T) {
 	require.NoError(t, os.Chmod(existing.handover(), 0o755))
 	_, stderr, exit = existing.run(t, findingJSON(t, nil), "findings", "add")
 	require.Equal(t, 0, exit, stderr)
+	assert.Contains(t, stderr, "findings: note: .handover/ existed already and has no .gitignore", "and the command says what it did not do")
 	assert.Equal(t, os.FileMode(0o755), modeOfPath(t, existing.handover()), "an existing folder keeps its mode")
 	assert.NoFileExists(t, filepath.Join(existing.handover(), ".gitignore"), "only the creator writes it")
 }

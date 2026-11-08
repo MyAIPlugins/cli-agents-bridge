@@ -152,6 +152,10 @@ func (s *Store) addLocked(in Input) (AddResult, error) {
 	if err != nil {
 		return AddResult{}, err
 	}
+	ignoreNote, err := gitignoreNote(s.Dir) // before publishing: an I/O error must not come after the row is recorded
+	if err != nil {
+		return AddResult{}, err
+	}
 	row := newRow(in, ts, firstSeenFor(reg.rows, in.Chiave, ts))
 	snapshot, err := buildSnapshot(path, reg.data, row, s.maxBytes())
 	if err != nil {
@@ -164,6 +168,9 @@ func (s *Store) addLocked(in Input) (AddResult, error) {
 	var notes []string
 	if reg.looseMode != 0 {
 		notes = append(notes, fmt.Sprintf("the registry had mode %04o, it is 0600 now", reg.looseMode))
+	}
+	if ignoreNote != "" {
+		notes = append(notes, ignoreNote)
 	}
 	return AddResult{Row: row, Notes: notes}, nil
 }
@@ -254,6 +261,25 @@ func (s *Store) checkDirForRead() (exists bool, err error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// gitignoreNote says it when the directory has no .gitignore. Only the command
+// that creates the directory writes one (D13), so a directory that existed before
+// has none unless its owner put one there, and then git sees the registry as an
+// untracked file. This cannot be fixed from here without changing a directory that
+// is not ours, so it is said every time, like the loose mode of the registry.
+// The check is the file and nothing else: a `.handover/` that the repository's
+// root .gitignore already ignores gets the note too (git is not asked).
+func gitignoreNote(dir string) (string, error) {
+	_, err := os.Lstat(filepath.Join(dir, gitignoreName))
+	switch {
+	case err == nil:
+		return "", nil
+	case errors.Is(err, fs.ErrNotExist):
+		return fmt.Sprintf("%s/ existed already and has no %s: this command did not add one, make sure git ignores it", filepath.Base(dir), gitignoreName), nil
+	default:
+		return "", fmt.Errorf("findings: %s: %w", filepath.Join(dir, gitignoreName), err)
+	}
 }
 
 // finishNewDir pins the mode of a directory this process just created and writes
@@ -394,6 +420,11 @@ func (s *Store) Stale(days int) (StaleResult, error) {
 	if !reg.exists {
 		return StaleResult{Notes: []string{"no registry yet at " + path}}, nil
 	}
+	// Only with a registry: an empty folder has nothing for git to show.
+	ignoreNote, err := gitignoreNote(s.Dir)
+	if err != nil {
+		return StaleResult{}, err
+	}
 
 	rows, err := staleRows(reg.rows, s.now(), days)
 	if err != nil {
@@ -403,7 +434,14 @@ func (s *Store) Stale(days int) (StaleResult, error) {
 	if reg.looseMode != 0 {
 		notes = append(notes, fmt.Sprintf("the registry has mode %04o (the next add makes it 0600)", reg.looseMode))
 	}
-	return StaleResult{Rows: rows, Notes: notes}, nil
+	return StaleResult{Rows: rows, Notes: withNote(notes, ignoreNote)}, nil
+}
+
+func withNote(notes []string, note string) []string {
+	if note == "" {
+		return notes
+	}
+	return append(notes, note)
 }
 
 // staleRows keeps the current row (the last in file order) of every key whose

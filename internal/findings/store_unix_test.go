@@ -279,3 +279,14 @@ func TestStale_RefusesADirectoryThatIsALinkOrNotADirectory(t *testing.T) {
 		assert.NoDirExists(t, s.Dir)
 	})
 }
+
+// Both notes at once: the registry mode first, then the missing .gitignore.
+func TestAdd_NotesComeInOrderModeThenGitignore(t *testing.T) {
+	s, _ := newTestStore(t)
+	handMadeDir(t, s)
+	mustAdd(t, s, inputFor("k"))
+	require.NoError(t, os.Chmod(s.RegistryPath(), 0o644))
+
+	res := mustAdd(t, s, inputFor("k2"))
+	assert.Equal(t, []string{"the registry had mode 0644, it is 0600 now", noGitignoreNote}, res.Notes)
+}

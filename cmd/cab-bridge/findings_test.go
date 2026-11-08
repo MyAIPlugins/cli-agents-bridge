@@ -475,3 +475,25 @@ func TestFindingsAdd_BusyLockIsAnErrorAndWritesNothing(t *testing.T) {
 	assert.Empty(t, out.String())
 	assert.NoFileExists(t, e.registry())
 }
+
+// Diff gate round 1 (CRI2 M1): a `.handover/` that existed before has no
+// .gitignore unless its owner wrote one, and then git shows the registry. Both
+// commands say so, in the one format for notes.
+func TestFindings_SayWhenTheExistingDirectoryHasNoGitignore(t *testing.T) {
+	const note = "findings: note: .handover/ existed already and has no .gitignore: this command did not add one, make sure git ignores it"
+	e := newFindingsEnv(t)
+	require.NoError(t, os.Mkdir(filepath.Join(e.repo, ".handover"), 0o700))
+
+	_, stderr, err := e.run(validFindingJSON(t, nil), "add")
+	require.NoError(t, err)
+	assert.Contains(t, stderr, note)
+
+	_, stderr, err = e.run("", "stale")
+	require.NoError(t, err)
+	assert.Contains(t, stderr, note)
+
+	require.NoError(t, os.WriteFile(filepath.Join(e.repo, ".handover", ".gitignore"), []byte("*\n"), 0o600))
+	_, stderr, err = e.run("", "stale")
+	require.NoError(t, err)
+	assert.NotContains(t, stderr, "has no .gitignore")
+}
