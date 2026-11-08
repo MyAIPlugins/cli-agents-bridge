@@ -51,7 +51,8 @@ GO_FLAGS    := -trimpath -ldflags="-s -w -X main.version=$(VERSION)"
 # Override on an idle machine: make test-race GO_TEST_PARALLEL=8
 GO_TEST_PARALLEL ?= 4
 
-# The skills the agents load are the repo's: one copy, in skills/<runtime>/<name>/.
+# The skills the agents load are the repo's: one copy, in skills/<runtime>/<name>/, or in
+# skills/shared/<name>/ for a skill that Claude Code and Codex both load.
 # SKILLS_DIR is overridable only so a test can point at a fixture.
 SKILLS_DIR ?= skills
 
