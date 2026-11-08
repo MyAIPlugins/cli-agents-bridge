@@ -1,0 +1,25 @@
+tests/integration/findings_unix_test.go
+  s_d5e186cda02d82::t_a0e4685d6aa4db 1-144
+internal/findings/kill_test.go
+  s_d5e186cda02d82::t_d1d087f44d6e4d 36
+  s_d5e186cda02d82::t_8f726ee6e5f810 1-35,37-192
+tests/integration/findings_test.go
+  s_d5e186cda02d82::t_82e0cf6fd91684 421-426,428,453,463-467,472
+  s_d5e186cda02d82::t_a6a0f3528acf48 1-420,427,429-452,454-462,468-471,473-539
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f0a63e8560efa5199d31c17fb8316f5e0a94d937",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
