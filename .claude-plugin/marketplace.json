@@ -1,6 +1,6 @@
 {
   "name": "cli-agents-bridge-marketplace",
-  "description": "Self-marketplace for cli-agents-bridge — fork of PatilShreyas/claude-code-session-bridge",
+  "description": "Self-marketplace for cli-agents-bridge, a multi-peer bridge between CLI agent sessions",
   "owner": {
     "name": "myAIPlugins",
     "email": "firstcontact@alancurtisagency.com",

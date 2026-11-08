@@ -1,8 +1,8 @@
 # cli-agents-bridge
 
-Robust multi-peer IPC bridge between CLI agent sessions (Claude Code, Codex, Aider, Cline, ...) running in separate VS Code windows.
+Robust multi-peer IPC bridge between CLI agent sessions (Claude Code, Codex, Aider, Cline, ...) running in separate terminals or editor windows on the same machine.
 
-Fork of [`PatilShreyas/claude-code-session-bridge`](https://github.com/PatilShreyas/claude-code-session-bridge) v0.1.0 (MIT) with 9 confirmed upstream bugs fixed structurally, role-based routing, namespace-isolated storage, security baseline, and a single Go binary distribution.
+A single Go binary with role-based routing, a mailbox where nothing is consumed by accident, an isolated storage namespace and a security baseline. The basic idea came from [`PatilShreyas/claude-code-session-bridge`](https://github.com/PatilShreyas/claude-code-session-bridge) (see [Authors & credits](#authors--credits)).
 
 **Status**: v0.11.0 (shipped). See [CHANGELOG.md](./CHANGELOG.md) and [Releases](https://github.com/MyAIPlugins/cli-agents-bridge/releases) for details.
 
@@ -244,23 +244,23 @@ What travels to Anthropic and what stays on the host: [PRIVACY.md](./PRIVACY.md)
 
 ## Features
 
-| Feature | cli-agents-bridge | Patil upstream |
-|---|---|---|
-| Heartbeat in wait loop | structural (goroutine + Ticker) | bug, never updated |
-| Delivery semantics | `next` shows without consuming; `reply` archives one delivery, requeues the rest | delete on consume |
-| Multi-peer role routing | hub-and-spoke val↔esc + --allow-mesh | no role field |
-| Cross-project cleanup safety | scope=my-session default; `--scope=global` stays inside this project root and `--all-scopes` is opt-in. Retention purge is deliberately data-dir-wide and says so on stderr | global wipe by default |
-| Session ID lookup | longest-prefix-match | first-found, non-deterministic |
-| Lock on register | O_EXCL + stale recovery + --force-new; unique random IDs that never merge; collision detection vs a live owner | silent reuse, dup IDs sharing one inbox |
-| Agent names | guaranteed addressable: a name survives the shell that carries it | n/a |
-| Cross-repository addressing | `<name>@<project>`, val → val, with a shell-safe form of the token | n/a |
-| Stderr discipline | errors→stderr, exit 124 on timeout | errors→stdout |
-| Inbox audit trail | move-to-processed/ + retention | delete on consume |
-| Distribution | single static Go binary | bash + jq runtime |
-| Storage namespace | `~/.claude/cli-agents-bridge/` | shared with upstream |
-| Security baseline | umask 077, perms 700/600, SC-7 base-dir integrity, session-ID regex validation | user defaults |
-| Migration | `migrate-from-patil` subcommand | n/a |
-| JSON validation | DisallowUnknownFields gateway + lenient runtime read | none |
+| Feature | How |
+|---|---|
+| Heartbeat in wait loop | structural (goroutine + Ticker) |
+| Delivery semantics | `next` shows without consuming; `reply` archives one delivery, requeues the rest |
+| Multi-peer role routing | hub-and-spoke val↔esc + --allow-mesh |
+| Cross-project cleanup safety | scope=my-session default; `--scope=global` stays inside this project root and `--all-scopes` is opt-in. Retention purge is deliberately data-dir-wide and says so on stderr |
+| Session ID lookup | longest-prefix-match |
+| Lock on register | O_EXCL + stale recovery + --force-new; unique random IDs that never merge; collision detection vs a live owner |
+| Agent names | guaranteed addressable: a name survives the shell that carries it |
+| Cross-repository addressing | `<name>@<project>`, val → val, with a shell-safe form of the token |
+| Stderr discipline | errors→stderr, exit 124 on timeout |
+| Inbox audit trail | move-to-processed/ + retention |
+| Distribution | single static Go binary, no runtime dependencies |
+| Storage namespace | `~/.claude/cli-agents-bridge/`, separate from the session-bridge plugin's `~/.claude/session-bridge/` |
+| Security baseline | umask 077, perms 700/600, SC-7 base-dir integrity, session-ID regex validation |
+| Migration | `migrate-from-patil` imports the sessions of the session-bridge plugin |
+| JSON validation | DisallowUnknownFields gateway + lenient runtime read |
 
 ---
 
@@ -319,7 +319,7 @@ Single Go binary, filesystem-based IPC. No external runtime dependencies (no jq,
     └── lock                      # O_EXCL PID file
 ```
 
-Storage namespace is **separate** from Patil upstream (`~/.claude/session-bridge/`) to eliminate cross-destructive cleanup risk.
+Storage namespace is **separate** from the session-bridge plugin's directory (`~/.claude/session-bridge/`), so neither can clean up the other's sessions.
 
 For threat model + security controls see [SECURITY.md](./SECURITY.md). For GDPR / data flow see [PRIVACY.md](./PRIVACY.md).
 
@@ -359,10 +359,10 @@ See [docs/dev-conventions.md](./docs/dev-conventions.md) for Go style, commit fo
 
 Built as a triadic VAL/ESC workflow: Alan drove the vision and gated every plan and commit; Claude designed and wrote the code. *The idea is Alan's, the code is Claude's.*
 
-Forked from [`PatilShreyas/claude-code-session-bridge`](https://github.com/PatilShreyas/claude-code-session-bridge) (MIT) — full credit to Shreyas Patil for the original session-bridge design that this builds on.
+The basic idea, two Claude Code sessions talking through files, came from Shreyas Patil's [`PatilShreyas/claude-code-session-bridge`](https://github.com/PatilShreyas/claude-code-session-bridge) (MIT). cli-agents-bridge is a new codebase, written in Go, with its own design.
 
 ---
 
 ## License
 
-MIT — see [LICENSE](./LICENSE). Compatible with upstream Patil license.
+MIT, see [LICENSE](./LICENSE).
