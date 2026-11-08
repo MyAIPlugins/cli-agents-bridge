@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
@@ -76,6 +77,17 @@ type AddResult struct {
 type StaleResult struct {
 	Rows  []Row
 	Notes []string
+}
+
+// TSV renders the header followed by the rows, byte for byte as the registry
+// stores them: what `stale` prints on stdout, readable by a machine.
+func (r StaleResult) TSV() string {
+	var b strings.Builder
+	b.WriteString(header)
+	for _, row := range r.Rows {
+		b.WriteString(row.line())
+	}
+	return b.String()
 }
 
 // RegistryPath is where the rows live.
