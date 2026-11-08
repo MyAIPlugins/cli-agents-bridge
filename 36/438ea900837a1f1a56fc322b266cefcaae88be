@@ -1,0 +1,21 @@
+internal/findings/store_unix_test.go
+  s_d5e186cda02d82::t_7b3cf274924b79 22-49
+internal/findings/store_test.go
+  s_d5e186cda02d82::t_aebfc614d1984d 358-360
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "36438ea900837a1f1a56fc322b266cefcaae88be",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
