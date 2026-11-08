@@ -1,0 +1,21 @@
+README.md
+  s_f8849908940048::t_e5e619d150e67c 3,5,247-263,322,362,368
+.claude-plugin/marketplace.json
+  s_f8849908940048::t_e5e619d150e67c 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3ed5e7298b750b611cbb601d7d122a0ad4e3ee3b",
+  "prompts": {},
+  "sessions": {
+    "s_f8849908940048": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "37bcf92a-1982-4e9a-a4d3-17eecb17eeb9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
