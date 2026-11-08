@@ -1,0 +1,23 @@
+README.md
+  s_f8849908940048::t_2310e3bcbac20d 123-124
+skills/claude/critico/SKILL.md
+  s_f8849908940048::t_ba97c1e19089f0 38-39
+docs/customizing-roles.md
+  s_f8849908940048::t_e0e7b3adb11dad 1-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f4279e96b37ca8209be8335c8677738aec400457",
+  "prompts": {},
+  "sessions": {
+    "s_f8849908940048": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "37bcf92a-1982-4e9a-a4d3-17eecb17eeb9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
