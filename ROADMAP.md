@@ -5,7 +5,23 @@
 
 ---
 
-## Status corrente — 2026-11-01
+## Status corrente — 2026-11-08
+
+**Il team ha un metodo nuovo (8 nov)**: BAR prima di ogni lotto, gate del piano per i lotti grandi, rubriche e regole comuni, SEC come revisore di sicurezza. I testi principali stanno fuori da git (versioni personali); nel repo arrivano le versioni inglesi e generiche. Lotti in corso:
+
+**F-155 — skill comuni a due runtime in `make install-skills` (ESC, 8 nov)**. `skills/shared/<nome>/` si installa in Claude Code e in Codex; un nome doppio fra `shared/` e un runtime e' rifiutato prima di copiare. Commit `3519a9a` su `feat/f155-shared-skills`. `[E]` gate del VAL in un worktree suo: criteri 1-7 verdi, test del lotto 40 PASS, lint per darwin, linux e windows con la toolchain del `go.mod`; suite completa verde 4 volte su 6 (i due rossi sono F-158, sotto). Da fare: PR in bozza per la CI, merge.
+
+**F-156 — `cab-bridge findings`, il registro dei finding (ESC, 8 nov)**. BAR approvato da Alan, lotto grande. Piano dell'ESC al gate: CRI NO-GO con 3 Blocker (un append interrotto da SIGKILL lascia una riga a meta'; `AcquireLock` non garantisce un solo scrittore quando due processi recuperano insieme un lock morto, `internal/session/lock.go:67-71,88-91`; la regola sulle assegnazioni di segreti lascia passare valori corti) e 1 Major (un registro esistente 0644 resta 0644); CRI2 GO con 1 Major, che e' lo stesso difetto del lock trovato in modo indipendente (il rimedio di una scrittura corta tronca la riga di un altro processo) e 7 Nit. Tutti PROPOSE FIX, piano v2 in corso.
+
+**F-160 — `AcquireLock` puo' rimuovere il lock di un processo vivo (CRI, 8 nov)**. `[L]` `internal/session/lock.go:67-71`: un lock appena creato con `O_EXCL` e non ancora scritto (il PID arriva a `:104`) viene letto come illeggibile e rimosso da un secondo processo; `:88-91` il recupero di un lock morto "rimuovi e ricrea" non verifica che sia ancora lo stesso, e il commento lo dichiara ("we surrender"). Due processi possono tenerlo insieme. Riguarda tutti i chiamanti, non solo F-156 (che non lo usera'). Da valutare quali chiamanti dipendono dall'esclusione.
+
+**F-157 — Codex: `~/.codex/skills` e' deprecata (8 nov)**. `[L]` documentazione di Codex 0.164.0: la cartella utente nuova e' `~/.agents/skills`, la vecchia e' ancora letta. `make install-skills` installa nella vecchia. Lotto dopo F-155.
+
+**F-158 — `TestMCPWithTheRealBinary/the_server_never_reads_as_a_listener` cade a volte nella pulizia (8 nov)**. `[E]` `TempDir RemoveAll cleanup: unlinkat .../home/repo/.git: directory not empty`, solo nella suite completa: 2 rossi su 6 sul lotto F-155, 0 su 4 su `main`, 0 su 3 isolato. Il test dura 0,13 s e il server esce in tempo; qualcosa scrive dentro `.git` della sandbox mentre la pulizia la cancella, e il bridge non lancia mai `git` (`[L]` grep). Non e' del lotto (il diff non tocca `cmd/`), e non e' spiegato: e' la stessa famiglia di F-153 (test MCP sotto carico). Da diagnosticare: chi scrive in `.git`.
+
+**F-159 — `make lint` locale rosso con Go 1.27.3 (8 nov)**. `[E]` lo staticcheck 0.8.1 installato non legge l'export data della 1.27.3 (`export data version 5 is greater than maximum supported version 4`); con `GOTOOLCHAIN=go1.27.1` (la toolchain del `go.mod`, quella della CI) e' verde. Il gate locale e' un altro oggetto rispetto alla CI (LL-20). Fix possibili: il target `lint` usa la toolchain del `go.mod`, oppure staticcheck ricompilato. Fino ad allora il gate del VAL lancia `GOTOOLCHAIN=go1.27.1 make lint`.
+
+## Status al 2026-11-01
 
 **v0.11.0 (1 nov): Claude Desktop nel bridge, le skill degli agenti in inglese con una copia sola, F-151 e F-152 chiusi.** `[E]` merge `58f021b` del lotto `fix/f151-f152` (9 commit), CI della PR #8 verde al secondo tentativo (il primo: F-154, sotto). Gate del val su ogni delta; diff-gate di CRI2 GO su `cd8d816`, poi tre rilievi chiusi prima del merge, cioe' `Refuse` fuori dal controllo dei sorgenti, la scrittura attraverso un symlink, e un file aggiunto a mano perso senza `FORCE` (P2, riprodotto in sandbox). Le skill: allineate prima nei due versi, perche' le copie installate e quelle del repo si erano separate (il critico di Codex non aveva la regola del `CODEX_THREAD_ID`, la skill VAL installata diceva ancora che `cleanup` non tocca una sessione viva), poi tradotte e confrontate riga per riga da CRI2 su 1021 righe: un solo tipo di errore, «fermo» reso con *idle*, che e' anche uno stato del bridge. Nuova `skills/claude-desktop/arc-bridge`. `make install-skills` / `make skills-check` (ESC), con un record `.cab-installed` per distinguere «indietro» da «modificata a mano».
 
