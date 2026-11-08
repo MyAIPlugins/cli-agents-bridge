@@ -1,0 +1,33 @@
+internal/findings/redact.go
+  s_d5e186cda02d82::t_c6602d81bef8a0 1-121
+internal/findings/redact_test.go
+  s_d5e186cda02d82::t_b0157bcc0ed049 1-182
+internal/findings/entry.go
+  s_d5e186cda02d82::t_5e7daf726792b0 94
+  s_d5e186cda02d82::t_25851fc04e3353 1-93,95-295
+internal/findings/decode.go
+  s_d5e186cda02d82::t_fb56b95ab2f8cd 1-109
+internal/findings/decode_test.go
+  s_d5e186cda02d82::t_66aeafb0311bfc 1-99
+internal/findings/entry_test.go
+  s_d5e186cda02d82::t_7b02aaf5b62ab7 1-150,153-159,162-270
+  s_d5e186cda02d82::t_350db58cfd14f6 151
+  s_d5e186cda02d82::t_5e7daf726792b0 152
+  s_d5e186cda02d82::t_d8738d0961eefb 160-161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "17bfd7539666bac8d4dbc1214f8986548bd7e2b7",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
