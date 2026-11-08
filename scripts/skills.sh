@@ -1,11 +1,18 @@
 #!/bin/sh
-# The skills the repo carries (skills/<runtime>/<name>/) and the copies the runtimes load.
+# The skills the repo carries (skills/<runtime>/<name>/, and skills/shared/<name>/ for the
+# ones that go to more than one runtime) and the copies the runtimes load.
 #
 #   skills.sh check     compares each skill with its installed copy; touches nothing
 #   skills.sh install   copies the repo's skills into the runtimes that load them
 #
 # Run through `make skills-check` and `make install-skills`. POSIX sh, for macOS and
 # Linux: on Windows copy the folders by hand.
+#
+# A skill in skills/shared/<name>/ is one folder in the repo and one copy in Claude Code
+# and one in Codex (shared_targets, below). Each copy is held to everything that follows
+# as if it were a skill of its own runtime, and has its own line in a check. The same name
+# in shared/ and in the folder of claude or codex is refused, by check and by install,
+# before anything is read or copied: a skill has one source.
 #
 # What it promises, and the whole of what it does to the machine:
 #   - it only ever touches the folders of the skills the repo has; every other folder
@@ -44,6 +51,11 @@ home=${HOME:?skills: HOME is not set}
 force=${FORCE:-}
 
 runtimes="claude codex antigravity claude-desktop"
+
+# A skill in skills/shared/<name>/ is one folder in the repo and one copy in each of
+# these runtimes. Not Antigravity and not Claude Desktop: a skill for those is in the
+# folder of its own runtime.
+shared_targets="claude codex"
 
 # The record of the last install, in the installed copy of a skill: one line per file,
 # "<crc> <size> <path>" as POSIX cksum says it. It tells an edit by hand from a copy that
@@ -184,46 +196,70 @@ show_extras() {
 	done
 }
 
-# Calls $1 for every skill of the repo with: status runtime name source installed-copy.
+# Calls $1 for the skill of the repo in folder $3, as it goes to runtime $2, with:
+# status runtime name source installed-copy.
 # The status is skipped (the runtime is not here), manual (Claude Desktop), linked (a
 # symbolic link in the repo's skill or in the installed copy; the sixth argument lists
 # them), or what status_of says.
+emit_skill() {
+	cb=$1
+	runtime=$2
+	src=$3
+	name=$(basename "$src")
+	if [ "$runtime" = claude-desktop ]; then
+		links=$(links_in "$src")
+		if [ -n "$links" ]; then
+			"$cb" linked "$runtime" "$name" "$src" "" "$links"
+		else
+			"$cb" manual "$runtime" "$name" "$src" ""
+		fi
+		return 0
+	fi
+	if [ ! -d "$(runtime_root "$runtime")" ]; then
+		"$cb" skipped "$runtime" "$name" "$src" ""
+		return 0
+	fi
+	dst=$(installed_copy "$runtime" "$name")
+	links=$(links_in "$src"; links_in "$dst")
+	if [ -n "$links" ]; then
+		"$cb" linked "$runtime" "$name" "$src" "$dst" "$links"
+		return 0
+	fi
+	"$cb" "$(status_of "$src" "$dst")" "$runtime" "$name" "$src" "$dst"
+}
+
+# A skill of skills/shared/ ($2): the same source, one copy for each of shared_targets.
+emit_shared() {
+	for target in $shared_targets; do
+		emit_skill "$1" "$target" "$2"
+	done
+}
+
+# Calls $1 for every skill in folder $2 of the repo, the folder of runtime $3 or shared.
+each_skill_in() {
+	for sdir in "$2"*/; do
+		[ -d "$sdir" ] || continue
+		if [ "$3" = shared ]; then
+			emit_shared "$1" "${sdir%/}"
+		else
+			emit_skill "$1" "$3" "${sdir%/}"
+		fi
+	done
+}
+
+# Calls $1 for every skill of the repo, see emit_skill.
 each_skill() {
 	for rdir in "$skills_dir"/*/; do
 		[ -d "$rdir" ] || continue
 		runtime=$(basename "$rdir")
-		case " $runtimes " in
+		case " $runtimes shared " in
 		*" $runtime "*) ;;
 		*)
 			echo "skills: $rdir is not a runtime this knows ($runtimes)" >&2
 			exit 1
 			;;
 		esac
-		for sdir in "$rdir"*/; do
-			[ -d "$sdir" ] || continue
-			src=${sdir%/}
-			name=$(basename "$src")
-			if [ "$runtime" = claude-desktop ]; then
-				links=$(links_in "$src")
-				if [ -n "$links" ]; then
-					"$1" linked "$runtime" "$name" "$src" "" "$links"
-				else
-					"$1" manual "$runtime" "$name" "$src" ""
-				fi
-				continue
-			fi
-			if [ ! -d "$(runtime_root "$runtime")" ]; then
-				"$1" skipped "$runtime" "$name" "$src" ""
-				continue
-			fi
-			dst=$(installed_copy "$runtime" "$name")
-			links=$(links_in "$src"; links_in "$dst")
-			if [ -n "$links" ]; then
-				"$1" linked "$runtime" "$name" "$src" "$dst" "$links"
-				continue
-			fi
-			"$1" "$(status_of "$src" "$dst")" "$runtime" "$name" "$src" "$dst"
-		done
+		each_skill_in "$1" "$rdir" "$runtime"
 	done
 }
 
@@ -231,6 +267,35 @@ each_skill() {
 	echo "skills: $skills_dir is not a directory" >&2
 	exit 1
 }
+
+# $1 is a skill of skills/shared/, $2 the folder it would have in a runtime's own folder.
+# A link counts, a dangling one too: it is a name taken.
+note_clash() {
+	if [ -e "$2" ] || [ -L "$2" ]; then
+		clashes=$((clashes + 1))
+		printf 'skills: the skill is in both %s and %s\n' "$1" "$2" >&2
+	fi
+}
+
+# The same name in skills/shared/ and in the folder of claude or codex would be two
+# sources for one installed copy, and which one wins would be the order of a loop. It is
+# refused before anything is read or copied, by check as well as by install, and every
+# pair is named. A name in shared/ and in antigravity/ is no pair: those copies go to
+# different places.
+refuse_duplicates() {
+	clashes=0
+	for sdir in "$skills_dir"/shared/*/; do
+		[ -d "$sdir" ] || continue
+		for target in $shared_targets; do
+			note_clash "${sdir%/}" "$skills_dir/$target/$(basename "$sdir")"
+		done
+	done
+	if [ "$clashes" -gt 0 ]; then
+		echo "skills: a skill has one source: remove or rename one folder of each pair. Nothing was copied." >&2
+		exit 1
+	fi
+}
+refuse_duplicates
 
 # ---- check ------------------------------------------------------------------
 

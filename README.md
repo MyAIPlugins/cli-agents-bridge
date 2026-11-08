@@ -111,7 +111,7 @@ This installs the `bridge-workflow` skill and the `/cli-agents-bridge:cab` comma
 
 ### 4. Install the agent skills (optional, from a clone, macOS and Linux)
 
-`skills/` holds the role skills for each runtime: the VAL and critic skills for Claude Code and Codex, the Antigravity ones, and `arc-bridge` for Claude Desktop. From a clone of this repository:
+`skills/` holds the role skills for each runtime: the VAL and critic skills for Claude Code and Codex, the Antigravity ones, and `arc-bridge` for Claude Desktop. A skill that Claude Code and Codex both load lives once, in `skills/shared/<name>/`, and is installed in both; the same name in `skills/shared/` and in `skills/claude/` or `skills/codex/` is refused before anything is copied. From a clone of this repository:
 
 ```
 make skills-check      # what differs between the repository and your installed copies
