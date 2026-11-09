@@ -108,6 +108,50 @@ func TestValidate_ValueOutsideEnum(t *testing.T) {
 	assert.Equal(t, "must be one of: Blocker, Major, Nit, fuori-scala", violationsFor(func() Input { in := validValues(); in.Severita = "x"; return in }(), "severita")[0].Reason)
 }
 
+// The help lists the closed columns from InputColumnInfo: what it lists must be
+// exactly what Validate accepts, in the order Validate reports it.
+func TestInputColumnInfo_ListsExactlyWhatValidateAccepts(t *testing.T) {
+	setters := map[string]func(*Input, string){
+		"gate":      func(in *Input, v string) { in.Gate = v },
+		"severita":  func(in *Input, v string) { in.Severita = v },
+		"decisione": func(in *Input, v string) { in.Decisione = v },
+		"esito":     func(in *Input, v string) { in.Esito = v },
+	}
+	closed := 0
+	for _, col := range InputColumnInfo() {
+		if len(col.Allowed) == 0 {
+			continue
+		}
+		closed++
+		set, ok := setters[col.Name]
+		require.True(t, ok, "closed column %q has no setter in this test", col.Name)
+
+		for _, v := range col.Allowed {
+			in := validValues()
+			set(&in, v)
+			assert.Empty(t, violationsFor(in, col.Name), "%s=%q is listed, so it must be accepted", col.Name, v)
+		}
+		in := validValues()
+		set(&in, "not-a-value")
+		got := violationsFor(in, col.Name)
+		require.NotEmpty(t, got)
+		assert.Equal(t, "must be one of: "+strings.Join(col.Allowed, ", "), got[0].Reason)
+	}
+	assert.Equal(t, len(setters), closed, "every closed column is listed")
+}
+
+func TestInputColumnInfo_ReturnsACopy(t *testing.T) {
+	first := InputColumnInfo()
+	for i := range first {
+		for j := range first[i].Allowed {
+			first[i].Allowed[j] = "tampered"
+		}
+	}
+	for _, col := range InputColumnInfo() {
+		assert.NotContains(t, col.Allowed, "tampered")
+	}
+}
+
 func TestValidate_ShapesOfIdentifiersKeyAndNumbers(t *testing.T) {
 	long := func(n int) string { return strings.Repeat("a", n) }
 	cases := []struct {

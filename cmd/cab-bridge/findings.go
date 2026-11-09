@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
@@ -20,11 +21,59 @@ import (
 // in <repository root>/.handover/findings.tsv, the root being the git-COMMON one,
 // so every worktree of a repository shares one registry. The mechanism (snapshot
 // plus one rename, kernel lock) is in internal/findings; this file is the command.
-const findingsUsage = `usage:
-  cab-bridge findings add             one JSON object on stdin, with the columns:
-                                      lotto, gate, critico, chiave, finding, severita, evidenza,
-                                      decisione, esito (required); azione, modello, token, costo (optional)
-  cab-bridge findings stale [--days=N]   open findings older than N days (default findings_stale_days), as TSV`
+//
+// findingsUsage is what an error prints; --help adds findingsGuide. Both are built
+// from the package's own list of columns, so they cannot name a value Validate
+// does not accept.
+var findingsUsage = buildFindingsUsage()
+
+func buildFindingsUsage() string {
+	var required, optional []string
+	for _, c := range findings.InputColumnInfo() {
+		if c.Required {
+			required = append(required, c.Name)
+		} else {
+			optional = append(optional, c.Name)
+		}
+	}
+	return fmt.Sprintf(`usage:
+  cab-bridge findings add                one JSON object on stdin, with the columns:
+                                         %s (required);
+                                         %s (optional)
+  cab-bridge findings stale [--days=N]   open findings older than N days (default findings_stale_days), as TSV`,
+		strings.Join(required, ", "), strings.Join(optional, ", "))
+}
+
+// findingsGuide is the rest of --help: the values a closed column accepts, how a
+// finding is identified and closed, and what is checked and what is not. It is
+// the only text that travels with the binary, so the limit of the check is here.
+func findingsGuide() string {
+	var b strings.Builder
+	b.WriteString("\nallowed values:\n")
+	for _, c := range findings.InputColumnInfo() {
+		if len(c.Allowed) > 0 {
+			fmt.Fprintf(&b, "  %-10s %s\n", c.Name, strings.Join(c.Allowed, " | "))
+		}
+	}
+	b.WriteString(`
+how it works:
+  The registry is <repository root>/.handover/findings.tsv: one for the whole repository, shared by
+  all its worktrees. Every add appends one row. A finding is identified by its chiave: the same
+  chiave is the same finding, and its LAST row is its current state. To close one, add a row with
+  the same chiave and esito chiuso (or respinto). ts and first_seen are written by the command;
+  the age of a finding counts from the first row of its chiave. stale writes nothing in the
+  repository; add creates .handover/ (with its own .gitignore) the first time.
+`)
+	fmt.Fprintf(&b, `
+what is checked:
+  A row is refused, and nothing is written, if a column matches one of these rules:
+    %s
+  (the last one needs the list findings_denied_names in config.json; without it names are not checked).
+  This is NOT a general secret detector: a secret of a type that is not listed, split across the
+  value or encoded passes. Write pointers (file:line, a commit, a message id), not values.
+`, strings.Join(findings.ContentRuleNames(), ", "))
+	return b.String()
+}
 
 // The one format for what is informational on stderr; errors have no prefix of their own.
 const findingsNotePrefix = "findings: note: "
@@ -60,8 +109,7 @@ func findingsRun(args []string, stdin io.Reader, stdout, stderr io.Writer, deps 
 	}
 	switch args[0] {
 	case "-h", "--help", "help":
-		_, err := fmt.Fprintln(stderr, findingsUsage)
-		return err
+		return printFindingsHelp(stderr)
 	case "add":
 		return findingsAdd(args[1:], stdin, stdout, stderr, deps)
 	case "stale":
@@ -71,10 +119,14 @@ func findingsRun(args []string, stdin io.Reader, stdout, stderr io.Writer, deps 
 	}
 }
 
+func printFindingsHelp(stderr io.Writer) error {
+	_, err := fmt.Fprint(stderr, findingsUsage+"\n"+findingsGuide())
+	return err
+}
+
 func findingsAdd(args []string, stdin io.Reader, stdout, stderr io.Writer, deps findingsDeps) error {
 	if len(args) == 1 && (args[0] == "-h" || args[0] == "--help") {
-		_, err := fmt.Fprintln(stderr, findingsUsage)
-		return err
+		return printFindingsHelp(stderr)
 	}
 	if len(args) != 0 {
 		return fmt.Errorf("findings add: takes no arguments, the columns come as one JSON object on stdin\n%s", findingsUsage)
@@ -113,7 +165,9 @@ func findingsStale(args []string, stdout, stderr io.Writer, deps findingsDeps) e
 	daysFlag := flags.Int("days", 0, "findings open for more than this many days (default: findings_stale_days)")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			return nil
+			// The flag package has printed the short usage; the guide completes it.
+			_, werr := fmt.Fprint(stderr, findingsGuide())
+			return werr
 		}
 		return fmt.Errorf("findings stale: %w", err)
 	}

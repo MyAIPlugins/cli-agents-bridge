@@ -248,6 +248,9 @@ func TestFindings_ExitCodesAndHelp(t *testing.T) {
 	_, stderr, exit := r.run(t, "", "findings", "--help")
 	assert.Equal(t, 0, exit)
 	assert.Contains(t, stderr, "cab-bridge findings add")
+	// The real binary, not the function: what it says must include the limit of the check.
+	assert.Contains(t, stderr, "NOT a general secret detector")
+	assert.Contains(t, stderr, "PROPOSE-FIX | CONTEST | DECLINE | ESCALATE")
 
 	_, stderr, exit = r.run(t, "", "findings")
 	assert.Equal(t, 1, exit)

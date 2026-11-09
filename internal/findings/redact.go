@@ -79,6 +79,16 @@ var contentRules = []contentRule{
 	{name: "email", re: regexp.MustCompile(`[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}`)},
 }
 
+// ContentRuleNames lists the rules a value is checked against, in the order they
+// are applied, the person-name rule last. The help prints them.
+func ContentRuleNames() []string {
+	names := make([]string, 0, len(contentRules)+1)
+	for _, r := range contentRules {
+		names = append(names, r.name)
+	}
+	return append(names, personNameRule)
+}
+
 // minNameRunes is the shortest accepted entry of findings_denied_names.
 const minNameRunes = 2
 

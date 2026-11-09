@@ -397,8 +397,9 @@ func tooLargeError(path string, maxBytes int64) error {
 }
 
 // Stale lists the findings still open after more than days days. It never takes
-// the lock and never writes anything (not the registry, not the lock file, not
-// the directory): it reads one whole snapshot, which is either the registry
+// the lock and writes nothing in the repository (not the registry, not the lock
+// file, not the directory; the command around it may still create the bridge's
+// own data directory, as every command does): it reads one whole snapshot, which is either the registry
 // before a concurrent add or the one after it, because add replaces the file
 // with a rename.
 func (s *Store) Stale(days int) (StaleResult, error) {

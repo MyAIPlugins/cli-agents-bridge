@@ -258,6 +258,45 @@ func TestFindingsRun_UsageAndUnknownActions(t *testing.T) {
 	assert.NoDirExists(t, filepath.Join(e.repo, ".handover"))
 }
 
+// The help is the only text that travels with the binary, so it has to say what
+// the check covers and what it does not, and it must list the values Validate
+// accepts. It is built from the package's own lists: this test pins the contract,
+// not the wording of each line.
+func TestFindingsRun_HelpSaysWhatIsCheckedAndWhatIsNot(t *testing.T) {
+	e := newFindingsEnv(t)
+
+	for _, args := range [][]string{{"-h"}, {"--help"}, {"help"}, {"add", "-h"}, {"stale", "--help"}} {
+		_, stderr, err := e.run("", args...)
+		require.NoError(t, err, args)
+
+		for _, col := range findings.InputColumnInfo() {
+			assert.Contains(t, stderr, col.Name, "%v: column %s", args, col.Name)
+			for _, v := range col.Allowed {
+				assert.Contains(t, stderr, v, "%v: allowed value %s of %s", args, v, col.Name)
+			}
+		}
+		for _, rule := range findings.ContentRuleNames() {
+			assert.Contains(t, stderr, rule, "%v: rule %s", args, rule)
+		}
+		assert.Contains(t, stderr, "NOT a general secret detector", args)
+		assert.Contains(t, stderr, "split across the", args)
+		assert.Contains(t, stderr, "LAST row", args)
+		assert.Contains(t, stderr, "esito chiuso (or respinto)", args)
+		assert.Contains(t, stderr, "stale writes nothing in the", args)
+	}
+	assert.NoDirExists(t, filepath.Join(e.repo, ".handover"))
+}
+
+// An error prints the short usage only: the guide is for --help.
+func TestFindingsRun_AnErrorPrintsTheShortUsageNotTheGuide(t *testing.T) {
+	e := newFindingsEnv(t)
+
+	_, _, err := e.run("")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cab-bridge findings add")
+	assert.NotContains(t, err.Error(), "NOT a general secret detector")
+}
+
 // ---- stale ----------------------------------------------------------------
 
 // seed records findings through the command itself, on a clock that moves.

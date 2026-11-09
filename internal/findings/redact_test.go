@@ -72,6 +72,34 @@ func TestScan_RuleNamesAreUniqueAndTheListIsComplete(t *testing.T) {
 	assert.Equal(t, "anthropic-key", got)
 }
 
+// The help names the rules from ContentRuleNames. The list has to be the one Scan
+// really applies: every name Scan reports is listed, every listed name is
+// reported by some input, and the person-name rule (a list, not a pattern) is last.
+func TestContentRuleNames_AreTheRulesScanReports(t *testing.T) {
+	names := ContentRuleNames()
+	require.Len(t, names, 13)
+	assert.Equal(t, personNameRule, names[len(names)-1])
+
+	reported := map[string]bool{}
+	for rule, value := range secretFixtures() {
+		got, hit := Scan(value, nil)
+		require.True(t, hit, rule)
+		reported[got] = true
+	}
+	got, hit := Scan("Marta wrote this", []string{"Marta"})
+	require.True(t, hit)
+	reported[got] = true
+
+	listed := map[string]bool{}
+	for _, n := range names {
+		listed[n] = true
+		assert.True(t, reported[n], "listed rule %s is never reported by Scan", n)
+	}
+	for n := range reported {
+		assert.True(t, listed[n], "Scan reports %s but the help does not list it", n)
+	}
+}
+
 func TestScan_NearMissesPass(t *testing.T) {
 	for _, v := range []string{
 		"internal/findings/store.go:120", "3519a9a", "msg-9d958ef1a8d0", "/Users/x/y.md", `C:\dev\x.go:12`,

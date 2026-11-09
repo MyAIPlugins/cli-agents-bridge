@@ -167,6 +167,23 @@ var inputColumns = []columnSpec{
 	{name: "costo", kind: kindCost},
 }
 
+// ColumnInfo is what the command's help says about one input column.
+type ColumnInfo struct {
+	Name     string
+	Required bool
+	Allowed  []string // the closed list of values; empty for a free column
+}
+
+// InputColumnInfo describes the columns the caller gives, in registry order. The
+// help is built from it, so the values it lists are the ones Validate accepts.
+func InputColumnInfo() []ColumnInfo {
+	out := make([]ColumnInfo, len(inputColumns))
+	for i, c := range inputColumns {
+		out[i] = ColumnInfo{Name: c.name, Required: c.required, Allowed: append([]string(nil), c.allowed...)}
+	}
+	return out
+}
+
 // Fixed reasons. None of them may contain a value from the input.
 const (
 	reasonRequired    = "is required"
