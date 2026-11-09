@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Skills shared by Claude Code and Codex live once, in `skills/shared/`** (F-155). `make install-skills` installs each one in both runtimes, `make skills-check` prints a line for each copy, and a name that is both in `skills/shared/` and in `skills/claude/` or `skills/codex/` is refused before anything is copied.
 
 ### Changed
+- **`make lint` runs under the Go toolchain named in `go.mod`** (F-159), the one CI uses, whatever Go the machine has by default. Before, a newer default Go made the pinned staticcheck fail on a tree that was fine, while CI stayed green. A `GOTOOLCHAIN` already set in the environment or on the `make` command line wins; without a `toolchain` line in `go.mod` the target stops and says how to add one.
 - The README no longer presents the project as a fork: the code was written from scratch in Go, and the credit says where the idea came from.
 
 ## [0.11.0] — 2026-11-01
