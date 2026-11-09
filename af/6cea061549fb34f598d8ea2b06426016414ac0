@@ -1,0 +1,25 @@
+skills/claude/cab-bridge-awareness/references/val.md
+  s_f8849908940048::t_2020b1a631c23a 73
+ROADMAP.md
+  s_f8849908940048::t_2020b1a631c23a 18-19
+skills/shared/security-expert/references/runtime-codex.md
+  s_f8849908940048::t_2020b1a631c23a 8
+skills/shared/security-expert/SKILL.md
+  s_f8849908940048::t_2020b1a631c23a 71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "af6cea061549fb34f598d8ea2b06426016414ac0",
+  "prompts": {},
+  "sessions": {
+    "s_f8849908940048": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "37bcf92a-1982-4e9a-a4d3-17eecb17eeb9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
