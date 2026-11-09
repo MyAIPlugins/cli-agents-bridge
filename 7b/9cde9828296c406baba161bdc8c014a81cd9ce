@@ -1,0 +1,25 @@
+ROADMAP.md
+  s_f8849908940048::t_1515d45fabdd2a 8,12,14,20,22
+README.md
+  s_f8849908940048::t_2e91fc67e2114e 297
+SECURITY.md
+  s_f8849908940048::t_2e2a24bb43aea6 76-92
+CHANGELOG.md
+  s_f8849908940048::t_f8228afa8817dd 8-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7b9cde9828296c406baba161bdc8c014a81cd9ce",
+  "prompts": {},
+  "sessions": {
+    "s_f8849908940048": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "37bcf92a-1982-4e9a-a4d3-17eecb17eeb9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
