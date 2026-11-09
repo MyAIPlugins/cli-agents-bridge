@@ -31,7 +31,33 @@
 #     is a link inside the repo's skill. The `skills` folder of a runtime may itself be a
 #     link: that is the user's own arrangement, and what is under it is the skill's folder;
 #   - all or nothing: if one copy would be refused, no skill is copied;
-#   - a runtime that is not on this machine (no ~/.codex) is skipped, with a line.
+#   - a skill of Codex that is also in ~/.codex/skills, the old folder Codex still reads,
+#     is a second copy, and Codex loads both (measured with 0.166.0: the name is listed
+#     twice). It is refused by check and by install, FORCE does not override it, and every
+#     such path is named so that the user can remove or move it: the install never does.
+#     It is refused when the old path is a folder, or a link to a folder, other than the
+#     one the install writes to, or a link that leads to no folder (Codex skips it today
+#     and would load a second copy if its target came back as another folder). It is not
+#     refused when the old path is the same folder reached by two paths (~/.codex/skills a
+#     link to ~/.agents/skills, or the other way round, or a link on the skill: Codex loads
+#     it once), a plain file, or nothing. Only the old path of each skill of the repo is
+#     looked at: .system and every other folder of ~/.codex/skills are the user's and are
+#     not read or listed. What a refusal tells the user to do must not cost the copy the
+#     install wrote nor anything outside ~/.codex/skills: a link is said to be one, with
+#     where it leads, and is removed as itself, and a folder is said where to be moved to;
+#   - "the same folder" is decided by device and inode, with test -ef, and not by how the
+#     two paths are written: a folder reached through a link spelled with other cases, on a
+#     volume that does not tell them apart, is one folder. test -ef is not in POSIX.1-2018;
+#     dash, bash, ksh and zsh have it, and a sh without it, or whose test says yes to
+#     everything, is refused up front, by check and by install, before anything is read or
+#     copied (a folder against this script, a file, must come out as two). The message for a
+#     link uses readlink
+#     (macOS and Linux; also not in POSIX.1-2018) to say where the link leads. The identity
+#     is a local one: device and inode, as the filesystem gives them;
+#   - a runtime that is not on this machine is skipped, with a line. Whether it is here is
+#     decided by its configuration folder (~/.claude, ~/.codex, ~/.gemini/config), not by
+#     the folder its copies go to: Codex is here if ~/.codex exists, and its copies go to
+#     ~/.agents/skills, which is created if it is not there.
 #
 # Environment: SKILLS_DIR (default skills), BIN_DIR (default bin, where the zips for
 # Claude Desktop go), FORCE (1 to overwrite), HOME. File names with a newline in them are
@@ -73,9 +99,76 @@ runtime_root() {
 	esac
 }
 
+# The folder a runtime loads the user's skills from, and so where the installed copies
+# go. For Codex it is not under its runtime_root: it keeps its configuration in ~/.codex
+# and loads skills from ~/.agents/skills (~/.codex/skills is the old folder, which it
+# still reads).
+skills_root() {
+	case $1 in
+	claude) echo "$home/.claude/skills" ;;
+	codex) echo "$home/.agents/skills" ;;
+	antigravity) echo "$home/.gemini/config/skills" ;;
+	esac
+}
+
 # Claude Desktop has no folder to copy into: it takes a zip uploaded by hand.
 installed_copy() {
-	echo "$(runtime_root "$1")/skills/$2"
+	echo "$(skills_root "$1")/$2"
+}
+
+# Where Codex used to look for the user's skills, and where the installed copies used to
+# go: $1 is the name of a skill. Codex still reads it, next to ~/.agents/skills.
+old_codex_copy() {
+	echo "$home/.codex/skills/$1"
+}
+
+# What the old folder holds under the name of a skill the install writes ($1 is the old
+# path, $2 the path the install writes to). Prints one word:
+#   other     a folder, or a link to one, that is not the folder the install writes to:
+#             Codex loads both and lists the skill twice
+#   dangling  a link that leads to no folder: Codex skips it today, and would load a
+#             second copy if its target came back
+#   same      the same folder reached by two paths (a link in either direction, above the
+#             skill or on it): Codex loads it once
+#   none      nothing, or a plain file, which Codex does not load
+# Same is decided by device and inode (test -ef), not by the strings of the two paths: a
+# link spelled with other cases on a volume that does not tell them apart gives two
+# strings for one folder, and a message that called the installed copy "another copy"
+# would have the user remove it.
+old_copy_kind() {
+	if [ -d "$1" ]; then
+		if [ "$1" -ef "$2" ]; then
+			echo same
+		else
+			echo other
+		fi
+	elif [ -L "$1" ]; then
+		echo dangling
+	else
+		echo none
+	fi
+}
+
+# Where the symbolic link $1 leads, as it was written; nothing if $1 is not a link. A
+# message that tells the user to remove a link has to say it is one and where it goes:
+# removed through a / at the end of its path, it takes the folder it leads to with it.
+link_target() {
+	if [ -L "$1" ]; then
+		readlink "$1" 2>/dev/null || echo "(readlink could not read it)"
+	fi
+}
+
+# What to do with a path of the old folder, said under the path itself. $1 is duplicate or
+# deadlink, $2 where the path leads if it is a link (else nothing), $3 the copy the
+# install writes. A real folder can be moved there to be kept, when nothing is there yet.
+how_to_clear() {
+	if [ -z "$2" ]; then
+		[ -e "$3" ] || [ -L "$3" ] || printf '    to keep it, move it to %s (nothing is there yet: it keeps its record, if it has one)\n' "$3"
+	elif [ "$1" = deadlink ]; then
+		printf '    a symbolic link to %s, which is not a folder: remove the link\n' "$2"
+	else
+		printf '    a symbolic link to %s: remove the link, not the folder it leads to\n' "$2"
+	fi
 }
 
 # Every symbolic link at $1 or inside it, one path per line. A link is neither followed
@@ -200,7 +293,10 @@ show_extras() {
 # status runtime name source installed-copy.
 # The status is skipped (the runtime is not here), manual (Claude Desktop), linked (a
 # symbolic link in the repo's skill or in the installed copy; the sixth argument lists
-# them), or what status_of says.
+# them), or what status_of says. A Codex skill that is also in the old folder is called
+# first with duplicate (a second folder) or deadlink (a link to no folder), the sixth
+# argument is the path in the old folder and the seventh where it leads if it is a link;
+# it is then called again for the copy itself.
 emit_skill() {
 	cb=$1
 	runtime=$2
@@ -220,6 +316,13 @@ emit_skill() {
 		return 0
 	fi
 	dst=$(installed_copy "$runtime" "$name")
+	if [ "$runtime" = codex ]; then
+		old=$(old_codex_copy "$name")
+		case $(old_copy_kind "$old" "$dst") in
+		other) "$cb" duplicate "$runtime" "$name" "$src" "$dst" "$old" "$(link_target "$old")" ;;
+		dangling) "$cb" deadlink "$runtime" "$name" "$src" "$dst" "$old" "$(link_target "$old")" ;;
+		esac
+	fi
 	links=$(links_in "$src"; links_in "$dst")
 	if [ -n "$links" ]; then
 		"$cb" linked "$runtime" "$name" "$src" "$dst" "$links"
@@ -267,6 +370,24 @@ each_skill() {
 	echo "skills: $skills_dir is not a directory" >&2
 	exit 1
 }
+
+# Whether two paths are one folder is asked of test -ef (same device and inode, links
+# followed), which POSIX.1-2018 does not have and dash, bash, ksh and zsh do. A sh without
+# it would answer "not the same" to everything, and the old-folder message would tell the
+# user to remove the copy the install wrote: so it is asked before anything is read.
+# 2>/dev/null: such a sh complains on stderr, and the line below says it once.
+[ "$skills_dir" -ef "$skills_dir" ] 2>/dev/null || {
+	echo "skills: this sh has no test -ef (same device and inode), which tells whether two paths are one folder. Nothing was read or copied." >&2
+	exit 1
+}
+# The other way too: a test that answers yes to an operator it does not know passes the line
+# above, and would call every pair "the same folder", so two copies would be loaded without a
+# word. A folder (skills_dir is one, checked above) and this very script, a file, are never one
+# thing, whatever the paths or the volume: it must say no to that pair.
+if [ "$skills_dir" -ef "$0" ] 2>/dev/null; then
+	echo "skills: this sh's test -ef calls a folder and a file one thing, so it cannot tell whether two paths are one folder. Nothing was read or copied." >&2
+	exit 1
+fi
 
 # $1 is a skill of skills/shared/, $2 the folder it would have in a runtime's own folder.
 # A link counts, a dangling one too: it is a name taken.
@@ -317,6 +438,20 @@ report() {
 		printf '    %s\n' "$6"
 		bad=1
 		;;
+	duplicate)
+		if [ -n "$7" ]; then
+			printf 'duplicate  %s/%s  (%s is a symbolic link to %s, another copy in the old folder Codex still reads: Codex would load both)\n' "$2" "$3" "$6" "$7"
+		else
+			printf 'duplicate  %s/%s  (%s is another copy, in the old folder Codex still reads: Codex would load both)\n' "$2" "$3" "$6"
+		fi
+		how_to_clear "$1" "$7" "$5"
+		bad=1
+		;;
+	deadlink)
+		printf 'deadlink   %s/%s  (%s is a symbolic link to %s, which is not a folder: Codex skips it today, and would load a second copy if its target came back as a folder other than the new copy)\n' "$2" "$3" "$6" "$7"
+		how_to_clear "$1" "$7" "$5"
+		bad=1
+		;;
 	behind)
 		printf 'different  %s/%s  (behind the repo; %s)\n' "$2" "$3" "$5"
 		show_findings "$4" "$5"
@@ -341,6 +476,7 @@ fi
 conflicts=0
 desktop=0
 linked=0
+oldcopies=0
 plan() {
 	case $1 in
 	linked)
@@ -350,6 +486,15 @@ plan() {
 		fi
 		printf '  %s/%s\n' "$2" "$3" >&2
 		printf '    %s\n' "$6" >&2
+		;;
+	duplicate | deadlink)
+		oldcopies=$((oldcopies + 1))
+		if [ "$oldcopies" -eq 1 ]; then
+			echo "refused: a skill is also in the old folder Codex still reads, ~/.codex/skills, and a name found in both folders is loaded twice. FORCE does not change that, and nothing there is moved or deleted by this: remove each of these by hand, or move it out of ~/.codex/skills, then run again. A symbolic link is removed as itself, never with a / at the end of its path: that reaches the folder it leads to. Nothing was copied." >&2
+		fi
+		printf '  %s/%s\n' "$2" "$3" >&2
+		printf '    %s\n' "$6" >&2
+		how_to_clear "$1" "$7" "$5" >&2
 		;;
 	edited)
 		conflicts=$((conflicts + 1))
@@ -366,7 +511,7 @@ plan() {
 }
 
 each_skill plan
-if [ "$linked" -gt 0 ]; then
+if [ "$linked" -gt 0 ] || [ "$oldcopies" -gt 0 ]; then
 	exit 1
 fi
 if [ "$conflicts" -gt 0 ] && [ "$force" != 1 ]; then

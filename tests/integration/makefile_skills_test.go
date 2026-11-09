@@ -121,7 +121,7 @@ func exitCode(t *testing.T, err error) int {
 func (fx skillsFixture) runtimeTree(t *testing.T) map[string]string {
 	t.Helper()
 	all := map[string]string{}
-	for _, dir := range []string{".claude", ".codex", ".gemini"} {
+	for _, dir := range []string{".agents", ".claude", ".codex", ".gemini"} {
 		if _, err := os.Stat(filepath.Join(fx.home, dir)); err != nil {
 			continue
 		}
@@ -171,7 +171,7 @@ func TestMakefile_Skills(t *testing.T) {
 
 		assert.Equal(t, "alpha for claude\n", readFile(t, installed(fx, ".claude", "alpha", "SKILL.md")))
 		assert.Equal(t, "guide\n", readFile(t, installed(fx, ".claude", "alpha", "refs/guide.md")))
-		assert.Equal(t, "alpha for codex\n", readFile(t, installed(fx, ".codex", "alpha", "SKILL.md")))
+		assert.Equal(t, "alpha for codex\n", readFile(t, installed(fx, ".agents", "alpha", "SKILL.md")))
 		assert.Equal(t, personal, tree(t, filepath.Join(fx.home, ".claude", "skills", "personal")), "the user's own skill is untouched")
 		assert.NotContains(t, out, "personal", "and not even named")
 
@@ -191,7 +191,7 @@ func TestMakefile_Skills(t *testing.T) {
 				others = append(others, n)
 			}
 		}
-		assert.Equal(t, []string{".claude", ".codex"}, others, "nothing else appeared in HOME (a module cache, say)")
+		assert.Equal(t, []string{".agents", ".claude", ".codex"}, others, "nothing else appeared in HOME (a module cache, say)")
 
 		again, code := fx.make(t, repoRoot, "install-skills")
 		require.Equal(t, 0, code, again)
@@ -239,7 +239,7 @@ func TestMakefile_Skills(t *testing.T) {
 		out, code := fx.make(t, repoRoot, "install-skills")
 		require.Equal(t, 0, code, out)
 		write(t, installed(fx, ".claude", "alpha", "SKILL.md"), "alpha for claude\nA LOCAL EDIT\n")
-		require.NoError(t, os.RemoveAll(filepath.Join(fx.home, ".codex", "skills", "alpha")))
+		require.NoError(t, os.RemoveAll(filepath.Join(fx.home, ".agents", "skills", "alpha")))
 
 		out, code = fx.make(t, repoRoot, "install-skills")
 		assert.NotEqual(t, 0, code, out)
@@ -247,13 +247,13 @@ func TestMakefile_Skills(t *testing.T) {
 		assert.Contains(t, out, "claude/alpha")
 		assert.Contains(t, out, "differs: SKILL.md")
 		assert.Equal(t, "alpha for claude\nA LOCAL EDIT\n", readFile(t, installed(fx, ".claude", "alpha", "SKILL.md")), "the local edit is still there")
-		assert.NoDirExists(t, filepath.Join(fx.home, ".codex", "skills", "alpha"), "all or nothing: the codex copy that was missing was not installed either")
+		assert.NoDirExists(t, filepath.Join(fx.home, ".agents", "skills", "alpha"), "all or nothing: the codex copy that was missing was not installed either")
 
 		out, code = fx.make(t, repoRoot, "install-skills", "FORCE=1")
 		require.Equal(t, 0, code, out)
 		assert.Contains(t, out, "overwrote  claude/alpha: SKILL.md", "FORCE says what it overwrote")
 		assert.Equal(t, "alpha for claude\n", readFile(t, installed(fx, ".claude", "alpha", "SKILL.md")))
-		assert.Equal(t, "alpha for codex\n", readFile(t, installed(fx, ".codex", "alpha", "SKILL.md")), "and the missing one is installed")
+		assert.Equal(t, "alpha for codex\n", readFile(t, installed(fx, ".agents", "alpha", "SKILL.md")), "and the missing one is installed")
 	})
 
 	// What each install leaves in a skill's folder is a record of what it installed, and
@@ -448,7 +448,7 @@ func TestMakefile_Skills(t *testing.T) {
 			assert.Contains(t, out, "refused", "%v", extra)
 			assert.Contains(t, out, link, "the path of the link is named: %v", extra)
 			assert.Equal(t, before, tree(t, elsewhere), "nothing was written through it: %v", extra)
-			assert.NoDirExists(t, filepath.Join(fx.home, ".codex", "skills", "alpha"), "and nothing else was copied: %v", extra)
+			assert.NoDirExists(t, filepath.Join(fx.home, ".agents", "skills", "alpha"), "and nothing else was copied: %v", extra)
 		}
 		out, code := fx.make(t, repoRoot, "skills-check")
 		assert.NotEqual(t, 0, code, out)
@@ -582,6 +582,7 @@ func TestMakefile_Skills(t *testing.T) {
 		require.Equal(t, 0, code, out)
 		assert.Contains(t, out, "skipped    codex/alpha")
 		assert.NoDirExists(t, filepath.Join(fx.home, ".codex"))
+		assert.NoDirExists(t, filepath.Join(fx.home, ".agents"), "and neither is ~/.agents, where its copies would go")
 	})
 
 	t.Run("skills-check says ok, missing or different, exits non-zero unless all is ok, and touches nothing", func(t *testing.T) {
