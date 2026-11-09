@@ -1,6 +1,6 @@
 # Orchestration: vendors, other repositories, Claude Desktop, maintenance
 
-Reference of `cab-bridge-awareness`, for the VAL. Text moved from the single file of 8 Nov.
+Reference of `cab-bridge-awareness`, for the VAL.
 
 
 ## Vendor map (measured from 9 August onward)
@@ -70,7 +70,7 @@ So: if a red gate happens while others are building, **rerun it alone before bel
 
 ## Cleanup
 
-Closing a window does not delete the session: it stays orphaned until the auto-gc. To clean up immediately there is `cab-bridge cleanup --scope=global --force`, but **you do not run it without the human's OK**: a provisional rule the VAL wrote on 8 Nov because of the two facts below and in `lessons.md` (section "Destructive tests": thirteen sessions deleted on 9 Aug).
+Closing a window does not delete the session: it stays orphaned until the auto-gc. To clean up immediately there is `cab-bridge cleanup --scope=global --force --data-dir=<the data dir the command prints>` (without `--data-dir` it refuses, and it stops at the sessions of the current project; `--all-scopes` takes them all), but **you do not run it without the human's OK**: a provisional rule the VAL wrote on 8 Nov because of the two facts below and in `lessons.md` (section "Destructive tests": thirteen sessions deleted on 9 Aug).
 
 ⚠️ **WARNING, and the previous line here said something false**: `cleanup` is **NOT** as conservative as the auto-gc. `[E]` The auto-gc removes only if **PID dead AND heartbeat old** (a double condition, declared load-bearing in the code); `globalSweep` looks **only at the heartbeat** and never calls `IsProcessAlive`. ⇒ **A session with a LIVE process but a heartbeat older than 300 s gets removed**, i.e. precisely the **paused** agent, with no hanging `next` and no `state orchestrating`, which is stopped by someone's decision and not abandoned. *The manual command is LESS cautious than the automatic mechanism, which is the opposite of what you expect from a tool with `--force`.* ⇒ **Before running it: `peers --all-scopes`, and look at who is stopped on purpose.**
 

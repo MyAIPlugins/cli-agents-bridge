@@ -7,7 +7,7 @@
 | VAL | the evaluator: orchestrates the team, writes the BAR and the documents, holds the gates, triages the findings |
 | ESC, ESC2 | executors: they write the code; ESC2 is a second executor on an independent lot |
 | CRI, CRI2 | independent critics; in the team these rubrics come from, CRI runs on Codex and CRI2 on Claude Code |
-| SEC | security reviewer (skill `security-expert`), on any runtime: **on trial**, its first real lot is also its trial, and the human ends the trial. It is activated when the BAR says "SEC: yes" |
+| SEC | security reviewer (skill `security-expert`), on any runtime. It is activated when the BAR says "SEC: yes" |
 | BRO | browser verifier |
 | ARC | the architect, Claude Desktop: talks only with the VAL |
 | lot | an assigned unit of work, with its BAR, that ends in a merge |
@@ -91,7 +91,7 @@ A push, a PR, a merge, a deploy or the creation of a cloud resource interrupted 
 
 Each agent writes only its own files. No agent modifies the files of another.
 
-## Brief to a subagent (for whoever runs on Claude Code and launches them)
+## Brief to a subagent (for whoever launches them)
 
 One level only: whoever launches the subagents is a member of the team; the subagents do not delegate. For several perimeters, several instances in the same message, each one with its own brief. The brief, always in this form:
 - **Goal**: one line.

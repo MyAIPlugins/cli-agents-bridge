@@ -1,6 +1,6 @@
 # Codex peer: engagement, wake-up, cost of waiting
 
-Reference of `cab-bridge-awareness`, for the VAL that engages or wakes a Codex peer. Text moved from the single file of 8 Nov, with the measurements and dates as they were: an environment number expires, so measure it again before building on it.
+Reference of `cab-bridge-awareness`, for the VAL that engages or wakes a Codex peer. The measurements and dates are as they were: an environment number expires, so measure it again before building on it.
 
 
 ## Engagement
@@ -68,6 +68,8 @@ not yet measured: `ask` is the right form for a task anyway, so it costs nothing
 goal, no hanging `next`, **zero cost**) and you wake it when there is material:
 
     codex queue --thread <its CODEX_THREAD_ID> --message "you have mail on the bridge"
+
+(It needs codex-cli 0.154.0 or later in the PATH of whoever wakes: the check is in the core, "Peers without native push".)
 
 **How you get the id**: **you ask it, and it reads it from its own environment**: `CODEX_THREAD_ID` and
 `CODEX_SESSION_ID`, which match the `thread_id` of its rollout file. ⛔ **Do not look it up yourself with

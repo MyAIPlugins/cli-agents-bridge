@@ -1,6 +1,6 @@
 # Lessons: the incidents that produced the rules
 
-Reference of `cab-bridge-awareness`. The core keeps the rule and one line of reason; here is the story, with the date, moved from the single file of 8 Nov. A new rule born from an incident: the rule in the core, the story here.
+Reference of `cab-bridge-awareness`. The core keeps the rule and one line of reason; here is the story, with the date. A new rule born from an incident: the rule in the core, the story here.
 
 
 ## Entry
@@ -18,7 +18,7 @@ Field data (9 Aug): three fresh agents spent **six commands each** where two wer
 
 ## Sending method
 
-**And it applies to EVERY command that takes text, not just the bridge.** The case that got me after I had written this rule: `git commit -m "... ~0.6ms su `+'`peers`'+` con 4 sessioni ..."`. The shell executed `peers` as a command and the message ended up in the history with a hole in its place, already pushed and not rewritable. **For commit messages: always `git commit -F <file>`** (written with `Write`), or a heredoc with a quoted delimiter. The risk does not belong to the bridge: it belongs to any text that passes through a shell line.
+**And it applies to EVERY command that takes text, not just the bridge.** The case that got me after I had written this rule: `git commit -m "... ~0.6ms on `+'`peers`'+` with 4 sessions ..."`. The shell executed `peers` as a command and the message ended up in the history with a hole in its place, already pushed and not rewritable. **For commit messages: always `git commit -F <file>`** (written with `Write`), or a heredoc with a quoted delimiter. The risk does not belong to the bridge: it belongs to any text that passes through a shell line.
 
 **Why "be careful" is not enough.** The shell interprets backticks, `$` and quotes **before** the binary is invoked: when `cab-bridge` starts the content is already corrupted, and **no tool-side check can notice** (there is no original to compare it with). The command exits successfully and the message leaves in pieces.
 
@@ -70,13 +70,13 @@ Born from ten errors of mine in one day. They are not good intentions: they are 
 
 ## Destructive tests
 
-It is not enough to say *"verify on the code"*. An agent testing commands that delete will do it on the machine it is on, and **a `cd` into a test directory does not protect it**: the `cab-bridge` data dir derives from `$HOME`, not from the cwd, and no output says so.
+It is not enough to say *"verify on the code"*. An agent testing commands that delete will do it on the machine it is on, and **a `cd` into a test directory does not protect it**: the `cab-bridge` data dir derives from `$HOME`, not from the cwd, and back then no output said so (today, 0.11.0, `cleanup --scope=global` prints it and requires `--data-dir`).
 
 Real cost (9 Aug): a critic testing an attack vector on `archive/` ran `cleanup --scope=global --force` without `CAB_DATA_DIR`, trusting its own `cd`. **Thirteen archived sessions deleted from the production data dir.** Recovered from a snapshot, but by luck, not by design. The critic had **predicted that defect a few hours earlier** and fell into it anyway: knowing is not enough, when the command does not remind you at the moment it matters.
 
 **So in the brief, always, in one line:** *"for any test that deletes or modifies, export `CAB_DATA_DIR` to a sandbox: the cwd isolates nothing"*. And if the command has a `--dry-run`, name it.
 
-It is a mitigation, not the fix: the fix lies in the tool, which must say what it acts on before acting. But the line in the brief costs one sentence and covers the agent that has not read the skill.
+It is a mitigation, not the fix: the fix lies in the tool, which must say what it acts on before acting (for `cleanup`, 0.11.0 does). But the line in the brief costs one sentence and covers the agent that has not read the skill.
 
 
 ## Close the loop
@@ -120,8 +120,9 @@ it does not.
 (`'VAL-bridge@C:\<path>\cli-agents-bridge'`). Used **verbatim, as this skill prescribes**, the
 `tell` fails:
 
-    no agent named "VAL-bridge" in project "C:\<path>\cli-agents-bridge"
-      projects with agents: other-project, **cli-agents-bridge**
+    no agent named "VAL-bridge" in project "C:\<path>\cli-agents-bridge" ... projects with agents: other-project, **cli-agents-bridge**
+
+(one line in the real output, shortened here)
 
 ⇒ The binary **lists among the valid projects the very one it has just rejected**: that is the signature.
 `[L]` The cause (from the bridge's VAL): `recipient.go:72` decides *"is it an absolute path?"* with

@@ -109,7 +109,7 @@ Claude Code wakes up on its own with the background `next`. Codex does not: you 
 
     codex queue --thread <CODEX_THREAD_ID> --message "you have mail on the bridge"
 
-(`--thread` and `--message` are mandatory; the text is fixed and short, so the rule "never the text as an argument" does not bite here: the real content is on the bridge.) Details and limits in `references/codex-peer.md`, sections "WAKING A CODEX PEER" and "What is NOT solved yet". Claude Desktop cannot be woken from outside in any way: it reads mail only when it calls `next` inside one of its turns, and a person opens the turn; use `ask` and tell the human.
+(`--thread` and `--message` are mandatory; the text is fixed and short, so the rule "never the text as an argument" does not bite here: the real content is on the bridge.) `codex queue` exists from 0.154.0 on: before relying on it, check `codex --version` **of the binary your PATH finds** (`which -a codex` if there is more than one); an older one answers `unexpected argument '--thread'` and the peer stays asleep. Measured on 9 Nov 2026: a machine with two installs, one of them 0.136.0, gave that error to a probe that had found the old one. Details and limits in `references/codex-peer.md`, sections "WAKING A CODEX PEER" and "What is NOT solved yet". Claude Desktop cannot be woken from outside in any way: it reads mail only when it calls `next` inside one of its turns, and a person opens the turn; use `ask` and tell the human.
 
 Do not leave on a peer's inbox a background `next` that nobody reads: the message stays in the inbox marked `NOTIFIED`, `overview` says "nothing unread" and no `next` redelivers it.
 

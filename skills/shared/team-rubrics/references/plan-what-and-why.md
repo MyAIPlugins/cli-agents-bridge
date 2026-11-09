@@ -2,7 +2,7 @@
 
 Adapted from google/elephant-goldfish-model (feature-spec and Heilmeier questions), Apache-2.0.
 
-It serves the ESC for part A of the plan in lots with a plan gate, ARC for every proposal, CRI2 to judge them (and SEC, on trial, on the risks and limits item). Whoever applies it checks that every point is there and holds up; a missing point is a finding.
+It serves the ESC for part A of the plan in lots with a plan gate, ARC for every proposal, CRI2 to judge them (and SEC, on the risks and limits item). Whoever applies it checks that every point is there and holds up; a missing point is a finding.
 
 1. **Goal**, in your own words and without jargon: what changes for whoever uses the system.
 2. **How it works today** and where it stops. Read in the code or in the documents, not remembered.

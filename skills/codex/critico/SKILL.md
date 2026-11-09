@@ -24,7 +24,7 @@ initiative. Declare that you are ready as CRI and wait to be assigned what to cr
 
 ⚠️⚠️ **Your `CODEX_THREAD_ID` goes in that first message** (you read it from your environment, together
 with `CODEX_SESSION_ID`). You stay **still** — no `next` left hanging, no persistent goal, which
-would cost ~130k tokens per hour of silence — and the VAL wakes you with `codex queue --thread <id>`.
+would cost ~130k tokens per hour of silence — and the VAL wakes you with `codex queue --thread <id> --message "..."`.
 **The VAL gets that id only if you send it.** Without it, on its side you do not exist; on yours, the silence
 is indistinguishable from "the VAL has not finished yet". You would stay silent forever and neither of you would
 notice.
