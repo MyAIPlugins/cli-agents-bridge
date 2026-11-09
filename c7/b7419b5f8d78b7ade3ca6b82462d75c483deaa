@@ -1,0 +1,55 @@
+skills/claude/cab-bridge-awareness/SKILL.md
+  s_f8849908940048::t_49c739343ecedb 3-5,10,12-16,18,20-21,23,25,27,29,31-37,39,41,46-47,50-55,57,59-60,62,64,66,68,70,72,74,78,80,84,86-90,92,94,96,98,100-104,106,108,110,112,114,116,125,128
+skills/shared/team-rubrics/references/naive-reader.md
+  s_f8849908940048::t_49c739343ecedb 1-11
+skills/shared/team-rubrics/references/common-rules.md
+  s_f8849908940048::t_49c739343ecedb 1-105
+skills/shared/team-rubrics/SKILL.md
+  s_f8849908940048::t_49c739343ecedb 1-21
+skills/shared/team-rubrics/references/zoom-out.md
+  s_f8849908940048::t_49c739343ecedb 1-16
+skills/codex/critico/SKILL.md
+  s_f8849908940048::t_cf6cacdaf2b349 48,56
+skills/shared/security-expert/references/runtime-codex.md
+  s_f8849908940048::t_49c739343ecedb 1-47
+CHANGELOG.md
+  s_f8849908940048::t_8a2ccbe7f6dce7 12,16-17
+skills/shared/team-rubrics/references/plan-detail.md
+  s_f8849908940048::t_49c739343ecedb 1-15
+README.md
+  s_f8849908940048::t_8a2ccbe7f6dce7 114
+skills/claude-desktop/arc-bridge/SKILL.md
+  s_f8849908940048::t_49c739343ecedb 6,40,52-54
+skills/claude/cab-bridge-awareness/references/val.md
+  s_f8849908940048::t_49c739343ecedb 1-82
+skills/shared/team-rubrics/references/plan-what-and-why.md
+  s_f8849908940048::t_49c739343ecedb 1-17
+skills/shared/security-expert/references/checklist-stack.md
+  s_f8849908940048::t_49c739343ecedb 1-50
+skills/claude/cab-bridge-awareness/references/lessons.md
+  s_f8849908940048::t_49c739343ecedb 1-146
+skills/claude/cab-bridge-awareness/references/codex-peer.md
+  s_f8849908940048::t_49c739343ecedb 1-127
+skills/claude/critico/SKILL.md
+  s_f8849908940048::t_cf6cacdaf2b349 50,58
+skills/shared/security-expert/references/runtime-claude-code.md
+  s_f8849908940048::t_49c739343ecedb 1-18
+skills/shared/security-expert/SKILL.md
+  s_f8849908940048::t_49c739343ecedb 1-71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c7b7419b5f8d78b7ade3ca6b82462d75c483deaa",
+  "prompts": {},
+  "sessions": {
+    "s_f8849908940048": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "37bcf92a-1982-4e9a-a4d3-17eecb17eeb9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
