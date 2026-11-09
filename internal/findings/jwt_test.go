@@ -112,7 +112,7 @@ func TestJWT_ValidTokensAreRejectedWhateverTheirSerialization(t *testing.T) {
 // the table shows what the structural check is looking at.
 func TestJWT_WhatIsNotATokenPasses(t *testing.T) {
 	sig := strings.Repeat("s", signatureLen)
-	require.True(t, containsJWT(makeJWT(headerPlain, claims)), "premise: the same shape with a real header is a token")
+	require.Equal(t, verdictHit, containsJWT(makeJWT(headerPlain, claims)), "premise: the same shape with a real header is a token")
 
 	passes := map[string]string{
 		"a version":                         "1.22.3",
@@ -280,4 +280,52 @@ func TestJWT_WhenTheWorkRunsOutTheRunIsRefused(t *testing.T) {
 // shape, which is exactly what let valid tokens through.
 func makeJWT(header, payload string) string {
 	return encode(header) + "." + encode(payload) + "." + strings.Repeat("s", signatureLen)
+}
+
+// A run the work ran out on is refused, but it is not said to be a token: the
+// verdict is its own, and the reason printed for it says that the value was too
+// long to be checked. A real token anywhere in the value wins over it, because
+// that is the reason that helps.
+func TestJWT_TheVerdictWhenTheWorkRunsOutIsNotAHit(t *testing.T) {
+	long := strings.Repeat("I", 5000) + ".a.b"
+	token := makeJWT(headerPlain, claims)
+
+	assert.Equal(t, verdictUnchecked, containsJWT(long))
+	assert.Equal(t, verdictHit, containsJWT(token), "premise: a real token is a hit")
+	assert.Equal(t, verdictNo, containsJWT(strings.Repeat("I", 100)+".a.b"), "premise: the same shape, examined to the end")
+
+	rule, v := scan(long, nil)
+	assert.Equal(t, "jwt", rule)
+	assert.Equal(t, verdictUnchecked, v)
+
+	rule, v = scan(long+" "+token, nil)
+	assert.Equal(t, "jwt", rule)
+	assert.Equal(t, verdictHit, v, "a token after the run that could not be examined is still a token")
+	rule, v = scan(token+" "+long, nil)
+	assert.Equal(t, "jwt", rule)
+	assert.Equal(t, verdictHit, v, "and before it")
+
+	_, hit := Scan(long, nil)
+	assert.True(t, hit, "Scan still refuses it")
+}
+
+// The reason printed names the problem, and keeps the rule name so that it can be
+// found in the help. The value is longer than its column here, so the length is
+// the first reason; the second is the one under test.
+func TestValidate_AValueTheJWTRuleCouldNotCheckSaysSo(t *testing.T) {
+	in := validValues()
+	in.Finding = strings.Repeat("I", 5000) + ".a.b"
+	reasons := violationsFor(in, "finding")
+
+	var got []string
+	for _, v := range reasons {
+		got = append(got, v.Reason)
+	}
+	assert.Contains(t, got, "is too long to be checked for a token (rule jwt)")
+	assert.NotContains(t, strings.Join(got, "|"), "looks like jwt", "it is not said to be a token")
+
+	in.Finding = makeJWT(headerPlain, claims)
+	reasons = violationsFor(in, "finding")
+	require.Len(t, reasons, 1)
+	assert.Equal(t, "contains something that looks like jwt", reasons[0].Reason, "a real token keeps its reason")
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"os"
@@ -190,4 +191,34 @@ func TestFindings_RealBinaryStillTakesFindingsThatOnlyMentionASecret(t *testing.
 		_, stderr, exit := r.run(t, findingJSON(t, override), "findings", "add")
 		require.Equal(t, 0, exit, "%v: %s", override, stderr)
 	}
+}
+
+// The two refusals that are not a secret, through the real binary: a pointer with
+// a digest after `sk-` (the end of `disk-`), refused as openai-key and said so in
+// the help with what to do; and a value too long for the JWT rule to examine,
+// which is refused for its own reason and not as a token.
+func TestFindings_RealBinaryExplainsTheRefusalsThatAreNotSecrets(t *testing.T) {
+	r := newFindingsRepo(t)
+	columnCap := findingColumnCap(t, r)
+
+	digest := fmt.Sprintf("%x", sha256.Sum256([]byte("synthetic fixture")))
+	pointer := "/tmp/disk-" + digest + ".log"
+	_, stderr, exit := r.run(t, findingJSON(t, map[string]string{"evidence": pointer}), "findings", "add")
+	require.Equal(t, 1, exit, stderr)
+	assert.Contains(t, stderr, "findings: column evidence: contains something that looks like openai-key\n")
+	assert.False(t, leaksFragment(stderr, digest), "the digest does not come back")
+	assert.NoDirExists(t, r.handover(), "a refused row creates nothing")
+
+	_, helpErr, exit := r.run(t, "", "findings", "--help")
+	require.Equal(t, 0, exit, helpErr)
+	assert.Contains(t, helpErr, "a name is refused although it is not a secret")
+	assert.Contains(t, helpErr, "Cite the file with another pointer")
+
+	long := strings.Repeat("I", columnCap*5) + ".a.b"
+	_, stderr, exit = r.run(t, findingJSON(t, map[string]string{"finding": long}), "findings", "add")
+	require.Equal(t, 1, exit, stderr)
+	assert.Contains(t, stderr, fmt.Sprintf("findings: column finding: is longer than %d bytes\n", columnCap))
+	assert.Contains(t, stderr, "findings: column finding: is too long to be checked for a token (rule jwt)\n")
+	assert.NotContains(t, stderr, "looks like jwt", "it is not said to be a token")
+	assert.NoDirExists(t, r.handover(), "a refused row creates nothing")
 }

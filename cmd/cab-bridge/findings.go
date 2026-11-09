@@ -78,7 +78,12 @@ what is checked:
   (the last one needs the list findings_denied_names in config.json; without it names are not checked).
   This is NOT a general secret detector: a secret of a type that is not listed, split across the
   value or encoded passes. Write pointers (file:line, a commit, a message id), not values.
-`, strings.Join(findings.ContentRuleNames(), ", "))
+  The other way round, a name is refused although it is not a secret if it contains one of
+    %s
+  followed by 20 more characters, or sk- (the end of disk- or task-) followed by a digest of 48
+  letters and digits, such as cache/task-<sha256>.bin. Cite the file with another pointer: a
+  commit and a line.
+`, strings.Join(findings.ContentRuleNames(), ", "), strings.Join(findings.PrefixedKeyPrefixes(), ", "))
 	return b.String()
 }
 

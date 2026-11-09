@@ -8,6 +8,17 @@ import (
 	"unicode/utf8"
 )
 
+// verdict is what a rule says about a value. A rule that decides by structure can
+// also say that it could not decide: the work it was allowed ran out, and a value
+// that cannot be ruled out is refused, but not for the reason a hit is.
+type verdict uint8
+
+const (
+	verdictNo verdict = iota
+	verdictHit
+	verdictUnchecked
+)
+
 // contentRule is one pattern a column value must not match. The name is what
 // the refusal reports; it never carries a prefix of the secret.
 //
@@ -17,23 +28,67 @@ import (
 type contentRule struct {
 	name    string
 	re      *regexp.Regexp
-	confirm func(candidate string) bool
+	confirm func(candidate string) verdict
 }
 
-func (r contentRule) matches(value string) bool {
+// matches returns verdictHit if some candidate is the secret, whatever the others
+// are; verdictUnchecked if none is but one could not be examined; verdictNo
+// otherwise.
+func (r contentRule) matches(value string) verdict {
 	if r.confirm == nil {
-		return r.re.MatchString(value)
+		if r.re.MatchString(value) {
+			return verdictHit
+		}
+		return verdictNo
 	}
+	result := verdictNo
 	for _, candidate := range r.re.FindAllString(value, -1) {
-		if r.confirm(candidate) {
-			return true
+		switch r.confirm(candidate) {
+		case verdictHit:
+			return verdictHit
+		case verdictUnchecked:
+			result = verdictUnchecked
 		}
 	}
-	return false
+	return result
 }
 
 // personNameRule is the 14th rule: it is a list from config, not a pattern.
 const personNameRule = "person-name"
+
+// prefixedKeys are the prefixes that say what a key is: after one of them, 20 more
+// characters of the key alphabet are a key, wherever the prefix sits (no boundary
+// on the left). The rules below and the help are both built from this list, so the
+// help names exactly the prefixes that are refused.
+var prefixedKeys = []struct{ rule, prefix string }{
+	{"anthropic-key", "sk-ant-"},
+	{"openai-key", "sk-proj-"},
+	{"openai-key", "sk-svcacct-"},
+	{"openai-key", "sk-admin-"},
+}
+
+// PrefixedKeyPrefixes lists the prefixes of prefixedKeys, in order. A name that
+// contains one of them followed by 20 characters is refused even if it is not a
+// key; the help says so.
+func PrefixedKeyPrefixes() []string {
+	out := make([]string, len(prefixedKeys))
+	for i, k := range prefixedKeys {
+		out[i] = k.prefix
+	}
+	return out
+}
+
+// prefixedKeyPattern is the alternation of the prefixes of one rule, then 20 or
+// more characters of the key alphabet.
+func prefixedKeyPattern(rule string) string {
+	var prefixes []string
+	for _, k := range prefixedKeys {
+		if k.rule == rule {
+			prefixes = append(prefixes, regexp.QuoteMeta(k.prefix))
+		}
+	}
+	return `(?:` + strings.Join(prefixes, "|") + `)[A-Za-z0-9_-]{20,}`
+}
 
 // openAIMarkerPattern is `sk-`, anything in the key alphabet, the marker, and at
 // least one more character of the alphabet. It is the third way to recognise an
@@ -64,10 +119,14 @@ const openAIMarkerPattern = `sk-[A-Za-z0-9_-]*T3BlbkFJ[A-Za-z0-9_-]+`
 // Known and wanted false positives: `Token: 43085`, `max_token=4096`,
 // `secret: no`, `token=ok` (secret-assignment), `git@github.com:org/repo.git` (email), an
 // all-caps word of 20 characters that starts like an AWS key id
-// (`ASIAPACIFICREGIONCODE`), and a kebab-case slug that contains `sk-ant-`,
-// `sk-proj-`, `sk-svcacct-` or `sk-admin-` followed by 20 more characters
-// (`task-admin-console-timeout-fix-on-windows`). A refused row costs one rewrite;
-// a leaked secret does not come back.
+// (`ASIAPACIFICREGIONCODE`), a kebab-case slug that contains one of the prefixes
+// of prefixedKeys followed by 20 more characters
+// (`task-admin-console-timeout-fix-on-windows`), and a pointer in which `sk-`, the
+// end of `disk-` or `task-`, is followed by a digest of 48 letters and digits
+// (`/tmp/disk-<sha256>.log`, `cache/task-<64 hex digits>.bin`): the legacy OpenAI
+// form has no boundary on the left, and putting one back would lose keys glued to
+// a word. A refused row costs one rewrite (cite the file with another pointer: a
+// commit and a line); a leaked secret does not come back.
 //
 // Declared limits: a secret of a type that is not listed here, split across the
 // value, or encoded; a JWT in the JSON serialization; a key of another vendor that
@@ -78,8 +137,8 @@ var contentRules = []contentRule{
 	{name: "aws-secret-key", re: regexp.MustCompile(`(?i)aws_?secret_?access_?key["']?\s*[:=]\s*["']?[A-Za-z0-9/+=]{40}`)},
 	{name: "github-fine-grained-token", re: regexp.MustCompile(`github_pat_[A-Za-z0-9_]{22,255}`)},
 	{name: "github-token", re: regexp.MustCompile(`gh[pousr]_[A-Za-z0-9]{36,255}`)},
-	{name: "anthropic-key", re: regexp.MustCompile(`sk-ant-[A-Za-z0-9_-]{20,}`)},
-	{name: "openai-key", re: regexp.MustCompile(`sk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{48}`)},
+	{name: "anthropic-key", re: regexp.MustCompile(prefixedKeyPattern("anthropic-key"))},
+	{name: "openai-key", re: regexp.MustCompile(prefixedKeyPattern("openai-key") + `|sk-[A-Za-z0-9]{48}`)},
 	{name: "openai-key-marker", re: regexp.MustCompile(openAIMarkerPattern)},
 	{name: "slack-token", re: regexp.MustCompile(`(?:xox[abprs]|xapp)-[A-Za-z0-9-]{10,}`)},
 	{name: "pem-private-key", re: regexp.MustCompile(`-----BEGIN (?:[A-Z]+ )*PRIVATE KEY(?: BLOCK)?-----`)},
@@ -109,17 +168,24 @@ const minNameRunes = 2
 // of person names from the configuration (may be empty: then the person-name
 // rule does not exist, and the caller says so).
 func Scan(value string, names []string) (rule string, hit bool) {
+	rule, v := scan(value, names)
+	return rule, v != verdictNo
+}
+
+// scan is Scan with the verdict: the command needs to tell a value that is a
+// secret from one that could not be examined.
+func scan(value string, names []string) (rule string, v verdict) {
 	for _, r := range contentRules {
-		if r.matches(value) {
-			return r.name, true
+		if v := r.matches(value); v != verdictNo {
+			return r.name, v
 		}
 	}
 	for _, name := range names {
 		if containsWholeWord(value, name) {
-			return personNameRule, true
+			return personNameRule, verdictHit
 		}
 	}
-	return "", false
+	return "", verdictNo
 }
 
 // CheckNames validates findings_denied_names: an empty entry, one shorter than

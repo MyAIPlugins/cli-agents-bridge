@@ -200,17 +200,18 @@ func InputColumnInfo() []ColumnInfo {
 
 // Fixed reasons. None of them may contain a value from the input.
 const (
-	reasonRequired    = "is required"
-	reasonCommandOwns = "is written by the command"
-	reasonCharacters  = "contains a character that is not allowed (control, invisible or invalid)"
-	reasonEdgeSpace   = "must not start or end with a space"
-	reasonIdent       = "must start with a letter or digit and contain only letters, digits, '.', '_' and '-'"
-	reasonSlug        = "must be lowercase words (a-z, 0-9) joined by single '-'"
-	reasonToken       = "must be a non-negative integer of at most 12 digits"
-	reasonCost        = "must be a decimal number in USD: up to 6 digits, optionally a '.' and up to 6 decimals"
-	reasonContentFmt  = "contains something that looks like %s"
-	reasonTooLongFmt  = "is longer than %d bytes"
-	reasonEnumFmt     = "must be one of: %s"
+	reasonRequired     = "is required"
+	reasonCommandOwns  = "is written by the command"
+	reasonCharacters   = "contains a character that is not allowed (control, invisible or invalid)"
+	reasonEdgeSpace    = "must not start or end with a space"
+	reasonIdent        = "must start with a letter or digit and contain only letters, digits, '.', '_' and '-'"
+	reasonSlug         = "must be lowercase words (a-z, 0-9) joined by single '-'"
+	reasonToken        = "must be a non-negative integer of at most 12 digits"
+	reasonCost         = "must be a decimal number in USD: up to 6 digits, optionally a '.' and up to 6 decimals"
+	reasonContentFmt   = "contains something that looks like %s"
+	reasonUncheckedFmt = "is too long to be checked for a token (rule %s)"
+	reasonTooLongFmt   = "is longer than %d bytes"
+	reasonEnumFmt      = "must be one of: %s"
 )
 
 func inputValues(in Input) []string {
@@ -252,8 +253,11 @@ func checkValue(spec columnSpec, value string, names []string) []Violation {
 	if reason := shapeProblem(spec, value); reason != "" {
 		add(reason)
 	}
-	if rule, hit := Scan(value, names); hit {
+	switch rule, v := scan(value, names); v {
+	case verdictHit:
 		add(fmt.Sprintf(reasonContentFmt, rule))
+	case verdictUnchecked:
+		add(fmt.Sprintf(reasonUncheckedFmt, rule))
 	}
 	return out
 }

@@ -1,6 +1,8 @@
 package findings
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"testing"
 
@@ -132,19 +134,67 @@ func TestScan_KebabCaseKeysThatContainSkAreNotKeys(t *testing.T) {
 }
 
 // The price of recognising the four prefixes anywhere, written down so that it is
-// known and not found: a slug that contains one of them followed by 20 more
-// characters is refused. A refused row costs one rewrite of the key.
-func TestScan_ASlugThatContainsADistinctivePrefixIsRefused(t *testing.T) {
+// known and not found: a name that contains one of them followed by 20 more
+// characters is refused, with the rule that owns the prefix. A refused row costs
+// one rewrite. The prefixes are the ones the help names (PrefixedKeyPrefixes).
+func TestScan_ANameThatContainsAPrefixedKeyPrefixIsRefused(t *testing.T) {
+	require.Equal(t, []string{"sk-ant-", "sk-proj-", "sk-svcacct-", "sk-admin-"}, PrefixedKeyPrefixes())
+
+	for _, k := range prefixedKeys {
+		t.Run(k.prefix, func(t *testing.T) {
+			name := "word-" + k.prefix + strings.Repeat("a", 20)
+			rule, hit := Scan(name, nil)
+			require.True(t, hit)
+			assert.Equal(t, k.rule, rule)
+
+			_, hit = Scan("word-"+k.prefix+strings.Repeat("a", 19), nil)
+			assert.False(t, hit, "with fewer than 20 characters after the prefix it passes")
+		})
+	}
+
 	slug := "task-admin-console-timeout-fix-on-windows"
 	body := slug[strings.Index(slug, "sk-"):]
 	require.GreaterOrEqual(t, len(strings.TrimPrefix(body, "sk-admin-")), 20, "premise: 20 characters follow the prefix")
-
 	rule, hit := Scan(slug, nil)
 	require.True(t, hit)
 	assert.Equal(t, "openai-key", rule)
+}
 
-	_, hit = Scan("task-admin-console-timeout", nil)
-	assert.False(t, hit, "with fewer than 20 characters after the prefix it passes")
+// The other known false positive, written down: the legacy OpenAI form has no
+// boundary on the left, so `sk-`, the end of `disk-` or `task-`, followed by a
+// digest of 48 letters and digits is refused (`/tmp/disk-<sha256>.log`). It is not
+// a defect: a boundary would lose keys glued to a word. The digest is computed at
+// run time. A shorter digest, such as a commit hash, is not affected.
+func TestScan_APointerWithADigestAfterSkIsRefused(t *testing.T) {
+	sum := sha256.Sum256([]byte("synthetic fixture"))
+	digest := hex.EncodeToString(sum[:])
+	require.Len(t, digest, 64, "premise: a sha256 in hex is 64 characters")
+
+	for name, pointer := range map[string]string{
+		"a log under disk-":      "/tmp/disk-" + digest + ".log",
+		"a cache file of task-":  "cache/task-" + digest + ".bin",
+		"exactly 48 characters":  "cache/task-" + digest[:48] + ".bin",
+		"the digest in a phrase": "see /tmp/disk-" + digest + ".log for the output",
+	} {
+		t.Run(name, func(t *testing.T) {
+			rule, hit := Scan(pointer, nil)
+			require.True(t, hit)
+			assert.Equal(t, "openai-key", rule)
+		})
+	}
+
+	for name, pointer := range map[string]string{
+		"47 characters":         "cache/task-" + digest[:47] + ".bin",
+		"a commit hash (40)":    "cache/task-" + digest[:40] + ".bin",
+		"a short hash":          "internal/findings/store.go:120 at 3519a9a",
+		"a digest after disk_":  "/tmp/disk_" + digest + ".log",
+		"a digest after a dash": "/tmp/build-" + digest + ".log",
+	} {
+		t.Run("passes: "+name, func(t *testing.T) {
+			_, hit := Scan(pointer, nil)
+			assert.False(t, hit, "%s must not be refused", name)
+		})
+	}
 }
 
 // The URL rule has no boundary on the left either: a scheme glued to a word

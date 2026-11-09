@@ -53,13 +53,15 @@ const (
 // at least two dots. containsJWT decides.
 var jwtCandidate = regexp.MustCompile(`[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]*){2,}`)
 
-// containsJWT reports whether a dotted run holds a JWT: some place in it starts
-// a JOSE header that is followed by the segments its shape needs. The header can
+// containsJWT says whether a dotted run holds a JWT: verdictHit if some place in
+// it starts a JOSE header that is followed by the segments its shape needs,
+// verdictUnchecked if the work ran out before the answer, verdictNo otherwise. The header can
 // sit after other dotted segments (`a.b.<token>`) and after any characters in its
 // own segment (`prefix_<token>`, `x<token>`): `_` and `-` belong to the base64url
 // alphabet and a letter is one too, so no prefix can be told from the token. That
-// is why every start is tried, with no limit on how many.
-func containsJWT(run string) bool {
+// is why every start is tried, with no limit on how many. When the work ran out
+// the answer is "refuse", but it is not "this is a token": the caller says so.
+func containsJWT(run string) verdict {
 	segments := strings.Split(run, ".")
 	work := 0
 	for i := range segments {
@@ -69,11 +71,14 @@ func containsJWT(run string) bool {
 		}
 		hit, spent := headerStartsIn(segments[i], possible)
 		work += spent
-		if hit || work > jwtMaxWork {
-			return true
+		if hit {
+			return verdictHit
+		}
+		if work > jwtMaxWork {
+			return verdictUnchecked
 		}
 	}
-	return false
+	return verdictNo
 }
 
 // shapesAfter returns the shapes that segments[i], taken as the header, has

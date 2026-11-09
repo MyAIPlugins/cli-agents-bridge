@@ -289,6 +289,16 @@ func TestFindingsRun_HelpSaysWhatIsCheckedAndWhatIsNot(t *testing.T) {
 			assert.Contains(t, stderr, o, "%v: closing outcome %s", args, o)
 		}
 		assert.Contains(t, stderr, "a file named .gitignore in it is the whole check", args)
+		for _, prefix := range findings.PrefixedKeyPrefixes() {
+			assert.Contains(t, stderr, prefix, "%v: the help names the prefix %s", args, prefix)
+		}
+		// The help wraps its lines: these sentences are read with the line breaks folded,
+		// so that rewrapping the text does not break the test and a changed sentence does.
+		flat := strings.Join(strings.Fields(stderr), " ")
+		assert.Contains(t, flat, "a name is refused although it is not a secret", args)
+		assert.Contains(t, flat, "followed by 20 more characters", args)
+		assert.Contains(t, flat, "followed by a digest of 48 letters and digits", args)
+		assert.Contains(t, flat, "Cite the file with another pointer: a commit and a line.", args)
 		assert.Contains(t, stderr, "stale writes nothing in the", args)
 	}
 	assert.NoDirExists(t, filepath.Join(e.repo, ".handover"))
