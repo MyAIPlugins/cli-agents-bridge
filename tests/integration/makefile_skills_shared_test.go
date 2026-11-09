@@ -73,7 +73,7 @@ func TestMakefile_SharedSkills(t *testing.T) {
 		require.Equal(t, 0, code, out)
 		return out
 	}
-	bothRuntimes := []string{".claude", ".codex"}
+	bothRuntimes := []string{".claude", ".agents"}
 
 	t.Run("a shared skill is installed in Claude Code and in Codex with the source's content", func(t *testing.T) {
 		fx := newSkillsFixture(t).withSharedSkill(t)
@@ -86,9 +86,9 @@ func TestMakefile_SharedSkills(t *testing.T) {
 			assert.Equal(t, want, relTree(t, fx.copyOf(dir, "delta")), dir)
 		}
 		assert.Contains(t, out, "installed  claude/delta -> "+fx.copyOf(".claude", "delta"))
-		assert.Contains(t, out, "installed  codex/delta -> "+fx.copyOf(".codex", "delta"))
+		assert.Contains(t, out, "installed  codex/delta -> "+fx.copyOf(".agents", "delta"))
 		assert.Equal(t, "alpha for claude\n", readFile(t, fx.copyOf(".claude", "alpha", "SKILL.md")), "the runtime's own skills go where they went")
-		assert.Equal(t, "alpha for codex\n", readFile(t, fx.copyOf(".codex", "alpha", "SKILL.md")))
+		assert.Equal(t, "alpha for codex\n", readFile(t, fx.copyOf(".agents", "alpha", "SKILL.md")))
 	})
 
 	t.Run("a shared skill does not go to Antigravity or to Claude Desktop", func(t *testing.T) {
@@ -114,7 +114,7 @@ func TestMakefile_SharedSkills(t *testing.T) {
 		assert.Equal(t, 1, strings.Count(out, "ok         claude/delta"), out)
 		assert.Equal(t, 1, strings.Count(out, "ok         codex/delta"), out)
 
-		write(t, fx.copyOf(".codex", "delta", "refs", "x.md"), "changed\n")
+		write(t, fx.copyOf(".agents", "delta", "refs", "x.md"), "changed\n")
 		out, code = fx.script(t, repoRoot, "check")
 		assert.Equal(t, 1, code, "the script itself, make says 2: "+out)
 		assert.Contains(t, out, "ok         claude/delta", "the copy that is fine is still said")
@@ -152,7 +152,7 @@ func TestMakefile_SharedSkills(t *testing.T) {
 	t.Run("a Codex copy that differs is refused, named, and the Claude copy is not installed either", func(t *testing.T) {
 		fx := newSkillsFixture(t).withSharedSkill(t)
 		install(t, fx)
-		write(t, fx.copyOf(".codex", "delta", "SKILL.md"), "delta, for both\nA LOCAL EDIT\n")
+		write(t, fx.copyOf(".agents", "delta", "SKILL.md"), "delta, for both\nA LOCAL EDIT\n")
 		require.NoError(t, os.RemoveAll(fx.copyOf(".claude", "delta")))
 		before := fx.runtimeTree(t)
 
@@ -161,13 +161,13 @@ func TestMakefile_SharedSkills(t *testing.T) {
 		assert.Contains(t, out, "refused")
 		assert.Contains(t, out, "codex/delta")
 		assert.Contains(t, out, "differs: SKILL.md")
-		assert.Equal(t, "delta, for both\nA LOCAL EDIT\n", readFile(t, fx.copyOf(".codex", "delta", "SKILL.md")), "the local edit is still there")
+		assert.Equal(t, "delta, for both\nA LOCAL EDIT\n", readFile(t, fx.copyOf(".agents", "delta", "SKILL.md")), "the local edit is still there")
 		assert.NoDirExists(t, fx.copyOf(".claude", "delta"), "all or nothing")
 		assert.Equal(t, before, fx.runtimeTree(t), "the Claude copy was not even begun: every file of every runtime folder is as it was")
 
 		out = install(t, fx, "FORCE=1")
 		assert.Contains(t, out, "overwrote  codex/delta: SKILL.md", "FORCE says what it overwrote")
-		assert.Equal(t, "delta, for both\n", readFile(t, fx.copyOf(".codex", "delta", "SKILL.md")))
+		assert.Equal(t, "delta, for both\n", readFile(t, fx.copyOf(".agents", "delta", "SKILL.md")))
 		assert.Equal(t, "delta, for both\n", readFile(t, fx.copyOf(".claude", "delta", "SKILL.md")), "and the missing one is installed")
 	})
 
@@ -183,7 +183,7 @@ func TestMakefile_SharedSkills(t *testing.T) {
 
 		assert.Contains(t, out, "updated    claude/delta: SKILL.md")
 		assert.Contains(t, out, "updated    codex/delta: SKILL.md")
-		assert.Equal(t, "delta, newer\n", readFile(t, fx.copyOf(".codex", "delta", "SKILL.md")))
+		assert.Equal(t, "delta, newer\n", readFile(t, fx.copyOf(".agents", "delta", "SKILL.md")))
 	})
 
 	t.Run("a symbolic link inside the Codex copy is refused with or without FORCE, and nothing is copied", func(t *testing.T) {
@@ -191,7 +191,7 @@ func TestMakefile_SharedSkills(t *testing.T) {
 		install(t, fx)
 		elsewhere := filepath.Join(t.TempDir(), "x.md")
 		write(t, elsewhere, "outside\n")
-		link := fx.copyOf(".codex", "delta", "refs", "x.md")
+		link := fx.copyOf(".agents", "delta", "refs", "x.md")
 		require.NoError(t, os.Remove(link))
 		require.NoError(t, os.Symlink(elsewhere, link))
 		write(t, fx.sharedSource("SKILL.md"), "delta, newer\n") // the Claude copy would be updated
@@ -209,19 +209,19 @@ func TestMakefile_SharedSkills(t *testing.T) {
 	t.Run("files added by hand in the Codex copy: kept, unless the repo acquires one of them", func(t *testing.T) {
 		fx := newSkillsFixture(t).withSharedSkill(t)
 		install(t, fx)
-		write(t, fx.copyOf(".codex", "delta", "mine.md"), "only mine\n")
+		write(t, fx.copyOf(".agents", "delta", "mine.md"), "only mine\n")
 		write(t, fx.sharedSource("SKILL.md"), "delta, newer\n")
 
 		out := install(t, fx)
 		assert.Contains(t, out, "updated    codex/delta: SKILL.md", "only behind: no FORCE")
 		assert.Contains(t, out, "only in the installed copy, left alone: mine.md")
-		assert.Equal(t, "only mine\n", readFile(t, fx.copyOf(".codex", "delta", "mine.md")))
+		assert.Equal(t, "only mine\n", readFile(t, fx.copyOf(".agents", "delta", "mine.md")))
 
 		write(t, fx.sharedSource("mine.md"), "the repo's\n")
 		out, code := fx.make(t, repoRoot, "install-skills")
 		assert.NotEqual(t, 0, code, out)
 		assert.Contains(t, out, "added by hand, and the repo now has another one: mine.md")
-		assert.Equal(t, "only mine\n", readFile(t, fx.copyOf(".codex", "delta", "mine.md")), "and the file is still the user's")
+		assert.Equal(t, "only mine\n", readFile(t, fx.copyOf(".agents", "delta", "mine.md")), "and the file is still the user's")
 	})
 
 	// A name in shared/ and in a runtime's own folder would be two sources for one copy.
