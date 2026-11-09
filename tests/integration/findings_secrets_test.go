@@ -107,6 +107,8 @@ func TestFindings_RealBinaryRefusesTheVariantsOfAKnownSecret(t *testing.T) {
 		{"a URL after a prefix", "url", "prefix_" + "https://" + "internal.example.net/path"},
 	}
 
+	cases = append(cases, skKeyCases()...)
+
 	_, stderr, exit := r.run(t, findingJSON(t, nil), "findings", "add")
 	require.Equal(t, 0, exit, stderr)
 	before, err := os.ReadFile(r.registry())
@@ -130,6 +132,33 @@ func TestFindings_RealBinaryRefusesTheVariantsOfAKnownSecret(t *testing.T) {
 	}
 }
 
+// skKeyCases is every form of an `sk-` key after a letter, a digit and `_`: the
+// four prefixes that say what they are, the legacy shape (`sk-` and 48 letters and
+// digits) and the three ways in which the marker rule takes what is left. The
+// left context used to be a condition, and a key glued to a letter or a digit
+// went through.
+func skKeyCases() []struct{ name, rule, value string } {
+	rep := strings.Repeat
+	marker := "T3Blbk" + "FJ"
+	forms := []struct{ name, rule, key string }{
+		{"sk-ant-", "anthropic-key", "sk-" + "ant-api03-" + rep("Qz4", 11)},
+		{"sk-proj-", "openai-key", "sk-" + "proj-" + rep("Qz4", 11)},
+		{"sk-svcacct-", "openai-key", "sk-" + "svcacct-" + rep("Qz4", 11)},
+		{"sk-admin-", "openai-key", "sk-" + "admin-" + rep("Qz4", 11)},
+		{"the legacy shape, 48 letters and digits", "openai-key", "sk-" + rep("Qz4", 16)},
+		{"the marker in a legacy key of another length", "openai-key-marker", "sk-" + rep("Qz4", 5) + marker + rep("Wx7", 5)},
+		{"the marker after sk-None-", "openai-key-marker", "sk-" + "None-" + rep("Qz4", 7) + marker + rep("Wx7", 7)},
+		{"the marker after sk-service-x-", "openai-key-marker", "sk-" + "service-x-" + rep("Qz4", 7) + marker + rep("Wx7", 7)},
+	}
+	var out []struct{ name, rule, value string }
+	for _, f := range forms {
+		for _, before := range []struct{ label, text string }{{"a letter", "x"}, {"a digit", "7"}, {"an underscore", "_"}} {
+			out = append(out, struct{ name, rule, value string }{f.name + ", after " + before.label, f.rule, before.text + f.key})
+		}
+	}
+	return out
+}
+
 // The control that makes the test above mean something: the same command takes a
 // finding that only mentions the kind of secret, names that contain the base64 of
 // an empty object (`e30`) and were taken for tokens, and slugs that contain `sk-`.
@@ -148,6 +177,15 @@ func TestFindings_RealBinaryStillTakesFindingsThatOnlyMentionASecret(t *testing.
 	} {
 		rows = append(rows, map[string]string{"finding": "the name " + mention + " is in the log", "key": "mention-" + strconv.Itoa(i)})
 	}
+	for _, slug := range []string{
+		"task-description-overflow-in-the-lock-registry",
+		"disk-io-race-while-writing-the-registry",
+		"risk-assessment-of-the-lock-race-on-windows",
+		"sk-description-overflow-in-store",
+	} {
+		rows = append(rows, map[string]string{"finding": "a slug that contains sk-", "key": slug})
+	}
+
 	for _, override := range rows {
 		_, stderr, exit := r.run(t, findingJSON(t, override), "findings", "add")
 		require.Equal(t, 0, exit, "%v: %s", override, stderr)

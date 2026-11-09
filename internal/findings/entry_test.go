@@ -238,7 +238,7 @@ func TestValidate_ContentRulesNameTheColumnAndTheRule(t *testing.T) {
 
 	in = validValues()
 	in.Evidence = "ask Marta"
-	assert.Empty(t, Validate(in, nil), "no names configured: rule 13 does not exist")
+	assert.Empty(t, Validate(in, nil), "no names configured: the person-name rule does not exist")
 	assert.Equal(t, []Violation{{Column: "evidence", Reason: "contains something that looks like person-name"}}, Validate(in, []string{"Marta"}))
 }
 

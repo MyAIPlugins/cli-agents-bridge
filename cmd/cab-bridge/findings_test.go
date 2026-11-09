@@ -116,6 +116,7 @@ func secretCases() []secretCase {
 		{"github-token", "gh" + "p_" + body[:36], body[:36]},
 		{"anthropic-key", "sk-" + "ant-api03-" + body, body},
 		{"openai-key", "sk-" + "proj-" + body, body},
+		{"openai-key-marker", "sk-" + "None-" + body[:20] + "T3Blbk" + "FJ" + body[20:40], body[:20] + "T3Blbk" + "FJ" + body[20:40]},
 		{"slack-token", "xo" + "xb-" + rep("4", 12), rep("4", 12)},
 		{"pem-private-key", "-----BEGIN " + "RSA PRIVATE KEY-----", "RSA PRIVATE KEY"},
 		jwtSecretCase(),

@@ -32,43 +32,55 @@ func (r contentRule) matches(value string) bool {
 	return false
 }
 
-// personNameRule is the 13th rule: it is a list from config, not a pattern.
+// personNameRule is the 14th rule: it is a list from config, not a pattern.
 const personNameRule = "person-name"
 
-// notAfterAlnum is the left context of the generic `sk-` prefix: the start of
-// the value or anything but a letter or a digit. It is NOT `\b`: `_` is a word
-// character, so `\b` let `prefix_sk-...` through. It is not "nothing" either:
-// `key` is a kebab-case slug, and `task-description-overflow` contains
-// `sk-description-overflow`, which the 20-character body would take for a key.
-// A key glued directly to a letter or a digit is therefore a declared limit.
-const notAfterAlnum = `(?:^|[^A-Za-z0-9])`
+// openAIMarkerPattern is `sk-`, anything in the key alphabet, the marker, and at
+// least one more character of the alphabet. It is the third way to recognise an
+// OpenAI key, next to the three prefixed forms and the exact legacy shape: it does
+// not depend on the prefix or on the length, so it also takes a legacy key of any
+// length, `sk-None-` and `sk-service-<name>-`. The marker `T3BlbkFJ` (base64 of
+// "OpenAI") is what gitleaks (`cmd/generate/config/rules/openai.go`, keyword
+// "T3BlbkFJ") and trufflehog (`pkg/detectors/openai/openai.go`, "The magic string
+// T3BlbkFJ") key on; both files read on 2026-11-09. OpenAI does not document the
+// format in any page consulted, so this is an observed fact and not a guarantee,
+// which is why the other two forms stay. It cannot fire on a kebab-case slug: the
+// marker is not a word.
+const openAIMarkerPattern = `sk-[A-Za-z0-9_-]*T3BlbkFJ[A-Za-z0-9_-]+`
 
-// contentRules are the 12 pattern rules, in the order they are applied: the
+// contentRules are the 13 pattern rules, in the order they are applied: the
 // first that matches names the refusal, so a key shaped like both Anthropic and
 // OpenAI keys is reported as Anthropic.
 //
-// The rules whose prefix is unmistakable (AKIA, github_pat_, ghp_, xoxb-, a
-// scheme before ://) have no boundary at all, on either side: a boundary is
-// where a secret escapes, by being glued to a word character (`token_ghp_...`,
-// `AKIA...EXAMPLE_PROD`). That costs the false positives below.
+// The rules whose prefix is unmistakable (AKIA, github_pat_, ghp_, xoxb-, sk-ant-,
+// sk-proj-, a scheme before ://) have no boundary at all, on either side: a
+// boundary is where a secret escapes, by being glued to a word character
+// (`token_ghp_...`, `AKIA...EXAMPLE_PROD`). The generic `sk-` prefix is not
+// unmistakable (`task-description-overflow` contains `sk-description-overflow`),
+// so the old OpenAI form is only taken in its exact shape: 48 letters and digits,
+// no dash (openai-key). The jwt rule tries every place in a
+// segment as the start of the header, so it has no left boundary either.
 //
 // Known and wanted false positives: `Token: 43085`, `max_token=4096`,
-// `secret: no`, `token=ok` (rule 10), `git@github.com:org/repo.git` (rule 12) and
-// an all-caps word of 20 characters that starts like an AWS key id
-// (`ASIAPACIFICREGIONCODE`). A refused row costs one rewrite; a leaked secret does
-// not come back.
+// `secret: no`, `token=ok` (secret-assignment), `git@github.com:org/repo.git` (email), an
+// all-caps word of 20 characters that starts like an AWS key id
+// (`ASIAPACIFICREGIONCODE`), and a kebab-case slug that contains `sk-ant-`,
+// `sk-proj-`, `sk-svcacct-` or `sk-admin-` followed by 20 more characters
+// (`task-admin-console-timeout-fix-on-windows`). A refused row costs one rewrite;
+// a leaked secret does not come back.
 //
-// Declared limits of the left context: a `sk-` key (rules 5 and 6) glued directly
-// to a letter or a digit is not recognised, and neither is a secret of a type that
-// is not listed here, split across the value, or encoded. A JWT is found whatever
-// is glued to it: every place in a segment is tried as the start of the header.
+// Declared limits: a secret of a type that is not listed here, split across the
+// value, or encoded; a JWT in the JSON serialization; a key of another vendor that
+// starts with `sk-` (the generic prefix used to take it by accident, and no longer
+// does unless it has the legacy shape or the OpenAI marker).
 var contentRules = []contentRule{
 	{name: "aws-access-key", re: regexp.MustCompile(`(?:AKIA|ASIA|AGPA|AIDA|AIPA|ANPA|ANVA|AROA)[A-Z0-9]{16}`)},
 	{name: "aws-secret-key", re: regexp.MustCompile(`(?i)aws_?secret_?access_?key["']?\s*[:=]\s*["']?[A-Za-z0-9/+=]{40}`)},
 	{name: "github-fine-grained-token", re: regexp.MustCompile(`github_pat_[A-Za-z0-9_]{22,255}`)},
 	{name: "github-token", re: regexp.MustCompile(`gh[pousr]_[A-Za-z0-9]{36,255}`)},
-	{name: "anthropic-key", re: regexp.MustCompile(notAfterAlnum + `sk-ant-[A-Za-z0-9_-]{20,}`)},
-	{name: "openai-key", re: regexp.MustCompile(notAfterAlnum + `sk-(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,}`)},
+	{name: "anthropic-key", re: regexp.MustCompile(`sk-ant-[A-Za-z0-9_-]{20,}`)},
+	{name: "openai-key", re: regexp.MustCompile(`sk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{48}`)},
+	{name: "openai-key-marker", re: regexp.MustCompile(openAIMarkerPattern)},
 	{name: "slack-token", re: regexp.MustCompile(`(?:xox[abprs]|xapp)-[A-Za-z0-9-]{10,}`)},
 	{name: "pem-private-key", re: regexp.MustCompile(`-----BEGIN (?:[A-Z]+ )*PRIVATE KEY(?: BLOCK)?-----`)},
 	{name: "jwt", re: jwtCandidate, confirm: containsJWT},
@@ -94,8 +106,8 @@ func ContentRuleNames() []string {
 const minNameRunes = 2
 
 // Scan returns the name of the first rule the value breaks. names is the list
-// of person names from the configuration (may be empty: then rule 13 does not
-// exist, and the caller says so).
+// of person names from the configuration (may be empty: then the person-name
+// rule does not exist, and the caller says so).
 func Scan(value string, names []string) (rule string, hit bool) {
 	for _, r := range contentRules {
 		if r.matches(value) {

@@ -210,7 +210,7 @@ func inputValues(in Input) []string {
 
 // Validate checks the caller's input and returns every violation, in column
 // order. It is pure: no disk access, no clock. names is the list of person
-// names to refuse (rule 13), already checked by CheckNames.
+// names to refuse (the person-name rule), already checked by CheckNames.
 func Validate(in Input, names []string) []Violation {
 	var out []Violation
 	if in.Ts != nil {

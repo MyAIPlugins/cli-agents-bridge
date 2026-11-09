@@ -20,6 +20,7 @@ func secretFixtures() map[string]string {
 		"github-token":              "gh" + "p_" + rep("a", 36),
 		"anthropic-key":             "sk-" + "ant-api03-" + rep("a", 30),
 		"openai-key":                "sk-" + "proj-" + rep("a", 30),
+		"openai-key-marker":         "sk-" + "None-" + rep("a", 20) + openAIMarker + rep("b", 20),
 		"slack-token":               "xo" + "xb-" + rep("1", 12),
 		"pem-private-key":           "-----BEGIN " + "OPENSSH PRIVATE KEY-----",
 		"jwt":                       makeJWT(`{"alg":"HS256","typ":"JWT"}`, `{"sub":"x1"}`),
@@ -28,6 +29,10 @@ func secretFixtures() map[string]string {
 		"email":                     "a.b@example.org",
 	}
 }
+
+// openAIMarker is the string every OpenAI key of the forms known today carries in
+// the middle. It is built from pieces like the keys (D15).
+const openAIMarker = "T3Blbk" + "FJ"
 
 func TestScan_EachSecretTypeIsRejected(t *testing.T) {
 	for rule, value := range secretFixtures() {
@@ -51,7 +56,7 @@ func TestScan_RuleNamesAreUniqueAndTheListIsComplete(t *testing.T) {
 		assert.False(t, seen[r.name], "duplicate rule name %s", r.name)
 		seen[r.name] = true
 	}
-	assert.Len(t, contentRules, 12, "12 regular-expression rules, the 13th (person-name) is a list")
+	assert.Len(t, contentRules, 13, "13 regular-expression rules, the 14th (person-name) is a list")
 	for rule := range secretFixtures() {
 		assert.True(t, seen[rule], "no rule named %s", rule)
 	}
@@ -65,7 +70,7 @@ func TestScan_RuleNamesAreUniqueAndTheListIsComplete(t *testing.T) {
 // reported by some input, and the person-name rule (a list, not a pattern) is last.
 func TestContentRuleNames_AreTheRulesScanReports(t *testing.T) {
 	names := ContentRuleNames()
-	require.Len(t, names, 13)
+	require.Len(t, names, 14)
 	assert.Equal(t, personNameRule, names[len(names)-1])
 
 	reported := map[string]bool{}
