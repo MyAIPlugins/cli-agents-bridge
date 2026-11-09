@@ -1,0 +1,40 @@
+tests/integration/makefile_skills_agents_test.go
+  s_d5e186cda02d82::t_b703956bc8c43b 1-176
+tests/integration/makefile_skills_oldcopy_test.go
+  s_d5e186cda02d82::t_8bc916853274ab 199,218,227-251
+  s_d5e186cda02d82::t_3c6350ec4a9fe6 252-290
+  s_d5e186cda02d82::t_e1a7a4fe7f1ea6 1-198,291-455
+  s_d5e186cda02d82::t_d97a35b54a7ad2 200-217,219-226
+tests/integration/makefile_skills_shared_test.go
+  s_d5e186cda02d82::t_348bd17b97a8de 76,89,91,117,155,164,170,186,194,212,218,224
+tests/integration/makefile_skills_test.go
+  s_d5e186cda02d82::t_9d68a2b8980d2f 585
+  s_d5e186cda02d82::t_348bd17b97a8de 124,174,194,242,250,256,451
+scripts/skills.sh
+  s_d5e186cda02d82::t_96a36ccfd0897a 95-101,103-106,109
+  s_d5e186cda02d82::t_715403ffe960cc 471
+  s_d5e186cda02d82::t_dd8d38b79b95c5 50-53
+  s_d5e186cda02d82::t_a423598a0163f0 110,112-150
+  s_d5e186cda02d82::t_90e3310703032f 297-303
+  s_d5e186cda02d82::t_247a4abda5536e 34-49
+  s_d5e186cda02d82::t_706a93be20bf77 433,444-454
+  s_d5e186cda02d82::t_178367fa89ac45 275-277
+  s_d5e186cda02d82::t_e6d660dbde8a63 401-408,455
+  s_d5e186cda02d82::t_60df5dae65a874 102,111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c578b7b1ce405d88ba5b0043105dc7c8f0ce4125",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
