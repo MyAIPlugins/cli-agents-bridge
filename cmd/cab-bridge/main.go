@@ -73,6 +73,8 @@ func main() {
 		exitFromErr(runInspect(os.Args[2:]))
 	case "desktop":
 		exitFromErr(runDesktop(os.Args[2:]))
+	case "findings":
+		exitFromErr(runFindings(os.Args[2:]))
 	case "mcp":
 		exitFromErr(runMCP(os.Args[2:]))
 	case "migrate-from-patil":
@@ -147,6 +149,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  cleanup              Remove own session, or --scope=global")
 	fmt.Fprintln(os.Stderr, "  inspect <id>         Print a session manifest")
 	fmt.Fprintln(os.Stderr, "  desktop open|close|status  A val opens or closes the bridge to Claude Desktop (F-72)")
+	fmt.Fprintln(os.Stderr, "  findings add|stale   The repository's registry of critic findings (.handover/findings.tsv, F-156)")
 	fmt.Fprintln(os.Stderr, "  mcp                  The connector Claude Desktop runs (MCP over stdio); not for the terminal")
 	fmt.Fprintln(os.Stderr, "  migrate-from-patil   Migrate ~/.claude/session-bridge/ sessions to v2 namespace")
 	fmt.Fprintln(os.Stderr, "  version              Show version")

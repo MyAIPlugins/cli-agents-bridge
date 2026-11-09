@@ -236,6 +236,15 @@ func ReadOwnedFile(path string) ([]byte, error) {
 	return io.ReadAll(f)
 }
 
+// OpenOwned opens path with the checks of openOwned (no symlink followed, a
+// regular file, owned by the current uid on the OPEN DESCRIPTOR) and hands the
+// descriptor to the caller, who closes it. It exists for a caller that has to
+// act on the file it verified, not on a path it verified a moment before: a lock
+// is taken on the descriptor, so what is checked is exactly what gets locked.
+func OpenOwned(path string) (*os.File, error) {
+	return openOwned(path)
+}
+
 // CheckOwnedFile runs the same verification WITHOUT reading the contents, for
 // callers that derive meaning from a directory entry alone.
 //
