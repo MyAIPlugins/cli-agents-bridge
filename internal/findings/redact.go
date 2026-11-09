@@ -115,7 +115,7 @@ func Scan(value string, names []string) (rule string, hit bool) {
 func CheckNames(names []string) error {
 	for i, name := range names {
 		if utf8.RuneCountInString(name) < minNameRunes || name != strings.TrimSpace(name) {
-			return fmt.Errorf("findings_denied_names[%d] is invalid: it must have at least %d characters and no space at the start or the end", i, minNameRunes)
+			return fmt.Errorf("findings: findings_denied_names[%d] is invalid: it must have at least %d characters and no space at the start or the end", i, minNameRunes)
 		}
 	}
 	return nil

@@ -111,7 +111,9 @@ func (s *Store) maxBytes() int64 {
 
 // Add records one finding. Order (D17): validate (pure) -> directory -> lock ->
 // clock -> read and check the registry -> first_seen -> snapshot -> publish ->
-// release. A refusal before the lock creates nothing, not even the directory.
+// release. A refusal of the names or of the content (the first two steps)
+// creates nothing, not even the directory; from the directory on, whatever
+// happens next (a busy lock, an unreadable registry) leaves the directory there.
 func (s *Store) Add(in Input) (res AddResult, err error) {
 	if err := CheckNames(s.Names); err != nil {
 		return AddResult{}, err
@@ -386,6 +388,10 @@ func loadRegistry(path string, maxBytes int64) (registry, error) {
 	}
 
 	reg := registry{exists: true, data: data, rows: rows}
+	// DirPermsAreLoose is "does this mode grant anything to group or other", a
+	// question with the same answer for a file as for a directory; the name says
+	// Dir because the boot check was its first caller. On Windows it is always
+	// false (the mode is pinned there), so this note never fires on that system.
 	if security.DirPermsAreLoose(info.Mode().Perm()) {
 		reg.looseMode = info.Mode().Perm()
 	}

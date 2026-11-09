@@ -215,6 +215,21 @@ func TestAdd_PublishFailureLeavesTheRegistryUntouched(t *testing.T) {
 	assert.Equal(t, 3, strings.Count(string(readFile(t, s.RegistryPath())), "\n"), "the lock was released: the next add works")
 }
 
+// The Add comment promises the first two steps create nothing and the rest leaves
+// the directory behind. The first half is pinned by the refusal tests above; this
+// is the second: a lock that stays busy, on a repository that had no .handover/.
+func TestAdd_ABusyLockLeavesTheDirectoryItCreated(t *testing.T) {
+	s, _ := newTestStore(t)
+	s.Sleep = func(time.Duration) {}
+	s.LockAttempts = 2
+	s.TryLock = func(string) (func() error, error) { return nil, ErrBusy }
+
+	_, err := s.Add(inputFor("k"))
+	require.ErrorIs(t, err, ErrBusy)
+	assert.DirExists(t, s.Dir, "the directory was created before the lock was tried")
+	assert.NoFileExists(t, s.RegistryPath())
+}
+
 func TestAdd_BusyLockWritesNothing(t *testing.T) {
 	s, _ := newTestStore(t)
 	require.NoError(t, os.Mkdir(s.Dir, 0o700))

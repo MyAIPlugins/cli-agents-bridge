@@ -212,7 +212,7 @@ func TestCheckNames(t *testing.T) {
 	for _, bad := range [][]string{{""}, {"A"}, {" Marta"}, {"Marta "}, {"Marta", "x"}} {
 		err := CheckNames(bad)
 		require.Error(t, err, "%q", bad)
-		assert.Contains(t, err.Error(), "findings_denied_names[")
+		assert.True(t, strings.HasPrefix(err.Error(), "findings: findings_denied_names["), "every error of this package starts with findings: %q", err.Error())
 		for _, entry := range bad {
 			if len(strings.TrimSpace(entry)) > 1 {
 				assert.NotContains(t, err.Error(), strings.TrimSpace(entry), "the message names the index, never the entry")
