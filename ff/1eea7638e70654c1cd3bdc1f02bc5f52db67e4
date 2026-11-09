@@ -1,0 +1,26 @@
+skills/claude/cab-bridge-awareness/references/val.md
+  s_f8849908940048::t_9e8c845051c06d 73
+skills/claude/cab-bridge-awareness/SKILL.md
+  s_f8849908940048::t_9e8c845051c06d 128
+skills/shared/team-rubrics/references/common-rules.md
+  s_f8849908940048::t_9e8c845051c06d 51,66,69
+  s_f8849908940048::t_86ece5f232bb3e 70
+skills/shared/security-expert/SKILL.md
+  s_f8849908940048::t_9e8c845051c06d 49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ff1eea7638e70654c1cd3bdc1f02bc5f52db67e4",
+  "prompts": {},
+  "sessions": {
+    "s_f8849908940048": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "37bcf92a-1982-4e9a-a4d3-17eecb17eeb9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
