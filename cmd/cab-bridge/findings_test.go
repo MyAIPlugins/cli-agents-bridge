@@ -284,7 +284,11 @@ func TestFindingsRun_HelpSaysWhatIsCheckedAndWhatIsNot(t *testing.T) {
 		assert.Contains(t, stderr, "NOT a general secret detector", args)
 		assert.Contains(t, stderr, "split across the", args)
 		assert.Contains(t, stderr, "LAST row", args)
-		assert.Contains(t, stderr, "outcome closed (or rejected)", args)
+		assert.Contains(t, stderr, "outcome "+closingOutcomesText(findings.ClosingOutcomes()), args)
+		for _, o := range findings.ClosingOutcomes() {
+			assert.Contains(t, stderr, o, "%v: closing outcome %s", args, o)
+		}
+		assert.Contains(t, stderr, "a file named .gitignore in it is the whole check", args)
 		assert.Contains(t, stderr, "stale writes nothing in the", args)
 	}
 	assert.NoDirExists(t, filepath.Join(e.repo, ".handover"))
@@ -522,7 +526,7 @@ func TestFindingsAdd_BusyLockIsAnErrorAndWritesNothing(t *testing.T) {
 // .gitignore unless its owner wrote one, and then git shows the registry. Both
 // commands say so, in the one format for notes.
 func TestFindings_SayWhenTheExistingDirectoryHasNoGitignore(t *testing.T) {
-	const note = "findings: note: .handover/ existed already and has no .gitignore: this command did not add one, make sure git ignores it"
+	const note = "findings: note: .handover/ existed already and has no .gitignore: this command did not add one, make sure git ignores it or put a .gitignore in it"
 	e := newFindingsEnv(t)
 	require.NoError(t, os.Mkdir(filepath.Join(e.repo, ".handover"), 0o700))
 
@@ -538,4 +542,30 @@ func TestFindings_SayWhenTheExistingDirectoryHasNoGitignore(t *testing.T) {
 	_, stderr, err = e.run("", "stale")
 	require.NoError(t, err)
 	assert.NotContains(t, stderr, "has no .gitignore")
+}
+
+// The prose of the guide that says how a finding is closed follows the list it
+// is given: the closing outcomes are not written in the text. Premise: the words
+// below are not outcomes of the registry.
+func TestFindingsGuide_ClosingOutcomesFollowTheList(t *testing.T) {
+	require.NotContains(t, findings.ClosingOutcomes(), "settled")
+
+	for _, tc := range []struct {
+		closing []string
+		want    string
+	}{
+		{[]string{"settled", "dropped"}, "outcome settled (or dropped)."},
+		{[]string{"settled"}, "outcome settled."},
+		{[]string{"settled", "dropped", "moved"}, "outcome settled (or dropped, moved)."},
+	} {
+		got := guideClosing(tc.closing)
+		assert.Contains(t, got, tc.want)
+
+		// The list of allowed values (above) names the real outcomes; the prose
+		// about closing a finding (below it) must not.
+		prose := got[strings.Index(got, "how it works:"):]
+		assert.NotContains(t, prose, "closed", "the real outcomes are not written in the prose")
+		assert.NotContains(t, prose, "rejected", "the real outcomes are not written in the prose")
+	}
+	assert.Contains(t, findingsGuide(), "outcome closed (or rejected).", "and the real list gives the real words")
 }

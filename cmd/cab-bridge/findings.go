@@ -47,7 +47,12 @@ func buildFindingsUsage() string {
 // findingsGuide is the rest of --help: the values a closed column accepts, how a
 // finding is identified and closed, and what is checked and what is not. It is
 // the only text that travels with the binary, so the limit of the check is here.
-func findingsGuide() string {
+func findingsGuide() string { return guideClosing(findings.ClosingOutcomes()) }
+
+// guideClosing builds the guide for a given list of outcomes that close a finding;
+// findingsGuide passes the package's own, the tests pass another to see that the
+// prose follows the list.
+func guideClosing(closing []string) string {
 	var b strings.Builder
 	b.WriteString("\nallowed values:\n")
 	for _, c := range findings.InputColumnInfo() {
@@ -55,15 +60,17 @@ func findingsGuide() string {
 			fmt.Fprintf(&b, "  %-10s %s\n", c.Name, strings.Join(c.Allowed, " | "))
 		}
 	}
-	b.WriteString(`
+	fmt.Fprintf(&b, `
 how it works:
   The registry is <repository root>/.handover/findings.tsv: one for the whole repository, shared by
   all its worktrees. Every add appends one row. A finding is identified by its key: the same
   key is the same finding, and its LAST row is its current state. To close one, add a row with
-  the same key and outcome closed (or rejected). ts and first_seen are written by the command;
+  the same key and outcome %s. ts and first_seen are written by the command;
   the age of a finding counts from the first row of its key. stale writes nothing in the
   repository; add creates .handover/ (with its own .gitignore) the first time.
-`)
+  If .handover/ existed before, add and stale note that it has no .gitignore until it has one:
+  a file named .gitignore in it is the whole check (git is not asked what it ignores).
+`, closingOutcomesText(closing))
 	fmt.Fprintf(&b, `
 what is checked:
   A row is refused, and nothing is written, if a column matches one of these rules:
@@ -73,6 +80,15 @@ what is checked:
   value or encoded passes. Write pointers (file:line, a commit, a message id), not values.
 `, strings.Join(findings.ContentRuleNames(), ", "))
 	return b.String()
+}
+
+// closingOutcomesText is "closed (or rejected)": the first outcome that ends a
+// finding, then the others, all from the package's list.
+func closingOutcomesText(closing []string) string {
+	if len(closing) < 2 {
+		return strings.Join(closing, "")
+	}
+	return closing[0] + " (or " + strings.Join(closing[1:], ", ") + ")"
 }
 
 // The one format for what is informational on stderr; errors have no prefix of their own.

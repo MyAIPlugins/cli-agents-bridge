@@ -79,8 +79,11 @@ type StaleResult struct {
 	Notes []string
 }
 
-// TSV renders the header followed by the rows, byte for byte as the registry
-// stores them: what `stale` prints on stdout, readable by a machine.
+// TSV renders the header followed by the rows, in the registry's format: what
+// `stale` prints on stdout, readable by a machine. A row is the one the registry
+// stores except for first_seen, which is the one of the first row of its key
+// (staleRows): in a registry edited by hand the line printed is not the line
+// written.
 func (r StaleResult) TSV() string {
 	var b strings.Builder
 	b.WriteString(header)
@@ -271,14 +274,15 @@ func (s *Store) checkDirForRead() (exists bool, err error) {
 // untracked file. This cannot be fixed from here without changing a directory that
 // is not ours, so it is said every time, like the loose mode of the registry.
 // The check is the file and nothing else: a `.handover/` that the repository's
-// root .gitignore already ignores gets the note too (git is not asked).
+// root .gitignore already ignores gets the note too (git is not asked), and a
+// .gitignore in it silences the note whatever it says.
 func gitignoreNote(dir string) (string, error) {
 	_, err := os.Lstat(filepath.Join(dir, gitignoreName))
 	switch {
 	case err == nil:
 		return "", nil
 	case errors.Is(err, fs.ErrNotExist):
-		return fmt.Sprintf("%s/ existed already and has no %s: this command did not add one, make sure git ignores it", filepath.Base(dir), gitignoreName), nil
+		return fmt.Sprintf("%s/ existed already and has no %s: this command did not add one, make sure git ignores it or put a %s in it", filepath.Base(dir), gitignoreName, gitignoreName), nil
 	default:
 		return "", fmt.Errorf("findings: %s: %w", filepath.Join(dir, gitignoreName), err)
 	}

@@ -37,6 +37,18 @@ var (
 	outcomes   = []string{outcomeOpen, "closed", "rejected"}
 )
 
+// ClosingOutcomes lists the outcomes that end a finding: every outcome but open.
+// The help names them from here, so it cannot say a value Validate does not accept.
+func ClosingOutcomes() []string {
+	out := make([]string, 0, len(outcomes)-1)
+	for _, o := range outcomes {
+		if o != outcomeOpen {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
 // outcomeOpen is the outcome of a finding that is still to be dealt with: the only
 // one `stale` looks at.
 const outcomeOpen = "open"

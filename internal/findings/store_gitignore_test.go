@@ -14,7 +14,7 @@ import (
 // one there, and then `git status` shows the registry. The command cannot fix
 // that without changing a directory that is not ours, so it says it, every time.
 
-const noGitignoreNote = ".handover/ existed already and has no .gitignore: this command did not add one, make sure git ignores it"
+const noGitignoreNote = ".handover/ existed already and has no .gitignore: this command did not add one, make sure git ignores it or put a .gitignore in it"
 
 func handMadeDir(t *testing.T, s *Store) {
 	t.Helper()

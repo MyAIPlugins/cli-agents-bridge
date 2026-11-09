@@ -140,6 +140,28 @@ func TestInputColumnInfo_ListsExactlyWhatValidateAccepts(t *testing.T) {
 	assert.Equal(t, len(setters), closed, "every closed column is listed")
 }
 
+// The help says which outcomes close a finding from ClosingOutcomes: they are the
+// outcomes of the column but open, and Validate accepts each of them.
+func TestClosingOutcomes_AreTheOutcomesButOpen(t *testing.T) {
+	closing := ClosingOutcomes()
+	require.NotEmpty(t, closing)
+	assert.NotContains(t, closing, outcomeOpen)
+
+	var listed []string
+	for _, col := range InputColumnInfo() {
+		if col.Name == "outcome" {
+			listed = col.Allowed
+		}
+	}
+	require.NotEmpty(t, listed, "premise: the outcome column is closed")
+	assert.ElementsMatch(t, listed, append([]string{outcomeOpen}, closing...))
+	for _, o := range closing {
+		in := validValues()
+		in.Outcome = o
+		assert.Empty(t, violationsFor(in, "outcome"), "%q closes a finding, so it must be accepted", o)
+	}
+}
+
 func TestInputColumnInfo_ReturnsACopy(t *testing.T) {
 	first := InputColumnInfo()
 	for i := range first {

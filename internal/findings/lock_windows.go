@@ -10,15 +10,20 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// The Windows half of the registry lock. NOTHING HERE WAS EXECUTED ON WINDOWS
-// when it was written: it was cross-compiled from a Mac. The proof is the
-// windows-latest leg of the CI; until it is green this file is a claim, and the
-// error texts name the Win32 call so that a failure says which one.
+// The Windows half of the registry lock. It was written on a Mac and
+// cross-compiled; it has run on Windows since the windows-latest leg of the CI on
+// 2026-11-09 (run 42539467090, commit 17e090f): `go test -race -count=1 ./...`
+// was green for this package, with the contention test
+// (TestTryLockFile_FirstHolderGetsItSecondIsBusyAndReleaseFreesIt) and the one in
+// which the holder dies (TestTryLockFile_SecondHolderIsBusyAndDeathFreesIt) among
+// them. The error texts name the Win32 call, so that a failure says which one.
 //
-// ERROR_LOCK_VIOLATION as the answer to "someone else holds it" under
-// LOCKFILE_FAIL_IMMEDIATELY is the code the documentation gives and has not been
-// seen returned. If the CI shows another code, the fix is HERE and in the plan,
-// by naming that code: not by treating every error as contention.
+// ERROR_LOCK_VIOLATION is the answer to "someone else holds it" under
+// LOCKFILE_FAIL_IMMEDIATELY, as the documentation says. The contention test is
+// the evidence that the call returns it: any other code is returned as an error,
+// not as contention, so the test could not pass otherwise. If a Windows version
+// ever returns another code, the fix is HERE and in the plan, by naming that code:
+// not by treating every error as contention.
 //
 // The lock is MANDATORY on Windows: a process that tries to read or write the
 // locked byte gets an error. So the lock file never holds anything and nothing
