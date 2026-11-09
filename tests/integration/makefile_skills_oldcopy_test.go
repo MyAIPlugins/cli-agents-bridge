@@ -251,8 +251,9 @@ func TestMakefile_SkillsOldCodexCopyBlocks(t *testing.T) {
 		})
 	}
 
-	// A folder that cannot be entered has no path to compare with the new copy's. It is
-	// taken as another folder: the mistake is on the side of refusing.
+	// A folder that cannot be entered is still a folder with an inode of its own, and test -ef
+	// needs no access inside it: its inode is not the new copy's, so it is another folder
+	// and is refused.
 	t.Run("an old folder that cannot be entered is refused, not taken for the same", func(t *testing.T) {
 		if os.Geteuid() == 0 {
 			t.Skip("root enters any folder")
@@ -301,6 +302,7 @@ func TestMakefile_SkillsOldCodexCopyBlocks(t *testing.T) {
 			assert.Contains(t, out, "deadlink   codex/alpha")
 			out, code = fx.script(t, repoRoot, "install", "FORCE=1")
 			assert.Equal(t, 1, code, out)
+			assert.Contains(t, out, fx.oldCopy("alpha"), "the refusal names the path to remove")
 			assert.Equal(t, before, fx.snapshot(t), "and nothing was touched")
 			return
 		}

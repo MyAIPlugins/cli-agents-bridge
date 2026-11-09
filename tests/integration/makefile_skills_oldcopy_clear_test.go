@@ -194,32 +194,55 @@ func TestMakefile_SkillsOldCopyMessagesAreSafeToFollow(t *testing.T) {
 		})
 	}
 
-	// The identity of two folders is decided with test -ef. A sh whose test does not have
-	// it would answer "not the same" to everything and bring the message back that says to
-	// remove the installed copy, so the script refuses to run. To get an sh like that, the
-	// same script is run with -ef spelled as an operator no test has: what such an sh makes
-	// of it is an error, not a crash and not a "yes".
-	t.Run("an sh whose test has no -ef is refused before anything is read or copied", func(t *testing.T) {
-		fx := newSkillsFixture(t)
-		src := readFile(t, filepath.Join(repoRoot, "scripts", "skills.sh"))
-		without := strings.ReplaceAll(src, `" -ef "`, `" -zzef "`) // the two tests, not the words of the message
-		require.NotEqual(t, src, without, "premise: the script uses -ef")
-		script := filepath.Join(t.TempDir(), "skills.sh")
-		write(t, script, without)
-		before := fx.snapshot(t)
+	// The identity of two folders is decided with test -ef, and a test that gets it wrong
+	// either way would bring back the message that says to remove the installed copy or load
+	// two copies without a word, so the script refuses to run. There is no such sh to run
+	// the suite under: each one is emulated by the same script with -ef spelled as another
+	// operator, in the two tests of the probe and in the one that decides.
+	for _, probe := range []struct {
+		name, operator, says, premiseName string
+		premise                           string
+	}{
+		// An operator no test has: what a sh without -ef makes of it is an error.
+		{"an sh whose test has no -ef is refused before anything is read or copied", "-zzef",
+			"has no test -ef", "-zzef is an error", `[ "a" -zzef "b" ]`},
+		// -o between two non-empty strings is true in every sh the suite runs under: it
+		// stands in for a test that answers yes to an operator it does not know, which
+		// passes the first line of the probe and would call every pair the same folder.
+		{"an sh whose test says yes to every operator is refused too", "-o",
+			"calls a folder and a file one thing", "-o is true for two non-empty strings", `[ "a" -o "b" ]`},
+	} {
+		t.Run(probe.name, func(t *testing.T) {
+			// The premise the emulation rests on, asserted in the sh in use.
+			ran := exec.Command("sh", "-c", probe.premise).Run()
+			if probe.operator == "-o" {
+				require.NoError(t, ran, "premise: "+probe.premiseName)
+			} else {
+				require.Error(t, ran, "premise: "+probe.premiseName)
+			}
 
-		for _, mode := range []string{"check", "install"} {
-			cmd := exec.Command("sh", script, mode)
-			cmd.Env = append(fx.env(), "SKILLS_DIR="+fx.skills, "BIN_DIR="+fx.bin)
-			raw, runErr := cmd.CombinedOutput()
-			out := string(raw)
-			assert.Equal(t, 1, exitCode(t, runErr), mode+": "+out)
-			assert.Contains(t, out, "-ef", mode)
-			assert.Contains(t, out, "Nothing was read or copied", mode)
-			assert.Equal(t, before, fx.snapshot(t), mode+": nothing was copied")
-		}
+			fx := newSkillsFixture(t)
+			src := readFile(t, filepath.Join(repoRoot, "scripts", "skills.sh"))
+			emulated := strings.ReplaceAll(src, `" -ef "`, `" `+probe.operator+` "`) // the tests, not the words of the message
+			require.NotEqual(t, src, emulated, "premise: the script uses -ef")
+			script := filepath.Join(t.TempDir(), "skills.sh")
+			write(t, script, emulated)
+			before := fx.snapshot(t)
 
-		out, code := fx.script(t, repoRoot, "install")
-		assert.Equal(t, 0, code, "and the script as it is passes in the same fixture: %s", out)
-	})
+			for _, mode := range []string{"check", "install"} {
+				cmd := exec.Command("sh", script, mode)
+				cmd.Env = append(fx.env(), "SKILLS_DIR="+fx.skills, "BIN_DIR="+fx.bin)
+				raw, runErr := cmd.CombinedOutput()
+				out := string(raw)
+				assert.Equal(t, 1, exitCode(t, runErr), mode+": "+out)
+				assert.Contains(t, out, probe.says, mode+": it is this line of the probe that spoke")
+				assert.Contains(t, out, "-ef", mode)
+				assert.Contains(t, out, "Nothing was read or copied", mode)
+				assert.Equal(t, before, fx.snapshot(t), mode+": nothing was copied")
+			}
+
+			out, code := fx.script(t, repoRoot, "install")
+			assert.Equal(t, 0, code, "and the script as it is passes in the same fixture: %s", out)
+		})
+	}
 }

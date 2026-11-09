@@ -48,8 +48,10 @@
 #   - "the same folder" is decided by device and inode, with test -ef, and not by how the
 #     two paths are written: a folder reached through a link spelled with other cases, on a
 #     volume that does not tell them apart, is one folder. test -ef is not in POSIX.1-2018;
-#     dash, bash, ksh and zsh have it, and a sh without it is refused up front, by check and
-#     by install, before anything is read or copied. The message for a link uses readlink
+#     dash, bash, ksh and zsh have it, and a sh without it, or whose test says yes to
+#     everything, is refused up front, by check and by install, before anything is read or
+#     copied (a folder against this script, a file, must come out as two). The message for a
+#     link uses readlink
 #     (macOS and Linux; also not in POSIX.1-2018) to say where the link leads. The identity
 #     is a local one: device and inode, as the filesystem gives them;
 #   - a runtime that is not on this machine is skipped, with a line. Whether it is here is
@@ -378,6 +380,14 @@ each_skill() {
 	echo "skills: this sh has no test -ef (same device and inode), which tells whether two paths are one folder. Nothing was read or copied." >&2
 	exit 1
 }
+# The other way too: a test that answers yes to an operator it does not know passes the line
+# above, and would call every pair "the same folder", so two copies would be loaded without a
+# word. A folder (skills_dir is one, checked above) and this very script, a file, are never one
+# thing, whatever the paths or the volume: it must say no to that pair.
+if [ "$skills_dir" -ef "$0" ] 2>/dev/null; then
+	echo "skills: this sh's test -ef calls a folder and a file one thing, so it cannot tell whether two paths are one folder. Nothing was read or copied." >&2
+	exit 1
+fi
 
 # $1 is a skill of skills/shared/, $2 the folder it would have in a runtime's own folder.
 # A link counts, a dangling one too: it is a name taken.
