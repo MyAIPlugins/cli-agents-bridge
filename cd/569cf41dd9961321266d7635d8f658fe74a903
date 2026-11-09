@@ -1,0 +1,32 @@
+internal/findings/redact.go
+  s_d5e186cda02d82::t_99be76fb31acca 61-64
+internal/findings/jwt_test.go
+  s_d5e186cda02d82::t_a9cdf508db8021 1-64,66-238,240-247,254,258-260,262-265,271-283
+  s_d5e186cda02d82::t_9f948509913624 65,239,248-253,255-257,261,266-270
+internal/findings/jwt.go
+  s_d5e186cda02d82::t_964155e4ba9329 17-29,31-45,47-49,56-61,64-67,70-72,79-99,102-104,106-107,110-128,132-135,138,140,142-143,145-146,148-150
+  s_d5e186cda02d82::t_40019ceff9bf45 141
+  s_d5e186cda02d82::t_bca748b7cceff7 144,147,151-167
+internal/findings/redact_variants_test.go
+  s_d5e186cda02d82::t_99be76fb31acca 12,17-18,20
+tests/integration/findings_secrets_test.go
+  s_d5e186cda02d82::t_f7a65789912fea 134-136,139-147,149-151
+  s_d5e186cda02d82::t_fbbf6bd245c561 4-6,8,10-11,28-67,84-89,92,94-99
+  s_d5e186cda02d82::t_0a7be95eb6481d 93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cd569cf41dd9961321266d7635d8f658fe74a903",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
