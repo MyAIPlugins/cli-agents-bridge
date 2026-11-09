@@ -1,0 +1,36 @@
+tests/integration/makefile_skills_oldcopy_clear_test.go
+  s_d5e186cda02d82::t_e328454ed2db96 158
+  s_d5e186cda02d82::t_245bc8e678f4d5 162
+  s_d5e186cda02d82::t_6b873572532493 132-153
+  s_d5e186cda02d82::t_32a4becdce07f3 1-131,154-157,159-161,163-204,206-225
+  s_d5e186cda02d82::t_b7c8f7192b147c 205
+scripts/skills.sh
+  s_d5e186cda02d82::t_1d3de06c539a7e 40-54
+  s_d5e186cda02d82::t_8428249b5aa813 295-297
+  s_d5e186cda02d82::t_183030214feb43 483,486-487
+  s_d5e186cda02d82::t_a93d14bd4030d0 320-321
+  s_d5e186cda02d82::t_0134621c4a816e 129-130,132-135,138
+  s_d5e186cda02d82::t_d4a416ff531e37 432-437,441-442
+  s_d5e186cda02d82::t_a77add1038b1f8 150-171
+  s_d5e186cda02d82::t_b5cea3c8b21b93 372-381
+tests/integration/makefile_skills_oldcopy_test.go
+  s_d5e186cda02d82::t_5ed149eee214e7 195-213
+  s_d5e186cda02d82::t_46fe229f0d8f5b 278-285,290,298-312,314-319
+  s_d5e186cda02d82::t_6860a58a6855e8 161-164,170-173,175,178
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b06ca929cdb624c52bff20063170154594a9bac8",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
