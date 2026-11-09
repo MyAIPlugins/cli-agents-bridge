@@ -229,7 +229,32 @@ STATICCHECK_VERSION := $(shell cat .staticcheck-version)
 # on the gate that authorises merges, while the local gate stayed green.
 STATICCHECK ?= $(shell if [ -x "$(STATICCHECK_DIR)/staticcheck" ]; then echo "$(STATICCHECK_DIR)/staticcheck"; else command -v staticcheck 2>/dev/null || echo "$(STATICCHECK_DIR)/staticcheck"; fi)
 
+# The Go toolchain `make lint` runs under is the one go.mod names in its
+# `toolchain` line, the same one CI uses (`go-version-file: go.mod`): one number,
+# one place. Without it the gate ran under whatever Go the machine has by
+# default, and a default NEWER than the one the pinned staticcheck was built with
+# made it fail on a tree that was fine ("export data version 5 is greater than
+# maximum supported version 4"), while CI stayed green: the local gate was
+# another object than the one that authorises merges.
+#
+# A GOTOOLCHAIN already in the environment, or given as `make lint
+# GOTOOLCHAIN=...`, wins: whoever sets it means it. Empty counts as unset, which
+# is how Go reads it too. Only the lint target exports it, so build and test run
+# as before. With no `toolchain` line (and no GOTOOLCHAIN) the target refuses
+# instead of picking a version by itself.
+LINT_TOOLCHAIN := $(shell awk '$$1 == "toolchain" { print $$2; exit }' go.mod)
+ifeq ($(strip $(GOTOOLCHAIN)),)
+lint: export GOTOOLCHAIN := $(LINT_TOOLCHAIN)
+endif
+
 lint: ## Run go vet + staticcheck (required; version pinned in .staticcheck-version)
+	@if [ -z "$(GOTOOLCHAIN)" ]; then \
+		echo "make lint: go.mod has no 'toolchain' line (or cannot be read), so there is no Go version to run under"; \
+		echo "  add one:  go mod edit -toolchain=go1.x.y   (or set GOTOOLCHAIN yourself)"; \
+		echo "  this is a hard failure on purpose: picking a toolchain here would make the local gate another object than CI's"; \
+		exit 1; \
+	fi
+	@printf 'make lint: %s (GOTOOLCHAIN=%s)\n' "$$(go version)" "$(GOTOOLCHAIN)"
 	go vet ./...
 	@if [ ! -x "$(STATICCHECK)" ]; then \
 		echo "make lint: staticcheck not found (looked in $(STATICCHECK_DIR), then \$$PATH)"; \
