@@ -1,0 +1,23 @@
+tests/integration/fake_tools_test.go
+  s_d5e186cda02d82::t_01e297bbbea6fc 1-24,30-146
+  s_d5e186cda02d82::t_957797a7daffcb 25-29
+tests/integration/makefile_lint_toolchain_test.go
+  s_d5e186cda02d82::t_00c5cdea144f33 216-221
+  s_d5e186cda02d82::t_957797a7daffcb 5,24-28,34,36-37,48,56-62,74,88-131,137,154,164,175,183,193,202,234
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b1fe3577744e489c58d5c1175bdf6932729775ad",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
