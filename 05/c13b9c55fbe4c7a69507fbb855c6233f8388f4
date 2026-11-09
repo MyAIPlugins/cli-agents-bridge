@@ -1,0 +1,37 @@
+internal/findings/redact.go
+  s_d5e186cda02d82::t_62dded6b9847d4 11-21,31,34-37,39-42,44,46-50,53,59-92,122-129,140-141,171-177,179-180,185,188
+internal/findings/entry.go
+  s_d5e186cda02d82::t_62dded6b9847d4 203-214,256-257,259-260
+internal/findings/redact_variants_test.go
+  s_d5e186cda02d82::t_03fcd247ceba58 4-5,137-154,161-184,186-197
+cmd/cab-bridge/findings_test.go
+  s_d5e186cda02d82::t_03fcd247ceba58 292-294
+  s_d5e186cda02d82::t_9f642ce3ff0cfa 295-301
+internal/findings/jwt.go
+  s_d5e186cda02d82::t_62dded6b9847d4 56-58,62-64,74-78,81
+cmd/cab-bridge/findings.go
+  s_d5e186cda02d82::t_be9027b22ad2ff 81,85-86
+  s_d5e186cda02d82::t_dc4b9cb18841f2 82-84
+internal/findings/jwt_test.go
+  s_d5e186cda02d82::t_03fcd247ceba58 284-331
+  s_d5e186cda02d82::t_62dded6b9847d4 115
+tests/integration/findings_secrets_test.go
+  s_d5e186cda02d82::t_03fcd247ceba58 7,195-223
+  s_d5e186cda02d82::t_4f0fe442b49601 224
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "05c13b9c55fbe4c7a69507fbb855c6233f8388f4",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
