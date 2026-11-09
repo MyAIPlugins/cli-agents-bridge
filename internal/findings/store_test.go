@@ -33,9 +33,9 @@ func newTestStore(t *testing.T) (*Store, *fakeClock) {
 	}, clock
 }
 
-func inputFor(chiave string) Input {
+func inputFor(key string) Input {
 	in := validValues()
-	in.Chiave = chiave
+	in.Key = key
 	return in
 }
 
@@ -68,15 +68,15 @@ func dirNames(t *testing.T, dir string) []string {
 func TestAdd_WritesAllFifteenColumnsInOrder(t *testing.T) {
 	s, _ := newTestStore(t)
 	in := inputFor("lock-race")
-	in.Azione = "rename the lock file"
-	in.Modello = "gpt-5.5"
-	in.Token = "43085"
-	in.Costo = "0.125"
+	in.Action = "rename the lock file"
+	in.Model = "gpt-5.5"
+	in.Tokens = "43085"
+	in.Cost = "0.125"
 
 	res := mustAdd(t, s, in)
 
 	want := header +
-		"2026-11-08T10:00:00.123Z\tF-156\tpiano\tCRI\tlock-race\t2026-11-08T10:00:00.123Z\tthe lock is advisory\tMajor\tlock.go:12\tPROPOSE-FIX\trename the lock file\taperto\tgpt-5.5\t43085\t0.125\n"
+		"2026-11-08T10:00:00.123Z\tF-156\tplan\tCRI\tlock-race\t2026-11-08T10:00:00.123Z\tthe lock is advisory\tMajor\tlock.go:12\tPROPOSE-FIX\trename the lock file\topen\tgpt-5.5\t43085\t0.125\n"
 	assert.Equal(t, want, string(readFile(t, s.RegistryPath())))
 	assert.Equal(t, "2026-11-08T10:00:00.123Z", res.Row.FirstSeen)
 	assert.Empty(t, res.Notes)
@@ -312,7 +312,7 @@ func TestAdd_ReleaseFailureIsReportedAndSaysTheRowWasRecorded(t *testing.T) {
 	res, err := s.Add(inputFor("k"))
 	require.ErrorIs(t, err, boom)
 	assert.Contains(t, err.Error(), "WAS recorded")
-	assert.Equal(t, "k", res.Row.Chiave, "the result still carries the row")
+	assert.Equal(t, "k", res.Row.Key, "the result still carries the row")
 	assert.Contains(t, string(readFile(t, s.RegistryPath())), "\tk\t")
 }
 
@@ -362,10 +362,10 @@ func TestRegistry_StructuralProblemsAreRefusedByAddAndStale(t *testing.T) {
 	}{
 		{"last row without a newline", func(good []byte, _ []string) []byte { return good[:len(good)-1] }, "line 2: the last line does not end with a newline"},
 		{"header differs", func(good []byte, _ []string) []byte {
-			return []byte(strings.Replace(string(good), "ts\tlotto", "ts\tlotti", 1))
+			return []byte(strings.Replace(string(good), "ts\tlot", "ts\tlotti", 1))
 		}, "line 1: the header is not the expected one"},
 		{"header with a carriage return", func(good []byte, _ []string) []byte {
-			return []byte(strings.Replace(string(good), "costo\n", "costo\r\n", 1))
+			return []byte(strings.Replace(string(good), "cost\n", "cost\r\n", 1))
 		}, "line 1: the header is not the expected one"},
 		{"14 columns", func(_ []byte, f []string) []byte {
 			return []byte(header + strings.Join(f[:14], "\t") + "\n")
@@ -374,11 +374,11 @@ func TestRegistry_StructuralProblemsAreRefusedByAddAndStale(t *testing.T) {
 			return []byte(header + strings.Join(append(f, "extra"), "\t") + "\n")
 		}, "line 2: the line has 16 columns, expected 15"},
 		{"carriage return in a row", rowWith(func(f []string) { f[6] += "\r" }), "line 2: the line contains a carriage return"},
-		{"gate outside its list", rowWith(func(f []string) { f[2] = "Piano" }), "line 2: column gate has a value outside its list"},
-		{"severita outside its list", rowWith(func(f []string) { f[7] = "major" }), "line 2: column severita has a value outside its list"},
-		{"decisione outside its list", rowWith(func(f []string) { f[9] = "ACCEPT" }), "line 2: column decisione has a value outside its list"},
-		{"esito outside its list", rowWith(func(f []string) { f[11] = "Aperto" }), "line 2: column esito has a value outside its list"},
-		{"chiave not a key", rowWith(func(f []string) { f[4] = "Lock_Race" }), "line 2: column chiave is not a valid key"},
+		{"gate outside its list", rowWith(func(f []string) { f[2] = "Plan" }), "line 2: column gate has a value outside its list"},
+		{"severity outside its list", rowWith(func(f []string) { f[7] = "major" }), "line 2: column severity has a value outside its list"},
+		{"decision outside its list", rowWith(func(f []string) { f[9] = "ACCEPT" }), "line 2: column decision has a value outside its list"},
+		{"outcome outside its list", rowWith(func(f []string) { f[11] = "Open" }), "line 2: column outcome has a value outside its list"},
+		{"key not a key", rowWith(func(f []string) { f[4] = "Lock_Race" }), "line 2: column key is not a valid key"},
 		{"ts not a timestamp", rowWith(func(f []string) { f[0] = "2026-11-08T10:00:00Z" }), "line 2: column ts is not a UTC timestamp with milliseconds"},
 		{"first_seen not a timestamp", rowWith(func(f []string) { f[5] = "yesterday" }), "line 2: column first_seen is not a UTC timestamp with milliseconds"},
 		{"a blank line", func(good []byte, _ []string) []byte { return []byte(string(good) + "\n") }, "line 3: the line has 1 columns, expected 15"},

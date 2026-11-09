@@ -58,10 +58,10 @@ func findingsGuide() string {
 	b.WriteString(`
 how it works:
   The registry is <repository root>/.handover/findings.tsv: one for the whole repository, shared by
-  all its worktrees. Every add appends one row. A finding is identified by its chiave: the same
-  chiave is the same finding, and its LAST row is its current state. To close one, add a row with
-  the same chiave and esito chiuso (or respinto). ts and first_seen are written by the command;
-  the age of a finding counts from the first row of its chiave. stale writes nothing in the
+  all its worktrees. Every add appends one row. A finding is identified by its key: the same
+  key is the same finding, and its LAST row is its current state. To close one, add a row with
+  the same key and outcome closed (or rejected). ts and first_seen are written by the command;
+  the age of a finding counts from the first row of its key. stale writes nothing in the
   repository; add creates .handover/ (with its own .gitignore) the first time.
 `)
 	fmt.Fprintf(&b, `
@@ -150,10 +150,10 @@ func findingsAdd(args []string, stdin io.Reader, stdout, stderr io.Writer, deps 
 
 	res, addErr := store.Add(in)
 	printNotes(stderr, res.Notes)
-	if res.Row.Chiave != "" {
+	if res.Row.Key != "" {
 		// Also when the lock failed to release after the row was recorded: the
 		// error below says so, and this line says what was recorded.
-		fmt.Fprintf(stdout, "recorded %s first_seen=%s -> %s\n", res.Row.Chiave, res.Row.FirstSeen, store.RegistryPath())
+		fmt.Fprintf(stdout, "recorded %s first_seen=%s -> %s\n", res.Row.Key, res.Row.FirstSeen, store.RegistryPath())
 	}
 	return addErr
 }

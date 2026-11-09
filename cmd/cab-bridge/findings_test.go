@@ -19,7 +19,7 @@ import (
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
-const findingsHeader = "ts\tlotto\tgate\tcritico\tchiave\tfirst_seen\tfinding\tseverita\tevidenza\tdecisione\tazione\tesito\tmodello\ttoken\tcosto\n"
+const findingsHeader = "ts\tlot\tgate\tcritic\tkey\tfirst_seen\tfinding\tseverity\tevidence\tdecision\taction\toutcome\tmodel\ttokens\tcost\n"
 
 var findingsNow = time.Date(2026, 11, 8, 10, 0, 0, 123_000_000, time.UTC)
 
@@ -60,9 +60,9 @@ func (e *findingsEnv) registry() string { return filepath.Join(e.repo, ".handove
 func validFindingJSON(t *testing.T, override map[string]string) string {
 	t.Helper()
 	m := map[string]string{
-		"lotto": "F-156", "gate": "piano", "critico": "CRI", "chiave": "lock-race",
-		"finding": "the lock is advisory", "severita": "Major", "evidenza": "lock.go:12",
-		"decisione": "PROPOSE-FIX", "esito": "aperto",
+		"lot": "F-156", "gate": "plan", "critic": "CRI", "key": "lock-race",
+		"finding": "the lock is advisory", "severity": "Major", "evidence": "lock.go:12",
+		"decision": "PROPOSE-FIX", "outcome": "open",
 	}
 	for k, v := range override {
 		m[k] = v
@@ -83,7 +83,7 @@ func TestFindingsAdd_PrintsWhatItRecorded(t *testing.T) {
 	assert.Equal(t, noNamesLine, stderr)
 	data, err := os.ReadFile(e.registry())
 	require.NoError(t, err)
-	assert.Equal(t, findingsHeader+"2026-11-08T10:00:00.123Z\tF-156\tpiano\tCRI\tlock-race\t2026-11-08T10:00:00.123Z\tthe lock is advisory\tMajor\tlock.go:12\tPROPOSE-FIX\t\taperto\t\t\t\n", string(data))
+	assert.Equal(t, findingsHeader+"2026-11-08T10:00:00.123Z\tF-156\tplan\tCRI\tlock-race\t2026-11-08T10:00:00.123Z\tthe lock is advisory\tMajor\tlock.go:12\tPROPOSE-FIX\t\topen\t\t\t\n", string(data))
 }
 
 func TestFindingsAdd_RejectionNamesTheColumnAndFails(t *testing.T) {
@@ -93,7 +93,7 @@ func TestFindingsAdd_RejectionNamesTheColumnAndFails(t *testing.T) {
 	require.Error(t, err)
 	var rejected *findings.RejectedError
 	require.ErrorAs(t, err, &rejected)
-	assert.Equal(t, "findings: column gate: must be one of: piano, diff\n"+
+	assert.Equal(t, "findings: column gate: must be one of: plan, diff\n"+
 		"findings: column finding: contains something that looks like secret-assignment\n"+
 		"findings: nothing was written", err.Error())
 	assert.Empty(t, stdout)
@@ -173,10 +173,10 @@ func TestFindingsAdd_ShortAssignmentsAreRefusedAndTheValueDoesNotComeBack(t *tes
 		for n := 1; n <= 4; n++ {
 			e := newFindingsEnv(t)
 			value := strings.Repeat("Q", n)
-			stdout, stderr, err := e.run(validFindingJSON(t, map[string]string{"azione": name + "=" + value}), "add")
+			stdout, stderr, err := e.run(validFindingJSON(t, map[string]string{"action": name + "=" + value}), "add")
 
 			require.Error(t, err, "%s=%s", name, value)
-			assert.Equal(t, "findings: column azione: contains something that looks like secret-assignment\nfindings: nothing was written", err.Error())
+			assert.Equal(t, "findings: column action: contains something that looks like secret-assignment\nfindings: nothing was written", err.Error())
 			assert.Equal(t, noNamesLine, stderr, "the premise: nothing but fixed text is printed")
 			assert.Empty(t, stdout)
 			assert.NotContains(t, stdout+stderr+err.Error(), "Q")
@@ -188,13 +188,13 @@ func TestFindingsAdd_ShortAssignmentsAreRefusedAndTheValueDoesNotComeBack(t *tes
 func TestFindingsAdd_SaysItEveryTimeWhenNoNamesAreConfigured(t *testing.T) {
 	e := newFindingsEnv(t)
 	for i := 0; i < 2; i++ {
-		_, stderr, err := e.run(validFindingJSON(t, map[string]string{"chiave": "k" + string(rune('a'+i))}), "add")
+		_, stderr, err := e.run(validFindingJSON(t, map[string]string{"key": "k" + string(rune('a'+i))}), "add")
 		require.NoError(t, err)
 		assert.Equal(t, noNamesLine, stderr, "add number %d", i+1)
 	}
 
 	e.cfg.FindingsDeniedNames = []string{"Marta"}
-	_, stderr, err := e.run(validFindingJSON(t, map[string]string{"chiave": "kc"}), "add")
+	_, stderr, err := e.run(validFindingJSON(t, map[string]string{"key": "kc"}), "add")
 	require.NoError(t, err)
 	assert.Empty(t, stderr, "with names configured there is nothing to warn about")
 }
@@ -202,9 +202,9 @@ func TestFindingsAdd_SaysItEveryTimeWhenNoNamesAreConfigured(t *testing.T) {
 func TestFindingsAdd_ConfiguredNamesAreRefused(t *testing.T) {
 	e := newFindingsEnv(t)
 	e.cfg.FindingsDeniedNames = []string{"Marta"}
-	_, _, err := e.run(validFindingJSON(t, map[string]string{"azione": "ask Marta"}), "add")
+	_, _, err := e.run(validFindingJSON(t, map[string]string{"action": "ask Marta"}), "add")
 	require.Error(t, err)
-	assert.Equal(t, "findings: column azione: contains something that looks like person-name\nfindings: nothing was written", err.Error())
+	assert.Equal(t, "findings: column action: contains something that looks like person-name\nfindings: nothing was written", err.Error())
 }
 
 func TestFindingsAdd_InvalidNamesEntryIsAConfigError(t *testing.T) {
@@ -223,7 +223,7 @@ func TestFindingsAdd_StdinErrorsAreFixedTextsAndCreateNothing(t *testing.T) {
 	for input, want := range map[string]string{
 		"":                                  "findings: input is empty",
 		"not json":                          "findings: stdin is not valid JSON (byte offset 2)",
-		`{"lotto":"x","bogus":"y"}`:         "findings: unknown column; the columns are: lotto, gate,",
+		`{"lot":"x","bogus":"y"}`:           "findings: unknown column; the columns are: lot, gate,",
 		`{"ts":"2026-11-08T10:00:00.000Z"}`: "findings: column ts is written by the command",
 		`{"ts":null}`:                       "findings: column ts is written by the command",
 		`{"first_seen":null}`:               "findings: column first_seen is written by the command",
@@ -283,7 +283,7 @@ func TestFindingsRun_HelpSaysWhatIsCheckedAndWhatIsNot(t *testing.T) {
 		assert.Contains(t, stderr, "NOT a general secret detector", args)
 		assert.Contains(t, stderr, "split across the", args)
 		assert.Contains(t, stderr, "LAST row", args)
-		assert.Contains(t, stderr, "esito chiuso (or respinto)", args)
+		assert.Contains(t, stderr, "outcome closed (or rejected)", args)
 		assert.Contains(t, stderr, "stale writes nothing in the", args)
 	}
 	assert.NoDirExists(t, filepath.Join(e.repo, ".handover"))
@@ -302,18 +302,18 @@ func TestFindingsRun_AnErrorPrintsTheShortUsageNotTheGuide(t *testing.T) {
 // ---- stale ----------------------------------------------------------------
 
 // seed records findings through the command itself, on a clock that moves.
-func (e *findingsEnv) seed(t *testing.T, age time.Duration, chiave, esito string) {
+func (e *findingsEnv) seed(t *testing.T, age time.Duration, key, outcome string) {
 	t.Helper()
 	e.now = findingsNow.Add(-age)
-	_, _, err := e.run(validFindingJSON(t, map[string]string{"chiave": chiave, "esito": esito}), "add")
+	_, _, err := e.run(validFindingJSON(t, map[string]string{"key": key, "outcome": outcome}), "add")
 	require.NoError(t, err)
 	e.now = findingsNow
 }
 
 func TestFindingsStale_DaysFlagOverridesConfig(t *testing.T) {
 	e := newFindingsEnv(t)
-	e.seed(t, 10*24*time.Hour, "old-one", "aperto")
-	e.seed(t, time.Hour, "young-one", "aperto")
+	e.seed(t, 10*24*time.Hour, "old-one", "open")
+	e.seed(t, time.Hour, "young-one", "open")
 	e.cfg.FindingsStaleDays = 30
 
 	stdout, stderr, err := e.run("", "stale")
@@ -334,7 +334,7 @@ func TestFindingsStale_DaysFlagOverridesConfig(t *testing.T) {
 
 func TestFindingsStale_UsesTheConfiguredDaysByDefault(t *testing.T) {
 	e := newFindingsEnv(t)
-	e.seed(t, 10*24*time.Hour, "old-one", "aperto")
+	e.seed(t, 10*24*time.Hour, "old-one", "open")
 	stdout, _, err := e.run("", "stale")
 	require.NoError(t, err)
 	assert.Contains(t, stdout, "\told-one\t", "findings_stale_days defaults to 7")
@@ -396,9 +396,9 @@ func TestFindingsStale_BadFlagsAndArguments(t *testing.T) {
 
 func TestFindingsStale_PrintsRowsAsStoredOldestFirst(t *testing.T) {
 	e := newFindingsEnv(t)
-	e.seed(t, 20*24*time.Hour, "zeta", "aperto")
-	e.seed(t, 30*24*time.Hour, "alpha", "aperto")
-	e.seed(t, 30*24*time.Hour, "closed", "chiuso")
+	e.seed(t, 20*24*time.Hour, "zeta", "open")
+	e.seed(t, 30*24*time.Hour, "alpha", "open")
+	e.seed(t, 30*24*time.Hour, "closed", "closed")
 
 	stdout, stderr, err := e.run("", "stale")
 	require.NoError(t, err)

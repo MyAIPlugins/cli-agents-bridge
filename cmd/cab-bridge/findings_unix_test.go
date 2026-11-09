@@ -13,7 +13,7 @@ import (
 
 func TestFindingsStale_NotesALooseRegistryAndDoesNotChangeIt(t *testing.T) {
 	e := newFindingsEnv(t)
-	e.seed(t, 10*24*time.Hour, "old-one", "aperto")
+	e.seed(t, 10*24*time.Hour, "old-one", "open")
 	require.NoError(t, os.Chmod(e.registry(), 0o644))
 
 	_, stderr, err := e.run("", "stale")
@@ -26,10 +26,10 @@ func TestFindingsStale_NotesALooseRegistryAndDoesNotChangeIt(t *testing.T) {
 
 func TestFindingsAdd_SaysWhenItRepublishesALooseRegistryAs0600(t *testing.T) {
 	e := newFindingsEnv(t)
-	e.seed(t, time.Hour, "first", "aperto")
+	e.seed(t, time.Hour, "first", "open")
 	require.NoError(t, os.Chmod(e.registry(), 0o644))
 
-	_, stderr, err := e.run(validFindingJSON(t, map[string]string{"chiave": "second"}), "add")
+	_, stderr, err := e.run(validFindingJSON(t, map[string]string{"key": "second"}), "add")
 	require.NoError(t, err)
 	assert.Equal(t, noNamesLine+"findings: note: the registry had mode 0644, it is 0600 now\n", stderr)
 	info, err := os.Stat(e.registry())

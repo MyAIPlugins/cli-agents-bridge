@@ -158,7 +158,7 @@ func (s *Store) addLocked(in Input) (AddResult, error) {
 	if err != nil {
 		return AddResult{}, err
 	}
-	row := newRow(in, ts, firstSeenFor(reg.rows, in.Chiave, ts))
+	row := newRow(in, ts, firstSeenFor(reg.rows, in.Key, ts))
 	snapshot, err := buildSnapshot(path, reg.data, row, s.maxBytes())
 	if err != nil {
 		return AddResult{}, err
@@ -185,9 +185,9 @@ func (s *Store) publish(path string, data []byte) error {
 }
 
 // firstSeenFor is B2.5: the first row with the same key wins, else this row's ts.
-func firstSeenFor(rows []Row, chiave, ts string) string {
+func firstSeenFor(rows []Row, key, ts string) string {
 	for _, r := range rows {
-		if r.Chiave == chiave {
+		if r.Key == key {
 			return r.FirstSeen
 		}
 	}
@@ -452,7 +452,7 @@ func withNote(notes []string, note string) []string {
 }
 
 // staleRows keeps the current row (the last in file order) of every key whose
-// esito is open and whose first_seen is strictly older than days days.
+// outcome is open and whose first_seen is strictly older than days days.
 //
 // A key's state is its last row; its age is counted from its FIRST row, the same
 // definition Add uses when it writes first_seen. Add keeps the column equal
@@ -468,21 +468,21 @@ func staleRows(rows []Row, now time.Time, days int) ([]Row, error) {
 	current := make(map[string]Row, len(rows))
 	born := make(map[string]string, len(rows))
 	for _, r := range rows {
-		if _, seen := born[r.Chiave]; !seen {
-			born[r.Chiave] = r.FirstSeen
+		if _, seen := born[r.Key]; !seen {
+			born[r.Key] = r.FirstSeen
 		}
-		current[r.Chiave] = r
+		current[r.Key] = r
 	}
 	limit := time.Duration(days) * 24 * time.Hour
 	var out []Row
 	for key, r := range current {
-		if r.Esito != outcomeOpen {
+		if r.Outcome != outcomeOpen {
 			continue
 		}
 		r.FirstSeen = born[key]
 		firstSeen, err := parseTimestamp(r.FirstSeen)
 		if err != nil {
-			return nil, fmt.Errorf("the first_seen of key %s is not a timestamp: %w", r.Chiave, err)
+			return nil, fmt.Errorf("the first_seen of key %s is not a timestamp: %w", r.Key, err)
 		}
 		if now.Sub(firstSeen) > limit {
 			out = append(out, r)
@@ -492,7 +492,7 @@ func staleRows(rows []Row, now time.Time, days int) ([]Row, error) {
 		if out[i].FirstSeen != out[j].FirstSeen {
 			return out[i].FirstSeen < out[j].FirstSeen
 		}
-		return out[i].Chiave < out[j].Chiave
+		return out[i].Key < out[j].Key
 	})
 	return out, nil
 }

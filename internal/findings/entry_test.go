@@ -12,8 +12,8 @@ import (
 
 func validValues() Input {
 	return Input{
-		Lotto: "F-156", Gate: "piano", Critico: "CRI", Chiave: "lock-race", Finding: "the lock is advisory",
-		Severita: "Major", Evidenza: "lock.go:12", Decisione: "PROPOSE-FIX", Esito: "aperto",
+		Lot: "F-156", Gate: "plan", Critic: "CRI", Key: "lock-race", Finding: "the lock is advisory",
+		Severity: "Major", Evidence: "lock.go:12", Decision: "PROPOSE-FIX", Outcome: "open",
 	}
 }
 
@@ -28,7 +28,7 @@ func violationsFor(in Input, column string) []Violation {
 }
 
 func TestHeader_MatchesTheColumnOrder(t *testing.T) {
-	assert.Equal(t, "ts\tlotto\tgate\tcritico\tchiave\tfirst_seen\tfinding\tseverita\tevidenza\tdecisione\tazione\tesito\tmodello\ttoken\tcosto\n", header)
+	assert.Equal(t, "ts\tlot\tgate\tcritic\tkey\tfirst_seen\tfinding\tseverity\tevidence\tdecision\taction\toutcome\tmodel\ttokens\tcost\n", header)
 	assert.Equal(t, numColumns, strings.Count(header, "\t")+1)
 	// Every column the caller gives is a header column, in the same relative order.
 	cols := strings.Split(strings.TrimSuffix(header, "\n"), "\t")
@@ -52,21 +52,21 @@ func indexOf(list []string, v string) int {
 
 func TestValidate_AcceptsAFullValidInput(t *testing.T) {
 	in := validValues()
-	in.Azione = "rename the lock file"
-	in.Modello = "gpt-5.5"
-	in.Token = json.Number("43085")
-	in.Costo = json.Number("0.125")
+	in.Action = "rename the lock file"
+	in.Model = "gpt-5.5"
+	in.Tokens = json.Number("43085")
+	in.Cost = json.Number("0.125")
 	assert.Empty(t, Validate(in, nil))
 	assert.Empty(t, Validate(validValues(), nil), "the optional columns may all be empty")
 }
 
 func TestValidate_RequiredColumnMissing(t *testing.T) {
 	cleared := map[string]func(*Input){
-		"lotto": func(in *Input) { in.Lotto = "" }, "gate": func(in *Input) { in.Gate = "" },
-		"critico": func(in *Input) { in.Critico = "" }, "chiave": func(in *Input) { in.Chiave = "" },
-		"finding": func(in *Input) { in.Finding = "" }, "severita": func(in *Input) { in.Severita = "" },
-		"evidenza": func(in *Input) { in.Evidenza = "" }, "decisione": func(in *Input) { in.Decisione = "" },
-		"esito": func(in *Input) { in.Esito = "" },
+		"lot": func(in *Input) { in.Lot = "" }, "gate": func(in *Input) { in.Gate = "" },
+		"critic": func(in *Input) { in.Critic = "" }, "key": func(in *Input) { in.Key = "" },
+		"finding": func(in *Input) { in.Finding = "" }, "severity": func(in *Input) { in.Severity = "" },
+		"evidence": func(in *Input) { in.Evidence = "" }, "decision": func(in *Input) { in.Decision = "" },
+		"outcome": func(in *Input) { in.Outcome = "" },
 	}
 	required := 0
 	for _, spec := range inputColumns {
@@ -91,10 +91,10 @@ func TestValidate_ValueOutsideEnum(t *testing.T) {
 		set    func(*Input, string)
 		bad    []string
 	}{
-		{"gate", func(in *Input, v string) { in.Gate = v }, []string{"Piano", "code", "piano ", "diff2"}},
-		{"severita", func(in *Input, v string) { in.Severita = v }, []string{"blocker", "P1", "minor", "Fuori-scala"}},
-		{"decisione", func(in *Input, v string) { in.Decisione = v }, []string{"propose-fix", "ACCEPT", "contest"}},
-		{"esito", func(in *Input, v string) { in.Esito = v }, []string{"Aperto", "open", "closed", "aperto "}},
+		{"gate", func(in *Input, v string) { in.Gate = v }, []string{"Plan", "code", "plan ", "diff2", "piano"}},
+		{"severity", func(in *Input, v string) { in.Severity = v }, []string{"blocker", "P1", "minor", "Out-of-scale", "fuori-scala"}},
+		{"decision", func(in *Input, v string) { in.Decision = v }, []string{"propose-fix", "ACCEPT", "contest"}},
+		{"outcome", func(in *Input, v string) { in.Outcome = v }, []string{"Open", "Closed", "open ", "aperto", "chiuso", "respinto"}},
 	}
 	for _, tc := range cases {
 		for _, bad := range tc.bad {
@@ -105,17 +105,17 @@ func TestValidate_ValueOutsideEnum(t *testing.T) {
 			assert.Contains(t, got[0].Reason, "must be one of: ")
 		}
 	}
-	assert.Equal(t, "must be one of: Blocker, Major, Nit, fuori-scala", violationsFor(func() Input { in := validValues(); in.Severita = "x"; return in }(), "severita")[0].Reason)
+	assert.Equal(t, "must be one of: Blocker, Major, Nit, out-of-scale", violationsFor(func() Input { in := validValues(); in.Severity = "x"; return in }(), "severity")[0].Reason)
 }
 
 // The help lists the closed columns from InputColumnInfo: what it lists must be
 // exactly what Validate accepts, in the order Validate reports it.
 func TestInputColumnInfo_ListsExactlyWhatValidateAccepts(t *testing.T) {
 	setters := map[string]func(*Input, string){
-		"gate":      func(in *Input, v string) { in.Gate = v },
-		"severita":  func(in *Input, v string) { in.Severita = v },
-		"decisione": func(in *Input, v string) { in.Decisione = v },
-		"esito":     func(in *Input, v string) { in.Esito = v },
+		"gate":     func(in *Input, v string) { in.Gate = v },
+		"severity": func(in *Input, v string) { in.Severity = v },
+		"decision": func(in *Input, v string) { in.Decision = v },
+		"outcome":  func(in *Input, v string) { in.Outcome = v },
 	}
 	closed := 0
 	for _, col := range InputColumnInfo() {
@@ -160,17 +160,17 @@ func TestValidate_ShapesOfIdentifiersKeyAndNumbers(t *testing.T) {
 		good   []string
 		bad    []string
 	}{
-		{"lotto", func(in *Input, v string) { in.Lotto = v },
+		{"lot", func(in *Input, v string) { in.Lot = v },
 			[]string{"F-156", "v0.11.0", "a", long(32)}, []string{"-x", ".x", "a b", "a/b", "a=b", "è", long(33)}},
-		{"critico", func(in *Input, v string) { in.Critico = v },
+		{"critic", func(in *Input, v string) { in.Critic = v },
 			[]string{"CRI2", "SEC", long(32)}, []string{"_x", "CRI 2", long(33)}},
-		{"chiave", func(in *Input, v string) { in.Chiave = v },
+		{"key", func(in *Input, v string) { in.Key = v },
 			[]string{"lock-race", "a", "a1-b2-c3", long(64)}, []string{"Lock-race", "lock_race", "-a", "a-", "a--b", "a b", "è", long(65)}},
-		{"modello", func(in *Input, v string) { in.Modello = v },
+		{"model", func(in *Input, v string) { in.Model = v },
 			[]string{"gpt-5.5", "claude-sonnet-5-5", long(64)}, []string{"-x", "a b", long(65)}},
-		{"token", func(in *Input, v string) { in.Token = json.Number(v) },
+		{"tokens", func(in *Input, v string) { in.Tokens = json.Number(v) },
 			[]string{"0", "43085", "999999999999"}, []string{"-1", "1.5", "1e5", "1234567890123", "abc", "+1"}},
-		{"costo", func(in *Input, v string) { in.Costo = json.Number(v) },
+		{"cost", func(in *Input, v string) { in.Cost = json.Number(v) },
 			[]string{"0", "1", "0.5", "123456.123456", "1.0"}, []string{"1,5", "1234567", "1.1234567", "-1", ".5", "1.", "1e3"}},
 	}
 	for _, tc := range cases {
@@ -219,36 +219,36 @@ func TestValidate_TextRules(t *testing.T) {
 	assert.NotEmpty(t, violationsFor(set(strings.Repeat("a", 1001)), "finding"))
 
 	ev := validValues()
-	ev.Evidenza = strings.Repeat("a", 301)
-	assert.Equal(t, "is longer than 300 bytes", violationsFor(ev, "evidenza")[0].Reason)
+	ev.Evidence = strings.Repeat("a", 301)
+	assert.Equal(t, "is longer than 300 bytes", violationsFor(ev, "evidence")[0].Reason)
 	az := validValues()
-	az.Azione = strings.Repeat("a", 501)
-	assert.Equal(t, "is longer than 500 bytes", violationsFor(az, "azione")[0].Reason)
+	az.Action = strings.Repeat("a", 501)
+	assert.Equal(t, "is longer than 500 bytes", violationsFor(az, "action")[0].Reason)
 }
 
 func TestValidate_ContentRulesNameTheColumnAndTheRule(t *testing.T) {
 	in := validValues()
 	in.Finding = "password=" + "hunter22"
-	in.Azione = "write to a@example.org"
+	in.Action = "write to a@example.org"
 	got := Validate(in, nil)
 	assert.Equal(t, []Violation{
 		{Column: "finding", Reason: "contains something that looks like secret-assignment"},
-		{Column: "azione", Reason: "contains something that looks like email"},
+		{Column: "action", Reason: "contains something that looks like email"},
 	}, got)
 
 	in = validValues()
-	in.Evidenza = "ask Marta"
+	in.Evidence = "ask Marta"
 	assert.Empty(t, Validate(in, nil), "no names configured: rule 13 does not exist")
-	assert.Equal(t, []Violation{{Column: "evidenza", Reason: "contains something that looks like person-name"}}, Validate(in, []string{"Marta"}))
+	assert.Equal(t, []Violation{{Column: "evidence", Reason: "contains something that looks like person-name"}}, Validate(in, []string{"Marta"}))
 }
 
 func TestValidate_ReportsEveryColumnInRegistryOrder(t *testing.T) {
-	in := Input{Gate: "x", Chiave: "Bad Key", Esito: "y", Token: json.Number("-1")}
+	in := Input{Gate: "x", Key: "Bad Key", Outcome: "y", Tokens: json.Number("-1")}
 	var columns []string
 	for _, v := range Validate(in, nil) {
 		columns = append(columns, v.Column)
 	}
-	assert.Equal(t, []string{"lotto", "gate", "critico", "chiave", "finding", "severita", "evidenza", "decisione", "esito", "token"}, columns)
+	assert.Equal(t, []string{"lot", "gate", "critic", "key", "finding", "severity", "evidence", "decision", "outcome", "tokens"}, columns)
 }
 
 func TestValidate_RefusesTsAndFirstSeenForAProgrammaticCaller(t *testing.T) {
@@ -266,9 +266,9 @@ func TestValidate_RefusesTsAndFirstSeenForAProgrammaticCaller(t *testing.T) {
 func TestValidate_ReasonsNeverContainTheValue(t *testing.T) {
 	const marker = "ZQ9"
 	in := Input{
-		Lotto: "-" + marker, Gate: marker, Critico: marker + " x", Chiave: "Bad" + marker, Finding: "\t" + marker,
-		Severita: marker, Evidenza: "password=" + marker, Decisione: marker, Azione: marker + "@example.org",
-		Esito: marker, Modello: "-" + marker, Token: json.Number(marker), Costo: json.Number(marker),
+		Lot: "-" + marker, Gate: marker, Critic: marker + " x", Key: "Bad" + marker, Finding: "\t" + marker,
+		Severity: marker, Evidence: "password=" + marker, Decision: marker, Action: marker + "@example.org",
+		Outcome: marker, Model: "-" + marker, Tokens: json.Number(marker), Cost: json.Number(marker),
 	}
 	got := Validate(in, []string{marker})
 	require.NotEmpty(t, got)
@@ -287,11 +287,11 @@ func TestRejectedError_ListsOneLinePerViolationThenSaysNothingWasWritten(t *test
 
 func TestRow_LineHasFifteenTabSeparatedFieldsAndANewline(t *testing.T) {
 	in := validValues()
-	in.Modello = "gpt-5.5"
-	in.Token = json.Number("43085")
+	in.Model = "gpt-5.5"
+	in.Tokens = json.Number("43085")
 	row := newRow(in, "2026-11-08T10:00:00.000Z", "2026-11-01T09:00:00.000Z")
 	assert.Equal(t,
-		"2026-11-08T10:00:00.000Z\tF-156\tpiano\tCRI\tlock-race\t2026-11-01T09:00:00.000Z\tthe lock is advisory\tMajor\tlock.go:12\tPROPOSE-FIX\t\taperto\tgpt-5.5\t43085\t\n",
+		"2026-11-08T10:00:00.000Z\tF-156\tplan\tCRI\tlock-race\t2026-11-01T09:00:00.000Z\tthe lock is advisory\tMajor\tlock.go:12\tPROPOSE-FIX\t\topen\tgpt-5.5\t43085\t\n",
 		row.line())
 	assert.Equal(t, row, rowFromFields(strings.Split(strings.TrimSuffix(row.line(), "\n"), "\t")))
 }

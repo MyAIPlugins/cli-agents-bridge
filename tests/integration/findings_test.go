@@ -29,7 +29,7 @@ import (
 // command, which a call to findingsRun does not have.
 
 const (
-	findingsHeaderLine = "ts\tlotto\tgate\tcritico\tchiave\tfirst_seen\tfinding\tseverita\tevidenza\tdecisione\tazione\tesito\tmodello\ttoken\tcosto\n"
+	findingsHeaderLine = "ts\tlot\tgate\tcritic\tkey\tfirst_seen\tfinding\tseverity\tevidence\tdecision\taction\toutcome\tmodel\ttokens\tcost\n"
 	noNamesStderr      = "findings: note: no person names configured (findings_denied_names in config.json): names are NOT checked\n"
 	busyText           = "locked by another process"
 
@@ -93,9 +93,9 @@ func (r *findingsRepo) run(t *testing.T, stdin string, args ...string) (stdout, 
 func findingJSON(t testing.TB, override map[string]string) string {
 	t.Helper()
 	m := map[string]string{
-		"lotto": "F-156", "gate": "piano", "critico": "CRI", "chiave": "lock-race",
-		"finding": "the lock is advisory", "severita": "Major", "evidenza": "lock.go:12",
-		"decisione": "PROPOSE-FIX", "esito": "aperto",
+		"lot": "F-156", "gate": "plan", "critic": "CRI", "key": "lock-race",
+		"finding": "the lock is advisory", "severity": "Major", "evidence": "lock.go:12",
+		"decision": "PROPOSE-FIX", "outcome": "open",
 	}
 	for k, v := range override {
 		m[k] = v
@@ -105,7 +105,7 @@ func findingJSON(t testing.TB, override map[string]string) string {
 	return string(data)
 }
 
-type registryRow struct{ lotto, chiave, firstSeen, finding string }
+type registryRow struct{ lot, key, firstSeen, finding string }
 
 // parseWholeRegistry checks that data is a header and k whole 15-column rows,
 // each ending in a newline, and returns the rows. A non-empty problem names the
@@ -124,7 +124,7 @@ func parseWholeRegistry(data []byte) (rows []registryRow, problem string) {
 		if len(f) != 15 {
 			return nil, fmt.Sprintf("row %d has %d columns", i+1, len(f))
 		}
-		rows = append(rows, registryRow{lotto: f[1], chiave: f[4], firstSeen: f[5], finding: f[6]})
+		rows = append(rows, registryRow{lot: f[1], key: f[4], firstSeen: f[5], finding: f[6]})
 	}
 	return rows, ""
 }
@@ -182,7 +182,7 @@ func TestFindings_AnOldKeyIsStaleUntilItIsClosed(t *testing.T) {
 	require.NoError(t, os.Mkdir(r.handover(), 0o700))
 	old := time.Now().UTC().Add(-30 * 24 * time.Hour).Format("2006-01-02T15:04:05.000Z")
 	seed := findingsHeaderLine + strings.Join([]string{
-		old, "F-100", "piano", "CRI", "old-key", old, "an old finding", "Major", "x.go:1", "PROPOSE-FIX", "", "aperto", "", "", "",
+		old, "F-100", "plan", "CRI", "old-key", old, "an old finding", "Major", "x.go:1", "PROPOSE-FIX", "", "open", "", "", "",
 	}, "\t") + "\n"
 	require.NoError(t, os.WriteFile(r.registry(), []byte(seed), 0o600))
 
@@ -190,7 +190,7 @@ func TestFindings_AnOldKeyIsStaleUntilItIsClosed(t *testing.T) {
 	require.Equal(t, 0, exit)
 	assert.Contains(t, stdout, "\told-key\t")
 
-	_, stderr, exit := r.run(t, findingJSON(t, map[string]string{"chiave": "old-key", "esito": "chiuso"}), "findings", "add")
+	_, stderr, exit := r.run(t, findingJSON(t, map[string]string{"key": "old-key", "outcome": "closed"}), "findings", "add")
 	require.Equal(t, 0, exit, stderr)
 
 	stdout, _, exit = r.run(t, "", "findings", "stale")
@@ -209,7 +209,7 @@ func TestFindings_AnOldKeyIsStaleUntilItIsClosed(t *testing.T) {
 // untouched (absent, or the same bytes), and the value does not come back.
 func TestFindings_RealBinaryRefusesShortAssignments(t *testing.T) {
 	const expectedStderr = noNamesStderr +
-		"findings: column azione: contains something that looks like secret-assignment\nfindings: nothing was written\n"
+		"findings: column action: contains something that looks like secret-assignment\nfindings: nothing was written\n"
 
 	for _, existing := range []bool{false, true} {
 		r := newFindingsRepo(t)
@@ -224,7 +224,7 @@ func TestFindings_RealBinaryRefusesShortAssignments(t *testing.T) {
 		for _, name := range []string{"password", "secret", "token"} {
 			for n := 1; n <= 4; n++ {
 				value := strings.Repeat("Q", n)
-				stdout, stderr, exit := r.run(t, findingJSON(t, map[string]string{"azione": name + "=" + value}), "findings", "add")
+				stdout, stderr, exit := r.run(t, findingJSON(t, map[string]string{"action": name + "=" + value}), "findings", "add")
 
 				require.Equal(t, 1, exit, "%s=%s existing=%v", name, value, existing)
 				assert.Equal(t, expectedStderr, stderr, "the premise: only fixed text is printed")
@@ -306,7 +306,7 @@ func TestFindings_ConcurrentProcessesWriteWholeRows(t *testing.T) {
 	r := newFindingsRepo(t)
 	bin := buildBinary(t)
 
-	expected := map[string]string{} // lotto/chiave -> finding
+	expected := map[string]string{} // lot/key -> finding
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	start := make(chan struct{})
@@ -318,17 +318,17 @@ func TestFindings_ConcurrentProcessesWriteWholeRows(t *testing.T) {
 			defer wg.Done()
 			<-start
 			for j := 0; j < perProcess; j++ {
-				lotto := fmt.Sprintf("w%d", p)
-				chiave := fmt.Sprintf("w%d-k%d", p, j)
+				lot := fmt.Sprintf("w%d", p)
+				key := fmt.Sprintf("w%d-k%d", p, j)
 				if j == 0 {
-					chiave = "shared-key"
+					key = "shared-key"
 				}
 				finding := fmt.Sprintf("finding %d-%d", p, j)
-				input := `{"lotto":"` + lotto + `","gate":"piano","critico":"CRI","chiave":"` + chiave +
-					`","finding":"` + finding + `","severita":"Nit","evidenza":"x.go:1","decisione":"CONTEST","esito":"aperto"}`
+				input := `{"lot":"` + lot + `","gate":"plan","critic":"CRI","key":"` + key +
+					`","finding":"` + finding + `","severity":"Nit","evidence":"x.go:1","decision":"CONTEST","outcome":"open"}`
 				out := addWithRetry(bin, r, input)
 				mu.Lock()
-				expected[lotto+"/"+chiave] = finding
+				expected[lot+"/"+key] = finding
 				outcomes = append(outcomes, out)
 				mu.Unlock()
 			}
@@ -354,10 +354,10 @@ func TestFindings_ConcurrentProcessesWriteWholeRows(t *testing.T) {
 	seen := map[string]int{}
 	var shared []registryRow
 	for _, row := range rows {
-		key := row.lotto + "/" + row.chiave
+		key := row.lot + "/" + row.key
 		seen[key]++
 		assert.Equal(t, expected[key], row.finding, "the row %s is whole and is the one that was added", key)
-		if row.chiave == "shared-key" {
+		if row.key == "shared-key" {
 			shared = append(shared, row)
 		}
 	}
@@ -410,8 +410,8 @@ func TestFindings_ConcurrentFirstCreation(t *testing.T) {
 		go func(p int) {
 			defer wg.Done()
 			<-start
-			input := `{"lotto":"w` + fmt.Sprint(p) + `","gate":"diff","critico":"CRI2","chiave":"first-` + fmt.Sprint(p) +
-				`","finding":"created together","severita":"Nit","evidenza":"x.go:1","decisione":"DECLINE","esito":"respinto"}`
+			input := `{"lot":"w` + fmt.Sprint(p) + `","gate":"diff","critic":"CRI2","key":"first-` + fmt.Sprint(p) +
+				`","finding":"created together","severity":"Nit","evidence":"x.go:1","decision":"DECLINE","outcome":"rejected"}`
 			outcomes[p] = addWithRetry(bin, r, input)
 		}(p)
 	}
@@ -532,7 +532,7 @@ func TestFindings_ReaderNeverSeesAPartialRegistry(t *testing.T) {
 		go func(w int) {
 			defer writerWG.Done()
 			for j := 0; j < perWriter; j++ {
-				input := fmt.Sprintf(`{"lotto":"w%d","gate":"piano","critico":"CRI","chiave":"w%d-k%d","finding":"row %d-%d","severita":"Nit","evidenza":"x.go:1","decisione":"CONTEST","esito":"aperto"}`, w, w, j, w, j)
+				input := fmt.Sprintf(`{"lot":"w%d","gate":"plan","critic":"CRI","key":"w%d-k%d","finding":"row %d-%d","severity":"Nit","evidence":"x.go:1","decision":"CONTEST","outcome":"open"}`, w, w, j, w, j)
 				outcomes[w*perWriter+j] = addWithRetry(bin, r, input)
 			}
 		}(w)

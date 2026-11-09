@@ -8,15 +8,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const validInput = `{"lotto":"F-156","gate":"piano","critico":"CRI","chiave":"lock-race","finding":"the lock is advisory","severita":"Major","evidenza":"lock.go:12","decisione":"PROPOSE-FIX","esito":"aperto"}`
+const validInput = `{"lot":"F-156","gate":"plan","critic":"CRI","key":"lock-race","finding":"the lock is advisory","severity":"Major","evidence":"lock.go:12","decision":"PROPOSE-FIX","outcome":"open"}`
 
 func TestDecodeStrict_ReadsTheColumns(t *testing.T) {
 	in, err := DecodeStrict(strings.NewReader(validInput))
 	require.NoError(t, err)
-	assert.Equal(t, "F-156", in.Lotto)
-	assert.Equal(t, "piano", in.Gate)
-	assert.Equal(t, "lock-race", in.Chiave)
-	assert.Equal(t, "", in.Azione)
+	assert.Equal(t, "F-156", in.Lot)
+	assert.Equal(t, "plan", in.Gate)
+	assert.Equal(t, "lock-race", in.Key)
+	assert.Equal(t, "", in.Action)
 	assert.Empty(t, in.Ts)
 	assert.Empty(t, in.FirstSeen)
 	assert.Empty(t, Validate(in, nil))
@@ -24,13 +24,13 @@ func TestDecodeStrict_ReadsTheColumns(t *testing.T) {
 
 func TestDecodeStrict_TokenAndCostoAcceptANumberOrAStringWithANumber(t *testing.T) {
 	for _, body := range []string{
-		`"token":5000,"costo":1.25`,
-		`"token":"5000","costo":"1.25"`,
+		`"tokens":5000,"cost":1.25`,
+		`"tokens":"5000","cost":"1.25"`,
 	} {
-		in, err := DecodeStrict(strings.NewReader(strings.Replace(validInput, `"esito":"aperto"`, `"esito":"aperto",`+body, 1)))
+		in, err := DecodeStrict(strings.NewReader(strings.Replace(validInput, `"outcome":"open"`, `"outcome":"open",`+body, 1)))
 		require.NoError(t, err, body)
-		assert.Equal(t, "5000", in.Token.String())
-		assert.Equal(t, "1.25", in.Costo.String())
+		assert.Equal(t, "5000", in.Tokens.String())
+		assert.Equal(t, "1.25", in.Cost.String())
 		assert.Empty(t, Validate(in, nil))
 	}
 }
@@ -40,7 +40,7 @@ func TestDecodeStrict_RefusesTsAndFirstSeenFromTheCaller(t *testing.T) {
 		"ts":         `"ts":"2026-11-08T10:00:00.000Z"`,
 		"first_seen": `"first_seen":"2026-11-08T10:00:00.000Z"`,
 	} {
-		_, err := DecodeStrict(strings.NewReader(strings.Replace(validInput, `"esito":"aperto"`, `"esito":"aperto",`+body, 1)))
+		_, err := DecodeStrict(strings.NewReader(strings.Replace(validInput, `"outcome":"open"`, `"outcome":"open",`+body, 1)))
 		require.Error(t, err, column)
 		assert.Equal(t, "findings: column "+column+" is written by the command", err.Error())
 	}
@@ -55,7 +55,7 @@ func TestDecodeStrict_AnyValueForTsOrFirstSeenIsTheSameRefusal(t *testing.T) {
 	for _, column := range []string{"ts", "first_seen"} {
 		for _, value := range values {
 			body := `"` + column + `":` + value
-			_, err := DecodeStrict(strings.NewReader(strings.Replace(validInput, `"esito":"aperto"`, `"esito":"aperto",`+body, 1)))
+			_, err := DecodeStrict(strings.NewReader(strings.Replace(validInput, `"outcome":"open"`, `"outcome":"open",`+body, 1)))
 			require.Error(t, err, body)
 			assert.Equal(t, "findings: column "+column+" is written by the command", err.Error(), body)
 		}
@@ -71,17 +71,17 @@ func TestDecodeStrict_ErrorsAreFixedTextsAndNeverCarryTheInput(t *testing.T) {
 	}{
 		{"empty", ``, "findings: input is empty"},
 		{"blank", " \n\t ", "findings: input is empty"},
-		{"truncated", `{"lotto":"ZQ9`, "findings: stdin is not valid JSON (byte offset "},
-		{"syntax", `{"lotto":ZQ9}`, "findings: stdin is not valid JSON (byte offset "},
+		{"truncated", `{"lot":"ZQ9`, "findings: stdin is not valid JSON (byte offset "},
+		{"syntax", `{"lot":ZQ9}`, "findings: stdin is not valid JSON (byte offset "},
 		{"array", `["ZQ9"]`, "findings: stdin must be one JSON object"},
 		{"string", `"ZQ9"`, "findings: stdin must be one JSON object"},
 		{"number", `5`, "findings: stdin must be one JSON object"},
-		{"unknown key", `{"ZQ9":"x"}`, "findings: unknown column; the columns are: lotto, gate, critico, chiave, finding, severita, evidenza, decisione, azione, esito, modello, token, costo"},
-		{"number in a text column", `{"lotto":5}`, "findings: column lotto must be a string"},
+		{"unknown key", `{"ZQ9":"x"}`, "findings: unknown column; the columns are: lot, gate, critic, key, finding, severity, evidence, decision, action, outcome, model, tokens, cost"},
+		{"number in a text column", `{"lot":5}`, "findings: column lot must be a string"},
 		{"array in a text column", `{"finding":["ZQ9"]}`, "findings: column finding must be a string"},
 		{"object in a text column", `{"finding":{"a":"ZQ9"}}`, "findings: column finding must be a string"},
-		{"bad number string", `{"token":"ZQ9"}`, "findings: columns token and costo must be a number or a string holding a number"},
-		{"bool as number", `{"costo":true}`, "findings: columns token and costo must be a number or a string holding a number"},
+		{"bad number string", `{"tokens":"ZQ9"}`, "findings: columns tokens and cost must be a number or a string holding a number"},
+		{"bool as number", `{"cost":true}`, "findings: columns tokens and cost must be a number or a string holding a number"},
 		{"two values", `{} {"ZQ9":1}`, "findings: more than one JSON value on stdin"},
 		{"trailing text", `{} ZQ9`, "findings: more than one JSON value on stdin"},
 	}

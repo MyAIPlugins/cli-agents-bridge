@@ -84,7 +84,7 @@ func typeFailure(e *json.UnmarshalTypeError) error {
 	switch {
 	case e.Type == numberType:
 		// encoding/json does not say which of the two number columns it was.
-		return decodeFailure("columns token and costo must be a number or a string holding a number")
+		return decodeFailure("columns tokens and cost must be a number or a string holding a number")
 	case isInputColumn(e.Field):
 		return decodeFailure("column %s must be a string", e.Field)
 	case e.Field == "":

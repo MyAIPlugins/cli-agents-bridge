@@ -38,7 +38,7 @@ const personNameRule = "person-name"
 // notAfterAlnum is the left context of the generic `sk-` prefix: the start of
 // the value or anything but a letter or a digit. It is NOT `\b`: `_` is a word
 // character, so `\b` let `prefix_sk-...` through. It is not "nothing" either:
-// `chiave` is a kebab-case slug, and `task-description-overflow` contains
+// `key` is a kebab-case slug, and `task-description-overflow` contains
 // `sk-description-overflow`, which the 20-character body would take for a key.
 // A key glued directly to a letter or a digit is therefore a declared limit.
 const notAfterAlnum = `(?:^|[^A-Za-z0-9])`

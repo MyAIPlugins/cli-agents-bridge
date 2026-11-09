@@ -52,14 +52,14 @@ func TestFindings_ExistingLooseRegistryIsRepublishedAs0600(t *testing.T) {
 	before, err := os.ReadFile(r.registry())
 	require.NoError(t, err)
 
-	_, _, exit = r.run(t, findingJSON(t, map[string]string{"chiave": "second", "azione": "password=" + "hunter22"}), "findings", "add")
+	_, _, exit = r.run(t, findingJSON(t, map[string]string{"key": "second", "action": "password=" + "hunter22"}), "findings", "add")
 	require.Equal(t, 1, exit)
 	assert.Equal(t, os.FileMode(0o644), modeOfPath(t, r.registry()), "a refused add leaves the mode")
 	again, err := os.ReadFile(r.registry())
 	require.NoError(t, err)
 	assert.Equal(t, before, again)
 
-	_, stderr, exit = r.run(t, findingJSON(t, map[string]string{"chiave": "second"}), "findings", "add")
+	_, stderr, exit = r.run(t, findingJSON(t, map[string]string{"key": "second"}), "findings", "add")
 	require.Equal(t, 0, exit, stderr)
 	assert.Contains(t, stderr, "findings: note: the registry had mode 0644, it is 0600 now\n")
 	assert.Equal(t, os.FileMode(0o600), modeOfPath(t, r.registry()))

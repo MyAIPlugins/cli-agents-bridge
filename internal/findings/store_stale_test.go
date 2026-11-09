@@ -13,18 +13,18 @@ import (
 const day = 24 * time.Hour
 
 // addAt records a finding as if the clock read t0+offset.
-func addAt(t *testing.T, s *Store, clock *fakeClock, offset time.Duration, chiave, esito string) {
+func addAt(t *testing.T, s *Store, clock *fakeClock, offset time.Duration, key, outcome string) {
 	t.Helper()
 	clock.now = t0.Add(offset)
-	in := inputFor(chiave)
-	in.Esito = esito
+	in := inputFor(key)
+	in.Outcome = outcome
 	mustAdd(t, s, in)
 }
 
 func staleKeys(res StaleResult) []string {
 	keys := make([]string, 0, len(res.Rows))
 	for _, r := range res.Rows {
-		keys = append(keys, r.Chiave)
+		keys = append(keys, r.Key)
 	}
 	return keys
 }
@@ -33,18 +33,18 @@ func staleKeys(res StaleResult) []string {
 // days, only the CURRENT row of a key counts, and only if it is still open.
 func TestStale_OpenAndOlderThanNDays(t *testing.T) {
 	s, clock := newTestStore(t)
-	addAt(t, s, clock, 0, "exactly-n", "aperto")                  // first_seen = t0
-	addAt(t, s, clock, -time.Millisecond, "n-and-a-ms", "aperto") // one millisecond older than exactly-n
-	addAt(t, s, clock, -day, "older", "aperto")
-	addAt(t, s, clock, -30*day, "closed-last", "aperto")
-	addAt(t, s, clock, -29*day, "closed-last", "chiuso")
-	addAt(t, s, clock, -30*day, "rejected-last", "aperto")
-	addAt(t, s, clock, -29*day, "rejected-last", "respinto")
-	addAt(t, s, clock, -20*day, "closed-then-reopened", "chiuso")
-	addAt(t, s, clock, -19*day, "closed-then-reopened", "aperto")
-	addAt(t, s, clock, -30*day, "fresh-key-twice", "aperto")
-	addAt(t, s, clock, 0, "fresh-key-twice", "aperto")
-	addAt(t, s, clock, 0, "young", "aperto")
+	addAt(t, s, clock, 0, "exactly-n", "open")                  // first_seen = t0
+	addAt(t, s, clock, -time.Millisecond, "n-and-a-ms", "open") // one millisecond older than exactly-n
+	addAt(t, s, clock, -day, "older", "open")
+	addAt(t, s, clock, -30*day, "closed-last", "open")
+	addAt(t, s, clock, -29*day, "closed-last", "closed")
+	addAt(t, s, clock, -30*day, "rejected-last", "open")
+	addAt(t, s, clock, -29*day, "rejected-last", "rejected")
+	addAt(t, s, clock, -20*day, "closed-then-reopened", "closed")
+	addAt(t, s, clock, -19*day, "closed-then-reopened", "open")
+	addAt(t, s, clock, -30*day, "fresh-key-twice", "open")
+	addAt(t, s, clock, 0, "fresh-key-twice", "open")
+	addAt(t, s, clock, 0, "young", "open")
 
 	// "Now" is t0 + 7 days. exactly-n has first_seen t0: exactly 7 days old, not stale.
 	// n-and-a-ms has first_seen t0-1ms: 7 days and 1 ms old, stale. older: 8 days.
@@ -59,8 +59,8 @@ func TestStale_OpenAndOlderThanNDays(t *testing.T) {
 
 func TestStale_OneRowPerKeyIsTheLastOneInFileOrder(t *testing.T) {
 	s, clock := newTestStore(t)
-	addAt(t, s, clock, -10*day, "k", "aperto")
-	addAt(t, s, clock, -9*day, "k", "aperto")
+	addAt(t, s, clock, -10*day, "k", "open")
+	addAt(t, s, clock, -9*day, "k", "open")
 	clock.now = t0
 	res, err := s.Stale(7)
 	require.NoError(t, err)
@@ -71,9 +71,9 @@ func TestStale_OneRowPerKeyIsTheLastOneInFileOrder(t *testing.T) {
 
 func TestStale_OrderIsFirstSeenThenKey(t *testing.T) {
 	s, clock := newTestStore(t)
-	addAt(t, s, clock, -20*day, "zeta", "aperto")
-	addAt(t, s, clock, -30*day, "mid", "aperto")
-	addAt(t, s, clock, -30*day, "alpha", "aperto")
+	addAt(t, s, clock, -20*day, "zeta", "open")
+	addAt(t, s, clock, -30*day, "mid", "open")
+	addAt(t, s, clock, -30*day, "alpha", "open")
 	clock.now = t0
 	res, err := s.Stale(7)
 	require.NoError(t, err)
@@ -82,8 +82,8 @@ func TestStale_OrderIsFirstSeenThenKey(t *testing.T) {
 
 func TestStale_SummaryNoteCountsWhatItListed(t *testing.T) {
 	s, clock := newTestStore(t)
-	addAt(t, s, clock, -10*day, "one", "aperto")
-	addAt(t, s, clock, -10*day, "two", "aperto")
+	addAt(t, s, clock, -10*day, "one", "open")
+	addAt(t, s, clock, -10*day, "two", "open")
 	clock.now = t0
 	res, err := s.Stale(7)
 	require.NoError(t, err)
@@ -125,7 +125,7 @@ func TestStale_DaysOutOfRangeIsAnError(t *testing.T) {
 // A huge day count must not wrap into a negative threshold that lists everything.
 func TestStale_TheLargestThresholdListsNothingRecent(t *testing.T) {
 	s, clock := newTestStore(t)
-	addAt(t, s, clock, -day, "yesterday", "aperto")
+	addAt(t, s, clock, -day, "yesterday", "open")
 	clock.now = t0
 	res, err := s.Stale(MaxStaleDays)
 	require.NoError(t, err)
@@ -135,7 +135,7 @@ func TestStale_TheLargestThresholdListsNothingRecent(t *testing.T) {
 // Stale does not take the lock: a busy lock does not stop it.
 func TestStale_DoesNotTakeTheLock(t *testing.T) {
 	s, clock := newTestStore(t)
-	addAt(t, s, clock, -10*day, "k", "aperto")
+	addAt(t, s, clock, -10*day, "k", "open")
 	held, err := TryLockFile(s.lockPath())
 	require.NoError(t, err)
 	defer func() { require.NoError(t, held()) }()
@@ -155,8 +155,8 @@ func TestStale_DoesNotTakeTheLock(t *testing.T) {
 func TestStale_RowsAreReturnedAsStored(t *testing.T) {
 	s, clock := newTestStore(t)
 	in := inputFor("k")
-	in.Azione = "do the thing"
-	in.Token = "5000"
+	in.Action = "do the thing"
+	in.Tokens = "5000"
 	clock.now = t0.Add(-10 * day)
 	mustAdd(t, s, in)
 	clock.now = t0
@@ -175,20 +175,20 @@ func TestStale_RowsAreReturnedAsStored(t *testing.T) {
 func TestStale_AgeComesFromTheFirstRowOfTheKeyAndStateFromTheLast(t *testing.T) {
 	s, _ := newTestStore(t) // now = t0
 	at := func(d time.Duration) string { return formatTimestamp(t0.Add(d)) }
-	row := func(chiave, esito, firstSeen, finding string) string {
-		in := inputFor(chiave)
-		in.Esito, in.Finding = esito, finding
+	row := func(key, outcome, firstSeen, finding string) string {
+		in := inputFor(key)
+		in.Outcome, in.Finding = outcome, finding
 		return newRow(in, at(-time.Hour), firstSeen).line()
 	}
 	registry := header +
 		// born 10 days ago, its last row says 1: listed (the old rule: not listed)
-		row("born-old", "aperto", at(-10*day), "first") + row("born-old", "aperto", at(-day), "last") +
+		row("born-old", "open", at(-10*day), "first") + row("born-old", "open", at(-day), "last") +
 		// born 1 day ago, its last row says 30: not listed (the old rule: listed)
-		row("born-young", "aperto", at(-day), "first") + row("born-young", "aperto", at(-30*day), "last") +
+		row("born-young", "open", at(-day), "first") + row("born-young", "open", at(-30*day), "last") +
 		// born old but closed by its last row: not listed
-		row("closed-last", "aperto", at(-10*day), "first") + row("closed-last", "chiuso", at(-day), "last") +
+		row("closed-last", "open", at(-10*day), "first") + row("closed-last", "closed", at(-day), "last") +
 		// born 9 days ago, its last row says 40: listed AFTER born-old (the old order: before)
-		row("born-later", "aperto", at(-9*day), "first") + row("born-later", "aperto", at(-40*day), "last")
+		row("born-later", "open", at(-9*day), "first") + row("born-later", "open", at(-40*day), "last")
 	require.NoError(t, os.MkdirAll(s.Dir, 0o700))
 	require.NoError(t, os.WriteFile(s.RegistryPath(), []byte(registry), 0o600))
 

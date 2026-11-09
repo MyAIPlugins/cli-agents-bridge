@@ -19,7 +19,7 @@ import (
 
 // header is the first line of every registry. Tabs are explicit: some viewers
 // squash them. A registry whose first line differs is refused, not repaired.
-const header = "ts\tlotto\tgate\tcritico\tchiave\tfirst_seen\tfinding\tseverita\tevidenza\tdecisione\tazione\tesito\tmodello\ttoken\tcosto\n"
+const header = "ts\tlot\tgate\tcritic\tkey\tfirst_seen\tfinding\tseverity\tevidence\tdecision\taction\toutcome\tmodel\ttokens\tcost\n"
 
 // numColumns is the width of the header and of every row.
 const numColumns = 15
@@ -31,15 +31,15 @@ const timeLayout = "2006-01-02T15:04:05.000Z"
 
 // Fixed enumerations. Values are part of the registry format.
 var (
-	gates      = []string{"piano", "diff"}
-	severities = []string{"Blocker", "Major", "Nit", "fuori-scala"}
+	gates      = []string{"plan", "diff"}
+	severities = []string{"Blocker", "Major", "Nit", "out-of-scale"}
 	decisions  = []string{"PROPOSE-FIX", "CONTEST", "DECLINE", "ESCALATE"}
-	outcomes   = []string{outcomeOpen, "chiuso", "respinto"}
+	outcomes   = []string{outcomeOpen, "closed", "rejected"}
 )
 
-// outcomeOpen is the esito of a finding that is still to be dealt with: the only
+// outcomeOpen is the outcome of a finding that is still to be dealt with: the only
 // one `stale` looks at.
-const outcomeOpen = "aperto"
+const outcomeOpen = "open"
 
 var (
 	identPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
@@ -77,34 +77,34 @@ func (e *RejectedError) Error() string {
 // nil, which reads as "not given", while a RawMessage keeps even the `null` text.
 // So any value given under those keys is non-nil, and Validate refuses it.
 type Input struct {
-	Lotto     string          `json:"lotto"`
+	Lot       string          `json:"lot"`
 	Gate      string          `json:"gate"`
-	Critico   string          `json:"critico"`
-	Chiave    string          `json:"chiave"`
+	Critic    string          `json:"critic"`
+	Key       string          `json:"key"`
 	Finding   string          `json:"finding"`
-	Severita  string          `json:"severita"`
-	Evidenza  string          `json:"evidenza"`
-	Decisione string          `json:"decisione"`
-	Azione    string          `json:"azione"`
-	Esito     string          `json:"esito"`
-	Modello   string          `json:"modello"`
-	Token     json.Number     `json:"token"`
-	Costo     json.Number     `json:"costo"`
+	Severity  string          `json:"severity"`
+	Evidence  string          `json:"evidence"`
+	Decision  string          `json:"decision"`
+	Action    string          `json:"action"`
+	Outcome   string          `json:"outcome"`
+	Model     string          `json:"model"`
+	Tokens    json.Number     `json:"tokens"`
+	Cost      json.Number     `json:"cost"`
 	Ts        json.RawMessage `json:"ts"`
 	FirstSeen json.RawMessage `json:"first_seen"`
 }
 
 // Row is one registry line, all columns as text.
 type Row struct {
-	Ts, Lotto, Gate, Critico, Chiave, FirstSeen, Finding, Severita string
-	Evidenza, Decisione, Azione, Esito, Modello, Token, Costo      string
+	Ts, Lot, Gate, Critic, Key, FirstSeen, Finding, Severity string
+	Evidence, Decision, Action, Outcome, Model, Tokens, Cost string
 }
 
 // fields returns the columns in registry order.
 func (r Row) fields() [numColumns]string {
 	return [numColumns]string{
-		r.Ts, r.Lotto, r.Gate, r.Critico, r.Chiave, r.FirstSeen, r.Finding, r.Severita,
-		r.Evidenza, r.Decisione, r.Azione, r.Esito, r.Modello, r.Token, r.Costo,
+		r.Ts, r.Lot, r.Gate, r.Critic, r.Key, r.FirstSeen, r.Finding, r.Severity,
+		r.Evidence, r.Decision, r.Action, r.Outcome, r.Model, r.Tokens, r.Cost,
 	}
 }
 
@@ -117,56 +117,56 @@ func (r Row) line() string {
 
 func rowFromFields(f []string) Row {
 	return Row{
-		Ts: f[0], Lotto: f[1], Gate: f[2], Critico: f[3], Chiave: f[4], FirstSeen: f[5],
-		Finding: f[6], Severita: f[7], Evidenza: f[8], Decisione: f[9], Azione: f[10],
-		Esito: f[11], Modello: f[12], Token: f[13], Costo: f[14],
+		Ts: f[0], Lot: f[1], Gate: f[2], Critic: f[3], Key: f[4], FirstSeen: f[5],
+		Finding: f[6], Severity: f[7], Evidence: f[8], Decision: f[9], Action: f[10],
+		Outcome: f[11], Model: f[12], Tokens: f[13], Cost: f[14],
 	}
 }
 
 // newRow builds the registry row for an input that already passed Validate.
 func newRow(in Input, ts, firstSeen string) Row {
 	return Row{
-		Ts: ts, Lotto: in.Lotto, Gate: in.Gate, Critico: in.Critico, Chiave: in.Chiave, FirstSeen: firstSeen,
-		Finding: in.Finding, Severita: in.Severita, Evidenza: in.Evidenza, Decisione: in.Decisione,
-		Azione: in.Azione, Esito: in.Esito, Modello: in.Modello, Token: in.Token.String(), Costo: in.Costo.String(),
+		Ts: ts, Lot: in.Lot, Gate: in.Gate, Critic: in.Critic, Key: in.Key, FirstSeen: firstSeen,
+		Finding: in.Finding, Severity: in.Severity, Evidence: in.Evidence, Decision: in.Decision,
+		Action: in.Action, Outcome: in.Outcome, Model: in.Model, Tokens: in.Tokens.String(), Cost: in.Cost.String(),
 	}
 }
 
 type valueKind int
 
 const (
-	kindIdent valueKind = iota // lotto, critico, modello
-	kindSlug                   // chiave
-	kindEnum                   // gate, severita, decisione, esito
-	kindText                   // finding, evidenza, azione
-	kindToken                  // token
-	kindCost                   // costo
+	kindIdent valueKind = iota // lot, critic, model
+	kindSlug                   // key
+	kindEnum                   // gate, severity, decision, outcome
+	kindText                   // finding, evidence, action
+	kindToken                  // tokens
+	kindCost                   // cost
 )
 
 type columnSpec struct {
 	name     string
 	required bool
 	kind     valueKind
-	maxBytes int      // 0 = no byte limit of its own (enums, token, costo have a shape)
+	maxBytes int      // 0 = no byte limit of its own (enums, tokens, cost have a shape)
 	allowed  []string // kindEnum only
 }
 
 // inputColumns are the columns the caller gives, in registry order (ts and
 // first_seen are not among them).
 var inputColumns = []columnSpec{
-	{name: "lotto", required: true, kind: kindIdent, maxBytes: 32},
+	{name: "lot", required: true, kind: kindIdent, maxBytes: 32},
 	{name: "gate", required: true, kind: kindEnum, allowed: gates},
-	{name: "critico", required: true, kind: kindIdent, maxBytes: 32},
-	{name: "chiave", required: true, kind: kindSlug, maxBytes: 64},
+	{name: "critic", required: true, kind: kindIdent, maxBytes: 32},
+	{name: "key", required: true, kind: kindSlug, maxBytes: 64},
 	{name: "finding", required: true, kind: kindText, maxBytes: 1000},
-	{name: "severita", required: true, kind: kindEnum, allowed: severities},
-	{name: "evidenza", required: true, kind: kindText, maxBytes: 300},
-	{name: "decisione", required: true, kind: kindEnum, allowed: decisions},
-	{name: "azione", kind: kindText, maxBytes: 500},
-	{name: "esito", required: true, kind: kindEnum, allowed: outcomes},
-	{name: "modello", kind: kindIdent, maxBytes: 64},
-	{name: "token", kind: kindToken},
-	{name: "costo", kind: kindCost},
+	{name: "severity", required: true, kind: kindEnum, allowed: severities},
+	{name: "evidence", required: true, kind: kindText, maxBytes: 300},
+	{name: "decision", required: true, kind: kindEnum, allowed: decisions},
+	{name: "action", kind: kindText, maxBytes: 500},
+	{name: "outcome", required: true, kind: kindEnum, allowed: outcomes},
+	{name: "model", kind: kindIdent, maxBytes: 64},
+	{name: "tokens", kind: kindToken},
+	{name: "cost", kind: kindCost},
 }
 
 // ColumnInfo is what the command's help says about one input column.
@@ -203,8 +203,8 @@ const (
 
 func inputValues(in Input) []string {
 	return []string{
-		in.Lotto, in.Gate, in.Critico, in.Chiave, in.Finding, in.Severita, in.Evidenza,
-		in.Decisione, in.Azione, in.Esito, in.Modello, in.Token.String(), in.Costo.String(),
+		in.Lot, in.Gate, in.Critic, in.Key, in.Finding, in.Severity, in.Evidence,
+		in.Decision, in.Action, in.Outcome, in.Model, in.Tokens.String(), in.Cost.String(),
 	}
 }
 
@@ -379,11 +379,11 @@ func structuralProblem(r Row) string {
 	}{
 		{"ts", isTimestamp(r.Ts), "is not a UTC timestamp with milliseconds"},
 		{"gate", contains(gates, r.Gate), "has a value outside its list"},
-		{"chiave", slugPattern.MatchString(r.Chiave) && len(r.Chiave) <= 64, "is not a valid key"},
+		{"key", slugPattern.MatchString(r.Key) && len(r.Key) <= 64, "is not a valid key"},
 		{"first_seen", isTimestamp(r.FirstSeen), "is not a UTC timestamp with milliseconds"},
-		{"severita", contains(severities, r.Severita), "has a value outside its list"},
-		{"decisione", contains(decisions, r.Decisione), "has a value outside its list"},
-		{"esito", contains(outcomes, r.Esito), "has a value outside its list"},
+		{"severity", contains(severities, r.Severity), "has a value outside its list"},
+		{"decision", contains(decisions, r.Decision), "has a value outside its list"},
+		{"outcome", contains(outcomes, r.Outcome), "has a value outside its list"},
 	} {
 		if !c.ok {
 			return fmt.Sprintf("column %s %s", c.name, c.what)

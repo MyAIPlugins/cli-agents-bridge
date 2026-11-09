@@ -76,8 +76,8 @@ func TestFindings_RealBinaryRefusesTheVariantsOfAKnownSecret(t *testing.T) {
 func TestFindings_RealBinaryStillTakesFindingsThatOnlyMentionASecret(t *testing.T) {
 	r := newFindingsRepo(t)
 	for _, override := range []map[string]string{
-		{"finding": "the JWT in the log was accepted by the staging API", "chiave": "jwt-in-log"},
-		{"finding": "an OpenAI key shape was not recognised after a prefix", "chiave": "task-description-overflow-in-the-lock-registry"},
+		{"finding": "the JWT in the log was accepted by the staging API", "key": "jwt-in-log"},
+		{"finding": "an OpenAI key shape was not recognised after a prefix", "key": "task-description-overflow-in-the-lock-registry"},
 	} {
 		_, stderr, exit := r.run(t, findingJSON(t, override), "findings", "add")
 		require.Equal(t, 0, exit, "%v: %s", override, stderr)

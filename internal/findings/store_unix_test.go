@@ -107,7 +107,7 @@ func TestAdd_RepublishesALooseRegistryAs0600AndSaysSo(t *testing.T) {
 
 func TestStale_NotesALooseRegistryAndDoesNotChangeIt(t *testing.T) {
 	s, clock := newTestStore(t)
-	addAt(t, s, clock, -10*day, "k", "aperto")
+	addAt(t, s, clock, -10*day, "k", "open")
 	require.NoError(t, os.Chmod(s.RegistryPath(), 0o644))
 	clock.now = t0
 
@@ -125,7 +125,7 @@ func TestStale_NeverWrites(t *testing.T) {
 		t.Skip("root ignores directory permissions: the premise of this test does not hold")
 	}
 	s, clock := newTestStore(t)
-	addAt(t, s, clock, -10*day, "k", "aperto")
+	addAt(t, s, clock, -10*day, "k", "open")
 	require.NoError(t, os.Remove(s.lockPath()), "so that a lock file appearing again would be visible")
 	require.NoError(t, os.Chmod(s.Dir, 0o500))
 	t.Cleanup(func() { _ = os.Chmod(s.Dir, 0o700) })
@@ -233,7 +233,7 @@ func TestAdd_RefusesALinkInPlaceOfTheDirectoryTheRegistryOrTheLock(t *testing.T)
 // premise is asserted: the registry the link points at is one Stale would list.
 func TestStale_RefusesADirectoryThatIsALinkOrNotADirectory(t *testing.T) {
 	elsewhere, clock := newTestStore(t)
-	addAt(t, elsewhere, clock, -30*day, "leaked-if-followed", "aperto")
+	addAt(t, elsewhere, clock, -30*day, "leaked-if-followed", "open")
 	clock.now = t0
 	res, err := elsewhere.Stale(7)
 	require.NoError(t, err)
