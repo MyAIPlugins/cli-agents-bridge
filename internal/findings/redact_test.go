@@ -1,7 +1,6 @@
 package findings
 
 import (
-	"encoding/base64"
 	"strings"
 	"testing"
 
@@ -28,17 +27,6 @@ func secretFixtures() map[string]string {
 		"url":                       "https://example.com/x",
 		"email":                     "a.b@example.org",
 	}
-}
-
-// makeJWT builds a compact token at run time from a header and a payload JSON
-// text, so that no whole token ever sits in the source (D15) and so that the
-// serialization of the JSON, white space included, is the test's choice. The
-// first fixture of this file was a string shaped like the old regular
-// expression that decoded to garbage: it passed because the rule asked for that
-// shape, which is exactly what let valid tokens through.
-func makeJWT(header, payload string) string {
-	enc := base64.RawURLEncoding.EncodeToString
-	return enc([]byte(header)) + "." + enc([]byte(payload)) + "." + strings.Repeat("s", 43)
 }
 
 func TestScan_EachSecretTypeIsRejected(t *testing.T) {

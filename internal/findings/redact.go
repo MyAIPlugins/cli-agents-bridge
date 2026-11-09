@@ -58,9 +58,10 @@ const notAfterAlnum = `(?:^|[^A-Za-z0-9])`
 // (`ASIAPACIFICREGIONCODE`). A refused row costs one rewrite; a leaked secret does
 // not come back.
 //
-// Declared limits of the left context: a `sk-` key (rules 5 and 6) or a JWT glued
-// directly to a letter or a digit is not recognised, and neither is a secret of a
-// type that is not listed here, split across the value, or encoded.
+// Declared limits of the left context: a `sk-` key (rules 5 and 6) glued directly
+// to a letter or a digit is not recognised, and neither is a secret of a type that
+// is not listed here, split across the value, or encoded. A JWT is found whatever
+// is glued to it: every place in a segment is tried as the start of the header.
 var contentRules = []contentRule{
 	{name: "aws-access-key", re: regexp.MustCompile(`(?:AKIA|ASIA|AGPA|AIDA|AIPA|ANPA|ANVA|AROA)[A-Z0-9]{16}`)},
 	{name: "aws-secret-key", re: regexp.MustCompile(`(?i)aws_?secret_?access_?key["']?\s*[:=]\s*["']?[A-Za-z0-9/+=]{40}`)},
