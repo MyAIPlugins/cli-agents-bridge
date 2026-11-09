@@ -294,6 +294,7 @@ cab-bridge connect <peer-id>    Refresh own heartbeat + check a peer is reachabl
 cab-bridge notify-watch -- <hook>  Run <hook> when mail arrives, for peers with no native push
 cab-bridge desktop open|close|status  Open this project to Claude Desktop, close it, or say if it is open (a val runs it)
 cab-bridge mcp                  The MCP server Claude Desktop starts (see "Claude Desktop"); not run by hand
+cab-bridge findings add|stale   The team's findings registry, .handover/findings.tsv: add one row (JSON on stdin), list the open ones
 cab-bridge cleanup              Remove own session, or --scope=global
 cab-bridge inspect <id>         Print a session manifest
 cab-bridge migrate-from-patil   Migrate ~/.claude/session-bridge/ sessions to the v2 namespace

@@ -73,6 +73,23 @@ What is **not** defended, stated rather than implied:
 - **A process of the same user can speak as a val.** The authorizer trusts the `from` written in the message: a process that sets `CAB_SESSION_ID` to a val's id is that val for Desktop. Role, scope, name and grant still come from disk. This is the same-UID limit of the threat model, and a test reproduces it.
 - **The source test does not follow indirection through `Refusef`'s arguments.** A string variable, a helper or a function value that carries text taken from an error elsewhere passes; so do `_test.go` files, excluded on purpose. A name read from yesterday's list can also match today's label of a different project with the same folder name: names by folder are not stable across time, and only joined projects are protected from it.
 
+### Findings registry (`cab-bridge findings`, F-156)
+
+The registry lives in the repository tree, not in the data dir: agents write it, people read it, and it sits next to code that may be pushed. Controls, each with where it lives:
+
+- **One file, replaced whole.** `<repository root>/.handover/findings.tsv`, 0600, in a 0700 directory. Every `add` publishes the whole new registry with one atomic rename (SC-5, `internal/findings/store.go`): a crash leaves it as it was or as it becomes, never a half row. A registry found with access for group or other is reported, and the next `add` makes it 0600.
+- **One writer at a time, held by the kernel.** `flock` on unix, `LockFileEx` on Windows, on `.handover/findings.lock`, opened through `security.OpenOwned`: no link followed, a regular file owned by the current uid, checked on the descriptor that gets locked. The lock ends with the process, so there is no stale lock to recover; the PID lock of SC-6 is not used (F-160).
+- **The directory is checked before use**: refused if it is a symbolic link, not a directory, or not ours. When `add` creates `.handover/` it writes a `.gitignore` containing `*`.
+- **A value that looks like a secret is refused before anything is written**, and the value is not repeated on stdout or stderr. Rules (`internal/findings/redact.go`, `jwt.go`): AWS keys, GitHub tokens, Anthropic and OpenAI keys, Slack tokens, PEM private keys, JWT and JWE, secret assignments, full URLs, email addresses, and the person names in `findings_denied_names`. A JWT is recognised by its structure: a JSON header with a string `alg`, three segments, or five with `enc`, where the encrypted key may be empty. Every start position in the value is tried, and a value too long to be checked is refused. The list of names is read from `config.json` only, never from the environment, so it does not show in `ps`.
+
+What is **not** defended, stated rather than implied:
+
+- **It is not a general secret detector.** A secret of a type that is not listed, split across the value or encoded passes. The registry is for pointers (file:line, a commit, a message id), not values, and `--help` says so.
+- **Without `findings_denied_names`, names are not checked**, and `add` says so every time it runs.
+- **Known false positives of the prefix rules**: a name that contains `sk-ant-`, `sk-proj-`, `sk-svcacct-` or `sk-admin-` followed by 20 more characters, or `sk-` followed by 48 letters and digits (the end of `disk-` or `task-` before a digest, as in `cache/task-<sha256>.bin`), is refused although it is not a key. Cite the file another way, with a commit and a line. Listed in `--help` and fixed by tests.
+- **The `.gitignore` is checked by name, git is not asked.** A `.handover/` that existed before without a `.gitignore` gets a note on every command and is never given one; a `.gitignore` there silences the note whatever it contains.
+- **A process of the same user can edit the file**: the same-UID limit of the threat model.
+
 ### P2 — still deferred at v0.8.0
 
 _Only SC-8 remains deferred. SC-3 moved to the active list above when the code landed — see the note there about how it got there._

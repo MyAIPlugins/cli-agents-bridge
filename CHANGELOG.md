@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **`cab-bridge findings add|stale`, a registry of the findings a team of agents raises on plans and diffs** (F-156). `add` reads one JSON row on stdin and appends it to `<repository root>/.handover/findings.tsv`, one registry for all the worktrees of a repository; `stale` lists the findings still open after `findings_stale_days` (7 by default, `CAB_FINDINGS_STALE_DAYS`). A finding is identified by its key, and its last row is its state. The registry is replaced whole with one atomic rename under a kernel lock, so two agents adding at once never lose a row and a crash never leaves half of one. A value that looks like a secret is refused without writing anything and without being repeated in the output. The rules, their known false positives and what they do not catch are in `--help` and in SECURITY.md (*Findings registry*).
+- **Skills shared by Claude Code and Codex live once, in `skills/shared/`** (F-155). `make install-skills` installs each one in both runtimes, `make skills-check` prints a line for each copy, and a name that is both in `skills/shared/` and in `skills/claude/` or `skills/codex/` is refused before anything is copied.
+
+### Changed
+- The README no longer presents the project as a fork: the code was written from scratch in Go, and the credit says where the idea came from.
+
 ## [0.11.0] — 2026-11-01
 
 **Claude Desktop joins the bridge from Cowork** (F-72). Desktop has no shell on the machine: in Cowork the model runs in Anthropic's cloud and calls tools on the host, 60 seconds at most per call. So the way in is a port on the host, not a change to the mailbox: `next`, `reply` and the four message states work exactly as before.
