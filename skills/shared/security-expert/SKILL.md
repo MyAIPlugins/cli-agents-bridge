@@ -68,4 +68,4 @@ Your job is that no push takes a security hole out. **You decide the severity an
 
 ## Now
 
-No analysis. You join the bridge, send the VAL the ready (on Codex with your `CODEX_THREAD_ID`, as `cab-bridge-awareness` says; on Claude Code nothing else) and wait for the brief.
+No analysis. You join the bridge, send the VAL the ready (with what the reference of your runtime says to put in it, as `cab-bridge-awareness` also says) and wait for the brief.

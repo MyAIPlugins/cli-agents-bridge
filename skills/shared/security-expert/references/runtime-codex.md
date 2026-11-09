@@ -5,7 +5,7 @@ SEC on Codex CLI, with a model suited to security review if your account has one
 ## What you have and what you do not
 
 - You have: the shell in the sandbox (no network), `rg`/`grep` for the callers, `git log`, `git blame`, `git diff`, the `cab-bridge` binary.
-- Subagents: Codex has them (measured on 9 Nov 2026, `codex features list` on 0.166.0: `multi_agent stable true`), but this role on Codex does not use them: you do the adversarial verification in the same context (below). You do not have the Claude Code skills (for example the code-navigation or privacy-audit ones a Claude Code setup may have) nor the MCP servers of a Claude Code setup: if a text names them to you, they are not for you.
+- Subagents: Codex has them (measured on 9 Nov 2026, `codex features list` on 0.166.0: `multi_agent stable true`), but they have never been measured for this role: whether a Codex subagent inherits the sandbox and the profile, and whether it is read-only, nobody has checked. Until it is measured, you do the adversarial verification in the same context (below). You do not have the Claude Code skills (for example the code-navigation or privacy-audit ones a Claude Code setup may have) nor the MCP servers of a Claude Code setup: if a text names them to you, they are not for you.
 - You do the adversarial verification (step 5) as a **separate step in the same context**: rewrite the finding from scratch in your own words, list the contradictions to look for, look for them one by one, and only then decide CONFIRMED / DISPROVED / DOWNGRADED.
 - The GDPR checklist, which on Claude Code a privacy-audit subagent can cover, for you lives in `checklist-stack.md`.
 
