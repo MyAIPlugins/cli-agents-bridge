@@ -73,23 +73,25 @@ func (e *RejectedError) Error() string {
 
 // Input is what the caller provides: the 13 columns that are not written by
 // the command. Ts and FirstSeen exist only to be refused: the command owns them.
-// A JSON null leaves them nil, i.e. it reads as "not given".
+// They are json.RawMessage, not *string, because a JSON null leaves a *string
+// nil, which reads as "not given", while a RawMessage keeps even the `null` text.
+// So any value given under those keys is non-nil, and Validate refuses it.
 type Input struct {
-	Lotto     string      `json:"lotto"`
-	Gate      string      `json:"gate"`
-	Critico   string      `json:"critico"`
-	Chiave    string      `json:"chiave"`
-	Finding   string      `json:"finding"`
-	Severita  string      `json:"severita"`
-	Evidenza  string      `json:"evidenza"`
-	Decisione string      `json:"decisione"`
-	Azione    string      `json:"azione"`
-	Esito     string      `json:"esito"`
-	Modello   string      `json:"modello"`
-	Token     json.Number `json:"token"`
-	Costo     json.Number `json:"costo"`
-	Ts        *string     `json:"ts"`
-	FirstSeen *string     `json:"first_seen"`
+	Lotto     string          `json:"lotto"`
+	Gate      string          `json:"gate"`
+	Critico   string          `json:"critico"`
+	Chiave    string          `json:"chiave"`
+	Finding   string          `json:"finding"`
+	Severita  string          `json:"severita"`
+	Evidenza  string          `json:"evidenza"`
+	Decisione string          `json:"decisione"`
+	Azione    string          `json:"azione"`
+	Esito     string          `json:"esito"`
+	Modello   string          `json:"modello"`
+	Token     json.Number     `json:"token"`
+	Costo     json.Number     `json:"costo"`
+	Ts        json.RawMessage `json:"ts"`
+	FirstSeen json.RawMessage `json:"first_seen"`
 }
 
 // Row is one registry line, all columns as text.

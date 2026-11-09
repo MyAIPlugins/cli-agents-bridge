@@ -242,6 +242,20 @@ func TestFindings_RealBinaryRefusesShortAssignments(t *testing.T) {
 	}
 }
 
+// The real binary, with a JSON null: it used to read as "not given" and the row was recorded.
+func TestFindings_NullTsOrFirstSeenIsRefusedAndNothingIsWritten(t *testing.T) {
+	r := newFindingsRepo(t)
+
+	for _, column := range []string{"ts", "first_seen"} {
+		body := strings.TrimSuffix(findingJSON(t, nil), "}") + `,"` + column + `":null}`
+		stdout, stderr, exit := r.run(t, body, "findings", "add")
+		assert.Equal(t, 1, exit, column)
+		assert.Empty(t, stdout, column)
+		assert.Contains(t, stderr, "findings: column "+column+" is written by the command", column)
+		assert.NoDirExists(t, r.handover(), "nothing was created for "+column)
+	}
+}
+
 func TestFindings_ExitCodesAndHelp(t *testing.T) {
 	r := newFindingsRepo(t)
 

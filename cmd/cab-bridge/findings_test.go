@@ -225,6 +225,8 @@ func TestFindingsAdd_StdinErrorsAreFixedTextsAndCreateNothing(t *testing.T) {
 		"not json":                          "findings: stdin is not valid JSON (byte offset 2)",
 		`{"lotto":"x","bogus":"y"}`:         "findings: unknown column; the columns are: lotto, gate,",
 		`{"ts":"2026-11-08T10:00:00.000Z"}`: "findings: column ts is written by the command",
+		`{"ts":null}`:                       "findings: column ts is written by the command",
+		`{"first_seen":null}`:               "findings: column first_seen is written by the command",
 		`{} {}`:                             "findings: more than one JSON value on stdin",
 	} {
 		_, _, err := e.run(input, "add")

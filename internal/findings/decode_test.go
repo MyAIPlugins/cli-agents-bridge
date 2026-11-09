@@ -17,8 +17,8 @@ func TestDecodeStrict_ReadsTheColumns(t *testing.T) {
 	assert.Equal(t, "piano", in.Gate)
 	assert.Equal(t, "lock-race", in.Chiave)
 	assert.Equal(t, "", in.Azione)
-	assert.Nil(t, in.Ts)
-	assert.Nil(t, in.FirstSeen)
+	assert.Empty(t, in.Ts)
+	assert.Empty(t, in.FirstSeen)
 	assert.Empty(t, Validate(in, nil))
 }
 
@@ -44,10 +44,22 @@ func TestDecodeStrict_RefusesTsAndFirstSeenFromTheCaller(t *testing.T) {
 		require.Error(t, err, column)
 		assert.Equal(t, "findings: column "+column+" is written by the command", err.Error())
 	}
-	// A value of the wrong type for those two keys is the same refusal, not a type hint.
-	_, err := DecodeStrict(strings.NewReader(`{"ts":5}`))
-	require.Error(t, err)
-	assert.Equal(t, "findings: column ts is written by the command", err.Error())
+}
+
+// Giving the key at all is the refusal, whatever the value: null, an empty
+// string, a number, an object. A JSON null used to read as "not given" because
+// the field was a *string (encoding/json leaves a pointer nil on null), so
+// `"ts": null` passed and the row was recorded as if the key were absent.
+func TestDecodeStrict_AnyValueForTsOrFirstSeenIsTheSameRefusal(t *testing.T) {
+	values := []string{`null`, `""`, `"2026-11-08T10:00:00.000Z"`, `5`, `true`, `[]`, `{}`}
+	for _, column := range []string{"ts", "first_seen"} {
+		for _, value := range values {
+			body := `"` + column + `":` + value
+			_, err := DecodeStrict(strings.NewReader(strings.Replace(validInput, `"esito":"aperto"`, `"esito":"aperto",`+body, 1)))
+			require.Error(t, err, body)
+			assert.Equal(t, "findings: column "+column+" is written by the command", err.Error(), body)
+		}
+	}
 }
 
 func TestDecodeStrict_ErrorsAreFixedTextsAndNeverCarryTheInput(t *testing.T) {

@@ -253,8 +253,8 @@ func TestValidate_ReportsEveryColumnInRegistryOrder(t *testing.T) {
 
 func TestValidate_RefusesTsAndFirstSeenForAProgrammaticCaller(t *testing.T) {
 	in := validValues()
-	ts := "2026-11-08T10:00:00.000Z"
-	in.Ts, in.FirstSeen = &ts, &ts
+	given := json.RawMessage(`"2026-11-08T10:00:00.000Z"`)
+	in.Ts, in.FirstSeen = given, given
 	assert.Equal(t, []Violation{
 		{Column: "ts", Reason: reasonCommandOwns},
 		{Column: "first_seen", Reason: reasonCommandOwns},
