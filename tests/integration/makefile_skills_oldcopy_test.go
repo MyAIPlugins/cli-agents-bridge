@@ -158,14 +158,24 @@ func TestMakefile_SkillsOldCodexCopyBlocks(t *testing.T) {
 				out, code := fx.make(t, repoRoot, "install-skills")
 				require.Equal(t, 0, code, "premise: the install passes when nothing is in the old folder: %s", out)
 			}
+			var installedCopy map[string]string // what the install wrote, if it has
+			if c.installed {
+				installedCopy = tree(t, fx.agentsSkills(c.skill))
+			}
 			// Something an install would copy, so that "nothing was copied" is seen.
 			write(t, filepath.Join(fx.skills, "claude", "alpha", "SKILL.md"), "alpha for claude, newer\n")
 			watch := c.plant(t, fx, c.skill)
 			old := fx.oldCopy(c.skill)
 			before := fx.snapshot(t, watch...)
+			outsideBefore := map[string]map[string]string{}
+			for _, dir := range watch {
+				outsideBefore[dir] = tree(t, dir)
+			}
 
+			var refusal string
 			for _, extra := range [][]string{nil, {"FORCE=1"}} {
 				out, code := fx.script(t, repoRoot, "install", extra...)
+				refusal = out
 				assert.Equal(t, 1, code, "%v: %s", extra, out)
 				assert.Contains(t, out, "refused: a skill is also in the old folder", "%v", extra)
 				assert.Contains(t, out, "codex/"+c.skill, "%v", extra)
@@ -182,9 +192,25 @@ func TestMakefile_SkillsOldCodexCopyBlocks(t *testing.T) {
 			assert.NotContains(t, out, "deadlink   claude/")
 			assert.Equal(t, before, fx.snapshot(t, watch...), "a check touches nothing")
 
-			// The premise: the old path is the whole reason. Remove it, as the message
-			// says, and the same install passes and copies everything.
-			require.NoError(t, os.RemoveAll(old))
+			// The premise: the old path is the whole reason. Do what the message says,
+			// to the letter, and the same install passes and copies everything. To the
+			// letter means: the path as it is printed (a line of its own, no / at the end);
+			// a link is removed as itself, and a folder with what is in it. It must not cost
+			// the copy the install wrote, nor anything outside the old folder.
+			assert.Contains(t, refusal, "\n    "+old+"\n", "the path is printed on a line of its own, with no / at the end")
+			if info, lerr := os.Lstat(old); lerr == nil && info.Mode()&os.ModeSymlink != 0 {
+				assert.Contains(t, refusal, "a symbolic link to ", "a link is said to be one")
+				assert.Contains(t, refusal, "remove the link", "and to be removed as a link")
+				require.NoError(t, os.Remove(old))
+			} else {
+				require.NoError(t, os.RemoveAll(old))
+			}
+			for dir, was := range outsideBefore {
+				assert.Equal(t, was, tree(t, dir), "nothing outside the old folder was lost by following the message: %s", dir)
+			}
+			if c.installed {
+				assert.Equal(t, installedCopy, tree(t, fx.agentsSkills(c.skill)), "and the copy the install wrote is whole")
+			}
 			out, code = fx.script(t, repoRoot, "install")
 			require.Equal(t, 0, code, "without the old copy the same install passes: %s", out)
 			assert.Equal(t, "alpha for claude, newer\n", readFile(t, fx.copyOf(".claude", "alpha", "SKILL.md")))
@@ -249,42 +275,48 @@ func TestMakefile_SkillsOldCodexCopyBlocks(t *testing.T) {
 		assert.Equal(t, 0, code, "without it the same install passes: %s", out)
 	})
 
-	// The limit the header of skills.sh declares (F-142): "the same folder" is decided on
-	// the strings `pwd -P` prints, and on a volume that does not tell the cases apart one
-	// folder spelled two ways prints two. This pins the direction of the mistake: refused.
-	// On a volume that does tell them apart the link is to a folder that is not there, and
-	// is refused as a link to no folder. Both are refusals; which one ran is logged.
-	t.Run("a link that spells the new folder with other cases is refused, whichever kind of volume this is", func(t *testing.T) {
+	// The old limit (F-142) was here: "the same folder" was decided on the strings `pwd -P`
+	// printed, and one folder spelled two ways on a volume that does not tell the cases
+	// apart printed two, and was refused. It is now decided by device and inode (test -ef),
+	// so the spelling does not matter. On a volume that does tell the cases apart, `.Agents`
+	// is not `.agents`: the link leads to no folder, and is refused as that. Which one ran
+	// is logged. (The first round of this test expected `duplicate` on the first kind of
+	// volume: the expectation is inverted on purpose, see the report of the second round.)
+	t.Run("a link that spells the new folder with other cases is the same folder where the volume does not tell cases apart", func(t *testing.T) {
 		fx := newSkillsFixture(t)
 		out, code := fx.make(t, repoRoot, "install-skills")
 		require.Equal(t, 0, code, out)
 
-		probe := t.TempDir()
-		write(t, filepath.Join(probe, "CaseProbe"), "x\n")
-		_, statErr := os.Stat(filepath.Join(probe, "caseprobe"))
-		insensitive := statErr == nil
+		insensitive := volumeIgnoresCase(t)
 		t.Logf("this volume tells upper from lower case apart: %v", !insensitive)
 
 		require.NoError(t, os.MkdirAll(fx.oldCopy(), 0o700))
 		spelled := filepath.Join(fx.home, ".Agents", "skills", "alpha")
 		require.NoError(t, os.Symlink(spelled, fx.oldCopy("alpha")))
-		line := "deadlink   codex/alpha"
-		if insensitive {
-			oldInfo, err := os.Stat(fx.oldCopy("alpha"))
-			require.NoError(t, err, "premise: the link leads to a folder")
-			newInfo, err := os.Stat(fx.agentsSkills("alpha"))
-			require.NoError(t, err)
-			require.True(t, os.SameFile(oldInfo, newInfo), "premise: and it is the new copy's folder, spelled another way")
-			line = "duplicate  codex/alpha"
-		}
 		before := fx.snapshot(t)
 
+		if !insensitive {
+			out, code = fx.script(t, repoRoot, "check")
+			assert.Equal(t, 1, code, out)
+			assert.Contains(t, out, "deadlink   codex/alpha")
+			out, code = fx.script(t, repoRoot, "install", "FORCE=1")
+			assert.Equal(t, 1, code, out)
+			assert.Equal(t, before, fx.snapshot(t), "and nothing was touched")
+			return
+		}
+		oldInfo, err := os.Stat(fx.oldCopy("alpha"))
+		require.NoError(t, err, "premise: the link leads to a folder")
+		newInfo, err := os.Stat(fx.agentsSkills("alpha"))
+		require.NoError(t, err)
+		require.True(t, os.SameFile(oldInfo, newInfo), "premise: and it is the new copy's folder, spelled another way")
+
 		out, code = fx.script(t, repoRoot, "check")
-		assert.Equal(t, 1, code, out)
-		assert.Contains(t, out, line)
-		out, code = fx.script(t, repoRoot, "install", "FORCE=1")
-		assert.Equal(t, 1, code, out)
-		assert.Contains(t, out, fx.oldCopy("alpha"))
+		assert.Equal(t, 0, code, out)
+		assert.Contains(t, out, "ok         codex/alpha")
+		assert.NotContains(t, out, "duplicate")
+		out, code = fx.script(t, repoRoot, "install")
+		assert.Equal(t, 0, code, out)
+		assert.Contains(t, out, "unchanged  codex/alpha")
 		assert.Equal(t, before, fx.snapshot(t), "and nothing was touched")
 	})
 
