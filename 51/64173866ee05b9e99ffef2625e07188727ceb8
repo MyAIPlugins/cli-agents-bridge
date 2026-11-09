@@ -1,0 +1,21 @@
+tests/integration/makefile_lint_toolchain_test.go
+  s_d5e186cda02d82::t_96365d2898087c 1-204
+Makefile
+  s_d5e186cda02d82::t_2d33e0796d6e1c 232-249,251-257
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5164173866ee05b9e99ffef2625e07188727ceb8",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
