@@ -115,10 +115,12 @@ This installs the `bridge-workflow` skill and the `/cli-agents-bridge:cab` comma
 
 ```
 make skills-check      # what differs between the repository and your installed copies
-make install-skills    # install them into ~/.claude/skills, ~/.codex/skills, ~/.gemini/config/skills
+make install-skills    # install them into ~/.claude/skills, ~/.agents/skills (Codex), ~/.gemini/config/skills
 ```
 
 `install-skills` touches only the skills the repository has. It refuses to overwrite a copy that was edited by hand unless you pass `FORCE=1`, and it never deletes files you added or writes through a symbolic link. A copy that is only behind the repository is updated without `FORCE`. Claude Desktop takes its skill as a zip: `install-skills` builds `bin/arc-bridge.zip`, and you upload it under Customize > Skills.
+
+Codex loads a user's skills from `~/.agents/skills` and, for now, also reads the older `~/.codex/skills`, so a skill found in both is listed twice. If a skill of this repository is also in `~/.codex/skills`, as a folder of its own, a link to one, or a link to nothing, `skills-check` reports it and `install-skills` copies nothing, even with `FORCE=1`, and names each path to clear by hand; nothing there is moved or deleted for you. The same folder reached through a link is not a second copy. Both commands need a `sh` whose `test` has a working `-ef`, as dash, bash, ksh and zsh do, and stop before reading anything if it does not. On Windows, where these commands do not run, copy each folder by hand into the one your runtime loads skills from (for Codex, `.agents/skills` in your home, which we have not tested on Windows).
 
 The skills need nothing but the binary. To give the roles more tools (subagents, MCP servers, a knowledge base) without losing those protections, see [docs/customizing-roles.md](./docs/customizing-roles.md).
 
