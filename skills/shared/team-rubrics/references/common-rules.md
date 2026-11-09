@@ -48,7 +48,7 @@ A GO or a "done" with criteria in one of these states declares it **at the top**
 - **Major**: fixed before the merge. If it is not fixed, the VAL brings it to the human with ESCALATE and the written reason: it is a risk the human accepts.
 - **Nit**: recorded, does not block.
 
-SEC assigns the team severity to its own confirmed findings by itself, with one line of reason for each (impact in that context); needs_validation and notes stay out-of-scale. A single fixed rule: a secret in the diff is always a Blocker. SEC's "GO with fixes" verdict counts as a GO with open Majors: they are closed before the merge. The VAL does not change a SEC severity, neither downward nor upward: it contests it with the evidence (CONTEST), and if the disagreement remains the human decides (ESCALATE).
+SEC assigns the team severity to its own confirmed findings by itself, with one line of reason for each (impact in that context); needs_validation and notes stay out-of-scale. A single fixed rule: a secret in the diff is always a Blocker. SEC's "GO with fixes" verdict counts as a GO with open Majors: they are closed before the merge, or, like any Major, the human accepts them as a risk in writing (ESCALATE), with SEC's reason recorded; a SEC Blocker is never accepted as a risk. **In a lot with SEC the branch is not pushed before SEC's GO**: a pull request, even a draft, publishes the diff, and a published secret is already exposed. The VAL does not change a SEC severity, neither downward nor upward: it contests it with the evidence (CONTEST), and if the disagreement remains the human decides (ESCALATE).
 
 ## Proof of a finding
 
@@ -63,8 +63,10 @@ Both are valid proofs for triage.
 For each finding the VAL writes a decision:
 - **PROPOSE FIX**: valid; the VAL states the fix and sends it to the ESC.
 - **CONTEST**: wrong or born from a misunderstanding; the VAL writes the reason with the evidence.
-- **DECLINE**: only for Nits; recorded, not fixed.
+- **DECLINE**: for Nits and for SEC's notes (out-of-scale); recorded, not fixed.
 - **ESCALATE**: the human decides (product, cost, accepted risk).
+
+A SEC needs_validation is neither triaged nor recorded while the fact is missing: the VAL gets it (or has the ESC get it) and sends it back to SEC, which confirms it with a severity or closes it; from there it is triaged like the others.
 
 The VAL **does not change the severity** assigned by a critic: if it considers it wrong, it uses CONTEST. A finding with neither of the two forms of proof does not go to the ESC: the VAL asks for the proof or contests it.
 

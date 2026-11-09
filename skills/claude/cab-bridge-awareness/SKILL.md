@@ -125,4 +125,4 @@ inbox --list|--tidy    inspect without consuming / archive what has been handled
 inspect <id> | desktop open|status|close | notify-watch | version | help
 ```
 
-Flags go before the positional: `cab-bridge read --session-id=<id> <msg-id>`. **`cleanup` can remove a live agent that is paused**: do not run it without the human's OK (`references/val.md`, section "Cleanup").
+Flags go before the positional: `cab-bridge read --session-id=<id> <msg-id>`. **`cleanup` can remove a live agent that is paused, and with no flag it deletes the session of the current folder**: do not run it in any form without the human's OK (`references/val.md`, section "Cleanup").
