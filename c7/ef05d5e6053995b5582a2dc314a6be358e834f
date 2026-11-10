@@ -1,0 +1,138 @@
+internal/session/listener.go
+  s_d5e186cda02d82::t_02e502b3daae52 189,202,226
+tests/integration/lock_remedy_drift_test.go
+  s_d5e186cda02d82::t_9baf2737683e5e 21-23
+  s_d5e186cda02d82::t_59ecd1fad80ac3 24
+internal/session/manager.go
+  s_d5e186cda02d82::t_cc8d82cbece252 110,113
+  s_d5e186cda02d82::t_9467a6dfd2ba85 199-204
+  s_d5e186cda02d82::t_fc7e52c66c68ab 53-58
+  s_d5e186cda02d82::t_b789180ff66cb9 597-598,600,602,607-608
+  s_d5e186cda02d82::t_5365712c5350b2 79
+  s_d5e186cda02d82::t_5443f24464489b 603-606
+internal/cleanup/scope.go
+  s_d5e186cda02d82::t_37a6d331dbd064 384,397
+  s_d5e186cda02d82::t_9539b1e1711a8a 140-141,143-147,181,260,276-279,291-292,295,302-315,319-320,332-349,374-383,385-396,398-401
+internal/session/lock_file_test.go
+  s_d5e186cda02d82::t_fc58d79cf78958 1-226
+cmd/cab-bridge/inbox_test.go
+  s_d5e186cda02d82::t_e6dcfb9c9d509d 245
+  s_d5e186cda02d82::t_54bf039535c66b 144
+  s_d5e186cda02d82::t_06e1932b622468 17-26
+  s_d5e186cda02d82::t_d3a3d412cdff15 196
+internal/session/alive_unix.go
+  s_d5e186cda02d82::t_a2e9663e0a6c37 21,23
+  s_d5e186cda02d82::t_2ed70972b9475b 45-46
+tests/integration/lock_single_copy_test.go
+  s_d5e186cda02d82::t_4a6aea24b189af 201-209
+  s_d5e186cda02d82::t_9d836ed0833dfa 10,83-175,177-200,210-215
+  s_d5e186cda02d82::t_4b730166e58066 176
+internal/session/lock.go
+  s_d5e186cda02d82::t_87db7eed4a08dc 47-50,54
+  s_d5e186cda02d82::t_93a99183686570 157-159
+  s_d5e186cda02d82::t_42a9aa164bbf79 213-214,216-218,220
+  s_d5e186cda02d82::t_64dae0714a2cfa 270-272
+  s_d5e186cda02d82::t_f950f9495c255c 6,8-12,15-16,18-34,36-39,42-46,51-53,55-90,92-101,103-110,112-118,120-130,132-149,152-153,155-156,160-161,163-174,176-185,188-192,194,196-205,208-212,219,221,223-228,230-234,237-269,273-274,276,278
+  s_82dd7f2cad12c7::t_395ad9fa0a7d80 186-187
+internal/session/lock_reentrant_test.go
+  s_d5e186cda02d82::t_aa208961130e49 1-156
+internal/session/reconnect.go
+  s_d5e186cda02d82::t_707dfd3a89322f 74-77
+  s_d5e186cda02d82::t_ca7e526bdb41e5 151-154
+cmd/cab-bridge/notify_watch.go
+  s_d5e186cda02d82::t_397b61323c46f2 288-289,293-295
+  s_d5e186cda02d82::t_992db97c672109 33,170-174,180,226-260,262-265,267,274,279,286-287,290-292,296-298
+  s_82dd7f2cad12c7::t_2bc0067caa07a7 299
+internal/config/config.go
+  s_d5e186cda02d82::t_842e91dd5f09b7 173-184,224-225,362-364,427
+internal/session/manifest.go
+  s_d5e186cda02d82::t_379dfc5d27ba69 280-281
+cmd/cab-bridge/next.go
+  s_d5e186cda02d82::t_35bb7123325fd4 403-405
+internal/session/lock_exclusion_test.go
+  s_d5e186cda02d82::t_b20141fdd7ea0b 1-94,98-99,107-224,226-245,247,249-397,403-423,425-460,462-512
+  s_d5e186cda02d82::t_d32fc36796a1b4 461
+  s_d5e186cda02d82::t_d0222190e61670 95-97,100-106,398-402,424
+  s_d5e186cda02d82::t_7e7115773f622c 225,246,248
+internal/session/wakecursor.go
+  s_d5e186cda02d82::t_02e502b3daae52 131,189
+internal/session/alive_windows.go
+  s_d5e186cda02d82::t_d8749804e5695b 36-37
+  s_d5e186cda02d82::t_13c77d1b9ed094 18-21
+internal/session/lock_sequence_test.go
+  s_d5e186cda02d82::t_a18b88b65b014d 1-308
+internal/session/lock_retired_test.go
+  s_d5e186cda02d82::t_6637f867d8060e 1-168
+internal/cleanup/gc.go
+  s_d5e186cda02d82::t_9539b1e1711a8a 137,140-141
+internal/session/lock_test.go
+  s_d5e186cda02d82::t_0e2972d1d4112b 84-86
+  s_d5e186cda02d82::t_5b506ffb6120b5 4,12-13,16-26,31,39-40,43,47,49,55,58,62,65,67-69,71-73,76-80,83,87-108,126,136,142-144,151,153,167-168
+internal/session/lock_exclusion_holder_test.go
+  s_d5e186cda02d82::t_1a99e77e97cdc7 15
+  s_d5e186cda02d82::t_b05418ae3c7ac5 18
+  s_d5e186cda02d82::t_9f49017f4c9a01 114-115
+  s_d5e186cda02d82::t_337f53ec25bd7e 1-14,16-17,19-24,45-113,116-136
+  s_d5e186cda02d82::t_6f50d797235b72 25-44
+internal/cleanup/failures_test.go
+  s_d5e186cda02d82::t_ca19b1b0ca83d0 126,130-131
+  s_d5e186cda02d82::t_d3c2973a450b32 15-17
+  s_d5e186cda02d82::t_a3698832cd013b 32-35,38-44
+  s_d5e186cda02d82::t_7bf8b341a31428 114
+cmd/cab-bridge/notify_watch_retired_test.go
+  s_d5e186cda02d82::t_56ea3de8a30fc7 1-102
+internal/config/lockwait_test.go
+  s_d5e186cda02d82::t_9ac798626a7fad 1-130
+cmd/cab-bridge/common.go
+  s_d5e186cda02d82::t_a396e49ebdf2f2 167-169
+internal/session/listener_test.go
+  s_d5e186cda02d82::t_0765d61f2a1f35 20-24,28
+config/default.json
+  s_d5e186cda02d82::t_842e91dd5f09b7 19
+internal/session/lock_removed_unix_test.go
+  s_d5e186cda02d82::t_8959f154cf3bf2 1-37
+internal/session/lock_helper_test.go
+  s_d5e186cda02d82::t_62479a0ad1bdc4 1-71,76-77,80-90,93-102
+  s_d5e186cda02d82::t_e9d344a385805c 72-75,78-79,91-92
+internal/session/replytxn.go
+  s_d5e186cda02d82::t_02e502b3daae52 125
+cmd/cab-bridge/lockwait_wiring_test.go
+  s_d5e186cda02d82::t_e5d40a171f0ec9 37-39,59,62-63
+  s_d5e186cda02d82::t_90ec3cfb81a84b 1-36,40-58,60-61,64-70
+internal/cleanup/retire_test.go
+  s_d5e186cda02d82::t_4e00c87aea6fd8 1-15,17-74,81-240
+  s_d5e186cda02d82::t_2f5fc0872f2e34 16
+  s_d5e186cda02d82::t_2fc4f7ade93021 75-78,80
+  s_d5e186cda02d82::t_20fb9fdee8c765 79
+  s_d5e186cda02d82::t_7206183c888e4b 241-269
+internal/session/lock_wait_test.go
+  s_d5e186cda02d82::t_bf52628c661751 1-149,151
+  s_d5e186cda02d82::t_e9d344a385805c 150
+internal/session/lock_legacy_copy_test.go
+  s_d5e186cda02d82::t_59c4d84dadf7f7 1-147,150,160-164,166-192
+  s_d5e186cda02d82::t_efbc848b921e14 148-149,151-159,165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c7ef05d5e6053995b5582a2dc314a6be358e834f",
+  "prompts": {},
+  "sessions": {
+    "s_82dd7f2cad12c7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7a0f1dc0-b47d-45ee-84cd-db49c4e9320e",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    },
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
