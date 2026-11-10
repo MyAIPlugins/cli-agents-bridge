@@ -35,6 +35,7 @@ const (
 	seqExitAcquired  = 12
 	seqExitOther     = 13
 	seqExitStdin     = 14
+	seqExitHeld      = 15
 	seqStdinBound    = 20 * time.Second
 	seqChildReadWait = 10 * time.Second
 )
@@ -134,10 +135,15 @@ func assertLockIsFree(t *testing.T, lockPath string) {
 
 // CRI-1 / R2-3. A waiter that opened the lock file just before cleanup retired the
 // session locks an inode nobody contends for any more, so the kernel will say yes.
-// What stops it is the check made on the lock once taken. The waiter is a real
-// process, stopped between the open and the lock, while this process retires the
-// session completely.
-func TestAcquire_ARetiredInodeStopsAtValidate(t *testing.T) {
+// What stops it is the check made on the lock once taken: the file is not the one
+// the name points to any more (checkNamed), the waiter starts again from the name,
+// and the session is gone. The waiter is a real process, stopped between the open
+// and the lock, while this process retires the session completely.
+//
+// This used to be TestAcquire_ARetiredInodeStopsAtValidate, when validate was the
+// only thing that stopped it. Validate has its own test below: the waiter that takes
+// the lock while the lock file is still the named one and the manifest is not.
+func TestAcquire_AWaiterOnARetiredInodeIsRefused(t *testing.T) {
 	dataDir, sid := exclSession(t)
 	mgr := NewManager(dataDir, time.Second)
 
@@ -191,7 +197,12 @@ func TestHelperProcess_SessionLockSequence(t *testing.T) {
 	sid := os.Getenv(seqEnvSID)
 	switch mode {
 	case seqModeRetired:
+		stopped := false
 		_, err := mgr.acquireSessionLock(sid, 0, func() {
+			if stopped {
+				return // a second round, after the file was found replaced, does not stop again
+			}
+			stopped = true
 			fmt.Println("OPENED")
 			if !seqWaitLine("GO") {
 				os.Exit(seqExitStdin)
@@ -200,6 +211,8 @@ func TestHelperProcess_SessionLockSequence(t *testing.T) {
 		switch {
 		case errors.Is(err, ErrSessionGone):
 			os.Exit(seqExitGone)
+		case errors.Is(err, ErrLockHeld):
+			os.Exit(seqExitHeld)
 		case err == nil:
 			os.Exit(seqExitAcquired)
 		}
