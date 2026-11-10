@@ -299,6 +299,10 @@ defaulting to `~/.claude/session-bridge`, so a test injects a temp dir instead o
 
 On Unix a `flock` belongs to the open file description, and a fork in flight in the same process carries a copy of the descriptor until its exec. So a lock released in this process can still look busy for a few milliseconds. A test that asks "is it free?" right after a release in the same process asks "does it become free?" (`internal/fslock/locktest.Take`, with its numeric bound). A fixture that releases a lock and hands it to code that does not wait uses `locktest.Settle`. A test that asserts the lock is HELD uses neither: the window only makes a free lock look held.
 
+### File identity on Windows (F-160)
+
+On Windows `os.Stat` and `os.Lstat` record the path and load the file identity lazily, at the first `os.SameFile`, by opening the path again at that moment (Go 1.27.1). Two `os.Stat` of the same path therefore always compare as the same file, even when the file was replaced between them. To compare identities taken at two moments, take one from an open handle (`File.Stat` loads it at once) or, in tests, force the load with `internal/fslock/locktest.Identity`. With two `os.Stat`, an assertion that two files differ fails on Windows even when they do, and an assertion that they are the same passes without testing anything: in F-160 the CI caught one of the first kind, and three of the second were found next to it.
+
 ### A retry loop that decides on a sentinel (F-160)
 
 When a retry loop decides with `errors.Is(err, sentinel)`, a failure that must be final is not joined to the sentinel with `errors.Join`: it would be retried, and a later success would discard it. The final failure goes in the chain (`%w`), the cause in the text (`%v`).
