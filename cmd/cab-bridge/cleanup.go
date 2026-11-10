@@ -158,6 +158,18 @@ func runCleanup(args []string) error {
 			"cab-bridge: %d stale session(s) in other scopes were NOT touched — pass --all-scopes if you want them\n",
 			res.SkippedOtherScopes)
 	}
+	if res.SkippedBusy > 0 {
+		fmt.Fprintf(os.Stderr,
+			"cab-bridge: %d stale session(s) were busy (lock held or a reply in flight) and were left alone — the next cleanup finds them again\n",
+			res.SkippedBusy)
+	}
+	// One line per session that could not be removed. The exit code stays 0 and
+	// the JSON carries the same list: a script that parses stdout keeps working,
+	// and a person reading the terminal no longer sees a clean-looking sweep that
+	// failed.
+	for _, f := range res.SessionsFailed {
+		fmt.Fprintf(os.Stderr, "cab-bridge: could not remove session %s: %s\n", f.ID, f.Error)
+	}
 
 	out, err := json.MarshalIndent(res, "", "  ")
 	if err != nil {

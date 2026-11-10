@@ -156,8 +156,10 @@ func runAutoGC(cfg config.Config, scope string, logw io.Writer) []cleanup.Orphan
 	}
 	removed, err := cleanup.GCOrphans(cfg.DataDir, scope, cfg.AutoGCHours, nil)
 	if err != nil {
-		fmt.Fprintf(logw, "cab-bridge: auto-gc failed (non-fatal): %v\n", err)
-		return nil
+		// GCOrphans returns what it removed TOGETHER with the failures, so the
+		// list below is still printed: dropping it would hide that some orphans
+		// were swept while others were not.
+		fmt.Fprintf(logw, "cab-bridge: auto-gc finished with errors (non-fatal): %v\n", err)
 	}
 	for _, o := range removed {
 		// The scope is in the line because an id alone never said whose session

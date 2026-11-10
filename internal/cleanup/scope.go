@@ -96,8 +96,18 @@ type Result struct {
 	RemovedByScope map[string]int `json:"removedByScope,omitempty"`
 	// SkippedOtherScopes: stale sessions left alone because they are another
 	// team's. Zero unless scope=global without --all-scopes.
-	SkippedOtherScopes int      `json:"skippedOtherScopes,omitempty"`
-	ArchivesPurged     []string `json:"archivesPurged"`
+	SkippedOtherScopes int `json:"skippedOtherScopes,omitempty"`
+	// SkippedBusy: stale sessions left alone because their lock is held or a reply
+	// transaction is in flight (ErrSessionBusy). Not a failure: a session in the
+	// middle of an operation is by definition not abandoned, and the next pass
+	// finds it again. Additive, omitempty.
+	SkippedBusy int `json:"skippedBusy,omitempty"`
+	// SessionsFailed: sessions cleanup meant to remove and could not, with the
+	// reason. Before F-160 every per-session error was swallowed as "best-effort"
+	// and a lock error of ANY kind was reported as "busy", so a sweep that
+	// failed looked exactly like one that had nothing to do. Additive, omitempty.
+	SessionsFailed []SessionFailure `json:"sessionsFailed,omitempty"`
+	ArchivesPurged []string         `json:"archivesPurged"`
 	// PurgedSessionCount is how many archived SESSIONS went with those dates. A
 	// date says when something was archived and nothing about how much of whose
 	// work was inside it — and the retention sweep spans every project in the
@@ -106,6 +116,32 @@ type Result struct {
 	//
 	// Additive, omitempty: archivesPurged keeps its shape.
 	PurgedSessionCount int `json:"purgedSessionCount,omitempty"`
+}
+
+// SessionFailure names a session cleanup could not remove, and why.
+type SessionFailure struct {
+	ID    string `json:"id"`
+	Error string `json:"error"`
+}
+
+// sweepOutcome is what globalSweep found, kept in one value so adding a counter
+// does not add a return value to every caller.
+type sweepOutcome struct {
+	removed            []string
+	byScope            map[string]int
+	skippedOtherScopes int
+	skippedBusy        int
+	failed             []SessionFailure
+}
+
+// record files the error of one session's removal: busy is a skip, anything
+// else is a failure the caller must be told about.
+func (o *sweepOutcome) record(id string, err error) {
+	if errors.Is(err, ErrSessionBusy) {
+		o.skippedBusy++
+		return
+	}
+	o.failed = append(o.failed, SessionFailure{ID: id, Error: err.Error()})
 }
 
 // scopeOfSession reads a session's scope BEFORE it is removed. "(no scope)" for
@@ -145,13 +181,15 @@ func Run(_ context.Context, opts Options) (*Result, error) {
 		res.RemovedByScope[sc]++
 
 	case ScopeGlobal:
-		removed, byScope, skipped, err := globalSweep(opts)
+		sw, err := globalSweep(opts)
 		if err != nil {
 			return nil, err
 		}
-		res.SessionsRemoved = removed
-		res.RemovedByScope = byScope
-		res.SkippedOtherScopes = skipped
+		res.SessionsRemoved = sw.removed
+		res.RemovedByScope = sw.byScope
+		res.SkippedOtherScopes = sw.skippedOtherScopes
+		res.SkippedBusy = sw.skippedBusy
+		res.SessionsFailed = sw.failed
 
 	default:
 		return nil, fmt.Errorf("%w: %q (allowed: my-session, global)", ErrUnknownScope, opts.Scope)
@@ -168,27 +206,27 @@ func Run(_ context.Context, opts Options) (*Result, error) {
 }
 
 // globalSweep scans every session under DataDir, archives + removes those that
-// are stale per session.IsStale. Returns the IDs removed. BUG-8: StaleSeconds is
+// are stale per session.IsStale. Returns what was removed, what was skipped
+// (other scope, busy) and what failed, with the reason. BUG-8: StaleSeconds is
 // the single source of truth shared with list-peers. F-23a: staleness goes
 // through session.IsStale (same as peers/status), so a session in state
 // "orchestrating" is heartbeat-exempt and is NOT swept here — the displayed
 // "not stale" and the swept set can never diverge.
-func globalSweep(opts Options) ([]string, map[string]int, int, error) {
+func globalSweep(opts Options) (sweepOutcome, error) {
 	sessionsRoot := filepath.Join(opts.DataDir, "sessions")
-	byScope := map[string]int{}
-	skipped := 0
+	// BUG-B: removed is empty, not nil, for JSON [].
+	out := sweepOutcome{removed: []string{}, byScope: map[string]int{}}
 	entries, err := os.ReadDir(sessionsRoot)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return []string{}, byScope, 0, nil // BUG-B: empty, not nil, for JSON []
+			return out, nil
 		}
-		return nil, nil, 0, fmt.Errorf("cleanup global: read sessions root: %w", err)
+		return sweepOutcome{}, fmt.Errorf("cleanup global: read sessions root: %w", err)
 	}
 
 	now := opts.Now()
 	mgr := session.NewManager(opts.DataDir, time.Second) // interval irrelevant — we only LoadManifest
 
-	removed := []string{} // BUG-B: empty, not nil, for JSON []
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
@@ -208,7 +246,7 @@ func globalSweep(opts Options) ([]string, map[string]int, int, error) {
 		// copies of one rule drift, and this codebase has already watched three
 		// hand-kept copies of the role list disagree with each other.
 		if !opts.AllScopes && !gcOwns(opts.CallerScope, mf.Scope) {
-			skipped++
+			out.skippedOtherScopes++
 			continue
 		}
 		sc := mf.Scope
@@ -216,12 +254,13 @@ func globalSweep(opts Options) ([]string, map[string]int, int, error) {
 			sc = "(no scope)"
 		}
 		if err := archiveAndRemoveSession(opts.DataDir, e.Name(), opts.Now); err != nil {
-			continue // best-effort
+			out.record(e.Name(), err)
+			continue
 		}
-		removed = append(removed, e.Name())
-		byScope[sc]++
+		out.removed = append(out.removed, e.Name())
+		out.byScope[sc]++
 	}
-	return removed, byScope, skipped, nil
+	return out, nil
 }
 
 // messageSubdirs are the per-session subdirectories that hold message files
@@ -260,7 +299,14 @@ func archiveAndRemoveSession(dataDir, sid string, now func() time.Time) error {
 
 	release, lerr := session.AcquireLock(filepath.Join(sessionDir, "lock"), false)
 	if lerr != nil {
-		return fmt.Errorf("%w: session %q is busy: %v", ErrSessionBusy, sid, lerr)
+		// Only contention is "busy". Any other error (permissions, a missing
+		// parent, a file where the lock should be) is a failure the caller must
+		// hear about: before F-160 all of them were reported as busy and then
+		// swallowed, so a sweep that could not touch anything looked idle.
+		if errors.Is(lerr, session.ErrLockHeld) {
+			return fmt.Errorf("%w: session %q is busy: %v", ErrSessionBusy, sid, lerr)
+		}
+		return fmt.Errorf("cleanup: session %q: acquire lock: %w", sid, lerr)
 	}
 	defer func() { _ = release() }()
 

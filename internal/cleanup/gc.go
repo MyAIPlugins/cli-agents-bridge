@@ -72,10 +72,14 @@ type Orphan struct {
 // echo of the caller's AutoGCHours>0 gate so GCOrphans cannot wipe everything
 // if invoked with a zero threshold by mistake.
 //
-// Best-effort per session: a corrupt manifest or a failed archive/remove skips
-// that session rather than aborting the whole sweep, mirroring globalSweep.
-// The returned slice is always non-nil (empty, not nil) for clean JSON/length
-// consumers, consistent with cleanup.Run (BUG-B).
+// Best-effort per session: a corrupt manifest skips that session, and a failed
+// archive/remove skips it WITHOUT aborting the sweep, mirroring globalSweep. A
+// failed remove is not silent any more (F-160): the sessions that were removed
+// are returned together with errors.Join of the ones that were not, so the
+// caller sees both. A busy session (lock held, reply in flight) is skipped
+// without an error: the next pass finds it again. The returned slice is always
+// non-nil (empty, not nil) for clean JSON/length consumers, consistent with
+// cleanup.Run (BUG-B).
 func GCOrphans(dataDir, scope string, gcHours int, now func() time.Time) ([]Orphan, error) {
 	if now == nil {
 		now = func() time.Time { return time.Now().UTC() }
@@ -96,6 +100,7 @@ func GCOrphans(dataDir, scope string, gcHours int, now func() time.Time) ([]Orph
 
 	cutoff := now().Add(-time.Duration(gcHours) * time.Hour)
 	mgr := session.NewManager(dataDir, time.Second) // interval irrelevant — LoadManifest only
+	var failures []error
 
 	for _, e := range entries {
 		if !e.IsDir() {
@@ -130,11 +135,16 @@ func GCOrphans(dataDir, scope string, gcHours int, now func() time.Time) ([]Orph
 		}
 		idle := now().Sub(mf.LastHeartbeat)
 		if err := archiveAndRemoveSession(dataDir, e.Name(), now); err != nil {
-			continue // best-effort: a single failure must not block the rest
+			// A single failure must not block the rest, but it must not vanish
+			// either. Busy is not a failure: the next pass finds the session again.
+			if !errors.Is(err, ErrSessionBusy) {
+				failures = append(failures, fmt.Errorf("gc orphans: session %s: %w", e.Name(), err))
+			}
+			continue
 		}
 		removed = append(removed, Orphan{SessionID: e.Name(), PID: mf.PID, IdleAge: idle})
 	}
-	return removed, nil
+	return removed, errors.Join(failures...)
 }
 
 // gcOwns reports whether a caller in callerScope may collect a session whose
