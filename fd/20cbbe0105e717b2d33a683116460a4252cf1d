@@ -1,0 +1,30 @@
+internal/session/lock_file_test.go
+  s_d5e186cda02d82::t_e3543decd15839 149
+  s_d5e186cda02d82::t_245c44ddf5c0fc 162,164-167
+tests/integration/lock_wait_test.go
+  s_d5e186cda02d82::t_f65f812b1434d9 257
+  s_d5e186cda02d82::t_ea0610aa8f2529 20
+  s_d5e186cda02d82::t_2360f244b97627 104-113
+internal/session/lock_heldread_windows_test.go
+  s_d5e186cda02d82::t_b8668c8cc4ff35 1-26
+internal/session/lock_test.go
+  s_d5e186cda02d82::t_cea46860f9926a 99-103,105
+internal/session/lock_heldread_unix_test.go
+  s_d5e186cda02d82::t_a5bd14302de61a 1-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fd20cbbe0105e717b2d33a683116460a4252cf1d",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
