@@ -30,7 +30,7 @@ func TestAcquireLock_Reentrant_SamePID(t *testing.T) {
 	assert.False(t, probeLock(t, lockPath), "after the INNER release another process still finds the lock busy")
 
 	require.NoError(t, outer())
-	assert.True(t, probeLock(t, lockPath), "after the outer release it is free")
+	assert.True(t, probeBecomesFree(t, lockPath), "after the outer release it becomes free")
 }
 
 func TestAcquireLock_ReleasingTwiceDoesNotLowerTheCount(t *testing.T) {
@@ -48,7 +48,7 @@ func TestAcquireLock_ReleasingTwiceDoesNotLowerTheCount(t *testing.T) {
 	assert.False(t, probeLock(t, lockPath), "a release repeated three times is still ONE release: the outer hold stands")
 
 	require.NoError(t, outer())
-	assert.True(t, probeLock(t, lockPath))
+	assert.True(t, probeBecomesFree(t, lockPath))
 }
 
 // Re-entrancy is per process, not per goroutine, and that is the declared
@@ -109,7 +109,7 @@ func TestAcquireLock_ReleasesInAnyOrderBetweenTwoGoroutines(t *testing.T) {
 		require.NoError(t, releases[order[0]]())
 		assert.False(t, probeLock(t, lockPath), "one hold is still standing (releasing goroutine %d first)", order[0])
 		require.NoError(t, releases[order[1]]())
-		assert.True(t, probeLock(t, lockPath), "the last release frees the lock (goroutine %d last)", order[1])
+		assert.True(t, probeBecomesFree(t, lockPath), "the last release frees the lock (goroutine %d last)", order[1])
 	}
 }
 
@@ -149,7 +149,7 @@ func TestWithSessionLock_NestedCommitWakeCursorWorks(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.True(t, probeLock(t, mgr.lockBase(sid)), "and it is free once the outer section is over")
+	assert.True(t, probeBecomesFree(t, mgr.lockBase(sid)), "and it becomes free once the outer section is over")
 	cursor, _, err := mgr.ReadWakeCursor(sid)
 	require.NoError(t, err)
 	assert.True(t, cursor.IsNotified("msg-aaaaaaaaaaaa"))

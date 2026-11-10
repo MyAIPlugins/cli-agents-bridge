@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/myAIPlugins/cli-agents-bridge/internal/fslock"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
@@ -96,7 +95,7 @@ func TestArchiveAndRemoveSession_ByTheReleaseTheSessionIsGoneAndOnlyTheLockFileI
 		_, lerr := mgr.AcquireSessionLock("aaaaaaab", 0)
 		assert.ErrorIs(t, lerr, session.ErrSessionGone, "a late arrival is refused: the session is gone, not busy")
 
-		again, terr := fslock.TryLock(sessionPath(dataDir, "aaaaaaab", session.LockFileName))
+		again, terr := tryLockWhenFree(sessionPath(dataDir, "aaaaaaab", session.LockFileName))
 		require.NoError(t, terr, "and the lock itself was released")
 		require.NoError(t, again())
 	}
@@ -271,6 +270,7 @@ func TestRun_ARetiredSessionRefusesANewWatcherOfTheSameName(t *testing.T) {
 	mgr := session.NewManager(dataDir, 0)
 	releaseOld, err := mgr.AcquireWatcherLock("aaaaaaag", "w")
 	require.NoError(t, err)
+	waitSessionLockFree(t, dataDir, "aaaaaaag") // the session lock AcquireWatcherLock took is released; the retirement does not wait
 
 	require.NoError(t, archiveAndRemoveSession(dataDir, "aaaaaaag", func() time.Time { return failuresBase }, nil))
 

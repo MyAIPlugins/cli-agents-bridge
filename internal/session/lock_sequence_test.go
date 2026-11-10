@@ -54,11 +54,10 @@ func TestAcquire_TheOrderIsPrecheckOpenLockValidate(t *testing.T) {
 		afterOpen: func() {
 			order = append(order, "open")
 			assert.FileExists(t, lockPath, "the file exists once opened")
-			// A second descriptor can still lock it: the lock has not been taken.
-			second, serr := fslock.TryLock(lockPath)
-			if assert.NoError(t, serr, "between open and lock the lock is still free") {
-				assert.NoError(t, second())
-			}
+			// A second descriptor can still lock it: the lock has not been taken. The
+			// probe is a take-and-release right before acquire's own Lock, which does
+			// not wait, so it must leave no window of its own: settleLock.
+			assert.NoError(t, settleLock(lockPath), "between open and lock the lock is still free")
 		},
 		validate: func() error {
 			order = append(order, "validate")
@@ -128,8 +127,8 @@ func TestAcquire_EveryFailureReleasesWhatItTook(t *testing.T) {
 
 func assertLockIsFree(t *testing.T, lockPath string) {
 	t.Helper()
-	release, err := fslock.TryLock(lockPath)
-	require.NoError(t, err, "the lock must be free: the failed acquisition gave its descriptor back")
+	release, err := tryLockWhenFree(lockPath)
+	require.NoError(t, err, "the lock must become free: the failed acquisition gave its descriptor back")
 	require.NoError(t, release())
 }
 

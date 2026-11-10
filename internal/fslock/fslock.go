@@ -9,6 +9,15 @@
 // between O_EXCL and the PID write). The file holds nothing and nobody reads it:
 // it is only something to lock.
 //
+// "Gone" means the last descriptor of the open file is closed, and on Unix that is
+// not always the holder's own. A fork in flight in the same process (another
+// goroutine starting a child) carries a copy of every descriptor until its exec,
+// so for that long, milliseconds, a release or a death does not free the lock yet.
+// The product never needs it freed at that very instant: an acquirer that waits
+// polls, and one that does not wait skips and tries again. A test that asks
+// "is it free right after the release?" must ask "does it become free?" instead
+// (internal/fslock/locktest).
+//
 // The lock belongs to the OPEN FILE DESCRIPTION, not to the process: a second
 // open of the same file in the same process contends too. That is what stops one
 // process from taking the same lock twice by accident, and it is why a caller that

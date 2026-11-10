@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/fslock"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/fslock/locktest"
 )
 
 const (
@@ -67,6 +68,37 @@ func probeLock(t *testing.T, path string) (free bool) {
 		require.FailNow(t, "the probe process failed", "%v: %s", err, out)
 		return false
 	}
+}
+
+// probeBecomesFree is probeLock for a lock that was JUST released in this process:
+// a fork in flight in the same process (a parallel test starting a child) holds a
+// copy of the descriptor until its exec, so for milliseconds another process still
+// finds the lock busy. The question a test means is "does it become free?", and it
+// is asked here with a numeric bound (internal/fslock/locktest). A test that asserts
+// BUSY keeps using probeLock.
+func probeBecomesFree(t *testing.T, path string) bool {
+	t.Helper()
+	return locktest.BecomesFree(func() bool { return probeLock(t, path) })
+}
+
+// tryLockWhenFree is fslock.TryLock for a lock that was JUST released in this
+// process, with the same bounded wait as probeBecomesFree. Only ErrBusy is waited
+// for; any other error comes back at once.
+func tryLockWhenFree(path string) (func() error, error) {
+	return locktest.Take(
+		func(err error) bool { return errors.Is(err, fslock.ErrBusy) },
+		func() (func() error, error) { return fslock.TryLock(path) },
+	)
+}
+
+// settleLock returns once the lock at path is free, for a fixture that has just let
+// go of it and hands it to code that does not wait. The probe leaves no window of
+// its own (locktest.Settle).
+func settleLock(path string) error {
+	return locktest.Settle(
+		func(err error) bool { return errors.Is(err, fslock.ErrBusy) },
+		func() (func() error, error) { return fslock.TryLock(path) },
+	)
 }
 
 // heldInThisProcess reports whether this process's registry holds the lock at

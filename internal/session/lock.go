@@ -19,8 +19,10 @@ import (
 // PID file needs a judgement about the holder ("is that process still alive?"),
 // and the recovery of a dead holder is "remove the file and create it again",
 // a step two processes can both perform. F-160 reproduced three ways in which two
-// processes held the lock together. A kernel lock has no such step: it is gone the
-// instant its holder dies, and a contender never removes or replaces the file.
+// processes held the lock together. A kernel lock has no such step: it is gone when
+// its holder dies (a fork in flight in the same process keeps it for the
+// milliseconds until its exec, see internal/fslock), and a contender never removes
+// or replaces the file.
 
 // DefaultLockWait is how long a waiting caller keeps trying before giving up. It is
 // a default: config session_lock_wait_ms (env CAB_SESSION_LOCK_WAIT_MS) sets it, and

@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/myAIPlugins/cli-agents-bridge/internal/fslock"
 )
 
 // CONTROL for the retirement order, not a property of the product. A kernel lock is a
@@ -32,6 +30,7 @@ func TestLock_RemovingTheFileOfAHeldLockLetsASecondHolderIn(t *testing.T) {
 
 	require.NoError(t, err, "with the file unlinked a second process locks a NEW inode at the same name: two holders")
 	require.NoError(t, release())
-	_, terr := fslock.TryLock(path)
+	again, terr := tryLockWhenFree(path)
 	require.NoError(t, terr, "and the first holder's lock never was on this file")
+	require.NoError(t, again())
 }

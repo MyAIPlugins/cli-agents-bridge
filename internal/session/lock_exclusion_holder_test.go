@@ -82,6 +82,12 @@ func exclSession(t *testing.T) (dataDir, sid string) {
 	})
 	require.NoError(t, err)
 	require.NoError(t, release())
+	// Register's release is a close like any other: a fork in flight in this process
+	// holds a copy of the descriptor until its exec. The session is handed over only
+	// once the lock is really free, so that a test (or a child) that takes it
+	// without waiting does not meet that window.
+	require.NoError(t, settleLock(mgr.lockBase(mf.SessionID)),
+		"the lock of the new session must become free after Register released it")
 	return dataDir, mf.SessionID
 }
 

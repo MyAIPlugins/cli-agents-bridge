@@ -2,6 +2,7 @@ package session
 
 import (
 	"crypto/sha256"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/fslock"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/fslock/locktest"
 )
 
 // holdElsewhere takes the kernel lock on path from a different open file, which
@@ -68,8 +70,11 @@ func TestAcquireLock_Release_LeavesTheFile(t *testing.T) {
 	require.NoError(t, statErr, "release gives the lock back and leaves the file: only cleanup removes it, after retiring the session")
 	assert.Zero(t, info.Size())
 
-	again, err := AcquireLock(lockPath, 0, nil)
-	require.NoError(t, err, "and the lock is free")
+	again, err := locktest.Take(
+		func(err error) bool { return errors.Is(err, ErrLockHeld) },
+		func() (func() error, error) { return AcquireLock(lockPath, 0, nil) },
+	)
+	require.NoError(t, err, "and the lock becomes free")
 	require.NoError(t, again())
 }
 
