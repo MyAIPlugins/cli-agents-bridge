@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -98,6 +99,16 @@ func jsonFiles(t *testing.T, dir string) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// inQuotedPath is how a piece of a path reads inside the %q of an error message
+// (lockPath=%q): strconv.Quote without the surrounding quotes. On Unix it is the
+// piece itself; on Windows every backslash is doubled, so a test that looks for the
+// piece as filepath.Join spells it never finds it. The message is the fact; the
+// test looks for the form the message prints.
+func inQuotedPath(piece string) string {
+	quoted := strconv.Quote(piece)
+	return quoted[1 : len(quoted)-1]
 }
 
 func lwReadJSON(t *testing.T, path string, into any) {
@@ -243,7 +254,7 @@ func TestLockWait_TellAndAskWaitForAShortHold(t *testing.T) {
 
 				assert.Equal(t, 1, exit, "stderr: %s", errOut)
 				t.Logf("stderr of %s with the lock held past the wait: %s", verb, strings.TrimSpace(errOut))
-				assert.Contains(t, errOut, filepath.Join("sessions", q.escID, session.LockFileName), "it names the lock file")
+				assert.Contains(t, errOut, inQuotedPath(filepath.Join("sessions", q.escID, session.LockFileName)), "it names the lock file, spelled as the message spells a quoted path")
 				assert.Contains(t, errOut, "still held after waiting 200ms", "and how long it waited")
 				assert.NotContains(t, errOut, "--", "and it names no flag to try")
 				assert.Empty(t, jsonFiles(t, q.sessionPath(q.escID, "inbox")), "nothing was delivered")

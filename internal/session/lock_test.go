@@ -96,9 +96,13 @@ func TestAcquireLock_APreexistingLockFileWithContentIsLockedAndNeverModified(t *
 			release, err := AcquireLock(lockPath, 0, nil)
 			require.NoError(t, err, "the content of the file is not a verdict on the lock")
 
-			heldBytes, err := os.ReadFile(lockPath)
+			heldBytes, readable := readHeldLockFile(t, lockPath)
+			if readable { // Unix. On Windows the bytes cannot be read while the lock is held: the length below and the read after the release stand in
+				assert.Equal(t, want, sha256.Sum256(heldBytes), "taking the lock must not write to the file")
+			}
+			heldInfo, err := os.Stat(lockPath)
 			require.NoError(t, err)
-			assert.Equal(t, want, sha256.Sum256(heldBytes), "taking the lock must not write to the file")
+			assert.EqualValues(t, len(content), heldInfo.Size(), "taking the lock must not change the length of the file")
 
 			require.NoError(t, release())
 			afterBytes, err := os.ReadFile(lockPath)

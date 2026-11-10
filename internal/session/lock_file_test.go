@@ -146,8 +146,7 @@ func TestLock_AContenderNeverRemovesOrReplacesTheFile(t *testing.T) {
 	holdElsewhere(t, lockPath)
 	before, err := os.Stat(lockPath)
 	require.NoError(t, err)
-	beforeBytes, err := os.ReadFile(lockPath)
-	require.NoError(t, err)
+	beforeBytes, readable := readHeldLockFile(t, lockPath)
 
 	attempts := 10000
 	if testing.Short() {
@@ -160,10 +159,12 @@ func TestLock_AContenderNeverRemovesOrReplacesTheFile(t *testing.T) {
 
 	after, err := os.Stat(lockPath)
 	require.NoError(t, err)
-	afterBytes, err := os.ReadFile(lockPath)
-	require.NoError(t, err)
+	afterBytes, _ := readHeldLockFile(t, lockPath)
 	assert.True(t, os.SameFile(before, after), "the file is the same inode after %d contenders", attempts)
-	assert.Equal(t, sha256.Sum256(beforeBytes), sha256.Sum256(afterBytes))
+	assert.Equal(t, before.Size(), after.Size(), "and it is as long as before")
+	if readable { // Unix. Windows cannot read the bytes while the lock is held: the size above is what it can compare
+		assert.Equal(t, sha256.Sum256(beforeBytes), sha256.Sum256(afterBytes))
+	}
 	_, err = fslock.TryLock(lockPath)
 	assert.ErrorIs(t, err, fslock.ErrBusy, "and the holder is still holding")
 }
