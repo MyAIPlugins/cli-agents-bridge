@@ -1,0 +1,42 @@
+tests/integration/manifest_writers_test.go
+  s_d5e186cda02d82::t_61da1147d332b9 1-55,62,64,73,75-104,106-182
+  s_d5e186cda02d82::t_7b07f8a6c75e06 56-61,63,65-72,74
+  s_d5e186cda02d82::t_881322eebc6c01 105
+internal/session/manager.go
+  s_d5e186cda02d82::t_92b69d801fd01b 847-848
+  s_d5e186cda02d82::t_e6b46ea8229f04 792-796
+  s_d5e186cda02d82::t_672dafaf9ae40f 45,47,49-54
+  s_d5e186cda02d82::t_ea897dd74a7f2d 845-846,850-854
+  s_d5e186cda02d82::t_e0c13dd122832d 645-647
+  s_d5e186cda02d82::t_608806c29e9328 747,749,756
+  s_d5e186cda02d82::t_781d44f40a65a9 622-644,648,655-657,661-679,682-683,685-688,692-693,697-701,710-713,715
+  s_d5e186cda02d82::t_9672f436d78058 774,776,780
+internal/cleanup/manifest_resurrection_test.go
+  s_d5e186cda02d82::t_9d8e0c2071ab11 146-148
+  s_d5e186cda02d82::t_7b962d940f9cfc 206
+  s_d5e186cda02d82::t_033456a1bc4115 1-145,149-205,207-244
+internal/session/reconnect.go
+  s_d5e186cda02d82::t_55248827edc02d 308-309,311-320,324
+internal/session/manifest_writers_test.go
+  s_d5e186cda02d82::t_cc04389a3afa4d 1-21,42,47,54-107
+  s_d5e186cda02d82::t_fff3723d985475 43
+  s_d5e186cda02d82::t_12eb38456ed932 22-41,44-46,48-53
+internal/session/lock_retired_test.go
+  s_d5e186cda02d82::t_bcdf7e52d4e567 49-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c658e4731bea70c0fd8111614e637fe2d1f3990c",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
