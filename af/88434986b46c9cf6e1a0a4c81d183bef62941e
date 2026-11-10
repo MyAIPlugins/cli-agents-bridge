@@ -1,0 +1,183 @@
+internal/config/config_test.go
+  s_d5e186cda02d82::t_7fb89d86bdde9a 21-25,27-31,54-58
+cmd/cab-bridge/desktop_test.go
+  s_d5e186cda02d82::t_9fab8737cc5980 56
+  s_d5e186cda02d82::t_2bfd00280b2054 27
+cmd/cab-bridge/overview_test.go
+  s_d5e186cda02d82::t_fde7bd1cc3ef57 339,359
+cmd/cab-bridge/layout_sc7_test.go
+  s_d5e186cda02d82::t_a27b687c92137d 1-127
+cmd/cab-bridge/common.go
+  s_d5e186cda02d82::t_0d4ea458e9f13e 297
+  s_d5e186cda02d82::t_5404dbb1e1b586 401
+  s_d5e186cda02d82::t_d1b2d1b62dd711 412
+  s_d5e186cda02d82::t_fd9f303eb7eb71 283-287
+  s_d5e186cda02d82::t_c8a7ed6891fa21 60,126-138,149-151
+  s_d5e186cda02d82::t_e9154a5d604d8c 86
+  s_d5e186cda02d82::t_37759538ed6821 64-68
+  s_d5e186cda02d82::t_e06ed71e895a90 24-41,53-54,58-59
+tests/integration/scenario1_test.go
+  s_d5e186cda02d82::t_03a62a2a2ecacc 11-12,66
+cmd/cab-bridge/sent_test.go
+  s_d5e186cda02d82::t_fde7bd1cc3ef57 148
+  s_d5e186cda02d82::t_8e6f9b64503811 26,65,113,149
+cmd/cab-bridge/legacy_tree.go
+  s_d5e186cda02d82::t_5a6daa983f16cb 1-86
+cmd/cab-bridge/verbs.go
+  s_d5e186cda02d82::t_6e9b49d0523fb7 201-202,209-210,212-213,505,657
+cmd/cab-bridge/join_gc_architect_test.go
+  s_d5e186cda02d82::t_9fab8737cc5980 18,39
+  s_d5e186cda02d82::t_10d1e127309f4e 32
+cmd/cab-bridge/next_test.go
+  s_d5e186cda02d82::t_9fab8737cc5980 25-26,90
+  s_d5e186cda02d82::t_8e6f9b64503811 27
+cmd/cab-bridge/whoami.go
+  s_d5e186cda02d82::t_2884fe5c636263 37-42,44,65,84,122
+cmd/cab-bridge/join_test.go
+  s_d5e186cda02d82::t_10d1e127309f4e 71,95,137,166,203,354,411,516,547,652,717,786,847,921,1001,1059
+  s_d5e186cda02d82::t_316bf3b0ba459a 961
+  s_d5e186cda02d82::t_8e6f9b64503811 30,239,267,304,1128
+  s_d5e186cda02d82::t_35d46615706ddf 192,1117
+cmd/cab-bridge/scope_guardrail_test.go
+  s_d5e186cda02d82::t_8e6f9b64503811 174
+  s_d5e186cda02d82::t_a9a96290a2f187 88,105,131,151,172,177-178,182,184,191,193,199-200,206,208,214,216,222,224
+cmd/cab-bridge/send_test.go
+  s_d5e186cda02d82::t_8e6f9b64503811 20
+cmd/cab-bridge/mcp_realbin_test.go
+  s_d5e186cda02d82::t_160a63acafd315 20-21,54,58-61,309
+tests/integration/scenario_team_test.go
+  s_d5e186cda02d82::t_54d56b9d8fd176 4
+  s_d5e186cda02d82::t_a001d5bf5c7bf1 9-10,72-75
+cmd/cab-bridge/layout_owner_unix_test.go
+  s_d5e186cda02d82::t_e1b4df8b0985d5 1-21
+internal/config/layout_test.go
+  s_d5e186cda02d82::t_204fcbed6cc7d7 1-98
+internal/config/config.go
+  s_d5e186cda02d82::t_b13c0b96120bc5 261-262,264,266-267,270-273
+  s_d5e186cda02d82::t_2cef09d0af86ac 220-222,229,233
+  s_d5e186cda02d82::t_89c5c6c1e89075 244,246
+  s_d5e186cda02d82::t_5a6b1f99a4f381 294-295
+  s_d5e186cda02d82::t_1ebe9c584a6c6e 363
+  s_d5e186cda02d82::t_0224dfac4628db 38-41,44-51
+  s_d5e186cda02d82::t_82f50ffa42445a 184-186,189,191-192
+  s_d5e186cda02d82::t_cce45ea97c16e6 274
+cmd/cab-bridge/mcp_harness_test.go
+  s_d5e186cda02d82::t_2884fe5c636263 11
+  s_d5e186cda02d82::t_9fab8737cc5980 82
+  s_d5e186cda02d82::t_dfaf5ad4214e07 64-69,80-81,83,87
+tests/integration/scenario5_test.go
+  s_d5e186cda02d82::t_a001d5bf5c7bf1 112-113
+  s_d5e186cda02d82::t_03a62a2a2ecacc 12-13,73,85,99,107
+tests/smoke-test.md
+  s_d5e186cda02d82::t_afca0fe2c49eaf 35
+tests/smoke/reply-phase1b.sh
+  s_d5e186cda02d82::t_afca0fe2c49eaf 26-27,63,69-70,83,90,93,106,111,113
+cmd/cab-bridge/mcp_child.go
+  s_d5e186cda02d82::t_620bd2313bb0c6 87-91
+tests/smoke/next-phase1a.sh
+  s_d5e186cda02d82::t_afca0fe2c49eaf 28-29,73,92-93,96
+cmd/cab-bridge/notify_watch_test.go
+  s_d5e186cda02d82::t_fde7bd1cc3ef57 380,388,397,423,440
+cmd/cab-bridge/verbs_test.go
+  s_d5e186cda02d82::t_8e6f9b64503811 920
+  s_d5e186cda02d82::t_9fab8737cc5980 30-35
+cmd/cab-bridge/recipient_test.go
+  s_d5e186cda02d82::t_485f018071c862 382,420
+  s_d5e186cda02d82::t_8e6f9b64503811 103,143,341,459,479,500,581,601
+  s_d5e186cda02d82::t_9fab8737cc5980 383,421,647
+cmd/cab-bridge/recipient_windows_test.go
+  s_d5e186cda02d82::t_8e6f9b64503811 67
+cmd/cab-bridge/peers_test.go
+  s_d5e186cda02d82::t_8e6f9b64503811 137,197
+tests/integration/scenario_connect_test.go
+  s_d5e186cda02d82::t_03a62a2a2ecacc 10-11,48
+cmd/cab-bridge/reply_gate_test.go
+  s_d5e186cda02d82::t_9fab8737cc5980 141,185,212
+cmd/cab-bridge/inbox_test.go
+  s_d5e186cda02d82::t_fde7bd1cc3ef57 82,102,114,229
+  s_d5e186cda02d82::t_8e6f9b64503811 132,183,214,231
+tests/integration/scenario4_test.go
+  s_d5e186cda02d82::t_03a62a2a2ecacc 10-11,44,58,62,67
+cmd/cab-bridge/shellarg_wiring_test.go
+  s_d5e186cda02d82::t_2bfd00280b2054 218-222
+  s_d5e186cda02d82::t_0cca96eb0e880b 168,245,261,276,297,307
+tests/integration/scenario_migrate_integrity_test.go
+  s_d5e186cda02d82::t_03a62a2a2ecacc 11-12,49,51,88
+internal/config/layout.go
+  s_d5e186cda02d82::t_b4564964eeb1ce 1-25
+cmd/cab-bridge/mcp_send.go
+  s_d5e186cda02d82::t_620bd2313bb0c6 107
+tests/integration/helpers_test.go
+  s_d5e186cda02d82::t_03a62a2a2ecacc 25-26,152
+cmd/cab-bridge/layout_test.go
+  s_d5e186cda02d82::t_ff3e369d23659e 209
+  s_d5e186cda02d82::t_4959af7b956dce 1-139,147-208,210-229
+  s_d5e186cda02d82::t_7fe0b25bd9efb5 140-146
+cmd/cab-bridge/layout_structure_test.go
+  s_d5e186cda02d82::t_78b0d0e566b4af 1-181,185-192,198-221,223
+  s_d5e186cda02d82::t_b13459620f3282 182-184,222
+  s_d5e186cda02d82::t_b24240eb2c5708 193-197
+cmd/cab-bridge/desktop_clock_test.go
+  s_d5e186cda02d82::t_9fab8737cc5980 17
+cmd/cab-bridge/mcp_send_test.go
+  s_d5e186cda02d82::t_dfaf5ad4214e07 45,83-87
+cmd/cab-bridge/layout_owner_windows_test.go
+  s_d5e186cda02d82::t_e1b4df8b0985d5 1-15
+cmd/cab-bridge/layout_helpers_test.go
+  s_d5e186cda02d82::t_10d1e127309f4e 1-21
+  s_d5e186cda02d82::t_8e6f9b64503811 22-35
+cmd/cab-bridge/mcp_poll_test.go
+  s_d5e186cda02d82::t_9fab8737cc5980 16,24
+cmd/cab-bridge/legacy_tree_test.go
+  s_d5e186cda02d82::t_0251dc5d8b7de1 164-166,168,172,176-178,181,189
+  s_d5e186cda02d82::t_f248e351ec504e 1-152,157-163,167,169,186-187,194
+  s_d5e186cda02d82::t_1088c8900d6f25 153-156,170-171,173-175,179-180,182-185,188,190-193
+cmd/cab-bridge/cleanup.go
+  s_d5e186cda02d82::t_d6690d44dfd1d7 109
+cmd/cab-bridge/cleanup_test.go
+  s_d5e186cda02d82::t_fa4731f63b92de 19
+cmd/cab-bridge/connect.go
+  s_d5e186cda02d82::t_d391f2080b8661 64
+cmd/cab-bridge/desktop.go
+  s_d5e186cda02d82::t_68627f4bba2750 44
+cmd/cab-bridge/inbox.go
+  s_d5e186cda02d82::t_061e8ca37671c0 69
+cmd/cab-bridge/inspect_test.go
+  s_d5e186cda02d82::t_7668e81a5f817a 29,44
+cmd/cab-bridge/next.go
+  s_d5e186cda02d82::t_10519b1cccc878 271
+cmd/cab-bridge/notify_watch.go
+  s_d5e186cda02d82::t_657362edaf1e5c 120
+cmd/cab-bridge/overview.go
+  s_d5e186cda02d82::t_28d653185336be 109
+cmd/cab-bridge/read.go
+  s_d5e186cda02d82::t_7dde554f180120 55
+cmd/cab-bridge/read_test.go
+  s_d5e186cda02d82::t_32d9577d47d219 97,112,137,150
+cmd/cab-bridge/register_test.go
+  s_d5e186cda02d82::t_be1b12b10079b4 89,122
+cmd/cab-bridge/sent.go
+  s_d5e186cda02d82::t_db09d9da30cb3c 88
+cmd/cab-bridge/state.go
+  s_d5e186cda02d82::t_9106c8980f3030 46
+cmd/cab-bridge/state_test.go
+  s_d5e186cda02d82::t_757e0dba41775b 41,98,113
+cmd/cab-bridge/status.go
+  s_d5e186cda02d82::t_4566db0372931a 62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "af88434986b46c9cf6e1a0a4c81d183bef62941e",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
