@@ -253,7 +253,7 @@ What travels to Anthropic and what stays on the host: [PRIVACY.md](./PRIVACY.md)
 | Multi-peer role routing | hub-and-spoke val↔esc + --allow-mesh |
 | Cross-project cleanup safety | scope=my-session default; `--scope=global` stays inside this project root and `--all-scopes` is opt-in. Retention purge is deliberately data-dir-wide and says so on stderr |
 | Session ID lookup | longest-prefix-match |
-| Lock on register | O_EXCL + stale recovery + --force-new; unique random IDs that never merge; collision detection vs a live owner |
+| Lock on register | a kernel lock (`flock`, `LockFileEx`) the OS releases when the holder dies; --force-new; unique random IDs that never merge; collision detection vs a live owner |
 | Agent names | guaranteed addressable: a name survives the shell that carries it |
 | Cross-repository addressing | `<name>@<project>`, val → val, with a shell-safe form of the token |
 | Stderr discipline | errors→stderr, exit 124 on timeout |
@@ -314,13 +314,15 @@ Single Go binary, filesystem-based IPC. No external runtime dependencies (no jq,
 ```
 ~/.claude/cli-agents-bridge/
 ├── config.json                   # optional CAB_* env vars override
-└── sessions/<id>/
+└── layout-2/sessions/<id>/       # this version shares no file with older ones
     ├── manifest.json             # schema v2 (role, agentName, pid)
     ├── inbox/*.json              # incoming messages (atomic write)
     ├── outbox/*.json
     ├── processed/                # audit trail post-consume
-    └── lock                      # O_EXCL PID file
+    └── lock                      # empty file, held with a kernel lock
 ```
+
+A command waits for a busy session lock for `session_lock_wait_ms` (env `CAB_SESSION_LOCK_WAIT_MS`, default 5000), then fails with an error that says so.
 
 Storage namespace is **separate** from the session-bridge plugin's directory (`~/.claude/session-bridge/`), so neither can clean up the other's sessions.
 

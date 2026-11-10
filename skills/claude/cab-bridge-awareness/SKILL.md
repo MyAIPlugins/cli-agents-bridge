@@ -7,7 +7,7 @@ metadata:
 
 # Operational cab-bridge
 
-The binary is on `$PATH`; sessions live in `~/.claude/cli-agents-bridge/sessions/<id>/`. This file is the core: every rule with one line of reason. The rest is opened when needed:
+The binary is on `$PATH`; sessions live in `~/.claude/cli-agents-bridge/layout-2/sessions/<id>/`. This file is the core: every rule with one line of reason. The rest is opened when needed:
 
 | when | file | sections |
 |---|---|---|

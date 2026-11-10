@@ -10,16 +10,16 @@
 
 | Data | Location | Created by | Removed by |
 |---|---|---|---|
-| Session manifest | `~/.claude/cli-agents-bridge/sessions/<id>/manifest.json` | `register` | `cleanup` (own/global) |
-| Incoming messages | `~/.claude/cli-agents-bridge/sessions/<id>/inbox/*.json` | peer `ask` | `listen` (move to `processed/`) |
-| Outgoing messages | `~/.claude/cli-agents-bridge/sessions/<id>/outbox/*.json` | n/a in v0.2 (reserved) | `cleanup` |
-| Consumed messages | `~/.claude/cli-agents-bridge/sessions/<id>/processed/*.json` | `listen` post-consume | `cleanup` (move to `archive/`) |
-| Archived messages | `~/.claude/cli-agents-bridge/archive/<YYYY-MM-DD>/<id>/*.json` | `cleanup` pre-delete | retention sweep (`RetentionDays`, default 7) |
-| PID lock | `~/.claude/cli-agents-bridge/sessions/<id>/lock` | `register` | session exit / `cleanup` |
+| Session manifest | `~/.claude/cli-agents-bridge/layout-2/sessions/<id>/manifest.json` | `register` | `cleanup` (own/global) |
+| Incoming messages | `~/.claude/cli-agents-bridge/layout-2/sessions/<id>/inbox/*.json` | peer `ask` | `listen` (move to `processed/`) |
+| Outgoing messages | `~/.claude/cli-agents-bridge/layout-2/sessions/<id>/outbox/*.json` | n/a in v0.2 (reserved) | `cleanup` |
+| Consumed messages | `~/.claude/cli-agents-bridge/layout-2/sessions/<id>/processed/*.json` | `listen` post-consume | `cleanup` (move to `archive/`) |
+| Archived messages | `~/.claude/cli-agents-bridge/layout-2/archive/<YYYY-MM-DD>/<id>/*.json` | `cleanup` pre-delete | retention sweep (`RetentionDays`, default 7) |
+| Session lock (an empty file, no data) | `~/.claude/cli-agents-bridge/layout-2/sessions/<id>/lock` | `register` | `cleanup` |
 | Config | `~/.claude/cli-agents-bridge/config.json` | user (optional) | manual `rm` |
-| Migration backup | `~/.claude/cli-agents-bridge/migration-backup-<ts>/` | `migrate-from-patil` | manual `rm` (user retains audit copy) |
-| Desktop grant | `~/.claude/cli-agents-bridge/sessions/<val-id>/desktop-grant.json` | `desktop open` | `desktop close` / `cleanup` of that session (an expired grant stays on disk, inert) |
-| Desktop identity lock | `~/.claude/cli-agents-bridge/mcp-owners/*.lock` | `cab-bridge mcp` at `join` | the lock ends with the server process; the file, holding the last holder's pid, stays until a manual `rm` |
+| Migration backup | `~/.claude/cli-agents-bridge/layout-2/migration-backup-<ts>/` | `migrate-from-patil` | manual `rm` (user retains audit copy) |
+| Desktop grant | `~/.claude/cli-agents-bridge/layout-2/sessions/<val-id>/desktop-grant.json` | `desktop open` | `desktop close` / `cleanup` of that session (an expired grant stays on disk, inert) |
+| Desktop identity lock | `~/.claude/cli-agents-bridge/layout-2/mcp-owners/*.lock` | `cab-bridge mcp` at `join` | the lock ends with the server process; the file, holding the last holder's pid, stays until a manual `rm` |
 
 ---
 

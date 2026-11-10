@@ -107,13 +107,13 @@ The backup folder is your rollback point:
 
 ```bash
 # Identify the backup folder
-ls ~/.claude/cli-agents-bridge/migration-backup-*
+ls ~/.claude/cli-agents-bridge/layout-2/migration-backup-*
 
 # Remove migrated v2 sessions
-rm -rf ~/.claude/cli-agents-bridge/sessions/
+rm -rf ~/.claude/cli-agents-bridge/layout-2/sessions/
 
 # Restore Patil tree (it was untouched, but if you accidentally deleted it)
-cp -r ~/.claude/cli-agents-bridge/migration-backup-<ts>/sessions \
+cp -r ~/.claude/cli-agents-bridge/layout-2/migration-backup-<ts>/sessions \
       ~/.claude/session-bridge/sessions
 ```
 

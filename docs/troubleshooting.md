@@ -44,9 +44,7 @@ This is intentional: liveness is tied to an active listener, not to a manifest t
 
 1. Check whether a previous Claude Code window is still alive: `ps -p 4567` (replace with the PID from the error).
 2. If alive: reuse the existing session — connect to it from the new window via `cab-bridge connect --session-id=abc123 <other-peer-id>` or close the old window first.
-3. If dead (`ps` shows nothing): the lock is stale. Either:
-   - `cab-bridge register --force-new ...` to override.
-   - Or `rm ~/.claude/cli-agents-bridge/sessions/abc123/lock` then `register` normally.
+3. If dead (`ps` shows nothing): there is nothing to clean up, the kernel released the lock when the process died. Run `cab-bridge join` again, or `cab-bridge register --force-new ...` to get a second session. Do not remove a `lock` file by hand.
 
 ---
 
@@ -154,5 +152,5 @@ If your issue isn't covered here:
 
 1. Capture the failing command + exit code.
 2. Run `cab-bridge inspect <id> --json` for the relevant session.
-3. Check `~/.claude/cli-agents-bridge/sessions/<id>/manifest.json` for unusual values.
+3. Check `~/.claude/cli-agents-bridge/layout-2/sessions/<id>/manifest.json` for unusual values.
 4. Open an issue at the repo with the above + your Claude Code + cab-bridge versions.

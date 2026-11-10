@@ -7,7 +7,7 @@ For the current ratified design see [PLAN.md v3](./PLAN.md).
 ## Quick reference
 
 - **Language**: Go (single static binary, `golang.org/x/sys/unix` for portable syscalls, no cgo)
-- **Transport** (MVP): filesystem polling JSON in `~/.claude/cli-agents-bridge/sessions/<id>/{inbox,outbox}/`
+- **Transport** (MVP): filesystem polling JSON in `~/.claude/cli-agents-bridge/layout-2/sessions/<id>/{inbox,outbox}/`
 - **Transport** (v0.4 gated): optional Unix socket daemon on `/tmp/cab-$UID/cab.sock`
 - **Storage**: namespace separato da Patil upstream (no shared dir)
 - **Distribution**: self-marketplace GitHub primary, pure-PATH fallback (Day 0 spike determines)

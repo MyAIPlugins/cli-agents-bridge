@@ -6,7 +6,7 @@ Companion to [SECURITY.md](../SECURITY.md). Each in-scope threat is decomposed i
 
 ## TM-1 — Same-machine, different-UID malware reads inbox/outbox
 
-**Attack path**: a process running as user `mallory` on the same workstation finds `~/alice/.claude/cli-agents-bridge/sessions/<id>/inbox/` world-readable and `cat`s the JSON files containing alice's briefings (which may quote proprietary code or business context).
+**Attack path**: a process running as user `mallory` on the same workstation finds `~/alice/.claude/cli-agents-bridge/layout-2/sessions/<id>/inbox/` world-readable and `cat`s the JSON files containing alice's briefings (which may quote proprietary code or business context).
 
 **Control**:
 
@@ -33,14 +33,15 @@ Companion to [SECURITY.md](../SECURITY.md). Each in-scope threat is decomposed i
 
 ## TM-3 — TOCTOU on lock and manifest
 
-**Attack path**: two `register` calls race on the same `lockPath`. Without `O_EXCL` both could observe "no lock exists" then both create it, ending with one stale + one live.
+**Attack path**: two processes race for one session: both believe they hold the lock, or a late writer brings back a session that has just been retired.
 
 **Control**:
 
-- **SC-6** `os.OpenFile(lockPath, O_CREATE|O_EXCL|O_WRONLY, 0o600)`. Atomic create-or-fail. The OS guarantees exactly one caller succeeds.
-- Stale recovery: read PID, `syscall.Kill(pid, 0)`. ESRCH → remove + retry once (`tryCreate` is called recursively but only retries one time, preventing infinite loops). EPERM/nil → live, return ErrLockHeld.
+- **SC-6** a kernel lock (`flock`, `LockFileEx`) on an empty file, taken by `internal/session/lock.go::acquire`. There is no PID to read and no stale lock to recover: the kernel drops the lock when its last descriptor closes.
+- After the lock, `checkNamed` verifies that the locked file is still the one the name points to, and `validate` that the session still exists, so a descriptor opened before a retirement is never a valid hold.
+- `Manager.updateManifest` puts every read-modify-write of `manifest.json` under the lock, and session directories are created with an exclusive `os.Mkdir`.
 
-**Residual risk**: NFS-mounted data dir where the `O_EXCL` semantics depend on the server. Documented in PLAN.md and SECURITY.md as out-of-scope (NFS is not a recommended deployment).
+**Residual risk**: a network filesystem, where advisory locks depend on the server. Out of scope (not a recommended deployment, and not tested).
 
 ---
 
@@ -72,7 +73,7 @@ Companion to [SECURITY.md](../SECURITY.md). Each in-scope threat is decomposed i
 
 ## TM-6 — Cross-session impersonation via manifest spoofing
 
-**Attack path**: a malicious process writes a manifest at `~/.claude/cli-agents-bridge/sessions/<spoofed-id>/manifest.json` with `role: "val"` and high-trust fields, then sends messages claiming to be VAL.
+**Attack path**: a malicious process writes a manifest at `~/.claude/cli-agents-bridge/layout-2/sessions/<spoofed-id>/manifest.json` with `role: "val"` and high-trust fields, then sends messages claiming to be VAL.
 
 **Control**:
 
@@ -115,5 +116,5 @@ Out of scope for the security baseline of v0.2.0. Users install via `/plugin mar
 | SC-3 | `internal/security/perms.go` | `CheckOwnership` |
 | SC-4 | `internal/security/perms.go` | `ValidateSessionID` |
 | SC-5 | `internal/transport/fs/atomic.go` | `AtomicWriteBytes` |
-| SC-6 | `internal/session/lock.go` | `AcquireLock` + `tryCreate` |
+| SC-6 | `internal/session/lock.go`, `internal/fslock` | `acquire` |
 | SC-7 | (Sprint 4 wiring — currently library-only via `EnforceDirPerms`) | `internal/security/perms.go` |

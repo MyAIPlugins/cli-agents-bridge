@@ -93,7 +93,7 @@ Error: project "/repo/analysis" already has active session abc123 (pid 4567), us
 
 Semantics:
 
-- "Live" = `manifest.pid` corresponds to a process responding to `kill -0`. A crashed session leaves an orphan PID; the next register's stale recovery removes the lock and proceeds.
+- "Live" = `manifest.pid` corresponds to a process responding to `kill -0`. A crashed session leaves a manifest with a dead PID and no lock (the kernel released it), so the next register proceeds.
 - This is NOT "one session per project ever" — multiple sessions can coexist for the same project at different times. The constraint is "no two LIVE sessions for the same project simultaneously".
 - Override with `--force-new` when you genuinely want two parallel sessions (rare; typically indicates a workflow that should split `projectPath` into subdirs).
 

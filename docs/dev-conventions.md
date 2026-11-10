@@ -294,3 +294,11 @@ defaulting to `~/.claude/session-bridge`, so a test injects a temp dir instead o
   done-channel idiom above and by `-race`, not by a leak detector. *(Stated because an internal note
   claimed otherwise for months: a tool nobody runs is worse than no tool, because readers assume the
   check exists.)*
+
+### Kernel locks in tests (F-160)
+
+On Unix a `flock` belongs to the open file description, and a fork in flight in the same process carries a copy of the descriptor until its exec. So a lock released in this process can still look busy for a few milliseconds. A test that asks "is it free?" right after a release in the same process asks "does it become free?" (`internal/fslock/locktest.Take`, with its numeric bound). A fixture that releases a lock and hands it to code that does not wait uses `locktest.Settle`. A test that asserts the lock is HELD uses neither: the window only makes a free lock look held.
+
+### A retry loop that decides on a sentinel (F-160)
+
+When a retry loop decides with `errors.Is(err, sentinel)`, a failure that must be final is not joined to the sentinel with `errors.Join`: it would be retried, and a later success would discard it. The final failure goes in the chain (`%w`), the cause in the text (`%v`).

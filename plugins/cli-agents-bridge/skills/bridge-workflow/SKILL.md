@@ -5,7 +5,7 @@ description: How to coordinate two (or more) CLI agent sessions with the cab-bri
 
 # cab-bridge — coordinating agent sessions
 
-`cab-bridge` is a single Go binary (on `$PATH` when this plugin is installed) that lets CLI agent sessions on the same machine exchange messages through files under `~/.claude/cli-agents-bridge/sessions/<id>/`. No network, no API calls: each agent reads its own mail and replies from its own live context.
+`cab-bridge` is a single Go binary (on `$PATH` when this plugin is installed) that lets CLI agent sessions on the same machine exchange messages through files under `~/.claude/cli-agents-bridge/layout-2/sessions/<id>/`. No network, no API calls: each agent reads its own mail and replies from its own live context.
 
 A common shape is **one orchestrator + one executor** (roles `val` and `esc`), but nothing here depends on those names.
 
