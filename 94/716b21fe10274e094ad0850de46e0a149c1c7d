@@ -1,0 +1,40 @@
+internal/fslock/fslock.go
+  s_d5e186cda02d82::t_cafbbf2d6bcf50 1-113
+tests/integration/lock_single_copy_test.go
+  s_d5e186cda02d82::t_f127184280628d 1-81
+internal/session/identitylock.go
+  s_d5e186cda02d82::t_71ad9415d4a867 14,130-131,134-135
+internal/fslock/fslock_unix_test.go
+  s_d5e186cda02d82::t_7b2ebfca532914 1-100
+internal/fslock/fslock_windows_test.go
+  s_d5e186cda02d82::t_7b2ebfca532914 1-28
+internal/session/identitylock_windows.go
+  s_d5e186cda02d82::t_e119add5758b3c 5-6
+  s_d5e186cda02d82::t_ee20f1421dd1dd 7-12
+internal/fslock/fslock_windows.go
+  s_d5e186cda02d82::t_dc9c272fbfbfb4 1-71
+internal/findings/lock.go
+  s_d5e186cda02d82::t_f937a9f8da662a 7,21-24,26,29-35,37
+internal/fslock/fslock_unix.go
+  s_d5e186cda02d82::t_dc9c272fbfbfb4 1-53
+internal/session/identitylock_unix.go
+  s_d5e186cda02d82::t_e119add5758b3c 5-6
+internal/fslock/fslock_test.go
+  s_d5e186cda02d82::t_7b2ebfca532914 1-199
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "94716b21fe10274e094ad0850de46e0a149c1c7d",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
