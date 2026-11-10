@@ -1,0 +1,28 @@
+internal/cleanup/manifest_resurrection_test.go
+  s_d5e186cda02d82::t_7b9cf3b82e5b68 113-115,128-138
+  s_d5e186cda02d82::t_1ac5580de61a82 116,122,156,160,165,174,183,244
+internal/cleanup/scope.go
+  s_d5e186cda02d82::t_c96d7f789f2a05 314-315,317-332
+  s_d5e186cda02d82::t_27047559f5fe64 357-358
+  s_d5e186cda02d82::t_3b129953b84f7c 408-410
+  s_d5e186cda02d82::t_1f008b4bd77a29 349
+  s_d5e186cda02d82::t_7bc9fecc785d1e 366
+internal/cleanup/retire_contention_test.go
+  s_d5e186cda02d82::t_5cbad1cfcd9556 1-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b9319c2ec4f1b3e92c2ce776c88a07a79e824fd3",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
