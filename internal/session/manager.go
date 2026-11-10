@@ -49,6 +49,19 @@ type Manager struct {
 	// guarded sections; locking them too would deadlock — sync.Mutex is not
 	// reentrant).
 	manifestMu sync.Mutex
+
+	// genID is the test seam for the session id. Nil means generateSessionID.
+	// It exists so a test can force the 1-in-2^32 collision that Register must
+	// survive without touching the other session's directory (F-160 C1).
+	genID func() (string, error)
+}
+
+// newSessionID returns a fresh session id, through the test seam when set.
+func (m *Manager) newSessionID() (string, error) {
+	if m.genID != nil {
+		return m.genID()
+	}
+	return generateSessionID()
 }
 
 // NewManager constructs a Manager with default clock.
@@ -147,13 +160,24 @@ func (m *Manager) Register(ctx context.Context, opts RegisterOpts) (*Manifest, f
 		}
 	}
 
-	sessionID, err := generateSessionID()
+	sessionID, err := m.newSessionID()
 	if err != nil {
 		return nil, nil, fmt.Errorf("register: %w", err)
 	}
 
 	sessionDir := m.sessionDir(sessionID)
-	if err := os.MkdirAll(sessionDir, 0o700); err != nil {
+	// The sessions/ parent may not exist yet, but the session directory itself
+	// must be created by US and exclusively: the two rollbacks below RemoveAll it,
+	// and with MkdirAll an id colliding with an existing session would have
+	// deleted that session's directory (F-160). On collision nothing is touched
+	// and the error says so; there is no silent retry with a new id.
+	if err := os.MkdirAll(filepath.Dir(sessionDir), 0o700); err != nil {
+		return nil, nil, fmt.Errorf("register: mkdir sessions dir %q: %w", filepath.Dir(sessionDir), err)
+	}
+	if err := os.Mkdir(sessionDir, 0o700); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return nil, nil, fmt.Errorf("register: session id %s already exists, nothing was touched: %w", sessionID, err)
+		}
 		return nil, nil, fmt.Errorf("register: mkdir session dir %q: %w", sessionDir, err)
 	}
 	for _, sub := range []string{"inbox", "outbox"} {
@@ -173,12 +197,13 @@ func (m *Manager) Register(ctx context.Context, opts RegisterOpts) (*Manifest, f
 		// NO --force-new advice here, and the reason is worth the line because
 		// it is not the obvious one. This IS the only AcquireLock caller whose
 		// forceNew comes from the flag, so by signature it looks like the place
-		// for the remedy — but sessionID is 32 random bits and this sessionDir
-		// was created three lines up, so reaching ErrLockHeld needs an ID
-		// COLLISION with a live holder. No test can get here, which makes any
-		// sentence written here a sentence nobody will ever read: the class
-		// F-126 is about. The advice the user actually meets lives at the two
-		// reachable refusals — ErrSessionExistsForProject above, and tryReuse.
+		// for the remedy — but sessionDir was created exclusively (os.Mkdir)
+		// above, so an ID collision with a live holder stops THERE and never
+		// reaches this branch, and nobody else can hold a lock inside a
+		// directory that did not exist a moment ago. No test can get here, which
+		// makes any sentence written here a sentence nobody will ever read: the
+		// class F-126 is about. The advice the user actually meets lives at the
+		// two reachable refusals — ErrSessionExistsForProject above, and tryReuse.
 		return nil, nil, fmt.Errorf("register: %w", err)
 	}
 
