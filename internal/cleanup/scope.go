@@ -302,13 +302,25 @@ var messageSubdirs = []string{"inbox", "outbox", "processed"}
 //
 // THE ORDER OF RETIREMENT IS THE POINT (F-160). A process that waits for the lock
 // may have opened the lock file just before it is unlinked, and would then lock an
-// inode nobody contends for any more. What stops it is the check every session
-// lock does on the lock once taken: the manifest must exist. So the manifest is
-// removed first, under the lock, before anything else and before the lock file; a
-// late waiter then finds the session gone (session.ErrSessionGone) and writes
-// nothing. The lock file is removed only after release, and the directory last, with
-// a plain rmdir: a leftover nobody expected is an error returned to the caller, not
+// inode nobody contends for any more. Two checks, both made by every session lock on
+// the lock once taken, stop it: the file locked must be the one the name points to
+// (session.checkNamed), and the manifest must exist. So the manifest is removed
+// first, under the lock, before anything else and before the lock file; a late
+// waiter then finds the session gone (session.ErrSessionGone) and writes nothing. The
+// lock file is removed only after release, and the directory last, with a plain
+// rmdir: a leftover nobody expected is an error returned to the caller, not
 // something to delete blind.
+//
+// What this rests on: the manifest of a retired session does not come back. Every
+// writer of an existing manifest takes the session lock first (updateManifest), and
+// the two creators of a session folder, Register and the Patil import, create it
+// exclusively, so nobody publishes a manifest into a folder that already exists.
+//
+// A LIMIT, NOT A GUARANTEE: the session lock is shared by every acquisition made
+// inside one process (session.processHolds), so a retirement does not exclude a writer
+// of the same session that runs in the same process. Nothing in the binary does both,
+// because cleanup is a command of its own; a caller that did would not be protected by
+// any of the above.
 //
 // afterRelease is a test seam, nil in production: it runs after the lock is
 // released and before the lock file and the directory are removed. The other seam,
@@ -414,7 +426,10 @@ func retireSession(dataDir, sid, sessionDir, dateDir string, underLock func()) e
 // leftoverNote ends the error of a retirement that stopped halfway. The manifest is
 // already gone, which is what retired the session, and every sweep lists sessions by
 // their manifest: the folder that is left is not a session to any of them, so none
-// will ever come back to it.
+// will ever come back to it. "Holds no session any more" stays true only while nothing
+// publishes a manifest into a folder that exists: Register and the Patil import create
+// the folder exclusively for that reason (see archiveAndRemoveSession). If one of them
+// stopped doing so, this sentence would be false and so would the advice it gives.
 const leftoverNote = "the folder holds no session any more and no cleanup pass will collect it: it has to be removed by hand"
 
 // removeLockAndDir is the last step, after the lock is released: the lock file,

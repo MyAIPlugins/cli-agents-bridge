@@ -41,6 +41,7 @@ const (
 
 type lwPair struct {
 	dataDir      string
+	project      string
 	valID, escID string
 }
 
@@ -68,7 +69,7 @@ func lwRegister(t *testing.T) lwPair {
 		require.Equal(t, 0, exit, "register %s: %s", name, errOut)
 		return mustJSONField(t, out, "sessionId")
 	}
-	return lwPair{dataDir: dataDir, valID: reg("val", "VAL-lw"), escID: reg("esc", "ESC-lw")}
+	return lwPair{dataDir: dataDir, project: project, valID: reg("val", "VAL-lw"), escID: reg("esc", "ESC-lw")}
 }
 
 // holdSessionLock takes the lock of session id and keeps it until the returned
@@ -213,6 +214,25 @@ func (c *liveCmd) wait(t *testing.T) {
 }
 
 // ---------------------------------------------------------------- tell and ask
+
+// A join that finds the lock of its own session held for longer than the wait fails
+// like every other command of the loop: the message starts with the command, and
+// names the lock and the wait (CRI2 nit N1: it used to start with "reuse: lock").
+func TestLockWait_JoinFailsAsJoinWhenTheLockOfItsSessionIsHeld(t *testing.T) {
+	t.Parallel()
+	p := lwRegister(t)
+	release := p.holdSessionLock(t, p.escID)
+
+	_, errOut, exit := run(t, []string{"join", "--role=esc", "--agent-name=ESC-lw", "--project-path=" + p.project}, p.env(p.escID, lwShortWait))
+
+	assert.Equal(t, 1, exit, "stderr: %s", errOut)
+	assert.Contains(t, errOut, "join: ")
+	assert.NotContains(t, errOut, "cab-bridge: reuse:", "the error is said as join's")
+	assert.Contains(t, errOut, "still held after waiting 200ms")
+	release()
+	_, errOut, exit = run(t, []string{"join", "--role=esc", "--agent-name=ESC-lw", "--project-path=" + p.project}, p.env(p.escID, lwLongWait))
+	assert.Equal(t, 0, exit, "after the release the same join goes through: %s", errOut)
+}
 
 func TestLockWait_TellAndAskWaitForAShortHold(t *testing.T) {
 	t.Parallel()

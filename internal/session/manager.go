@@ -243,6 +243,12 @@ func (m *Manager) Register(ctx context.Context, opts RegisterOpts) (*Manifest, f
 
 // SaveManifest atomically writes manifest.json under the session dir.
 // SC-5 enforced via transportfs.AtomicWriteJSON.
+//
+// It takes no lock: it is the primitive of the two callers that already hold one.
+// In production only Register (under the lock it has just created) and updateManifest
+// (session lock first, then manifestMu) call it, and a structural test fixes that
+// (tests/integration/manifest_writers_test.go). A third caller that skipped the
+// session lock could bring back the manifest of a session cleanup has retired.
 func (m *Manager) SaveManifest(manifest *Manifest) error {
 	if err := manifest.Validate(); err != nil {
 		return fmt.Errorf("savemanifest: %w", err)
@@ -678,9 +684,11 @@ func (m *Manager) touchHeartbeat(sessionID string) error {
 }
 
 // SetLastConsumed records msgID as the most recently consumed inbox message in
-// sessionID's manifest (F-12 observability). Called by listen after emitting a
-// message and by receive after matching a reply. Waits for the session lock like
-// every other caller (LockWait) and refuses a retired session.
+// sessionID's manifest (F-12 observability). It was called by the listen and receive
+// commands, which no longer exist: nothing in production calls it today (the cursor of
+// `next` is wake-cursor.json). It stays as part of the Manager API, and takes the same
+// path as every other writer: waits for the session lock (LockWait) and refuses a
+// retired session.
 func (m *Manager) SetLastConsumed(sessionID, msgID string) error {
 	return m.updateManifest(sessionID, m.LockWait, func(manifest *Manifest) bool {
 		manifest.LastConsumedMsgID = msgID
@@ -782,12 +790,14 @@ func (m *Manager) SetRole(sessionID, newRole string) error {
 }
 
 // AdoptPID claims sessionID for the current process by writing its PID into the
-// manifest (and refreshing the heartbeat). The long-running listen command
-// calls this at startup so collision detection (BUG-6) and stale detection
-// observe a LIVE owner — unlike the one-shot register command, whose PID dies
-// the moment it returns (Sprint 6 BUG-A). Touch deliberately does NOT adopt the
-// PID: connect.go calls Touch from a short-lived process whose PID would be
-// just as ephemeral as register's, so only a real listen owner takes ownership.
+// manifest (and refreshing the heartbeat), so collision detection (BUG-6) and stale
+// detection observe a LIVE owner — unlike the one-shot register command, whose PID
+// dies the moment it returns (Sprint 6 BUG-A). The long-running listen command that
+// called this no longer exists: `next` does it through StartWait, which holds the
+// session lock across the adoption and the claim and uses adoptPIDLocked, so nothing
+// in production calls AdoptPID itself today. Touch deliberately does NOT adopt the
+// PID: connect.go calls Touch from a short-lived process whose PID would be just as
+// ephemeral as register's, so only a real waiter takes ownership.
 func (m *Manager) AdoptPID(sessionID string) error {
 	return m.updateManifest(sessionID, m.LockWait, func(manifest *Manifest) bool {
 		manifest.PID = os.Getpid()

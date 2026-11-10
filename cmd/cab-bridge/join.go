@@ -343,7 +343,9 @@ func runJoin(args []string) error {
 		Resume:      !*forceNew,
 	})
 	if err != nil {
-		return err
+		// Said as join's, like every other failure of this command: a join that finds
+		// the lock of its own session held used to surface "reuse: lock <id>: ...".
+		return fmt.Errorf("join: %w", err)
 	}
 	_ = release()
 
