@@ -305,21 +305,21 @@ func scopeMatches(mf *Manifest, wantScope, absProj string) bool {
 // adoptAndBackfill claims sessionID for the current process (PID + fresh
 // heartbeat) and, if the session has no scope yet (legacy) and a scope is
 // available, backfills it — a pre-F-17 session auto-upgrades to F-17 on resume
-// (F-27). One RMW under manifestMu (same discipline as AdoptPID).
+// (F-27). One RMW through updateManifest, called with the session lock already held
+// (tryReuse takes it): it does not wait, see adoptPIDLocked.
 func (m *Manager) adoptAndBackfill(sessionID, scope string) (*Manifest, error) {
-	m.manifestMu.Lock()
-	defer m.manifestMu.Unlock()
-	mf, err := m.LoadManifest(sessionID)
+	var adopted *Manifest
+	err := m.updateManifest(sessionID, 0, func(mf *Manifest) bool {
+		mf.PID = os.Getpid()
+		mf.LastHeartbeat = m.now()
+		if mf.Scope == "" && scope != "" {
+			mf.Scope = scope // F-27 backfill: legacy session adopts the F-17 scope
+		}
+		adopted = mf
+		return true
+	})
 	if err != nil {
 		return nil, err
 	}
-	mf.PID = os.Getpid()
-	mf.LastHeartbeat = m.now()
-	if mf.Scope == "" && scope != "" {
-		mf.Scope = scope // F-27 backfill: legacy session adopts the F-17 scope
-	}
-	if err := m.SaveManifest(mf); err != nil {
-		return nil, err
-	}
-	return mf, nil
+	return adopted, nil
 }

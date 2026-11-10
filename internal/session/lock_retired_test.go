@@ -46,6 +46,19 @@ func TestRetiredSession_EveryLockingMethodStopsBeforeItsFirstWrite(t *testing.T)
 			_, err := m.touchHeartbeatOwned(sid, func() bool { return true })
 			return err
 		},
+		// The writers that used to take only manifestMu and could bring a retired
+		// session's manifest back (F-160, CRI diff-gate blocker). Every one of them
+		// now stops at the lock, and a retired session is an error, not a skipped beat.
+		"SetState":        func(m *Manager, sid string) error { return m.SetState(sid, StateIdle) },
+		"SetLastConsumed": func(m *Manager, sid string) error { return m.SetLastConsumed(sid, "msg-aaaaaaaaaaaa") },
+		"Touch":           func(m *Manager, sid string) error { return m.Touch(sid) },
+		"AdoptPID":        func(m *Manager, sid string) error { return m.AdoptPID(sid) },
+		"adoptPIDLocked":  func(m *Manager, sid string) error { return m.adoptPIDLocked(sid) },
+		"adoptAndBackfill": func(m *Manager, sid string) error {
+			_, err := m.adoptAndBackfill(sid, "scope")
+			return err
+		},
+		"touchHeartbeat": func(m *Manager, sid string) error { return m.touchHeartbeat(sid) },
 	}
 
 	for name, call := range calls {
