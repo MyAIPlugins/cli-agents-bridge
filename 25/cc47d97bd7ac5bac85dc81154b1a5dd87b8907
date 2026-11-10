@@ -1,0 +1,31 @@
+internal/config/layout.go
+  s_d5e186cda02d82::t_a34d19d4e5be5f 22
+internal/cleanup/retire_test.go
+  s_d5e186cda02d82::t_cd8d505da455ec 124-126,133-169
+  s_d5e186cda02d82::t_5a9af4349cbec2 170
+internal/session/lock_legacy_copy_test.go
+  s_d5e186cda02d82::t_a6520edc64f852 21-25
+internal/session/manager.go
+  s_d5e186cda02d82::t_6270a54baf70d4 117-118
+  s_d5e186cda02d82::t_c52239a4b3668a 119-120
+cmd/cab-bridge/layout_test.go
+  s_d5e186cda02d82::t_01681da6c31f82 30-34
+internal/cleanup/scope.go
+  s_d5e186cda02d82::t_e54401542f1811 394-399,404,407
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "25cc47d97bd7ac5bac85dc81154b1a5dd87b8907",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
