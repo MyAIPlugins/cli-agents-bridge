@@ -1,0 +1,23 @@
+internal/session/register_collision_test.go
+  s_d5e186cda02d82::t_857b075a92f471 1-101
+internal/session/manager.go
+  s_d5e186cda02d82::t_2d638afe4d3e59 52-64
+  s_d5e186cda02d82::t_54afa63d1a604f 200-206
+  s_d5e186cda02d82::t_5bc62bc21d5509 163,169-180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c64e11142c87dcd51804812969ade54c98ca3632",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
