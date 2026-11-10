@@ -1,0 +1,42 @@
+SECURITY.md
+  s_f8849908940048::t_7e5b367ea8f5c7 46,62,81
+skills/claude/cab-bridge-awareness/SKILL.md
+  s_f8849908940048::t_7e5b367ea8f5c7 10
+PRIVACY.md
+  s_f8849908940048::t_7e5b367ea8f5c7 13-18,20-22
+docs/security-model.md
+  s_f8849908940048::t_7e5b367ea8f5c7 9,36,40-42,44,76,119
+docs/migration-from-patil.md
+  s_f8849908940048::t_7e5b367ea8f5c7 110,113,116
+ARCHITECTURE.md
+  s_f8849908940048::t_7e5b367ea8f5c7 10
+docs/dev-conventions.md
+  s_f8849908940048::t_7e5b367ea8f5c7 297-304
+docs/troubleshooting.md
+  s_f8849908940048::t_7e5b367ea8f5c7 47,155
+docs/multi-esc-patterns.md
+  s_f8849908940048::t_7e5b367ea8f5c7 96
+CHANGELOG.md
+  s_f8849908940048::t_7e5b367ea8f5c7 16-19
+plugins/cli-agents-bridge/skills/bridge-workflow/SKILL.md
+  s_f8849908940048::t_7e5b367ea8f5c7 8
+README.md
+  s_f8849908940048::t_7e5b367ea8f5c7 256,317,322
+  s_f8849908940048::t_69203375d9ab08 325-326
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f023e7c2e69fafa86834891aa63b1a230576799b",
+  "prompts": {},
+  "sessions": {
+    "s_f8849908940048": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "37bcf92a-1982-4e9a-a4d3-17eecb17eeb9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
