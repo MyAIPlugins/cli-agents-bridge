@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/fslock"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/fslock/locktest"
 )
 
 const (
@@ -144,7 +145,7 @@ func TestLock_AContenderNeverRemovesOrReplacesTheFile(t *testing.T) {
 	t.Parallel()
 	lockPath := filepath.Join(t.TempDir(), "session.lock")
 	holdElsewhere(t, lockPath)
-	before, err := os.Stat(lockPath)
+	before, err := locktest.Identity(lockPath) // the identity now: see locktest.Identity
 	require.NoError(t, err)
 	beforeBytes, readable := readHeldLockFile(t, lockPath)
 
@@ -157,7 +158,7 @@ func TestLock_AContenderNeverRemovesOrReplacesTheFile(t *testing.T) {
 		require.ErrorIs(t, err, ErrLockHeld, "attempt %d", i)
 	}
 
-	after, err := os.Stat(lockPath)
+	after, err := locktest.Identity(lockPath)
 	require.NoError(t, err)
 	afterBytes, _ := readHeldLockFile(t, lockPath)
 	assert.True(t, os.SameFile(before, after), "the file is the same inode after %d contenders", attempts)
@@ -184,7 +185,7 @@ func TestLock_ASuccessorKeepsItsLockWhileAContenderPolls(t *testing.T) {
 		lockPath := filepath.Join(t.TempDir(), "session.lock")
 		releaseH, err := fslock.TryLock(lockPath)
 		require.NoError(t, err)
-		before, err := os.Stat(lockPath)
+		before, err := locktest.Identity(lockPath) // the identity now: see locktest.Identity
 		require.NoError(t, err)
 
 		type result struct {
@@ -216,7 +217,7 @@ func TestLock_ASuccessorKeepsItsLockWhileAContenderPolls(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = releaseN() })
 		assert.ErrorIs(t, got.err, ErrLockHeld, "the contender gave up: the successor holds the lock")
-		after, err := os.Stat(lockPath)
+		after, err := locktest.Identity(lockPath)
 		require.NoError(t, err)
 		assert.True(t, os.SameFile(before, after), "the contender's polling did not remove or replace the file")
 		_, err = fslock.TryLock(lockPath)

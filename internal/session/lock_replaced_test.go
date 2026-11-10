@@ -20,6 +20,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/myAIPlugins/cli-agents-bridge/internal/fslock/locktest"
 )
 
 func TestAcquire_AWaiterOnAReplacedFileDoesNotShareTheLockWithItsNewHolder(t *testing.T) {
@@ -28,7 +30,9 @@ func TestAcquire_AWaiterOnAReplacedFileDoesNotShareTheLockWithItsNewHolder(t *te
 	manifest, err := mgr.LoadManifest(sid)
 	require.NoError(t, err)
 	lockPath := SessionLockBase(dataDir, sid)
-	oldInfo, err := os.Stat(lockPath)
+	// Taken now, while the old file is still the one at the name: on Windows os.Stat
+	// alone reads the identity only when SameFile asks, i.e. from the new file.
+	oldInfo, err := locktest.Identity(lockPath)
 	require.NoError(t, err)
 
 	child := startSeqChild(t, seqModeRetired, dataDir, sid, "")
@@ -41,7 +45,7 @@ func TestAcquire_AWaiterOnAReplacedFileDoesNotShareTheLockWithItsNewHolder(t *te
 	holder, err := mgr.AcquireSessionLock(sid, 0)
 	require.NoError(t, err, "premise: the new session can be locked")
 	defer func() { require.NoError(t, holder()) }()
-	newInfo, err := os.Stat(lockPath)
+	newInfo, err := locktest.Identity(lockPath)
 	require.NoError(t, err)
 	require.False(t, os.SameFile(oldInfo, newInfo), "premise: the lock the child opened and the lock held now are two files")
 

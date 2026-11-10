@@ -318,9 +318,15 @@ var messageSubdirs = []string{"inbox", "outbox", "processed"}
 //
 // A LIMIT, NOT A GUARANTEE: the session lock is shared by every acquisition made
 // inside one process (session.processHolds), so a retirement does not exclude a writer
-// of the same session that runs in the same process. Nothing in the binary does both,
-// because cleanup is a command of its own; a caller that did would not be protected by
-// any of the above.
+// of the same session that runs in the same process. A retirement runs in two places
+// in the binary: the cleanup command (Run), and the auto-gc that join and register
+// start with (runAutoGC, then GCOrphans). The conclusion holds for both, and it holds
+// for a reason that can stop being true: the auto-gc runs once, in sequence (a plain
+// loop over the sessions, no goroutine), before the command has taken a session lock
+// or started anything of its own, and it only retires sessions whose owner process
+// is dead. If it is ever moved into a loop, or into a goroutine that runs beside
+// something that writes sessions in the same process (a heartbeat, a listener), none
+// of the checks above protects the writer.
 //
 // afterRelease is a test seam, nil in production: it runs after the lock is
 // released and before the lock file and the directory are removed. The other seam,

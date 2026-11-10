@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/myAIPlugins/cli-agents-bridge/internal/fslock/locktest"
 )
 
 // Bounds of the waits in this file. They are limits of the TEST, not promises of
@@ -62,14 +64,14 @@ func TestTryLock_CreatesTheFileOnceAndNeverWritesToIt(t *testing.T) {
 func TestOpen_AnExistingFileIsOpenedNotRecreated(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "x.lock")
 	require.NoError(t, os.WriteFile(path, nil, 0o600))
-	before, err := os.Stat(path)
+	before, err := locktest.Identity(path) // the identity now: see locktest.Identity
 	require.NoError(t, err)
 
 	f, err := Open(path)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, f.Close()) }()
 
-	after, err := os.Stat(path)
+	after, err := locktest.Identity(path)
 	require.NoError(t, err)
 	assert.True(t, os.SameFile(before, after), "the same file, not a replacement")
 }

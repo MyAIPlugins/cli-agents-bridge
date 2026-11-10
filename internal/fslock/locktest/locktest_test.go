@@ -2,6 +2,8 @@ package locktest
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"syscall"
 	"testing"
 	"time"
@@ -172,4 +174,49 @@ func TestBecomesFree_FalseWhenItNeverIs(t *testing.T) {
 
 	assert.False(t, ok)
 	assert.Equal(t, attempts, calls)
+}
+
+// The next three are what Identity is for. On Unix any os.Stat would pass them; on
+// Windows, where os.Stat reads the identity only when os.SameFile asks, the second one
+// is the test that a plain os.Stat would fail (see Identity).
+
+func TestIdentity_TheSameFileTwiceIsTheSameFile(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "x.lock")
+	require.NoError(t, os.WriteFile(path, nil, 0o600))
+
+	before, err := Identity(path)
+	require.NoError(t, err)
+	after, err := Identity(path)
+	require.NoError(t, err)
+
+	assert.True(t, os.SameFile(before, after))
+}
+
+// The file is moved aside (not deleted, so the system cannot give its identity to the
+// new one) and another takes its name: the identity taken BEFORE is still the old
+// file's.
+func TestIdentity_IsTheFileThatWasThereWhenItWasTaken(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "x.lock")
+	require.NoError(t, os.WriteFile(path, nil, 0o600))
+	before, err := Identity(path)
+	require.NoError(t, err)
+
+	require.NoError(t, os.Rename(path, filepath.Join(dir, "old.lock")))
+	require.NoError(t, os.WriteFile(path, nil, 0o600))
+	after, err := Identity(path)
+	require.NoError(t, err)
+
+	assert.False(t, os.SameFile(before, after), "the name points to another file now")
+}
+
+func TestIdentity_AMissingFileIsAnErrorAndNotAnIdentity(t *testing.T) {
+	t.Parallel()
+
+	info, err := Identity(filepath.Join(t.TempDir(), "nope"))
+
+	require.ErrorIs(t, err, os.ErrNotExist)
+	assert.Nil(t, info)
 }

@@ -12,10 +12,15 @@
 // once, because a failure is not contention. A test that asserts the lock is HELD
 // does not use this package, since the window only ever makes a lock look busier
 // than it is, never freer.
+//
+// Identity is the other thing in here: the identity of a file, taken now, for tests
+// that ask whether the file at a path is still the same one later.
 package locktest
 
 import (
 	"errors"
+	"fmt"
+	"os"
 	"syscall"
 	"time"
 )
@@ -78,6 +83,30 @@ func Settle(busy func(error) bool, take func() (release func() error, err error)
 		return struct{}{}, release()
 	})
 	return err
+}
+
+// Identity is os.Stat for a file that will be compared later with os.SameFile, to ask
+// whether the name still points to the same file. Use it for BOTH sides of such a
+// comparison when they are taken at different moments.
+//
+// On Unix os.Stat holds the identity (device and inode) from the call on. On Windows
+// it does not: it keeps the path, and the identity (volume and file index) is read the
+// first time os.SameFile asks, by opening that path again (Go 1.27.1, os/types_windows.go:
+// saveInfoFromPath, loadFileId). Two Stats of one path taken before and after a
+// replacement then both read the file that is there at the comparison, and SameFile is
+// true whatever happened in between: an assertion that the file is the same cannot fail,
+// and one that it is another cannot pass. Identity makes the read happen now, and
+// fails if it cannot, so a test never compares a file against an identity it does not
+// have. A FileInfo taken from an open handle (File.Stat) already has it.
+func Identity(path string) (os.FileInfo, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !os.SameFile(info, info) {
+		return nil, fmt.Errorf("locktest: the identity of %s cannot be read", path)
+	}
+	return info, nil
 }
 
 // BecomesFree reports whether free returns true within the same bound. It is for

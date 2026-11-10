@@ -46,17 +46,25 @@ var ErrLockHeld = errors.New("session lock held by live process")
 // on an inode that cleanup has since retired learns to stop (see acquire).
 var ErrSessionGone = errors.New("session no longer exists")
 
-// errLockFileReplaced is internal to acquire and never leaves it: the file that was
-// just locked is not the one the name points to any more. The name was unlinked, or
-// unlinked and created again, between the open and the lock (cleanup retires a
-// session that way, and the same id can exist again later: a re-import, for
-// instance). A kernel lock on such a file excludes nobody who opens the name now.
-var errLockFileReplaced = errors.New("session lock: the locked file is not the one the name points to")
+// errLockFileReplaced is how acquireOnce tells acquire to start again from the name:
+// the file that was just locked is not the one the name points to any more. The name
+// was unlinked, or unlinked and created again, between the open and the lock
+// (cleanup retires a session that way, and the same id can exist again later: a
+// re-import, for instance). A kernel lock on such a file excludes nobody who opens
+// the name now.
+//
+// acquire acts on it and does not pass it on, with one exception: when the bound
+// below is reached it comes back wrapped (%w) as the reason the acquisition failed.
+// It stays inside this package. A failed release is never reported with it, see
+// unlockWith.
+var errLockFileReplaced = errors.New("the locked file is not the one the name points to")
 
-// maxReplaced bounds how many times acquire takes the lock again after finding the
-// file replaced. One replacement is a retirement or a re-creation that happened to
-// overlap; three in a row mean the name is being replaced as fast as it is opened,
-// and that is an error to report, not a reason to keep going.
+// maxReplaced bounds how many times, IN ALL during one acquire, the lock is taken
+// again after finding the file replaced. The count is not reset by a wait for a busy
+// lock: it limits the work, not a run of consecutive replacements. One replacement is
+// a retirement or a re-creation that happened to overlap; more than a few mean the
+// name is being replaced as fast as it is opened, and that is an error to report,
+// not a reason to keep going.
 const maxReplaced = 3
 
 // LockFileName is the name of the lock file inside a session directory. cleanup
@@ -89,6 +97,10 @@ type acquireOpts struct {
 	validate func() error
 	// afterOpen is a test seam, nil in production: it runs between open and lock.
 	afterOpen func()
+	// unlock is a test seam, nil in production (fslock.Unlock): it gives back a lock
+	// taken by an attempt that is not going to succeed. It exists to make that
+	// release fail.
+	unlock func(f *os.File) error
 }
 
 // processHold is a lock this process holds, shared by every acquisition of the same
@@ -125,10 +137,11 @@ var (
 //  5. check that the file just locked is the one the name points to now. A lock on
 //     a file that has since been unlinked or replaced is a lock on nothing anybody
 //     else will ever contend for. If it is not, release it and start again from the
-//     name as it is now (at most maxReplaced times, without waiting: it is not
-//     contention). Starting again, and not refusing, is what keeps a session that
-//     exists again under the same id usable; the precheck of the new round refuses
-//     one that does not exist.
+//     name as it is now (at most maxReplaced rounds in all during this call, without
+//     waiting: it is not contention). If giving the lock back fails, that failure is
+//     final and is what comes back, see unlockWith. Starting again, and not refusing,
+//     is what keeps a session that exists again under the same id usable; the
+//     precheck of the new round refuses one that does not exist.
 //  6. validate, if any, on the lock just taken. This order is the point: validating
 //     before the lock leaves a gap in which cleanup retires the session.
 //  7. register the hold.
@@ -149,7 +162,7 @@ func acquire(base string, o acquireOpts) (release func() error, err error) {
 			release, err = acquireOnce(key, o)
 		}
 		if errors.Is(err, errLockFileReplaced) {
-			return nil, fmt.Errorf("session lock %q: the lock file was replaced %d times in a row while it was being taken: %w", base, maxReplaced, err)
+			return nil, fmt.Errorf("session lock %q: the lock file was replaced %d times during one acquisition: %w", base, maxReplaced, err)
 		}
 		if !errors.Is(err, fslock.ErrBusy) {
 			return release, err
@@ -193,11 +206,11 @@ func acquireOnce(key string, o acquireOpts) (func() error, error) {
 		return nil, err
 	}
 	if err := checkNamed(f, key); err != nil {
-		return nil, unlockWith(f, err)
+		return nil, unlockWith(f, err, o.unlock)
 	}
 	if o.validate != nil {
 		if err := o.validate(); err != nil {
-			return nil, unlockWith(f, err)
+			return nil, unlockWith(f, err, o.unlock)
 		}
 	}
 	h := &processHold{f: f, refs: 1}
@@ -225,10 +238,21 @@ func checkNamed(f *os.File, key string) error {
 }
 
 // unlockWith gives up a lock taken by an attempt that is not going to succeed, and
-// returns err, together with the error of the release if that failed too.
-func unlockWith(f *os.File, err error) error {
-	if uerr := fslock.Unlock(f); uerr != nil {
-		return errors.Join(err, uerr)
+// returns err. If the release fails too, THAT is what comes back, and err only in
+// its text: a failed release is final and the caller has to see it. It is %v for err
+// and %w for the release, the same rule as the close that fails after a busy lock in
+// acquireOnce, and not errors.Join, because Join keeps errors.Is(err, errLockFileReplaced)
+// true: acquire would start again, a later round would succeed, and the failed
+// release would be thrown away along with the error that carried it. The same goes
+// for the callers that read the error of a refused lock as benign (cleanup treats
+// ErrSessionGone as "somebody retired it already"): they would swallow the release
+// failure with it.
+func unlockWith(f *os.File, err error, unlock func(f *os.File) error) error {
+	if unlock == nil {
+		unlock = fslock.Unlock
+	}
+	if uerr := unlock(f); uerr != nil {
+		return fmt.Errorf("giving the lock on %s back: %w (the attempt had already failed with: %v)", f.Name(), uerr, err)
 	}
 	return err
 }
