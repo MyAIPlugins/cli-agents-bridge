@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/myAIPlugins/cli-agents-bridge/internal/fslock"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 )
 
@@ -53,7 +54,8 @@ func (e *HeldError) Is(target error) bool { return target == ErrIdentityHeld }
 //     file and both believe they hold it;
 //   - the descriptor is close-on-exec, so a child the holder starts (the MCP
 //     server runs `cab-bridge ask` as a child) cannot keep the lock alive after
-//     the holder is gone.
+//     the holder is gone, except for the milliseconds between its fork and its
+//     exec, when it still carries a copy (see internal/fslock).
 //
 // The file is never removed. An unlocked file is a free identity, and removing it
 // would put back the very race the lock exists to avoid.
@@ -126,11 +128,12 @@ func (m *Manager) AcquireIdentityLock(identity string) (*IdentityLock, error) {
 		return nil, fmt.Errorf("identity lock: %w", err)
 	}
 
-	if err := lockExclusiveNonBlocking(f); err != nil {
-		held := errors.Is(err, errLockContended)
+	if err := fslock.Lock(f); err != nil {
+		held := errors.Is(err, fslock.ErrBusy)
 		_ = f.Close()
 		if !held {
-			return nil, fmt.Errorf("identity lock: lock %s: %w", path, err)
+			// fslock names the file in its error already.
+			return nil, fmt.Errorf("identity lock: %w", err)
 		}
 		return nil, &HeldError{PID: readHolderPID(path), Path: path}
 	}

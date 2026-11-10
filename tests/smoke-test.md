@@ -32,6 +32,7 @@ export CAB_DATA_DIR=/tmp/cab-smoke-shared
 ```
 
 All subsequent steps assume `CAB_DATA_DIR` is set to the same literal value in every window.
+The binary keeps its sessions in `$CAB_DATA_DIR/layout-2/` (F-160), not in `$CAB_DATA_DIR/sessions/`: a step that looks at the disk looks there.
 
 ---
 

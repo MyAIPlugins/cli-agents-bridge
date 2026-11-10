@@ -377,8 +377,7 @@ func TestExecHookRunner_TimeoutKillsChildProcess(t *testing.T) {
 // --- runNotifyWatch: early-return paths (flag validation, dry-run, guardrail) ---
 
 func TestRunNotifyWatch_RequiresHook(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	useBase(t, t.TempDir())
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 	err := runNotifyWatch([]string{"--session-id=nwrun001"})
 	require.Error(t, err)
@@ -386,8 +385,7 @@ func TestRunNotifyWatch_RequiresHook(t *testing.T) {
 }
 
 func TestRunNotifyWatch_InvalidWatchName(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	useBase(t, t.TempDir())
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 	err := runNotifyWatch([]string{"--session-id=nwrun002", "--watch-name=bad/name", "--", "echo", "x"})
 	require.Error(t, err)
@@ -396,8 +394,7 @@ func TestRunNotifyWatch_InvalidWatchName(t *testing.T) {
 
 // --dry-run does one scan, prints, and exits without creating the lock/state.
 func TestRunNotifyWatch_DryRun(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 	sid := "nwrun003"
 	plantRoleSession(t, dataDir, sid, session.RoleEsc)
@@ -423,8 +420,7 @@ func TestRunNotifyWatch_DryRun(t *testing.T) {
 // guardrail it covered could no longer fire in production: nothing else wrote the
 // field the condition required.
 func TestRunNotifyWatch_GuardrailRefusesLiveWaiter(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 	sid := "nwrun004"
 	plantOverviewSession(t, dataDir, sid, session.RoleEsc, "ESC-x", "/repo/x", "", "")
@@ -441,8 +437,7 @@ func TestRunNotifyWatch_GuardrailRefusesLiveWaiter(t *testing.T) {
 // be refused. Without this, "the guardrail fires" and "the guardrail always
 // fires" look identical from the test suite.
 func TestRunNotifyWatch_GuardrailAllowsDepartedWaiter(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 	sid := "nwrun005"
 	plantOverviewSession(t, dataDir, sid, session.RoleEsc, "ESC-x", "/repo/x", "", "")

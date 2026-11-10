@@ -128,7 +128,7 @@ func (m *Manager) ReadWakeCursor(sessionID string) (*WakeCursor, string, error) 
 // Returns evicted=true when ownership was lost — the caller has already emitted
 // and must report the delivery as unconfirmed, not silently succeed.
 func (m *Manager) CommitWakeCursor(sessionID string, ids []string, now time.Time, ownerOK func() bool, prune map[string]bool) (evicted bool, err error) {
-	release, err := AcquireLock(filepath.Join(m.sessionDir(sessionID), "lock"), false)
+	release, err := m.AcquireSessionLock(sessionID, m.LockWait)
 	if err != nil {
 		return false, fmt.Errorf("wake cursor: acquire session lock: %w", err)
 	}
@@ -186,7 +186,7 @@ func (m *Manager) ForgetNotified(sessionID string, ids []string) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	release, err := AcquireLock(filepath.Join(m.sessionDir(sessionID), "lock"), false)
+	release, err := m.AcquireSessionLock(sessionID, m.LockWait)
 	if err != nil {
 		return fmt.Errorf("wake cursor: acquire session lock: %w", err)
 	}

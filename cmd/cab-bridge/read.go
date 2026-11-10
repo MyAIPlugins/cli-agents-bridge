@@ -52,7 +52,7 @@ func runRead(args []string) error {
 		return err
 	}
 	mgr := newSessionManager(cfg)
-	sid, err := resolveCurrentSession(mgr, "read", *sessionIDFlag)
+	sid, err := resolveCurrentSession(cfg, mgr, "read", *sessionIDFlag)
 	if err != nil {
 		return err
 	}

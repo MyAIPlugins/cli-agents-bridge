@@ -26,8 +26,7 @@ func TestRunInspect_SessionIDFlag_Rejected(t *testing.T) {
 // reject path must not change the happy path — `inspect <id>` still prints the
 // manifest.
 func TestRunInspect_PositionalStillWorks(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 	plantOverviewSession(t, dataDir, "insp0001", session.RoleEsc, "ESC-x", "/repo/x", "", "working")
 
@@ -42,8 +41,7 @@ func TestRunInspect_PositionalStillWorks(t *testing.T) {
 // TestRunInspect_ShowsListenerRecord is the B-2 observability: once a listener
 // has claimed, inspect's human output carries the listener generation/pid.
 func TestRunInspect_ShowsListenerRecord(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 	plantOverviewSession(t, dataDir, "inspls01", session.RoleEsc, "ESC-x", "/repo/x", "", "working")
 	mgr := session.NewManager(dataDir, time.Second)

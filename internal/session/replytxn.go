@@ -122,7 +122,7 @@ func (m *Manager) RemoveReplyTxn(sessionID string) error {
 // how `reply` freezes its set, and the same fencing `cleanup` must respect so
 // it cannot remove a session mid-transaction (§2.3).
 func (m *Manager) WithSessionLock(sessionID string, fn func() error) error {
-	release, err := AcquireLock(filepath.Join(m.sessionDir(sessionID), "lock"), false)
+	release, err := m.AcquireSessionLock(sessionID, m.LockWait)
 	if err != nil {
 		return fmt.Errorf("session lock: %w", err)
 	}

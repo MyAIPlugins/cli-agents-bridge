@@ -85,8 +85,7 @@ func sharedScopePrefixPair(t *testing.T, dataDir string) (escID, valID string) {
 // name-based recipients to resolve — and its remediation named --session-id,
 // which the v0.8 loop commands reject. A dead end, on every command.
 func TestRunWhoami_ExactMatchInSharedScope_IsSilent(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 	sharedScopePair(t, dataDir) // cwd == projectPath
 
@@ -103,8 +102,7 @@ func TestRunWhoami_ExactMatchInSharedScope_IsSilent(t *testing.T) {
 // in a shared scope an id-free `overview --json` resolves the cwd session, warns
 // on STDERR, and keeps STDOUT valid JSON (the warning must never pollute it).
 func TestRunOverview_SharedScope_WarnsStderrStdoutValidJSON(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 	escID, valID := sharedScopePrefixPair(t, dataDir)
 
@@ -130,8 +128,7 @@ func TestRunOverview_SharedScope_WarnsStderrStdoutValidJSON(t *testing.T) {
 // --session-id bypasses the guardrail entirely — no lookup, no warning — even in
 // a shared scope.
 func TestRunOverview_ExplicitSessionID_NoWarning(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 	escID, _ := sharedScopePair(t, dataDir)
 
@@ -151,8 +148,7 @@ func TestRunOverview_ExplicitSessionID_NoWarning(t *testing.T) {
 // REJECTED end-to-end (the warning is promoted to an error) — no silent pick.
 // Complements the pure-predicate strict test in common_test.go.
 func TestRunWhoami_StrictSharedScope_RejectsEndToEnd(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 	t.Setenv("CAB_BRIDGE_STRICT_SESSION_LOOKUP", "1")
 	_, valID := sharedScopePrefixPair(t, dataDir)
@@ -173,61 +169,59 @@ func TestRunWhoami_StrictSharedScope_RejectsEndToEnd(t *testing.T) {
 // --session-id > CAB_SESSION_ID > lookup-by-cwd, and the fail-closed behaviour
 // that makes the middle rung trustworthy.
 func TestResolveCurrentSession_EnvPrecedence(t *testing.T) {
-	setup := func(t *testing.T) (*session.Manager, string, string) {
+	setup := func(t *testing.T) (config.Config, *session.Manager, string, string) {
 		t.Helper()
-		dataDir := t.TempDir()
-		t.Setenv("CAB_DATA_DIR", dataDir)
+		dataDir := useBase(t, t.TempDir())
 		t.Setenv("CAB_AUTO_GC_HOURS", "0")
 		escID, valID := sharedScopePair(t, dataDir) // cwd == ESC's projectPath
-		cfg := config.DefaultConfig()
-		cfg.DataDir = dataDir
-		return newSessionManager(cfg), escID, valID
+		cfg := fixtureConfig(t, dataDir)
+		return cfg, newSessionManager(cfg), escID, valID
 	}
 
 	t.Run("env_wins_over_cwd", func(t *testing.T) {
-		mgr, escID, valID := setup(t)
+		cfg, mgr, escID, valID := setup(t)
 		t.Setenv("CAB_SESSION_ID", valID)
-		got, err := resolveCurrentSession(mgr, "next", "")
+		got, err := resolveCurrentSession(cfg, mgr, "next", "")
 		require.NoError(t, err)
 		assert.Equal(t, valID, got, "the environment decides, not the directory")
 		assert.NotEqual(t, escID, got)
 	})
 
 	t.Run("flag_wins_over_env", func(t *testing.T) {
-		mgr, escID, valID := setup(t)
+		cfg, mgr, escID, valID := setup(t)
 		t.Setenv("CAB_SESSION_ID", valID)
-		got, err := resolveCurrentSession(mgr, "read", escID)
+		got, err := resolveCurrentSession(cfg, mgr, "read", escID)
 		require.NoError(t, err)
 		assert.Equal(t, escID, got, "an explicit flag outranks the environment")
 	})
 
 	t.Run("cwd_used_when_env_unset", func(t *testing.T) {
-		mgr, escID, _ := setup(t)
-		got, err := resolveCurrentSession(mgr, "next", "")
+		cfg, mgr, escID, _ := setup(t)
+		got, err := resolveCurrentSession(cfg, mgr, "next", "")
 		require.NoError(t, err)
 		assert.Equal(t, escID, got)
 	})
 
 	t.Run("malformed_env_is_an_error_not_a_fallback", func(t *testing.T) {
-		mgr, _, _ := setup(t)
+		cfg, mgr, _, _ := setup(t)
 		t.Setenv("CAB_SESSION_ID", "NOT A VALID ID")
-		_, err := resolveCurrentSession(mgr, "next", "")
+		_, err := resolveCurrentSession(cfg, mgr, "next", "")
 		require.Error(t, err, "a bad value must never be ignored in favour of the cwd")
 		assert.Contains(t, err.Error(), "CAB_SESSION_ID")
 	})
 
 	t.Run("nonexistent_env_session_is_an_error", func(t *testing.T) {
-		mgr, _, _ := setup(t)
+		cfg, mgr, _, _ := setup(t)
 		t.Setenv("CAB_SESSION_ID", "deadbe01")
-		_, err := resolveCurrentSession(mgr, "next", "")
+		_, err := resolveCurrentSession(cfg, mgr, "next", "")
 		require.Error(t, err, "a stale export must be reported, not silently replaced by the cwd")
 		assert.Contains(t, err.Error(), "does not exist")
 	})
 
 	t.Run("empty_env_is_treated_as_unset", func(t *testing.T) {
-		mgr, escID, _ := setup(t)
+		cfg, mgr, escID, _ := setup(t)
 		t.Setenv("CAB_SESSION_ID", "   ")
-		got, err := resolveCurrentSession(mgr, "next", "")
+		got, err := resolveCurrentSession(cfg, mgr, "next", "")
 		require.NoError(t, err)
 		assert.Equal(t, escID, got)
 	})

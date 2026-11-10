@@ -186,7 +186,7 @@ func (m *Manager) reclaimListenerLocked(sessionID string) (ReclaimInfo, error) {
 // hold the lock for its lifetime (only the claim's read-modify-write is
 // serialized), matching the register/reconnect convention.
 func (m *Manager) ClaimListener(sessionID string) (ListenerOwner, error) {
-	release, err := AcquireLock(filepath.Join(m.sessionDir(sessionID), "lock"), false)
+	release, err := m.AcquireSessionLock(sessionID, m.LockWait)
 	if err != nil {
 		return ListenerOwner{}, fmt.Errorf("claim listener %s: %w", sessionID, err)
 	}
@@ -199,7 +199,7 @@ func (m *Manager) ClaimListener(sessionID string) (ListenerOwner, error) {
 // admin path; the register --resume reclaim instead uses reclaimListenerLocked
 // under the lock it already holds, so revoke + adopt are atomic (tryReuse).
 func (m *Manager) ReclaimListener(sessionID string) (ReclaimInfo, error) {
-	release, err := AcquireLock(filepath.Join(m.sessionDir(sessionID), "lock"), false)
+	release, err := m.AcquireSessionLock(sessionID, m.LockWait)
 	if err != nil {
 		return ReclaimInfo{}, fmt.Errorf("reclaim listener %s: %w", sessionID, err)
 	}
@@ -210,9 +210,10 @@ func (m *Manager) ReclaimListener(sessionID string) (ReclaimInfo, error) {
 // StartWait atomically adopts the session PID and claims wait ownership under a
 // SINGLE hold of the cross-process session lock.
 //
-// Doing the two separately is exploitable (CRI diff-gate P0-1): AdoptPID takes
-// only the in-process manifestMu, so a `register --resume` running in another
-// process could revoke the old waiter between its adopt and its claim — and the
+// Doing the two separately is exploitable (CRI diff-gate P0-1): AdoptPID holds
+// the session lock only for its own write and lets it go before the claim (it took
+// no cross-process lock at all until F-160), so a `register --resume` running in
+// another process could revoke the old waiter between its adopt and its claim — and the
 // old waiter's subsequent ClaimListener, which writes a fresh token
 // unconditionally, would hand ownership straight back to the process the resume
 // had just evicted. Revocation must be monotonic: once a resume has taken over,
@@ -223,7 +224,7 @@ func (m *Manager) ReclaimListener(sessionID string) (ReclaimInfo, error) {
 // after (and this waiter's token is stale, so its ownerOK goes false and its
 // watcher exits).
 func (m *Manager) StartWait(sessionID string) (ListenerOwner, error) {
-	release, err := AcquireLock(filepath.Join(m.sessionDir(sessionID), "lock"), false)
+	release, err := m.AcquireSessionLock(sessionID, m.LockWait)
 	if err != nil {
 		return ListenerOwner{}, fmt.Errorf("start wait %s: %w", sessionID, err)
 	}

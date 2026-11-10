@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
@@ -24,8 +23,7 @@ import (
 // five distinct causes into one.
 func TestSent_StatesAreNamedForWhatTheyProve(t *testing.T) {
 	dataDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
 
 	const me, peer = "sndme001", "sndpeer1"
@@ -64,8 +62,7 @@ func TestSent_StatesAreNamedForWhatTheyProve(t *testing.T) {
 // by name rather than decoded.
 func TestSent_ScansEachRecipientOnce(t *testing.T) {
 	dataDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
 
 	const me, peer = "sndme002", "sndpeer2"
@@ -113,8 +110,7 @@ func TestArchivedID(t *testing.T) {
 // why. The cursor already knows the difference, so the honest state was free.
 func TestSent_ReQueuedIsItsOwnState(t *testing.T) {
 	dataDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
 
 	const me, peer = "sndme002", "sndpeer2"
@@ -149,9 +145,8 @@ func TestSent_ReQueuedIsItsOwnState(t *testing.T) {
 // worse, for an ask the other side tidied without answering — the sender would
 // read "they replied" about an answer that never came.
 func TestSent_ArchivedDoesNotClaimAReply(t *testing.T) {
-	dataDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	dataDir := useBase(t, t.TempDir())
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
 
 	const me, peer = "sndme003", "sndpeer3"
@@ -174,7 +169,6 @@ func TestSent_ArchivedDoesNotClaimAReply(t *testing.T) {
 
 	// And the gloss must not attribute it to a reply that cannot exist.
 	out := captureStdout(t, func() {
-		t.Setenv("CAB_DATA_DIR", dataDir)
 		require.NoError(t, runSent([]string{"--session-id=" + me}))
 	})
 	assert.NotContains(t, out, "closed by their reply", "a tell is archived without any reply")

@@ -84,9 +84,11 @@ func (c *cappedBuffer) snapshot() (string, bool) {
 	return c.buf.String(), c.truncated
 }
 
-// childEnv is the environment of a loop-verb child, and nothing else.
-func childEnv(home, dataDir, sessionID string) []string {
-	return []string{"HOME=" + home, "CAB_DATA_DIR=" + dataDir, "CAB_SESSION_ID=" + sessionID}
+// childEnv is the environment of a loop-verb child, and nothing else. baseDir is
+// the BASE (CAB_DATA_DIR): the child derives <base>/layout-2 itself, so handing it
+// the state dir would make it look for <state>/layout-2 (F-160).
+func childEnv(home, baseDir, sessionID string) []string {
+	return []string{"HOME=" + home, "CAB_DATA_DIR=" + baseDir, "CAB_SESSION_ID=" + sessionID}
 }
 
 // runChild runs spec and waits for it. A non-zero exit is NOT an error: it is a

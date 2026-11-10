@@ -268,7 +268,7 @@ func runNext(args []string) error {
 	}
 	mgr := newSessionManager(cfg)
 
-	sid, err := resolveCurrentSession(mgr, "next", "")
+	sid, err := resolveCurrentSession(cfg, mgr, "next", "")
 	if err != nil {
 		return err
 	}
@@ -400,8 +400,9 @@ func nextRun(parent context.Context, mgr *session.Manager, cfg config.Config, si
 			// because it means two replies and two external effects. The output is
 			// bounded by the page limits, so the section stays short.
 			//
-			// The session lock is re-entrant within a process, so the commit below
-			// re-acquires it harmlessly.
+			// The session lock is re-entrant within a process (the registry in
+			// internal/session/lock.go), so the commit below takes it again
+			// harmlessly: the inner release does not free the outer hold.
 			var evicted bool
 			payload.page.AgentName = me
 			emitErr := mgr.WithSessionLock(sid, func() error {

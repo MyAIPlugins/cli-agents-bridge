@@ -19,6 +19,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/myAIPlugins/cli-agents-bridge/internal/fslock/locktest"
 )
 
 // TestHelperIdentityHolder is not a test: it is the body of a child process the
@@ -132,8 +134,11 @@ func TestIdentityLock_SecondAcquirerInTheSameProcessIsRefusedWithTheHolder(t *te
 	assert.Equal(t, os.Getpid(), held.PID, "the error names who holds it")
 
 	require.NoError(t, first.Release())
-	third, err := mgr.AcquireIdentityLock("/repo/a/.cab-desktop/cowork")
-	require.NoError(t, err, "released means free")
+	third, err := locktest.Take(
+		func(err error) bool { return errors.Is(err, ErrIdentityHeld) },
+		func() (*IdentityLock, error) { return mgr.AcquireIdentityLock("/repo/a/.cab-desktop/cowork") },
+	)
+	require.NoError(t, err, "released means it becomes free")
 	require.NoError(t, third.Release())
 }
 

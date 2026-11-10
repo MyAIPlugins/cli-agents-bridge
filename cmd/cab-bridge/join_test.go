@@ -27,8 +27,7 @@ func TestJoin_PrintsEveryoneNotAPickedPeer(t *testing.T) {
 	plantSessionFull(t, dataDir, "crigrp01", session.RoleEsc, "CRI-g", scope, "/repo/group/docs", "working")
 	plantSessionFull(t, dataDir, "cr2grp01", session.RoleEsc, "CRI2-g", scope, "/repo/group/cmd", "working")
 
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
 	peers, _, err := collectPeers(mgr, dataDir, cfg.StaleSeconds, 65536, true, "", scope)
 	require.NoError(t, err)
@@ -69,7 +68,7 @@ func TestJoin_ReportsAnEmptyRoomHonestly(t *testing.T) {
 func TestJoin_BareJoinReturnsToTheSessionAlreadyHere(t *testing.T) {
 	dataDir := t.TempDir()
 	proj := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir = useBase(t, dataDir)
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 
 	require.NoError(t, runJoin([]string{"--role=esc", "--agent-name=CRI-payload", "--project-path=" + proj}))
@@ -93,7 +92,7 @@ func TestJoin_BareJoinReturnsToTheSessionAlreadyHere(t *testing.T) {
 func TestJoin_ExplicitNameRenamesInPlaceAndKeepsTheMailbox(t *testing.T) {
 	dataDir := t.TempDir()
 	proj := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir = useBase(t, dataDir)
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 
 	require.NoError(t, runJoin([]string{"--role=architect", "--agent-name=ARCHITECT-docs", "--project-path=" + proj}))
@@ -135,7 +134,7 @@ func TestJoin_WillNotRenameIntoANameLiveElsewhere(t *testing.T) {
 	theirs := filepath.Join(base, "theirs")
 	require.NoError(t, os.MkdirAll(mine, 0o700))
 	require.NoError(t, os.MkdirAll(theirs, 0o700))
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir = useBase(t, dataDir)
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 
 	require.NoError(t, runJoin([]string{"--role=esc", "--agent-name=ESC-taken", "--project-path=" + theirs}))
@@ -164,7 +163,7 @@ func TestResolveRecipient_TellsWhereARenamedNameWent(t *testing.T) {
 	theirs := filepath.Join(base, "theirs")
 	require.NoError(t, os.MkdirAll(mine, 0o700))
 	require.NoError(t, os.MkdirAll(theirs, 0o700))
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir = useBase(t, dataDir)
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 
 	require.NoError(t, runJoin([]string{"--role=val", "--agent-name=VAL-payload", "--project-path=" + mine}))
@@ -190,7 +189,7 @@ func TestResolveRecipient_TellsWhereARenamedNameWent(t *testing.T) {
 }
 
 func TestRunJoin_RequiresRole(t *testing.T) {
-	t.Setenv("CAB_DATA_DIR", t.TempDir())
+	useBase(t, t.TempDir())
 	err := runJoin(nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--role")
@@ -201,7 +200,7 @@ func TestRunJoin_RequiresRole(t *testing.T) {
 func TestRunJoin_EndToEndIsIdempotent(t *testing.T) {
 	dataDir := t.TempDir()
 	proj := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir = useBase(t, dataDir)
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 
 	first := captureStdout(t, func() {
@@ -237,8 +236,7 @@ func TestRunJoin_EndToEndIsIdempotent(t *testing.T) {
 // sender CLOSED them without this life having ever seen them.
 func TestJoin_ReplaysOpenAsksAcrossLives(t *testing.T) {
 	dataDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
 
 	const sid = "jrepl001"
@@ -266,8 +264,7 @@ func TestJoin_ReplaysOpenAsksAcrossLives(t *testing.T) {
 // more, and unknown ids are simply absent.
 func TestForgetNotified_IsIdempotentAndBounded(t *testing.T) {
 	dataDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
 
 	const sid = "jrepl002"
@@ -304,8 +301,7 @@ func TestJoin_NameTakenElsewhereNamesAReachablePlace(t *testing.T) {
 	const scope = "/repo/shared"
 	plantSessionFull(t, dataDir, "occup001", session.RoleVal, "VAL-x", scope, occupantDir, session.StateOrchestrating)
 
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
 	peers, _, err := collectPeers(mgr, dataDir, cfg.StaleSeconds, 65536, true, "", scope)
 	require.NoError(t, err)
@@ -355,7 +351,7 @@ func TestJoin_CriticIsAFirstClassRole(t *testing.T) {
 	criDir := filepath.Join(base, "cri")
 	require.NoError(t, os.MkdirAll(valDir, 0o700))
 	require.NoError(t, os.MkdirAll(criDir, 0o700))
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir = useBase(t, dataDir)
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 
 	require.NoError(t, runJoin([]string{"--role=val", "--agent-name=VAL-p", "--project-path=" + valDir}))
@@ -412,7 +408,7 @@ func TestJoin_NameRuleAcrossTheFourSituations(t *testing.T) {
 	for _, d := range []string{a1, a2, b1} {
 		require.NoError(t, os.MkdirAll(d, 0o700))
 	}
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir = useBase(t, dataDir)
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 
 	require.NoError(t, runJoin([]string{"--role=critic", "--agent-name=CRI-x", "--project-path=" + a1}))
@@ -517,7 +513,7 @@ func TestJoin_RestartingWithADifferentRoleKeepsOneSession(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700))
 	mine := filepath.Join(base, "bro")
 	require.NoError(t, os.MkdirAll(mine, 0o700))
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir = useBase(t, dataDir)
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 
 	require.NoError(t, runJoin([]string{"--role=tester", "--agent-name=BRO-x", "--project-path=" + mine}))
@@ -548,7 +544,7 @@ func TestJoin_ChangingRoleKeepsTheMailbox(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700))
 	mine := filepath.Join(base, "bro")
 	require.NoError(t, os.MkdirAll(mine, 0o700))
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir = useBase(t, dataDir)
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 
 	require.NoError(t, runJoin([]string{"--role=tester", "--agent-name=BRO-x", "--project-path=" + mine}))
@@ -653,7 +649,7 @@ func TestJoin_LegacyUnsafeNameIsNamedAndRepairable(t *testing.T) {
 		t.Run(tc.label, func(t *testing.T) {
 			dataDir := t.TempDir()
 			proj := t.TempDir()
-			t.Setenv("CAB_DATA_DIR", dataDir)
+			dataDir = useBase(t, dataDir)
 			t.Setenv("CAB_AUTO_GC_HOURS", "0")
 
 			require.NoError(t, runJoin([]string{"--role=esc", "--agent-name=ESC-safe", "--project-path=" + proj}))
@@ -718,7 +714,7 @@ func TestRegister_FusedBasenamesStayAddressable(t *testing.T) {
 	dataDir := t.TempDir()
 	base := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700)) // one scope
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir = useBase(t, dataDir)
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 
 	// The second name was `a:b` and is now `a b`: NTFS refuses a colon outright
@@ -787,7 +783,7 @@ func TestRepairedSession_OldNameIsRecordedNotForwarded(t *testing.T) {
 	sender := filepath.Join(base, "sender")
 	require.NoError(t, os.MkdirAll(proj, 0o700))
 	require.NoError(t, os.MkdirAll(sender, 0o700))
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir = useBase(t, dataDir)
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 
 	require.NoError(t, runJoin([]string{"--role=esc", "--agent-name=ESC-safe", "--project-path=" + proj}))
@@ -848,7 +844,7 @@ func TestRepairCommand_IsRunnableFromAnywhere(t *testing.T) {
 	cwdB := filepath.Join(base, "elsewhere") // where the operator happens to be
 	require.NoError(t, os.MkdirAll(projA, 0o700))
 	require.NoError(t, os.MkdirAll(cwdB, 0o700))
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir = useBase(t, dataDir)
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 
 	require.NoError(t, runJoin([]string{"--role=esc", "--agent-name=ESC-ok", "--project-path=" + projA}))
@@ -922,7 +918,7 @@ func TestJoin_RelativeProjectPathIsTheSameProject(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700))
 	work := filepath.Join(base, "work")
 	require.NoError(t, os.MkdirAll(work, 0o700))
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir = useBase(t, dataDir)
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 	t.Chdir(work)
 
@@ -962,7 +958,7 @@ func TestRegister_SaysWhenTheNameIsNotTheDirectorys(t *testing.T) {
 	plain := filepath.Join(base, "plain")
 	require.NoError(t, os.MkdirAll(spaced, 0o700))
 	require.NoError(t, os.MkdirAll(plain, 0o700))
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	useBase(t, dataDir)
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 
 	stderr := captureStderr(t, func() {
@@ -1002,7 +998,7 @@ func TestRegister_NoticeDoesNotAnnounceADerivationThatWillNotHappen(t *testing.T
 	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700))
 	odd := filepath.Join(base, "a+b") // a directory whose basename IS escaped
 	require.NoError(t, os.MkdirAll(odd, 0o700))
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir = useBase(t, dataDir)
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 
 	// Registered with a name the caller chose, in a directory that would derive
@@ -1060,7 +1056,7 @@ func TestOutcome_IsReadFromTheResultNotTheClock(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(base, ".git"), 0o700))
 	odd := filepath.Join(base, "a+b") // basename that would derive something else
 	require.NoError(t, os.MkdirAll(odd, 0o700))
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir = useBase(t, dataDir)
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 
 	require.NoError(t, runRegister([]string{"--role=esc", "--json=false", "--agent-name=ESC-custom", "--project-path=" + odd}))
@@ -1118,8 +1114,7 @@ func TestOutcome_IsReadFromTheResultNotTheClock(t *testing.T) {
 // Found by the wiring harness (shellarg_wiring_test.go) on its first run, while
 // looking for something else entirely.
 func TestJoin_ACustomRoleStillDerivesAnAddressableName(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 	proj := t.TempDir()
 
@@ -1130,8 +1125,7 @@ func TestJoin_ACustomRoleStillDerivesAnAddressableName(t *testing.T) {
 	assert.Contains(t, stderr, "cannot be used as it stands in an agent name",
 		"and the reshaping is announced, exactly as the directory's is — a silent rename of one's own identity is the substitution this project keeps removing")
 
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
 	peers, _, err := collectPeers(mgr, dataDir, cfg.StaleSeconds, cfg.MaxMessageBytes, true, "", "")
 	require.NoError(t, err)

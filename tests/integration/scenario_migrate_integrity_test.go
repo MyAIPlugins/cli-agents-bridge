@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 )
 
 // TestMigrate_SessionIDDivergenceRejected covers FINDING-4 / NEW-1: a Patil
@@ -44,9 +46,9 @@ func TestMigrate_SessionIDDivergenceRejected(t *testing.T) {
 	require.Equal(t, 0, exit, "migrate must exit 0 even when skipping invalid: %s", errOut)
 
 	// Must not be migrated under either identity.
-	_, err := os.Stat(filepath.Join(dataDir, "sessions", "diverge1"))
+	_, err := os.Stat(filepath.Join(dataDir, config.LayoutDir, "sessions", "diverge1"))
 	assert.True(t, os.IsNotExist(err), "divergent session must not be migrated under its dir name")
-	_, err = os.Stat(filepath.Join(dataDir, "sessions", "otherid9"))
+	_, err = os.Stat(filepath.Join(dataDir, config.LayoutDir, "sessions", "otherid9"))
 	assert.True(t, os.IsNotExist(err), "divergent session must not be migrated under its manifest sessionId")
 
 	assert.Contains(t, out, "diverge1", "report must mention the rejected session")
@@ -83,7 +85,7 @@ func TestMigrate_CoherentManifestStillMigrates(t *testing.T) {
 	}, dataDirEnv(dataDir))
 	require.Equal(t, 0, exit, "coherent migrate must exit 0: %s", errOut)
 
-	mfPath := filepath.Join(dataDir, "sessions", "coher001", "manifest.json")
+	mfPath := filepath.Join(dataDir, config.LayoutDir, "sessions", "coher001", "manifest.json")
 	written, err := os.ReadFile(mfPath)
 	require.NoError(t, err, "coherent session must be migrated")
 	var got map[string]interface{}

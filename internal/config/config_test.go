@@ -18,11 +18,17 @@ func TestLoad_RelativeDataDirResolvedToAbsolute(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if !filepath.IsAbs(cfg.DataDir) {
-		t.Fatalf("DataDir not absolute after Load: %q", cfg.DataDir)
+	// F-160 changed contract: CAB_DATA_DIR names the BASE; DataDir (the state dir)
+	// is derived from it. The absolute check applies to the base, and the derived
+	// dir must follow it.
+	if !filepath.IsAbs(cfg.BaseDir) {
+		t.Fatalf("BaseDir not absolute after Load: %q", cfg.BaseDir)
 	}
-	if !strings.HasSuffix(cfg.DataDir, filepath.Join("relative", "data", "dir")) {
-		t.Errorf("resolved DataDir %q does not preserve the relative input suffix", cfg.DataDir)
+	if !strings.HasSuffix(cfg.BaseDir, filepath.Join("relative", "data", "dir")) {
+		t.Errorf("resolved BaseDir %q does not preserve the relative input suffix", cfg.BaseDir)
+	}
+	if want := filepath.Join(cfg.BaseDir, LayoutDir); cfg.DataDir != want {
+		t.Errorf("DataDir = %q, want the layout dir under the resolved base %q", cfg.DataDir, want)
 	}
 	found := false
 	for _, w := range warnings {
@@ -45,8 +51,11 @@ func TestLoad_AbsoluteDataDirUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.DataDir != abs {
-		t.Errorf("absolute DataDir changed: got %q want %q", cfg.DataDir, abs)
+	if cfg.BaseDir != abs {
+		t.Errorf("absolute BaseDir changed: got %q want %q", cfg.BaseDir, abs)
+	}
+	if want := filepath.Join(abs, LayoutDir); cfg.DataDir != want {
+		t.Errorf("DataDir = %q, want %q (the state lives under the base, never in it)", cfg.DataDir, want)
 	}
 	for _, w := range warnings {
 		if strings.Contains(w, "was relative") {

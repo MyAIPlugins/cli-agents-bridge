@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
@@ -135,8 +134,7 @@ func captureStdoutStderr(t *testing.T, fn func()) (string, string) {
 // the hidden-count hint, shows everything with --all-scopes, and lets --team
 // bypass the scope filter (H3).
 func TestRunPeers_ScopeFiltering(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 
 	root := t.TempDir()
@@ -196,8 +194,7 @@ func TestRunPeers_ScopeFiltering(t *testing.T) {
 // single source (ListenerOwner.Listening) buys.
 func TestPeers_ListeningAndOverviewCannotDisagree(t *testing.T) {
 	dataDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
 
 	const scope = "/repo/live"

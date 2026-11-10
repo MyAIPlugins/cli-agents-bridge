@@ -17,6 +17,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 )
 
 // These tests run the REAL binary: the server as Claude Desktop starts it (its own
@@ -49,9 +51,13 @@ type sandbox struct {
 	t    *testing.T
 	bin  string
 	home string
-	data string
+	data string // the BASE: what CAB_DATA_DIR is set to
 	repo string
 }
+
+// state is where the binary keeps its sessions under the base (F-160): the tests
+// that look at the disk read it, not data.
+func (sb *sandbox) state() string { return filepath.Join(sb.data, config.LayoutDir) }
 
 func newSandbox(t *testing.T, bin string) *sandbox {
 	t.Helper()
@@ -300,7 +306,7 @@ func TestMCPWithTheRealBinary(t *testing.T) {
 		// disk path (the sender's outbox is a file). The complaint must not arrive.
 		arcs := architectPeers(t, sb)
 		require.Len(t, arcs, 1)
-		outbox := filepath.Join(sb.data, "sessions", arcs[0]["sessionId"].(string), "outbox")
+		outbox := filepath.Join(sb.state(), "sessions", arcs[0]["sessionId"].(string), "outbox")
 		require.NoError(t, os.RemoveAll(outbox))
 		require.NoError(t, os.WriteFile(outbox, []byte("a file where a directory belongs"), 0o600))
 		res = srv.client.call("tell", map[string]any{"to": "VAL-real", "message": "a second message, while the disk misbehaves"})

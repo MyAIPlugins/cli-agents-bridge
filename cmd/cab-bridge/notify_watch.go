@@ -30,7 +30,7 @@ import (
 const (
 	notifyWatchDefaultPoll   = 15 * time.Second
 	notifyWatchDefaultHookTO = 30 * time.Second
-	notifyWatchDir           = "notify-watch"
+	notifyWatchDir           = session.NotifyWatchDir
 	notifyWatchDefaultName   = "default"
 	// notifyWatchKillGrace is how long a timed-out hook's process group has to
 	// exit on SIGTERM before it is SIGKILLed (P1.2 process-group teardown).
@@ -117,7 +117,7 @@ func runNotifyWatch(args []string) error {
 		return err
 	}
 	mgr := newSessionManager(cfg)
-	sid, err := resolveCurrentSession(mgr, "notify-watch", *sessionIDFlag)
+	sid, err := resolveCurrentSession(cfg, mgr, "notify-watch", *sessionIDFlag)
 	if err != nil {
 		return err
 	}
@@ -167,19 +167,17 @@ func runNotifyWatch(args []string) error {
 		fmt.Fprintf(logw, "notify-watch: WARN %s; proceeding (--allow-concurrent-consumer)\n", warn)
 	}
 
-	// Non-negotiable #5 (lock): one watcher per (session, watch-name). Reuses the
-	// session lock primitive (O_EXCL + PID stale recovery, SC-6).
-	watchDir := filepath.Join(sessionDir, notifyWatchDir)
-	if err := os.MkdirAll(watchDir, 0o700); err != nil {
-		return fmt.Errorf("notify-watch: create watch dir: %w", err)
-	}
-	lockPath := filepath.Join(watchDir, *watchName+".lock")
-	release, err := session.AcquireLock(lockPath, false)
+	// Non-negotiable #5 (lock): one watcher per (session, watch-name). The watcher
+	// lock is a kernel lock held for the life of this process, taken inside the
+	// session lock so a retired session is refused and nothing is created for it.
+	// A second watcher with the same name finds it held and stops at once.
+	release, err := mgr.AcquireWatcherLock(sid, *watchName)
 	if err != nil {
 		return fmt.Errorf("notify-watch: %w", err)
 	}
 	defer func() { _ = release() }()
 
+	watchDir := filepath.Join(sessionDir, notifyWatchDir)
 	statePath := filepath.Join(watchDir, *watchName+".json")
 	st, err := loadWatchState(statePath)
 	if err != nil {
@@ -223,30 +221,80 @@ func runNotifyWatch(args []string) error {
 
 	ctx, cancel := notifyWatchSignalContext()
 	defer cancel()
-	ticker := time.NewTicker(*pollInterval)
-	defer ticker.Stop()
 
 	fmt.Fprintln(logw, "notify-watch: watching (Ctrl-C to stop)")
+	return watchLoop(ctx, watchLoopParams{
+		mgr: mgr, sid: sid, sessionDir: sessionDir, statePath: statePath, st: st,
+		cfg: wcfg, run: runner, guard: guard, maxBytes: cfg.MaxMessageBytes, logw: logw, warned: warned,
+	})
+}
+
+// watchLoopParams is what watchLoop needs, in one value: the loop is separate from
+// the command so a test can drive it with a short poll and a fake hook.
+type watchLoopParams struct {
+	mgr        *session.Manager
+	sid        string
+	sessionDir string
+	statePath  string
+	st         *watchState
+	cfg        watchConfig
+	run        hookRunner
+	guard      hookGuard
+	maxBytes   int
+	logw       io.Writer
+	warned     map[string]bool
+}
+
+// watchLoop runs watchTick every poll interval until ctx is cancelled, a hook
+// fails under --exit-on-hook-error, or the session is retired.
+//
+// The retirement check is what the kernel lock cannot do. The watcher holds a lock
+// on a file inside the session directory; cleanup retires the session and removes
+// that file while this process still has it open, so nobody contends for it any
+// more and a new watcher of the same name would not be refused by it. The new one
+// cannot start either (starting needs the session lock, which refuses a retired
+// session), so the only thing left to do is to notice and stop. One tick is the
+// longest this watcher keeps running after the retirement.
+func watchLoop(ctx context.Context, p watchLoopParams) error {
+	ticker := time.NewTicker(p.cfg.pollInterval)
+	defer ticker.Stop()
 	for {
-		if err := watchTick(ctx, sessionDir, sid, st, statePath, wcfg, runner, guard, time.Now().UTC(), cfg.MaxMessageBytes, logw, warned); err != nil {
+		if err := sessionStillExists(p.mgr, p.sid, p.logw); err != nil {
+			return err
+		}
+		if err := watchTick(ctx, p.sessionDir, p.sid, p.st, p.statePath, p.cfg, p.run, p.guard, time.Now().UTC(), p.maxBytes, p.logw, p.warned); err != nil {
 			if errors.Is(err, errHookFailed) {
-				if wcfg.exitOnHookError {
+				if p.cfg.exitOnHookError {
 					return err
 				}
 				// already logged + backed off in watchTick; stay operational.
 			} else {
 				// I/O error on our own scan/state: log and keep watching rather
 				// than crashing the watcher on a transient FS hiccup.
-				fmt.Fprintf(logw, "notify-watch: tick error (continuing): %v\n", err)
+				fmt.Fprintf(p.logw, "notify-watch: tick error (continuing): %v\n", err)
 			}
 		}
 		select {
 		case <-ctx.Done():
-			fmt.Fprintln(logw, "notify-watch: shutting down")
+			fmt.Fprintln(p.logw, "notify-watch: shutting down")
 			return nil
 		case <-ticker.C:
 		}
 	}
+}
+
+// sessionStillExists returns an error only when the manifest is gone (the session
+// was retired). Any other failure to read it is not a reason to stop: it is logged
+// and the watcher goes on, like every transient I/O error of its tick.
+func sessionStillExists(mgr *session.Manager, sid string, logw io.Writer) error {
+	_, err := mgr.LoadManifest(sid)
+	if errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("notify-watch: session %s no longer exists (cleanup retired it), stopping: %w", sid, session.ErrSessionGone)
+	}
+	if err != nil {
+		fmt.Fprintf(logw, "notify-watch: could not read the manifest of session %s (continuing): %v\n", sid, err)
+	}
+	return nil
 }
 
 // watchTick performs ONE scan+notify pass: peek the pending inbox, prune markers

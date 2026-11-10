@@ -208,8 +208,22 @@ func loadPatilManifest(path string) (*session.Manifest, error) {
 
 // migrateOne writes the upgraded manifest into dstSessionDir + copies any
 // inbox/outbox files + drops the .migrated marker for idempotency.
+//
+// The session folder is created by US and exclusively, like Register does (F-160, CRI
+// diff-gate round 2): the lock protocol rests on "the manifest of a retired session
+// does not come back", and an importer that wrote into a folder that already exists
+// brought it back. The folder can exist because cleanup is in the middle of retiring
+// it (the lock file is still there), because the session is alive, or because an
+// earlier import was interrupted before it left its marker. In none of those cases is
+// it ours to write into, and the marker case never gets here (runMigrate skips it).
 func migrateOne(srcSessionDir, dstSessionDir string, mf *session.Manifest) error {
-	if err := os.MkdirAll(dstSessionDir, 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dstSessionDir), 0o700); err != nil {
+		return fmt.Errorf("mkdir sessions dir: %w", err)
+	}
+	if err := os.Mkdir(dstSessionDir, 0o700); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return fmt.Errorf("the session folder %s already exists and is not marked as migrated, so nothing was written: it is being retired, it is alive, or an earlier import of it was interrupted; remove it by hand if it is yours to remove", dstSessionDir)
+		}
 		return fmt.Errorf("mkdir target: %w", err)
 	}
 	for _, sub := range []string{"inbox", "outbox"} {

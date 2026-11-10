@@ -24,10 +24,9 @@ const (
 // Not parallel: it sets process environment.
 func desktopEnv(t *testing.T) (dataDir string) {
 	t.Helper()
-	dataDir = t.TempDir()
+	dataDir = useBase(t, t.TempDir())
 	plantOverviewSession(t, dataDir, dskVal, session.RoleVal, "VAL-dsk", dskScope, "", session.StateOrchestrating)
 	plantOverviewSession(t, dataDir, dskEsc, session.RoleEsc, "ESC-dsk", dskScope, "", "working")
-	t.Setenv("CAB_DATA_DIR", dataDir)
 	t.Setenv("CAB_SESSION_ID", dskVal)
 	t.Setenv("CAB_MCP_GRANT_TTL_MINUTES", "")
 	return dataDir
@@ -54,7 +53,7 @@ func TestDesktop_OpenWritesAGrantForTheConfiguredTTL(t *testing.T) {
 	assert.Contains(t, out, dskScope)
 	assert.Contains(t, out, "neither closes this nor renews it", "the D8 contract is said where the val reads it")
 
-	mgr := newSessionManager(nextTestConfig(dataDir))
+	mgr := newSessionManager(nextTestConfig(t, dataDir))
 	g, found, rerr := mgr.ReadDesktopGrant(dskVal)
 	require.NoError(t, rerr)
 	require.True(t, found)

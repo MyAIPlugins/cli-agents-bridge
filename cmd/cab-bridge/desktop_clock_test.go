@@ -14,7 +14,7 @@ import (
 // by accident: at the injected instant it is open, at the wall clock it is long gone.
 func TestDesktop_StatusJudgesTheGrantByTheManagersClock(t *testing.T) {
 	dataDir := desktopEnv(t)
-	mgr := newSessionManager(nextTestConfig(dataDir))
+	mgr := newSessionManager(nextTestConfig(t, dataDir))
 	t0 := time.Date(2001, 5, 6, 8, 0, 0, 0, time.UTC)
 	mgr.Now = func() time.Time { return t0 }
 	_, err := mgr.OpenDesktopGrant(dskVal, 8*time.Hour)

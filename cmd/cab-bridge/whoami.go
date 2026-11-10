@@ -34,8 +34,14 @@ type whoamiReport struct {
 	ScopeDerived bool `json:"scopeDerived,omitempty"`
 	// State is the F-23a agent task-state (idle/working/done/orchestrating) from
 	// the stored manifest; empty (omitted) for legacy/never-set.
-	State   string `json:"state,omitempty"`
+	State string `json:"state,omitempty"`
+	// DataDir is the directory this binary keeps its state in (<base>/layout-2): not
+	// the value to export as CAB_DATA_DIR. BaseDir is that value. The key
+	// "baseDir" is new and additive (F-160): a script that read "dataDir" to point
+	// another process at the same state must read "baseDir" instead, or the other
+	// process would look in <state>/layout-2.
 	DataDir string `json:"dataDir"`
+	BaseDir string `json:"baseDir"`
 }
 
 func runWhoami(args []string) error {
@@ -56,7 +62,7 @@ func runWhoami(args []string) error {
 	}
 	mgr := newSessionManager(cfg)
 
-	sid, err := resolveCurrentSession(mgr, "whoami", *sessionIDFlag)
+	sid, err := resolveCurrentSession(cfg, mgr, "whoami", *sessionIDFlag)
 	if err != nil {
 		return err
 	}
@@ -75,6 +81,7 @@ func runWhoami(args []string) error {
 		ScopeDerived: session.ScopeIsDerived(mf),
 		State:        mf.State,
 		DataDir:      cfg.DataDir,
+		BaseDir:      cfg.BaseDir,
 	}
 
 	if *asJSON {
@@ -112,5 +119,6 @@ func runWhoami(args []string) error {
 	fmt.Printf("scope:       %s\n", scope)
 	fmt.Printf("state:       %s\n", state)
 	fmt.Printf("dataDir:     %s\n", report.DataDir)
+	fmt.Printf("baseDir:     %s  (what CAB_DATA_DIR points at)\n", report.BaseDir)
 	return nil
 }

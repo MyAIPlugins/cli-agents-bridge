@@ -42,7 +42,7 @@ func (e *mcpEnv) useFakeCLI() string {
 }
 
 func (e *mcpEnv) fakeLog() string {
-	data, err := os.ReadFile(filepath.Join(e.dataDir, "fake-cli.log"))
+	data, err := os.ReadFile(filepath.Join(e.baseDir, "fake-cli.log"))
 	if err != nil {
 		return ""
 	}
@@ -80,7 +80,11 @@ func TestMCPSend_RunsTheVerbAsAChildWithTheMessageOnStdinAndANothingElseEnvironm
 	assert.Contains(t, log, "ARGC:2\nARG:ask\nARG:VAL-demo\n", "argv is the verb and the recipient, nothing else")
 	assert.True(t, strings.HasSuffix(log, "---STDIN\n"+msg), "the message arrives on stdin byte for byte")
 	assert.Contains(t, log, "CAB_SESSION_ID="+j.arcSID+"\n")
-	assert.Contains(t, log, "CAB_DATA_DIR="+j.e.dataDir+"\n")
+	// Changed contract (F-160): the child is handed the BASE, not the state dir. It
+	// finds the state by itself under <base>/layout-2; handing it the state dir would
+	// make it look for <state>/layout-2.
+	assert.Contains(t, log, "CAB_DATA_DIR="+j.e.baseDir+"\n")
+	assert.NotContains(t, log, "CAB_DATA_DIR="+j.e.dataDir+"\n", "the state dir is not what a child is told")
 	assert.Contains(t, log, "HOME="+j.e.home+"\n")
 	assert.NotContains(t, log, "MCP_LEAK_SENTINEL", "the child's environment is built from nothing, not inherited")
 	assert.NoFileExists(t, "/tmp/pwned")

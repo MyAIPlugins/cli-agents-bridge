@@ -35,10 +35,20 @@ type Config struct {
 	// (omitempty), so it stays out of any generated config.
 	Comment string `json:"_comment,omitempty"`
 
-	// DataDir is the root of all bridge state.
+	// BaseDir is the directory a user configures with CAB_DATA_DIR or "data_dir"
+	// in config.json: where config.json lives and where the generations of the
+	// on-disk layout sit side by side (F-160). It is NOT where this binary keeps
+	// its state: that is DataDir.
 	// Default: ~/.claude/cli-agents-bridge/
 	// Env override: CAB_DATA_DIR
-	DataDir string `json:"data_dir"`
+	BaseDir string `json:"data_dir"`
+
+	// DataDir is the root of all the state THIS binary reads and writes:
+	// <BaseDir>/layout-2. It is derived once, by layoutDir, in DefaultConfig and
+	// at the end of Load, and it is never read from config.json (json:"-"): the
+	// key "data_dir" has always meant the base, and a file that said otherwise
+	// would break every old binary that shares it.
+	DataDir string `json:"-"`
 
 	// StaleSeconds is how old lastHeartbeat must be before a peer is
 	// considered stale by list-peers and cleanup.
@@ -160,6 +170,18 @@ type Config struct {
 	// not been measured. Env override: CAB_MCP_MAX_RESULT_BYTES.
 	MCPMaxResultBytes int `json:"mcp_max_result_bytes"`
 
+	// SessionLockWaitMs is how long a command that needs a session lock keeps
+	// trying while another process holds it (F-160). The holds are milliseconds
+	// long, so the wait is normally invisible; the value is a default and not a
+	// maximum, and it only bounds how long a command waits before it fails with the
+	// lock path and the time it waited. <= 0 means do not wait: one attempt.
+	// Default: 5000.
+	// Env override: CAB_SESSION_LOCK_WAIT_MS. NOTE: a 0 in the user config.json is
+	// ignored (applyUserFile skips zero-values) — turn the wait off via the env var.
+	// Do not write this key in config.json while a cab-bridge from before F-160 is
+	// still in use: that version refuses a file with a key it does not know.
+	SessionLockWaitMs int `json:"session_lock_wait_ms"`
+
 	// FindingsStaleDays is how many days a finding may stay open before
 	// `cab-bridge findings stale` lists it (F-156). Must be >= 1; `stale`
 	// refuses a smaller value. Default 7. Env override: CAB_FINDINGS_STALE_DAYS.
@@ -171,12 +193,15 @@ type Config struct {
 	FindingsDeniedNames []string `json:"findings_denied_names,omitempty"`
 }
 
-// DefaultConfig returns the source-of-truth default values. The DataDir is
-// computed relative to the current user's home directory.
+// DefaultConfig returns the source-of-truth default values. The BaseDir is
+// computed relative to the current user's home directory, and DataDir derived
+// from it.
 func DefaultConfig() Config {
 	home, _ := os.UserHomeDir()
+	base := filepath.Join(home, ".claude", "cli-agents-bridge")
 	return Config{
-		DataDir:            filepath.Join(home, ".claude", "cli-agents-bridge"),
+		BaseDir:            base,
+		DataDir:            layoutDir(base),
 		StaleSeconds:       300,
 		PollIntervalMs:     1000,
 		MaxBlockingSeconds: 540,
@@ -196,6 +221,8 @@ func DefaultConfig() Config {
 		MCPChildTimeoutSeconds:    20,
 		MCPMaxResultBytes:         24576,
 
+		SessionLockWaitMs: 5000,
+
 		FindingsStaleDays: 7,
 	}
 }
@@ -204,19 +231,20 @@ func DefaultConfig() Config {
 // on top of DefaultConfig. Returns the resolved Config plus any non-fatal
 // warnings (e.g. malformed env var ignored). A nil error means resolution
 // succeeded; the user file is optional and absence is not an error.
-// InitialDataDir is the data dir BEFORE config.json has been consulted: the
-// compiled-in default, overridden by CAB_DATA_DIR.
+// InitialBaseDir is the BASE dir before config.json has been consulted: the
+// compiled-in default, overridden by CAB_DATA_DIR. (It was InitialDataDir until
+// F-160: the name now says which of the two directories it is.)
 //
 // It is exported because that directory is TRAVERSED to read config.json, which
 // means it is read before any integrity check could have run on it. The caller
 // verifies this one first, then loads, then verifies the final dir if the file
 // moved it — a redirect that happens before every check is a redirect nobody
 // checks (CRI diff-gate).
-func InitialDataDir() string {
+func InitialBaseDir() string {
 	if v := os.Getenv("CAB_DATA_DIR"); v != "" {
 		return v
 	}
-	return DefaultConfig().DataDir
+	return DefaultConfig().BaseDir
 }
 
 func Load() (Config, []string, error) {
@@ -227,9 +255,9 @@ func Load() (Config, []string, error) {
 	// CAB_DATA_DIR=/custom reads config.json from /custom rather than from the
 	// compiled-in default dir. applyEnv re-applies it idempotently below, so
 	// env still wins over the file for data_dir (and every other field).
-	cfg.DataDir = InitialDataDir()
+	cfg.BaseDir = InitialBaseDir()
 
-	userFile := filepath.Join(cfg.DataDir, "config.json")
+	userFile := filepath.Join(cfg.BaseDir, "config.json")
 	if err := applyUserFile(&cfg, userFile); err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
 			return cfg, warnings, fmt.Errorf("user config %q: %w", userFile, err)
@@ -244,14 +272,19 @@ func Load() (Config, []string, error) {
 	// filepath.Join CWD-relative and would let the SC-7 boot check inspect
 	// the wrong directory. We resolve rather than hard-fail to keep first-run
 	// ergonomics, but a relative path is almost always a user error so we warn.
-	if !filepath.IsAbs(cfg.DataDir) {
-		abs, err := filepath.Abs(cfg.DataDir)
+	if !filepath.IsAbs(cfg.BaseDir) {
+		abs, err := filepath.Abs(cfg.BaseDir)
 		if err != nil {
-			return cfg, warnings, fmt.Errorf("resolve data dir %q to absolute: %w", cfg.DataDir, err)
+			return cfg, warnings, fmt.Errorf("resolve data dir %q to absolute: %w", cfg.BaseDir, err)
 		}
-		warnings = append(warnings, fmt.Sprintf("data_dir %q was relative, resolved to absolute %q", cfg.DataDir, abs))
-		cfg.DataDir = abs
+		warnings = append(warnings, fmt.Sprintf("data_dir %q was relative, resolved to absolute %q", cfg.BaseDir, abs))
+		cfg.BaseDir = abs
 	}
+
+	// The one place the state dir is derived after the base is final: every path
+	// the binary uses hangs from cfg.DataDir, so none of them can reach the old
+	// layout's <base>/sessions or <base>/archive (F-160).
+	cfg.DataDir = layoutDir(cfg.BaseDir)
 
 	return cfg, warnings, nil
 }
@@ -272,8 +305,8 @@ func applyUserFile(cfg *Config, path string) error {
 		return fmt.Errorf("parse json: %w", err)
 	}
 
-	if override.DataDir != "" {
-		cfg.DataDir = override.DataDir
+	if override.BaseDir != "" {
+		cfg.BaseDir = override.BaseDir
 	}
 	if override.StaleSeconds != 0 {
 		cfg.StaleSeconds = override.StaleSeconds
@@ -326,6 +359,9 @@ func applyUserFile(cfg *Config, path string) error {
 	if override.MCPMaxResultBytes != 0 {
 		cfg.MCPMaxResultBytes = override.MCPMaxResultBytes
 	}
+	if override.SessionLockWaitMs != 0 {
+		cfg.SessionLockWaitMs = override.SessionLockWaitMs
+	}
 	if override.FindingsStaleDays != 0 {
 		cfg.FindingsStaleDays = override.FindingsStaleDays
 	}
@@ -341,7 +377,7 @@ func applyEnv(cfg *Config) []string {
 	var warnings []string
 
 	if v := os.Getenv("CAB_DATA_DIR"); v != "" {
-		cfg.DataDir = v
+		cfg.BaseDir = v
 	}
 	if w := envInt("CAB_STALE_SECONDS", &cfg.StaleSeconds); w != "" {
 		warnings = append(warnings, w)
@@ -388,6 +424,7 @@ func applyEnv(cfg *Config) []string {
 		{"CAB_MCP_SCAN_BUDGET_SECONDS", &cfg.MCPScanBudgetSeconds},
 		{"CAB_MCP_CHILD_TIMEOUT_SECONDS", &cfg.MCPChildTimeoutSeconds},
 		{"CAB_MCP_MAX_RESULT_BYTES", &cfg.MCPMaxResultBytes},
+		{"CAB_SESSION_LOCK_WAIT_MS", &cfg.SessionLockWaitMs},
 		{"CAB_FINDINGS_STALE_DAYS", &cfg.FindingsStaleDays},
 	} {
 		if w := envInt(e.name, e.dst); w != "" {

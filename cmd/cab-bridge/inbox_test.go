@@ -11,9 +11,18 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
 )
+
+// plantLiveSession gives the session a manifest owned by this process. Since F-160
+// the manifest is the proof that a session exists: every method that takes its lock
+// (the wake cursor the tidy tests commit, for one) refuses a directory without one
+// with ErrSessionGone, because that is what a session looks like once cleanup has
+// retired it.
+func plantLiveSession(t *testing.T, dataDir, sid string) {
+	t.Helper()
+	plantSession(t, dataDir, sid, os.Getpid(), time.Now().UTC())
+}
 
 // plantMsg writes a valid v2 message JSON into dataDir/sessions/<sid>/<box>/ so
 // the read-only listing can be driven without a full register/listen cycle.
@@ -80,8 +89,7 @@ func TestCollectInbox_ListsBothBoxesDistinctAndDoesNotConsume(t *testing.T) {
 
 func TestRunInbox_JSONOutput(t *testing.T) {
 	// Not parallel: t.Setenv (CAB_DATA_DIR).
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	sid := "inboxts2"
 	plantMsg(t, dataDir, sid, "inbox", "msg-aaaaaaaaaaaa", "val12345", "VAL-x", message.TypeQuery, "hello")
 	plantMsg(t, dataDir, sid, "processed", "msg-bbbbbbbbbbbb", "esc99999", "ESC-y", message.TypeResponse, "world")
@@ -101,8 +109,7 @@ func TestRunInbox_JSONOutput(t *testing.T) {
 
 func TestRunInbox_EmptyBoxes_EmptyJSONNoCrash(t *testing.T) {
 	// Not parallel: t.Setenv.
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	useBase(t, t.TempDir())
 
 	var runErr error
 	out := captureStdout(t, func() {
@@ -114,8 +121,7 @@ func TestRunInbox_EmptyBoxes_EmptyJSONNoCrash(t *testing.T) {
 
 func TestRunInbox_RequiresListFlag(t *testing.T) {
 	// Not parallel: t.Setenv.
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	useBase(t, t.TempDir())
 
 	err := runInbox([]string{"--session-id=inboxts4"})
 	require.Error(t, err)
@@ -133,9 +139,9 @@ func TestTidyInbox_ArchivesWellFormedLeavesForensics(t *testing.T) {
 	t.Parallel()
 	dataDir := t.TempDir()
 	sid := "tidyts1"
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
+	plantLiveSession(t, dataDir, sid)
 
 	plantMsg(t, dataDir, sid, "inbox", "msg-aaaaaaaaaaaa", "val12345", "VAL-x", message.TypeNotify, "one")
 	plantMsg(t, dataDir, sid, "inbox", "msg-bbbbbbbbbbbb", "val12345", "VAL-x", message.TypeResponse, "two")
@@ -185,9 +191,9 @@ func TestTidyInbox_LeavesOpenAsksAndUnread(t *testing.T) {
 	t.Parallel()
 	dataDir := t.TempDir()
 	sid := "tidyts5"
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
+	plantLiveSession(t, dataDir, sid)
 
 	plantMsg(t, dataDir, sid, "inbox", "msg-aaaaaaaaaaaa", "val12345", "VAL-x", message.TypeNotify, "read tell")
 	plantMsg(t, dataDir, sid, "inbox", "msg-bbbbbbbbbbbb", "val12345", "VAL-x", message.TypeQuery, "open ask")
@@ -217,8 +223,7 @@ func TestTidyInbox_LeavesOpenAsksAndUnread(t *testing.T) {
 func TestTidyInbox_MissingInbox_ZeroNoCrash(t *testing.T) {
 	t.Parallel()
 	dataDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	res, err := tidyInbox(newSessionManager(cfg), "tidyts4", filepath.Join(dataDir, "sessions", "tidyts4"), 65536)
 	require.NoError(t, err)
 	assert.Equal(t, 0, res.moved)
@@ -233,12 +238,11 @@ func TestRunInbox_ListAndTidy_MutuallyExclusive(t *testing.T) {
 
 func TestRunInbox_Tidy_JSONCount(t *testing.T) {
 	// Not parallel: t.Setenv.
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	sid := "tidyts2"
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
+	plantLiveSession(t, dataDir, sid)
 	// A handled tell (sweepable) plus an open ask (F-115: never sweepable), so
 	// the JSON has to carry all three numbers and not just the flattering one.
 	plantMsg(t, dataDir, sid, "inbox", "msg-aaaaaaaaaaaa", "val12345", "VAL-x", message.TypeNotify, "one")

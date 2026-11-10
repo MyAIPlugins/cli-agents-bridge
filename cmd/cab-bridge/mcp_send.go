@@ -104,7 +104,7 @@ func (a *mcpApp) runVerb(ctx context.Context, p *mcpProject, verb, to, content s
 	res, err := runChild(ctx, childSpec{
 		exe:     a.exe,
 		args:    []string{verb, to},
-		env:     childEnv(a.home, a.cfg.DataDir, p.sid),
+		env:     childEnv(a.home, a.cfg.BaseDir, p.sid),
 		stdin:   content,
 		timeout: time.Duration(a.cfg.MCPChildTimeoutSeconds) * time.Second,
 		maxOut:  a.cfg.MCPMaxResultBytes / 4,

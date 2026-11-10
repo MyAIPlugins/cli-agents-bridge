@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
@@ -166,8 +165,7 @@ func TestWiring_TheFixturesWouldBreakAnUnrenderedProducer(t *testing.T) {
 // and it prints the full path exactly when two projects share a basename — which
 // is also the only case where that path can carry a space.
 func TestWiring_PeersScopeColumn(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 
 	base := t.TempDir()
@@ -217,9 +215,11 @@ func TestWiring_PeersScopeColumn(t *testing.T) {
 // cleanup.go: the remediation for `--scope=global --force` names the data dir,
 // and a data dir comes from $HOME — a place with spaces in it is unremarkable.
 func TestWiring_CleanupGlobalRemediation(t *testing.T) {
-	dataDir := filepath.Join(t.TempDir(), wiringHostileDir)
-	require.NoError(t, os.MkdirAll(dataDir, 0o700))
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	base := filepath.Join(t.TempDir(), wiringHostileDir)
+	require.NoError(t, os.MkdirAll(base, 0o700))
+	// cleanup names the STATE dir (<base>/layout-2), and that is the one that must
+	// arrive as a single argument.
+	dataDir := useBase(t, base)
 
 	err := runCleanup([]string{"--scope=global", "--force"})
 	require.Error(t, err)
@@ -242,8 +242,7 @@ func TestWiring_SendVerbTooManyArguments(t *testing.T) {
 // join.go, the legacy-name repair: the role travels into the command that fixes
 // the session in place.
 func TestWiring_JoinRepairsALegacyName(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 	proj := canonicalProject(t)
 	plantSessionFull(t, dataDir, "legacyaa", session.RoleEsc, "ESC bridge", proj, proj, "")
@@ -259,8 +258,7 @@ func TestWiring_JoinRepairsALegacyName(t *testing.T) {
 
 // join.go, the name taken in another project.
 func TestWiring_JoinNameTakenInAnotherProject(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 	theirs, mine := t.TempDir(), t.TempDir()
 	plantSessionFull(t, dataDir, "takenaaa", session.RoleEsc, "ESC-taken", theirs, theirs, "")
@@ -275,8 +273,7 @@ func TestWiring_JoinNameTakenInAnotherProject(t *testing.T) {
 
 // join.go, the LIVE namesake in this same project.
 func TestWiring_JoinLiveNamesakeHere(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 	proj := canonicalProject(t)
 	sub := filepath.Join(proj, "sub")
@@ -297,8 +294,7 @@ func TestWiring_JoinLiveNamesakeHere(t *testing.T) {
 // verbs.go: one name, several projects — the way out is the qualified address,
 // so the address is the thing that must be pastable.
 func TestWiring_RecipientMatchesSeveralProjects(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 
 	base := t.TempDir()
@@ -308,8 +304,7 @@ func TestWiring_RecipientMatchesSeveralProjects(t *testing.T) {
 	plantSessionFull(t, dataDir, "dup1aaaa", session.RoleEsc, "ESC-dup", plain, plain, "")
 	plantSessionFull(t, dataDir, "dup2aaaa", session.RoleEsc, "ESC-dup", hostile, hostile, "")
 
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	_, err := resolveRecipientByName(cfg, newSessionManager(cfg), "ESC-dup"+session.ScopeSeparator+"repo", "selfaaaa")
 	require.Error(t, err)
 

@@ -66,7 +66,7 @@ func runInbox(args []string) error {
 	}
 	mgr := newSessionManager(cfg)
 
-	sid, err := resolveCurrentSession(mgr, "inbox", *sessionIDFlag)
+	sid, err := resolveCurrentSession(cfg, mgr, "inbox", *sessionIDFlag)
 	if err != nil {
 		return err
 	}

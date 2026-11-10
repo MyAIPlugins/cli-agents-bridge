@@ -94,8 +94,7 @@ func TestFindMessage_NotFound(t *testing.T) {
 
 func TestRunRead_ContentDefault(t *testing.T) {
 	// Not parallel: t.Setenv.
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	sid := "readrr01"
 	plantMsg(t, dataDir, sid, "inbox", "msg-aaaaaaaaaaaa", "val12345", "VAL-x", message.TypeQuery, "the full brief body")
 
@@ -110,8 +109,7 @@ func TestRunRead_ContentDefault(t *testing.T) {
 
 func TestRunRead_JSON(t *testing.T) {
 	// Not parallel: t.Setenv.
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	sid := "readrr02"
 	plantProcessedTimestamped(t, dataDir, sid, "msg-bbbbbbbbbbbb", "done report")
 
@@ -136,8 +134,7 @@ func TestRunRead_MalformedID(t *testing.T) {
 
 func TestRunRead_NotFound(t *testing.T) {
 	// Not parallel: t.Setenv.
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	sid := "readrr04"
 	plantMsg(t, dataDir, sid, "inbox", "msg-aaaaaaaaaaaa", "val12345", "VAL-x", message.TypeQuery, "x")
 
@@ -150,8 +147,7 @@ func TestRunRead_NotFound(t *testing.T) {
 // created as a side effect.
 func TestRunRead_NoConsume(t *testing.T) {
 	// Not parallel: t.Setenv.
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	sid := "readrr05"
 	plantMsg(t, dataDir, sid, "inbox", "msg-aaaaaaaaaaaa", "val12345", "VAL-x", message.TypeQuery, "stays put")
 	inboxFile := filepath.Join(dataDir, "sessions", sid, "inbox", "msg-aaaaaaaaaaaa.json")

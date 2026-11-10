@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -64,11 +65,65 @@ func TestSuiteNeverTouchesTheRealDataDir(t *testing.T) {
 	if err != nil {
 		t.Skip("no home dir to compare against")
 	}
-	real := home + "/.claude/cli-agents-bridge"
-	if cfg.DataDir == real {
-		t.Fatalf("the suite is pointed at the REAL data dir (%s): a test calling a run* entry point "+
-			"would send live messages to real peers and close their asks", cfg.DataDir)
+	if pointsAtTheRealDataDir(cfg, home) {
+		t.Fatalf("the suite is pointed at the REAL data dir (base %s, state %s): a test calling a run* entry point "+
+			"would send live messages to real peers and close their asks", cfg.BaseDir, cfg.DataDir)
 	}
+}
+
+// pointsAtTheRealDataDir says whether cfg resolves to the data of the user whose home
+// is home: either the BASE they installed into (~/.claude/cli-agents-bridge) or the
+// STATE dir the binary derives from it (<base>/layout-2). The guard compared only
+// DataDir with the base, and since F-160 DataDir is the state dir: it could never be
+// equal, and a suite pointed at the real base passed the check (CRI diff-gate, M2).
+func pointsAtTheRealDataDir(cfg config.Config, home string) bool {
+	realBase := filepath.Join(home, ".claude", "cli-agents-bridge")
+	for _, real := range []string{realBase, filepath.Join(realBase, config.LayoutDir)} {
+		if cfg.BaseDir == real || cfg.DataDir == real {
+			return true
+		}
+	}
+	return false
+}
+
+// The guard itself, on a home that is not the user's: HOME is a temporary directory,
+// so the "real" base is a path inside it and nothing of the user's is at stake. It
+// must say yes when CAB_DATA_DIR is that base, and yes when nothing is set and the
+// default is that base; and no for a sandbox. This does not touch the fence in
+// TestMain: it tests the predicate the fence's regression test relies on.
+func TestPointsAtTheRealDataDir_RecognisesTheBaseAndTheStateDirOfAHome(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+	fakeBase := filepath.Join(fakeHome, ".claude", "cli-agents-bridge")
+
+	t.Run("CAB_DATA_DIR is the default base", func(t *testing.T) {
+		t.Setenv("CAB_DATA_DIR", fakeBase)
+		cfg, err := loadConfigOrFail()
+		require.NoError(t, err)
+		assert.Equal(t, filepath.Join(fakeBase, config.LayoutDir), cfg.DataDir, "premise: the state dir is below the base")
+		assert.True(t, pointsAtTheRealDataDir(cfg, fakeHome))
+	})
+	t.Run("nothing set: the default is the real base", func(t *testing.T) {
+		t.Setenv("CAB_DATA_DIR", "")
+		cfg, err := loadConfigOrFail()
+		require.NoError(t, err)
+		assert.Equal(t, fakeBase, cfg.BaseDir, "premise: the default base is the one under HOME")
+		assert.True(t, pointsAtTheRealDataDir(cfg, fakeHome))
+	})
+	t.Run("a sandbox is not the real data dir", func(t *testing.T) {
+		t.Setenv("CAB_DATA_DIR", t.TempDir())
+		cfg, err := loadConfigOrFail()
+		require.NoError(t, err)
+		assert.False(t, pointsAtTheRealDataDir(cfg, fakeHome))
+	})
+	t.Run("the old comparison would have missed it", func(t *testing.T) {
+		t.Setenv("CAB_DATA_DIR", fakeBase)
+		cfg, err := loadConfigOrFail()
+		require.NoError(t, err)
+		assert.NotEqual(t, fakeBase, cfg.DataDir, "DataDir is the state dir, so DataDir == base never held")
+		assert.True(t, pointsAtTheRealDataDir(cfg, fakeHome), "and the guard still says yes")
+	})
 }
 
 // The CRI diff-gate P0, as an automated test: a leaf check cannot see a

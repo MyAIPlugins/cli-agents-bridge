@@ -336,8 +336,7 @@ func TestPrintOverviewHuman_NoPeerEmptyInbox(t *testing.T) {
 // with --session-id, overview reports THAT session directly, regardless of the
 // cwd — the worktree/shared-scope case where the bare cwd lookup is wrong.
 func TestRunOverview_SessionIDFlag_ResolvesExplicitSession(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 	plantOverviewSession(t, dataDir, "ovsid001", session.RoleEsc, "ESC-x", "/repo/x", "", "working")
 
@@ -357,8 +356,7 @@ func TestRunOverview_SessionIDFlag_ResolvesExplicitSession(t *testing.T) {
 // through the same SC-4 validation as every other id path and is rejected with
 // an overview-prefixed error.
 func TestRunOverview_SessionIDFlag_InvalidRejected(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	useBase(t, t.TempDir())
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 	err := runOverview([]string{"--session-id=BAD!!"})
 	require.Error(t, err)

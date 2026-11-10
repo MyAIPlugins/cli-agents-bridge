@@ -16,8 +16,7 @@ import (
 // told; what the command let it believe is the defect — the data dir comes from
 // $HOME, never from the cwd, and nothing said so.
 func TestRunCleanup_GlobalForceMustNameItsTarget(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 
 	t.Run("the_command_from_the_incident_is_refused", func(t *testing.T) {

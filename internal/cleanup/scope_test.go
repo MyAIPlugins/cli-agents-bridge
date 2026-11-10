@@ -2,6 +2,7 @@ package cleanup
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/myAIPlugins/cli-agents-bridge/internal/fslock"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/fslock/locktest"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
@@ -34,7 +37,32 @@ func registerSession(t *testing.T, dataDir string, age time.Duration) (string, *
 	})
 	require.NoError(t, err)
 	require.NoError(t, release()) // release lock so cleanup can wipe the dir
+	waitSessionLockFree(t, dataDir, mf.SessionID)
 	return mf.SessionID, mgr
+}
+
+// tryLockWhenFree is fslock.TryLock for a lock that was JUST released in this
+// process. A fork in flight in the same process (a parallel test starting a child)
+// holds a copy of the descriptor until its exec, so for milliseconds the lock is
+// still busy; cleanup does not wait, and would report the session busy. Only ErrBusy
+// is waited for, with a numeric bound (internal/fslock/locktest).
+func tryLockWhenFree(path string) (func() error, error) {
+	return locktest.Take(
+		func(err error) bool { return errors.Is(err, fslock.ErrBusy) },
+		func() (func() error, error) { return fslock.TryLock(path) },
+	)
+}
+
+// waitSessionLockFree returns once the lock of the session is free, for a fixture
+// that has just let go of it and is about to hand the session to cleanup. The probe
+// leaves no window of its own (locktest.Settle).
+func waitSessionLockFree(t *testing.T, dataDir, sid string) {
+	t.Helper()
+	err := locktest.Settle(
+		func(err error) bool { return errors.Is(err, fslock.ErrBusy) },
+		func() (func() error, error) { return fslock.TryLock(sessionPath(dataDir, sid, session.LockFileName)) },
+	)
+	require.NoError(t, err, "the lock of the session must become free after the fixture released it")
 }
 
 func TestRun_MySession_RemovesOnlyOwnSession(t *testing.T) {

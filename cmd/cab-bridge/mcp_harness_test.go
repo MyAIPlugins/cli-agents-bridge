@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -60,7 +61,12 @@ func (c *testClock) advance(d time.Duration) {
 }
 
 type mcpEnv struct {
-	t       *testing.T
+	t *testing.T
+	// baseDir is CAB_DATA_DIR (what a child is handed and where config.json lives);
+	// dataDir is the state directory under it, <baseDir>/layout-2, where the sessions
+	// are. They are different directories and both are explicit: a harness that
+	// derived one from the other by assignment would let a test pass on the wrong one.
+	baseDir string
 	dataDir string
 	cfg     config.Config
 	clock   *testClock
@@ -71,12 +77,14 @@ type mcpEnv struct {
 
 func newMCPEnv(t *testing.T) *mcpEnv {
 	t.Helper()
-	dataDir := t.TempDir()
-	cfg := nextTestConfig(dataDir)
+	baseDir := t.TempDir()
+	dataDir := filepath.Join(baseDir, config.LayoutDir)
+	cfg := nextTestConfig(t, dataDir)
+	cfg.BaseDir = baseDir
 	cfg.MCPNextMaxWaitSeconds = 5
 	cfg.MCPNextDefaultWaitSeconds = 2
 	cfg.MCPScanBudgetSeconds = 2
-	return &mcpEnv{t: t, dataDir: dataDir, cfg: cfg, clock: &testClock{t: time.Now().UTC().Truncate(time.Second)}, logs: &syncLog{}, home: t.TempDir()}
+	return &mcpEnv{t: t, baseDir: baseDir, dataDir: dataDir, cfg: cfg, clock: &testClock{t: time.Now().UTC().Truncate(time.Second)}, logs: &syncLog{}, home: t.TempDir()}
 }
 
 // manager is a manager over the env's data dir that reads the env's clock.

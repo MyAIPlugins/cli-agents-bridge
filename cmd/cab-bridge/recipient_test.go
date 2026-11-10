@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
@@ -101,8 +100,7 @@ func planted(t *testing.T, dataDir, id, role, name, scope string) {
 
 func TestResolveRecipient_QualifiedCrossScope(t *testing.T) {
 	dataDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
 
 	const mine, theirs = "/repo/bridge", "/repo/payload"
@@ -142,8 +140,7 @@ func TestResolveRecipient_QualifiedCrossScope(t *testing.T) {
 // prints on those rows (scopeColumn), so the error stays inside the grammar.
 func TestResolveRecipient_AmbiguousBasenameFailsClosed(t *testing.T) {
 	dataDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
 
 	// HOST-absolute fixtures, not POSIX literals: what this case is about is a
@@ -341,8 +338,7 @@ func TestScopeLabels_ShortenOnlyWhereItCannotMislead(t *testing.T) {
 // pins that the guarantee is at the gateway, on the manifests actually used.
 func TestSendMessage_CrossScopeRestrictionBindsAtTheGateway(t *testing.T) {
 	dataDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
 
 	const mine, theirs = "/repo/bridge", "/repo/payload"
@@ -383,10 +379,9 @@ func TestSendMessage_CrossScopeRestrictionBindsAtTheGateway(t *testing.T) {
 // compatibility included. An ask nobody can answer stays open forever, which is
 // worse than the thing the restriction guards against.
 func TestReply_CrossScopeExemptionIsADecision(t *testing.T) {
-	dataDir := t.TempDir()
-	cfg := nextTestConfig(dataDir)
+	dataDir := useBase(t, t.TempDir())
+	cfg := nextTestConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
-	t.Setenv("CAB_DATA_DIR", dataDir)
 	t.Setenv("CAB_SESSION_ID", "escrpl01")
 
 	const mine, theirs = "/repo/bridge", "/repo/payload"
@@ -422,10 +417,9 @@ func TestReply_CrossScopeExemptionIsADecision(t *testing.T) {
 // The legacy branch, which is the first of the three ways an open ask can
 // predate the checks: a message carrying no fromScope at all.
 func TestReply_LegacyAskWithoutProvenanceIsStillAnswerable(t *testing.T) {
-	dataDir := t.TempDir()
-	cfg := nextTestConfig(dataDir)
+	dataDir := useBase(t, t.TempDir())
+	cfg := nextTestConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
-	t.Setenv("CAB_DATA_DIR", dataDir)
 	t.Setenv("CAB_SESSION_ID", "escrpl01")
 
 	plantOverviewSession(t, dataDir, "escrpl01", session.RoleVal, "VAL-bridge", "/repo/bridge", "", "working")
@@ -462,8 +456,7 @@ func TestCrossesScopes_UnknownIsNotDifferent(t *testing.T) {
 
 func TestResolveRecipient_LegacySessionCanStillSendInScope(t *testing.T) {
 	dataDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
 
 	// A pre-F-17 session: no scope at all. It is an esc, so if its empty scope
@@ -483,8 +476,7 @@ func TestResolveRecipient_LegacySessionCanStillSendInScope(t *testing.T) {
 // flag on the loop verbs to escape by.
 func TestResolveRecipient_SameScopeDuplicatesSayDuplicates(t *testing.T) {
 	dataDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
 
 	planted(t, dataDir, "valmine1", session.RoleVal, "VAL-bridge", "/repo/mine")
@@ -505,8 +497,7 @@ func TestResolveRecipient_SameScopeDuplicatesSayDuplicates(t *testing.T) {
 // fixes had corrected COMPARISONS without ever deciding the VALUE.
 func TestEffectiveScope_LegacySessionBehavesLikeACurrentOne(t *testing.T) {
 	dataDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
 
 	// Two real repositories on disk, so the derivation has something to find.
@@ -587,8 +578,7 @@ func TestSameProject_UnknownIsAGroupNotAWildcard(t *testing.T) {
 // question finds.
 func TestResolveRecipient_ZeroMatchListsOnlyMyProject(t *testing.T) {
 	dataDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
 
 	planted(t, dataDir, "valmine1", session.RoleVal, "VAL-mine", "/repo/mine")
@@ -608,8 +598,7 @@ func TestResolveRecipient_ZeroMatchListsOnlyMyProject(t *testing.T) {
 // — it was wrong in BOTH directions.
 func TestLegacySession_OverviewAndJoinUseTheEffectiveScope(t *testing.T) {
 	dataDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
 
 	repoA, repoB := filepath.Join(dataDir, "repo-a"), filepath.Join(dataDir, "repo-b")
@@ -655,7 +644,7 @@ func TestLegacySession_OverviewAndJoinUseTheEffectiveScope(t *testing.T) {
 // the condition `listenUntil` was in.
 func TestLegacyEndToEnd_ProvenanceTokenAndDisambiguation(t *testing.T) {
 	dataDir := t.TempDir()
-	cfg := nextTestConfig(dataDir)
+	cfg := nextTestConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
 
 	repoA, repoB := filepath.Join(dataDir, "repo-a"), filepath.Join(dataDir, "repo-b")

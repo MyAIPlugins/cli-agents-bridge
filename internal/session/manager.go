@@ -42,13 +42,36 @@ type Manager struct {
 	// (touchHeartbeat) and the consume loop (SetLastConsumed) concurrently; both
 	// load-modify-save the SAME manifest, and AtomicWriteJSON is atomic only at
 	// the file level (rename), not across the read-modify-write window — without
-	// this lock one save would clobber the other's field. Guards ALL RMW methods
-	// (touchHeartbeat, AdoptPID, SetLastConsumed) as defense in depth, so a
-	// future RMW cannot silently reintroduce the lost-update bug. LoadManifest /
+	// this lock one save would clobber the other's field. LoadManifest /
 	// SaveManifest stay lock-free (they are the primitives called INSIDE the
-	// guarded sections; locking them too would deadlock — sync.Mutex is not
+	// guarded section; locking them too would deadlock — sync.Mutex is not
 	// reentrant).
+	//
+	// It is taken only by updateManifest, and ALWAYS AFTER the session lock, never
+	// before: the order is session lock, then manifestMu, and no path takes them the
+	// other way round (a structural test reads the source to keep it so). It is
+	// in-process only and does not exclude another process: that is the session
+	// lock's job, which is why updateManifest takes both.
 	manifestMu sync.Mutex
+
+	// LockWait is how long a caller that waits for the session lock keeps trying
+	// before it gives up with ErrLockHeld. NewManager sets DefaultLockWait; the
+	// command layer sets it from config session_lock_wait_ms, where <= 0 means "do
+	// not wait". The heartbeat and cleanup never wait, whatever this says.
+	LockWait time.Duration
+
+	// genID is the test seam for the session id. Nil means generateSessionID.
+	// It exists so a test can force the 1-in-2^32 collision that Register must
+	// survive without touching the other session's directory (F-160 C1).
+	genID func() (string, error)
+}
+
+// newSessionID returns a fresh session id, through the test seam when set.
+func (m *Manager) newSessionID() (string, error) {
+	if m.genID != nil {
+		return m.genID()
+	}
+	return generateSessionID()
 }
 
 // NewManager constructs a Manager with default clock.
@@ -57,6 +80,7 @@ func NewManager(dataDir string, heartbeatInterval time.Duration) *Manager {
 		DataDir:           dataDir,
 		HeartbeatInterval: heartbeatInterval,
 		Now:               time.Now,
+		LockWait:          DefaultLockWait,
 	}
 }
 
@@ -87,13 +111,13 @@ type RegisterOpts struct {
 }
 
 // Register creates a new session: generates a session ID, writes manifest.json
-// atomically, and acquires the PID lock. Returns the created Manifest plus a
+// atomically, and takes the session lock. Returns the created Manifest plus a
 // release function for the lock (caller must defer release()).
 //
-// BUG-6 fix: lock acquired via O_EXCL semantics in AcquireLock. If a session
-// already exists for this ProjectPath (same .claude/bridge-session-style
-// collision via longest-prefix-match), Register does NOT silently reuse it —
-// the caller decides whether to resume or force a new ID via opts.ForceNew.
+// BUG-6 fix: if a session already exists for this ProjectPath (same
+// .claude/bridge-session-style collision via longest-prefix-match), Register does
+// NOT silently reuse it — the caller decides whether to resume or force a new ID
+// via opts.ForceNew.
 // Resume semantics are deferred to Sprint 2 (BUG-6 MVP scope is collision
 // prevention, not resume UX).
 func (m *Manager) Register(ctx context.Context, opts RegisterOpts) (*Manifest, func() error, error) {
@@ -147,13 +171,24 @@ func (m *Manager) Register(ctx context.Context, opts RegisterOpts) (*Manifest, f
 		}
 	}
 
-	sessionID, err := generateSessionID()
+	sessionID, err := m.newSessionID()
 	if err != nil {
 		return nil, nil, fmt.Errorf("register: %w", err)
 	}
 
 	sessionDir := m.sessionDir(sessionID)
-	if err := os.MkdirAll(sessionDir, 0o700); err != nil {
+	// The sessions/ parent may not exist yet, but the session directory itself
+	// must be created by US and exclusively: the two rollbacks below RemoveAll it,
+	// and with MkdirAll an id colliding with an existing session would have
+	// deleted that session's directory (F-160). On collision nothing is touched
+	// and the error says so; there is no silent retry with a new id.
+	if err := os.MkdirAll(filepath.Dir(sessionDir), 0o700); err != nil {
+		return nil, nil, fmt.Errorf("register: mkdir sessions dir %q: %w", filepath.Dir(sessionDir), err)
+	}
+	if err := os.Mkdir(sessionDir, 0o700); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return nil, nil, fmt.Errorf("register: session id %s already exists, nothing was touched: %w", sessionID, err)
+		}
 		return nil, nil, fmt.Errorf("register: mkdir session dir %q: %w", sessionDir, err)
 	}
 	for _, sub := range []string{"inbox", "outbox"} {
@@ -165,20 +200,14 @@ func (m *Manager) Register(ctx context.Context, opts RegisterOpts) (*Manifest, f
 	// does not chmod existing dirs back down).
 	_ = os.Chmod(sessionDir, 0o700)
 
-	release, err := AcquireLock(filepath.Join(sessionDir, "lock"), opts.ForceNew)
+	// No validate and no precheck, the one caller that has neither: the manifest
+	// does not exist yet. The directory was created a moment ago by this call, so
+	// nobody else can hold a lock in it; the lock is taken to hand it to the caller
+	// for as long as the session is being set up. A failure here rolls back only
+	// what this call created.
+	release, err := AcquireLock(m.lockBase(sessionID), m.LockWait, nil)
 	if err != nil {
-		// Failed lock: rollback the session dir we just created to avoid
-		// leaving an orphan. Best-effort.
 		_ = os.RemoveAll(sessionDir)
-		// NO --force-new advice here, and the reason is worth the line because
-		// it is not the obvious one. This IS the only AcquireLock caller whose
-		// forceNew comes from the flag, so by signature it looks like the place
-		// for the remedy — but sessionID is 32 random bits and this sessionDir
-		// was created three lines up, so reaching ErrLockHeld needs an ID
-		// COLLISION with a live holder. No test can get here, which makes any
-		// sentence written here a sentence nobody will ever read: the class
-		// F-126 is about. The advice the user actually meets lives at the two
-		// reachable refusals — ErrSessionExistsForProject above, and tryReuse.
 		return nil, nil, fmt.Errorf("register: %w", err)
 	}
 
@@ -214,6 +243,12 @@ func (m *Manager) Register(ctx context.Context, opts RegisterOpts) (*Manifest, f
 
 // SaveManifest atomically writes manifest.json under the session dir.
 // SC-5 enforced via transportfs.AtomicWriteJSON.
+//
+// It takes no lock: it is the primitive of the two callers that already hold one.
+// In production only Register (under the lock it has just created) and updateManifest
+// (session lock first, then manifestMu) call it, and a structural test fixes that
+// (tests/integration/manifest_writers_test.go). A third caller that skipped the
+// session lock could bring back the manifest of a session cleanup has retired.
 func (m *Manager) SaveManifest(manifest *Manifest) error {
 	if err := manifest.Validate(); err != nil {
 		return fmt.Errorf("savemanifest: %w", err)
@@ -569,14 +604,18 @@ func (m *Manager) warnHeartbeatFailure(sessionID string, consecutive int, err er
 //
 // Returns evicted=true when the under-lock re-check fails (a reclaim happened):
 // the caller stops the heartbeat. Lock contention (a concurrent claim/reclaim)
-// returns evicted=false — best-effort, skip this beat and retry next tick.
+// returns evicted=false — best-effort, skip this beat and retry next tick. Any
+// other lock error, a retired session included, is returned: it is a failure.
 func (m *Manager) touchHeartbeatOwned(sessionID string, ownerOK func() bool) (evicted bool, err error) {
-	release, lerr := AcquireLock(filepath.Join(m.sessionDir(sessionID), "lock"), false)
+	release, lerr := m.AcquireSessionLock(sessionID, 0)
 	if lerr != nil {
-		// Contended — skip this beat (best-effort). NOT reported as a failure:
-		// a concurrent claim/reclaim is normal and self-resolving, and counting
-		// it would produce warnings about a healthy system.
-		return false, nil
+		if errors.Is(lerr, ErrLockHeld) {
+			// Contended — skip this beat (best-effort). NOT reported as a failure:
+			// a concurrent claim/reclaim is normal and self-resolving, and counting
+			// it would produce warnings about a healthy system.
+			return false, nil
+		}
+		return false, fmt.Errorf("heartbeat: %w", lerr)
 	}
 	defer func() { _ = release() }()
 	if !ownerOK() {
@@ -586,55 +625,88 @@ func (m *Manager) touchHeartbeatOwned(sessionID string, ownerOK func() bool) (ev
 	return false, m.touchHeartbeat(sessionID)
 }
 
-// touchHeartbeat reads manifest, sets LastHeartbeat = now, atomic-writes back.
-// Internal; the public surface is StartHeartbeat for the goroutine path
-// and Touch for the single-shot path. Holds manifestMu for the whole
-// read-modify-write (see the field doc) so a concurrent SetLastConsumed cannot
-// lose its update.
-func (m *Manager) touchHeartbeat(sessionID string) error {
+// updateManifest is the ONE read-modify-write of an existing session's manifest
+// (Register writes the first one, under the lock it has just created). It runs
+// entirely under the session lock, which is what makes "the manifest is gone" a
+// lasting fact once cleanup has retired the session (F-160, CRI diff-gate blocker):
+// a writer that loaded the manifest before the retirement and saved it after used to
+// bring it back, and a process that had opened the old lock file then found a
+// session that "existed" and held a lock nobody else could see.
+//
+// The session lock is taken first and refuses a retired session (ErrSessionGone)
+// before anything is read or written; the check is made again on the lock once held,
+// so a writer that waited across a retirement stops there too. wait says how long to
+// wait for the lock: 0 is one attempt and then ErrLockHeld. Order of the two locks:
+// session lock, then manifestMu (see its doc). mutate edits the freshly loaded
+// manifest and says whether it changed anything; false writes nothing.
+//
+// The lock is re-entrant inside a process, so a caller that already holds it (a claim,
+// a reclaim, the fenced heartbeat) goes through here without waiting for itself.
+func (m *Manager) updateManifest(sessionID string, wait time.Duration, mutate func(*Manifest) (write bool)) (err error) {
+	release, lerr := m.AcquireSessionLock(sessionID, wait)
+	if lerr != nil {
+		return lerr
+	}
+	defer func() {
+		if rerr := release(); rerr != nil {
+			err = errors.Join(err, fmt.Errorf("manifest %s: release the session lock: %w", sessionID, rerr))
+		}
+	}()
 	m.manifestMu.Lock()
 	defer m.manifestMu.Unlock()
 	manifest, err := m.LoadManifest(sessionID)
 	if err != nil {
 		return err
 	}
-	manifest.LastHeartbeat = m.now()
+	if !mutate(manifest) {
+		return nil
+	}
 	return m.SaveManifest(manifest)
+}
+
+// refreshHeartbeat sets LastHeartbeat = now, waiting up to wait for the lock.
+func (m *Manager) refreshHeartbeat(sessionID string, wait time.Duration) error {
+	return m.updateManifest(sessionID, wait, func(manifest *Manifest) bool {
+		manifest.LastHeartbeat = m.now()
+		return true
+	})
+}
+
+// touchHeartbeat is one beat of the heartbeat goroutine. It never waits: contention
+// (a claim, a reclaim or a commit holds the lock) skips the beat, exactly as
+// touchHeartbeatOwned does, and the next tick tries again. Anything else, a retired
+// session included, is a failure the caller counts.
+func (m *Manager) touchHeartbeat(sessionID string) error {
+	if err := m.refreshHeartbeat(sessionID, 0); err != nil && !errors.Is(err, ErrLockHeld) {
+		return err
+	}
+	return nil
 }
 
 // SetLastConsumed records msgID as the most recently consumed inbox message in
-// sessionID's manifest (F-12 observability). Called by listen after emitting a
-// message and by receive after matching a reply. Holds manifestMu for the whole
-// read-modify-write so the concurrent heartbeat goroutine cannot clobber the
-// field (see the manifestMu doc).
+// sessionID's manifest (F-12 observability). It was called by the listen and receive
+// commands, which no longer exist: nothing in production calls it today (the cursor of
+// `next` is wake-cursor.json). It stays as part of the Manager API, and takes the same
+// path as every other writer: waits for the session lock (LockWait) and refuses a
+// retired session.
 func (m *Manager) SetLastConsumed(sessionID, msgID string) error {
-	m.manifestMu.Lock()
-	defer m.manifestMu.Unlock()
-	manifest, err := m.LoadManifest(sessionID)
-	if err != nil {
-		return err
-	}
-	manifest.LastConsumedMsgID = msgID
-	return m.SaveManifest(manifest)
+	return m.updateManifest(sessionID, m.LockWait, func(manifest *Manifest) bool {
+		manifest.LastConsumedMsgID = msgID
+		return true
+	})
 }
 
 // SetState records the agent task-state in sessionID's manifest (F-23a) and
-// refreshes the heartbeat — setting the state is itself a sign of life. Holds
-// manifestMu for the whole read-modify-write so the concurrent heartbeat
-// goroutine (or SetLastConsumed) cannot clobber the field (same discipline as
-// SetLastConsumed / AdoptPID — see the manifestMu doc). The caller validates
+// refreshes the heartbeat — setting the state is itself a sign of life. Waits for
+// the session lock (LockWait) and refuses a retired session. The caller validates
 // state against the canonical set (IsValidState) before calling; Manager stores
 // it as given.
 func (m *Manager) SetState(sessionID, state string) error {
-	m.manifestMu.Lock()
-	defer m.manifestMu.Unlock()
-	manifest, err := m.LoadManifest(sessionID)
-	if err != nil {
-		return err
-	}
-	manifest.State = state
-	manifest.LastHeartbeat = m.now()
-	return m.SaveManifest(manifest)
+	return m.updateManifest(sessionID, m.LockWait, func(manifest *Manifest) bool {
+		manifest.State = state
+		manifest.LastHeartbeat = m.now()
+		return true
+	})
 }
 
 // Touch refreshes the lastHeartbeat field of sessionID's manifest to "now"
@@ -643,10 +715,12 @@ func (m *Manager) SetState(sessionID, state string) error {
 // Patil's connect-peer.sh did not refresh sender heartbeat, so a long-idle
 // peer could appear stale to the remote at the very moment of connect).
 //
-// Returns the underlying load/save errors if either fails — caller decides
-// whether to abort the connect attempt.
+// Unlike a beat of the goroutine it waits for the lock (LockWait): the caller asked
+// for a fresh heartbeat, and skipping would hand it a stale one in silence. Returns
+// the lock, load and save errors — the caller decides whether to abort the connect
+// attempt.
 func (m *Manager) Touch(sessionID string) error {
-	return m.touchHeartbeat(sessionID)
+	return m.refreshHeartbeat(sessionID, m.LockWait)
 }
 
 // RenameAgent changes a session's agent name in place, keeping its id, mailbox
@@ -678,22 +752,16 @@ func (m *Manager) RenameAgent(sessionID, newName string) error {
 	if err := ValidateAgentName(newName); err != nil {
 		return fmt.Errorf("rename: %w", err)
 	}
-	return m.WithSessionLock(sessionID, func() error {
-		m.manifestMu.Lock()
-		defer m.manifestMu.Unlock()
-		manifest, err := m.LoadManifest(sessionID)
-		if err != nil {
-			return err
-		}
+	return m.updateManifest(sessionID, m.LockWait, func(manifest *Manifest) bool {
 		if manifest.AgentName == newName {
-			return nil
+			return false
 		}
 		if manifest.AgentName != "" {
 			manifest.FormerAgentNames = append(manifest.FormerAgentNames, manifest.AgentName)
 		}
 		manifest.AgentName = newName
 		manifest.LastHeartbeat = m.now()
-		return m.SaveManifest(manifest)
+		return true
 	})
 }
 
@@ -711,39 +779,31 @@ func (m *Manager) RenameAgent(sessionID, newName string) error {
 // registration — verified on the real binary, where fixing the lookup alone left
 // the two homonyms exactly as they were.
 func (m *Manager) SetRole(sessionID, newRole string) error {
-	return m.WithSessionLock(sessionID, func() error {
-		m.manifestMu.Lock()
-		defer m.manifestMu.Unlock()
-		manifest, err := m.LoadManifest(sessionID)
-		if err != nil {
-			return err
-		}
+	return m.updateManifest(sessionID, m.LockWait, func(manifest *Manifest) bool {
 		if manifest.Role == newRole {
-			return nil
+			return false
 		}
 		manifest.Role = newRole
 		manifest.LastHeartbeat = m.now()
-		return m.SaveManifest(manifest)
+		return true
 	})
 }
 
 // AdoptPID claims sessionID for the current process by writing its PID into the
-// manifest (and refreshing the heartbeat). The long-running listen command
-// calls this at startup so collision detection (BUG-6) and stale detection
-// observe a LIVE owner — unlike the one-shot register command, whose PID dies
-// the moment it returns (Sprint 6 BUG-A). Touch deliberately does NOT adopt the
-// PID: connect.go calls Touch from a short-lived process whose PID would be
-// just as ephemeral as register's, so only a real listen owner takes ownership.
+// manifest (and refreshing the heartbeat), so collision detection (BUG-6) and stale
+// detection observe a LIVE owner — unlike the one-shot register command, whose PID
+// dies the moment it returns (Sprint 6 BUG-A). The long-running listen command that
+// called this no longer exists: `next` does it through StartWait, which holds the
+// session lock across the adoption and the claim and uses adoptPIDLocked, so nothing
+// in production calls AdoptPID itself today. Touch deliberately does NOT adopt the
+// PID: connect.go calls Touch from a short-lived process whose PID would be just as
+// ephemeral as register's, so only a real waiter takes ownership.
 func (m *Manager) AdoptPID(sessionID string) error {
-	m.manifestMu.Lock()
-	defer m.manifestMu.Unlock()
-	manifest, err := m.LoadManifest(sessionID)
-	if err != nil {
-		return err
-	}
-	manifest.PID = os.Getpid()
-	manifest.LastHeartbeat = m.now()
-	return m.SaveManifest(manifest)
+	return m.updateManifest(sessionID, m.LockWait, func(manifest *Manifest) bool {
+		manifest.PID = os.Getpid()
+		manifest.LastHeartbeat = m.now()
+		return true
+	})
 }
 
 // sessionDir returns the absolute filesystem path of the per-session
@@ -792,16 +852,14 @@ func defaultCapabilities(caps []string) []string {
 }
 
 // adoptPIDLocked is AdoptPID for callers that already hold the session lock.
-// The lock is what makes adopt+claim one indivisible startup (see StartWait);
-// manifestMu alone only serialises writers inside this process.
+// The lock is what makes adopt+claim one indivisible startup (see StartWait). It does
+// not wait, because a caller that holds the lock never has to: updateManifest is
+// re-entrant inside the process. A caller that forgot to hold it still never writes
+// outside the lock: it takes it for the write, or gets ErrLockHeld if somebody else has it.
 func (m *Manager) adoptPIDLocked(sessionID string) error {
-	m.manifestMu.Lock()
-	defer m.manifestMu.Unlock()
-	manifest, err := m.LoadManifest(sessionID)
-	if err != nil {
-		return err
-	}
-	manifest.PID = os.Getpid()
-	manifest.LastHeartbeat = m.now()
-	return m.SaveManifest(manifest)
+	return m.updateManifest(sessionID, 0, func(manifest *Manifest) bool {
+		manifest.PID = os.Getpid()
+		manifest.LastHeartbeat = m.now()
+		return true
+	})
 }

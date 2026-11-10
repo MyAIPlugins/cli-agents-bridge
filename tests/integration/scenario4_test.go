@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 )
 
 // TestScenario4_CleanupCrossProjectSafety implements PLAN §7.3 scenario 4:
@@ -39,7 +41,7 @@ func TestScenario4_CleanupCrossProjectSafety(t *testing.T) {
 	idC := register("proj-c")
 
 	// Stage a processed file under proj-a so archive will receive it
-	processedA := filepath.Join(dataDir, "sessions", idA, "processed")
+	processedA := filepath.Join(dataDir, config.LayoutDir, "sessions", idA, "processed")
 	require.NoError(t, os.MkdirAll(processedA, 0o700))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(processedA, "20260524T200000.000Z-msg-aaaaaaaaaaaa.json"),
@@ -53,16 +55,16 @@ func TestScenario4_CleanupCrossProjectSafety(t *testing.T) {
 	assert.Contains(t, out, idA, "result must report removed session")
 
 	// proj-a gone, proj-b+c intact
-	_, err := os.Stat(filepath.Join(dataDir, "sessions", idA))
+	_, err := os.Stat(filepath.Join(dataDir, config.LayoutDir, "sessions", idA))
 	assert.True(t, os.IsNotExist(err), "BUG-4 fix: own session must be removed")
 
 	for _, id := range []string{idB, idC} {
-		_, err := os.Stat(filepath.Join(dataDir, "sessions", id))
+		_, err := os.Stat(filepath.Join(dataDir, config.LayoutDir, "sessions", id))
 		assert.NoError(t, err, "BUG-4 regression: other project session %s must survive", id)
 	}
 
 	// Archive populated with proj-a's processed content
-	archRoot := filepath.Join(dataDir, "archive")
+	archRoot := filepath.Join(dataDir, config.LayoutDir, "archive")
 	dateDirs, err := os.ReadDir(archRoot)
 	require.NoError(t, err)
 	require.NotEmpty(t, dateDirs, "archive/ must contain a date dir")

@@ -25,6 +25,8 @@ fi
 
 ROOT="${2:-$(mktemp -d)}"
 export CAB_DATA_DIR="$ROOT/data"
+# F-160: the binary keeps its sessions under the base, in layout-2.
+STATE="$CAB_DATA_DIR/layout-2"
 export CAB_AUTO_GC_HOURS=0
 
 # One scope (git marker at the base), one working dir per agent: the shape of
@@ -68,7 +70,7 @@ NEXTPID=$!; BG_PIDS+=("$NEXTPID")
 sleep 3
 kill -0 "$NEXTPID" 2>/dev/null; check "next is still waiting (did not exit early)" $?
 
-MANIFEST="$CAB_DATA_DIR/sessions/$ESCID/manifest.json"
+MANIFEST="$STATE/sessions/$ESCID/manifest.json"
 grep -q '"waitingSince"' "$MANIFEST"; check "waiting marker published in manifest (F-81 without a deadline)" $?
 MPID=$(grep -oE '"pid": *[0-9]+' "$MANIFEST" | grep -oE '[0-9]+')
 [ -n "$MPID" ] && kill -0 "$MPID" 2>/dev/null; check "manifest PID is a live process — not STALE while waiting (F-95)" $?
@@ -87,11 +89,11 @@ MSGID=$(grep -oE 'msg-[a-f0-9]{12}' "$ROOT/next1.out" | head -1)
 echo "  delivered: $MSGID"
 
 echo "== 3. next is PURE-READ: the file is still in inbox, nothing archived =="
-[ -f "$CAB_DATA_DIR/sessions/$ESCID/inbox/$MSGID.json" ]; check "message still in inbox/ (next never moves a file)" $?
-[ ! -d "$CAB_DATA_DIR/sessions/$ESCID/processed" ]; check "processed/ was not even created" $?
+[ -f "$STATE/sessions/$ESCID/inbox/$MSGID.json" ]; check "message still in inbox/ (next never moves a file)" $?
+[ ! -d "$STATE/sessions/$ESCID/processed" ]; check "processed/ was not even created" $?
 
 echo "== 4. the wake cursor recorded exactly that id, 0600 =="
-CURSOR="$CAB_DATA_DIR/sessions/$ESCID/wake-cursor.json"
+CURSOR="$STATE/sessions/$ESCID/wake-cursor.json"
 [ -f "$CURSOR" ]; check "wake-cursor.json written" $?
 grep -q "$MSGID" "$CURSOR"; check "cursor contains the delivered id" $?
 grep -q '"schemaVersion"' "$CURSOR"; check "cursor is schema-versioned" $?
