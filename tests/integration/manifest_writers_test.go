@@ -9,8 +9,12 @@ package integration
 //   - SaveManifest is called by Register, under the lock it has just created, and by
 //     updateManifest, which takes the session lock first. Nothing else calls it.
 //   - Nothing else names "manifest.json" and writes: the only other writer is the
-//     migration from the Patil bridge, which creates a destination session that did
-//     not exist (it reads another tool's tree, never a live session of this one).
+//     migration from the Patil bridge, and it creates the folder of the destination
+//     session exclusively (os.Mkdir, like Register), so it writes nothing into a folder
+//     that already exists. That was a wish until round 2 of the F-160 diff-gate: it used
+//     MkdirAll, and a re-import brought a retired session's manifest back. It is
+//     fixed by migrate_exclusive_test.go, not by this file: this test reads which
+//     functions write, and cannot see how a folder is created.
 //   - manifestMu is taken in one function, updateManifest, after the session lock.
 //     One direction, so the two locks cannot be held in opposite orders.
 //
