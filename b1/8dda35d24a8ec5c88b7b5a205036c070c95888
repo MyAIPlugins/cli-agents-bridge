@@ -1,0 +1,21 @@
+cmd/cab-bridge/mcp_realbin_test.go
+  s_d5e186cda02d82::t_bd904386769848 22
+  s_d5e186cda02d82::t_fa6763fa18e48b 83-99
+  s_d5e186cda02d82::t_865a4a8cf19d77 63-74,79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b18dda35d24a8ec5c88b7b5a205036c070c95888",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
