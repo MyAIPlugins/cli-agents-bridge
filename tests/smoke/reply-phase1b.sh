@@ -23,6 +23,8 @@ fi
 
 ROOT="${2:-$(mktemp -d)}"
 export CAB_DATA_DIR="$ROOT/data"
+# F-160: the binary keeps its sessions under the base, in layout-2.
+STATE="$CAB_DATA_DIR/layout-2"
 export CAB_AUTO_GC_HOURS=0
 
 # One scope (git marker at the base), one working dir per agent — the shape of
@@ -58,14 +60,14 @@ check "tell with stdin succeeded" $?
 echo "== 4. next delivers, reply closes =="
 ( cd "$ESCDIR" && "$BIN" next > "$ROOT/next.out" 2>&1 )
 grep -q '"status": "emitted"' "$ROOT/next.out"; check "next emitted the batch" $?
-INBOX="$CAB_DATA_DIR/sessions/$ESCID/inbox"
+INBOX="$STATE/sessions/$ESCID/inbox"
 [ "$(countfiles "$INBOX")" = "2" ]; check "both messages still in inbox (next is pure-read)" $?
 
 ( cd "$ESCDIR" && "$BIN" reply "done, gate green" > "$ROOT/reply.out" 2> "$ROOT/reply.err" )
 check "reply succeeded" $?
 grep -q "closed:" "$ROOT/reply.out"; check "reply echoes what it closed" $?
-[ "$(countfiles "$CAB_DATA_DIR/sessions/$VALID/inbox")" = "1" ]; check "exactly one response reached VAL" $?
-RESPID=$(ls -1 "$CAB_DATA_DIR/sessions/$VALID/inbox" | head -1 | sed 's/\.json$//')
+[ "$(countfiles "$STATE/sessions/$VALID/inbox")" = "1" ]; check "exactly one response reached VAL" $?
+RESPID=$(ls -1 "$STATE/sessions/$VALID/inbox" | head -1 | sed 's/\.json$//')
 
 # The ask is archived; the tell is NOT (a tell is never "open").
 [ ! -f "$INBOX/$ASKID.json" ]; check "the ask was archived by reply" $?
@@ -78,17 +80,17 @@ echo "== 5. INDUCED CRASH between SENT and archiving =="
 ASK2=$(grep -oE 'msg-[a-f0-9]{12}' "$ROOT/ask2.out" | head -1)
 ( cd "$ESCDIR" && "$BIN" next > /dev/null 2>&1 )
 
-VAL_BEFORE=$(countfiles "$CAB_DATA_DIR/sessions/$VALID/inbox")
+VAL_BEFORE=$(countfiles "$STATE/sessions/$VALID/inbox")
 ( cd "$ESCDIR" && "$BIN" reply "answer to the second" > "$ROOT/reply2.out" 2>&1 )
 check "second reply succeeded" $?
 RESP2=$(grep -oE 'msg-[a-f0-9]{12}' "$ROOT/reply2.out" | head -1)
 
 # Rewind to the crash state: put the ask back in inbox and re-create the
 # journal as it was just after SENT, with the response already delivered.
-PROCESSED="$CAB_DATA_DIR/sessions/$ESCID/processed"
+PROCESSED="$STATE/sessions/$ESCID/processed"
 ARCHIVED=$(ls -1 "$PROCESSED" | grep "$ASK2" | head -1)
 cp "$PROCESSED/$ARCHIVED" "$INBOX/$ASK2.json"
-cat > "$CAB_DATA_DIR/sessions/$ESCID/reply-txn.json" <<JSON
+cat > "$STATE/sessions/$ESCID/reply-txn.json" <<JSON
 {
   "schemaVersion": 1,
   "responseId": "$RESP2",
@@ -101,14 +103,14 @@ cat > "$CAB_DATA_DIR/sessions/$ESCID/reply-txn.json" <<JSON
   "content": "answer to the second"
 }
 JSON
-VAL_AFTER_FIRST=$(countfiles "$CAB_DATA_DIR/sessions/$VALID/inbox")
+VAL_AFTER_FIRST=$(countfiles "$STATE/sessions/$VALID/inbox")
 
 # The retry: a plain `reply` must notice the journal and finish the job.
 ( cd "$ESCDIR" && "$BIN" reply "this text must be ignored" > "$ROOT/retry.out" 2> "$ROOT/retry.err" )
 check "the retry completed" $?
-[ "$(countfiles "$CAB_DATA_DIR/sessions/$VALID/inbox")" = "$VAL_AFTER_FIRST" ]; check "NO second response was delivered (idempotent)" $?
+[ "$(countfiles "$STATE/sessions/$VALID/inbox")" = "$VAL_AFTER_FIRST" ]; check "NO second response was delivered (idempotent)" $?
 [ ! -f "$INBOX/$ASK2.json" ]; check "the retry finished the archiving it had left undone" $?
-[ ! -f "$CAB_DATA_DIR/sessions/$ESCID/reply-txn.json" ]; check "journal removed once complete" $?
+[ ! -f "$STATE/sessions/$ESCID/reply-txn.json" ]; check "journal removed once complete" $?
 grep -qi "resuming an interrupted reply" "$ROOT/retry.err"; check "it announced the recovery instead of completing in silence" $?
 
 echo "== 6. nothing to reply to is an explicit refusal =="

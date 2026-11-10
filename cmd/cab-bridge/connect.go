@@ -61,7 +61,7 @@ func runConnect(args []string) error {
 	}
 	mgr := newSessionManager(cfg)
 
-	sid, err := resolveCurrentSession(mgr, "connect", *sessionIDFlag)
+	sid, err := resolveCurrentSession(cfg, mgr, "connect", *sessionIDFlag)
 	if err != nil {
 		return err
 	}

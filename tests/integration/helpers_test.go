@@ -22,6 +22,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 )
 
 var (
@@ -147,7 +149,7 @@ func mustJSONField(t *testing.T, jsonOut, fieldName string) string {
 // build just to obtain one file on disk.
 func plantQuery(t *testing.T, dataDir, toSID, fromSID, fromRole, fromName, content string) string {
 	t.Helper()
-	inbox := filepath.Join(dataDir, "sessions", toSID, "inbox")
+	inbox := filepath.Join(dataDir, config.LayoutDir, "sessions", toSID, "inbox")
 	require.NoError(t, os.MkdirAll(inbox, 0o700))
 
 	id, err := message.GenerateMessageID()

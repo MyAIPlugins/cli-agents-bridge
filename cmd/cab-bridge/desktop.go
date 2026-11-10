@@ -41,7 +41,7 @@ func desktopRun(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	mgr := newSessionManager(cfg)
-	sid, err := resolveCurrentSession(mgr, "desktop", "")
+	sid, err := resolveCurrentSession(cfg, mgr, "desktop", "")
 	if err != nil {
 		return err
 	}

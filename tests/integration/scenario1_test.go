@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 )
 
 // TestScenario1_OneValOneEscRoundTrip implements PLAN §7.3 scenario 1:
@@ -61,7 +63,7 @@ func TestScenario1_OneValOneEscRoundTrip(t *testing.T) {
 	// evidently reaching for: ten files prove that ten things arrived, not that
 	// they are the ten that were sent. A bridge delivering one message ten times
 	// passed this test.
-	escInbox := filepath.Join(dataDir, "sessions", escID, "inbox")
+	escInbox := filepath.Join(dataDir, config.LayoutDir, "sessions", escID, "inbox")
 	entries, err := os.ReadDir(escInbox)
 	require.NoError(t, err)
 	gotIDs := make([]string, 0, len(entries))

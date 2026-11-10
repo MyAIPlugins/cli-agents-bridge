@@ -13,7 +13,7 @@ import (
 // setting, poll_interval_ms, and nothing hardcoded beside it.
 func TestMCPApp_ThePollIntervalIsTheConfiguredOne(t *testing.T) {
 	t.Parallel()
-	cfg := nextTestConfig(t.TempDir())
+	cfg := nextTestConfig(t, t.TempDir())
 	cfg.PollIntervalMs = 37
 	app := newMCPApp(context.Background(), cfg, newSessionManager(cfg), "", t.TempDir(), func(string, ...any) {})
 	assert.Equal(t, 37*time.Millisecond, app.pollInterval)
@@ -21,7 +21,7 @@ func TestMCPApp_ThePollIntervalIsTheConfiguredOne(t *testing.T) {
 
 func TestValidateMCPConfig_RefusesAPollIntervalThatIsNotPositive(t *testing.T) {
 	t.Parallel()
-	cfg := nextTestConfig(t.TempDir())
+	cfg := nextTestConfig(t, t.TempDir())
 	require.NoError(t, validateMCPConfig(cfg))
 	for _, ms := range []int{0, -5} {
 		cfg.PollIntervalMs = ms

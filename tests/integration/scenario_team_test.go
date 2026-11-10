@@ -1,10 +1,13 @@
 package integration
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 )
 
 // registerTeam registers an ESC with an explicit --team and returns its id.
@@ -66,7 +69,10 @@ func TestScenarioTeam_Whoami(t *testing.T) {
 	assert.Equal(t, id, mustJSONField(t, out, "sessionId"))
 	assert.Equal(t, "alpha", mustJSONField(t, out, "teamId"))
 	assert.Equal(t, projectPath, mustJSONField(t, out, "projectPath"), "whoami must show the FULL projectPath (F-6)")
-	assert.Equal(t, dataDir, mustJSONField(t, out, "dataDir"), "whoami must show the current dataDir (F-5 diagnostic)")
+	// Changed contract (F-160): dataDir is the state dir under the base, and the new
+	// key baseDir is what CAB_DATA_DIR points at.
+	assert.Equal(t, filepath.Join(dataDir, config.LayoutDir), mustJSONField(t, out, "dataDir"), "whoami must show the current dataDir (F-5 diagnostic)")
+	assert.Equal(t, dataDir, mustJSONField(t, out, "baseDir"), "and the base, which is the value to export as CAB_DATA_DIR")
 
 	// Human output must render team and dataDir too.
 	out, errOut, exit = run(t, []string{"whoami", "--session-id=" + id}, dataDirEnv(dataDir))

@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
 )
 
@@ -80,8 +79,7 @@ func TestCollectInbox_ListsBothBoxesDistinctAndDoesNotConsume(t *testing.T) {
 
 func TestRunInbox_JSONOutput(t *testing.T) {
 	// Not parallel: t.Setenv (CAB_DATA_DIR).
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	sid := "inboxts2"
 	plantMsg(t, dataDir, sid, "inbox", "msg-aaaaaaaaaaaa", "val12345", "VAL-x", message.TypeQuery, "hello")
 	plantMsg(t, dataDir, sid, "processed", "msg-bbbbbbbbbbbb", "esc99999", "ESC-y", message.TypeResponse, "world")
@@ -101,8 +99,7 @@ func TestRunInbox_JSONOutput(t *testing.T) {
 
 func TestRunInbox_EmptyBoxes_EmptyJSONNoCrash(t *testing.T) {
 	// Not parallel: t.Setenv.
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	useBase(t, t.TempDir())
 
 	var runErr error
 	out := captureStdout(t, func() {
@@ -114,8 +111,7 @@ func TestRunInbox_EmptyBoxes_EmptyJSONNoCrash(t *testing.T) {
 
 func TestRunInbox_RequiresListFlag(t *testing.T) {
 	// Not parallel: t.Setenv.
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	useBase(t, t.TempDir())
 
 	err := runInbox([]string{"--session-id=inboxts4"})
 	require.Error(t, err)
@@ -133,8 +129,7 @@ func TestTidyInbox_ArchivesWellFormedLeavesForensics(t *testing.T) {
 	t.Parallel()
 	dataDir := t.TempDir()
 	sid := "tidyts1"
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
 
 	plantMsg(t, dataDir, sid, "inbox", "msg-aaaaaaaaaaaa", "val12345", "VAL-x", message.TypeNotify, "one")
@@ -185,8 +180,7 @@ func TestTidyInbox_LeavesOpenAsksAndUnread(t *testing.T) {
 	t.Parallel()
 	dataDir := t.TempDir()
 	sid := "tidyts5"
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
 
 	plantMsg(t, dataDir, sid, "inbox", "msg-aaaaaaaaaaaa", "val12345", "VAL-x", message.TypeNotify, "read tell")
@@ -217,8 +211,7 @@ func TestTidyInbox_LeavesOpenAsksAndUnread(t *testing.T) {
 func TestTidyInbox_MissingInbox_ZeroNoCrash(t *testing.T) {
 	t.Parallel()
 	dataDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	res, err := tidyInbox(newSessionManager(cfg), "tidyts4", filepath.Join(dataDir, "sessions", "tidyts4"), 65536)
 	require.NoError(t, err)
 	assert.Equal(t, 0, res.moved)
@@ -233,11 +226,9 @@ func TestRunInbox_ListAndTidy_MutuallyExclusive(t *testing.T) {
 
 func TestRunInbox_Tidy_JSONCount(t *testing.T) {
 	// Not parallel: t.Setenv.
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	sid := "tidyts2"
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
 	// A handled tell (sweepable) plus an open ask (F-115: never sweepable), so
 	// the JSON has to carry all three numbers and not just the flattering one.

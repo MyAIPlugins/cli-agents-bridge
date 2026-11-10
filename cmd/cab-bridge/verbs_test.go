@@ -27,8 +27,12 @@ const (
 // newReplyPair sets up a responder (self) and an asker (peer) sharing a scope.
 func newReplyPair(t *testing.T) (*session.Manager, config.Config, string) {
 	t.Helper()
-	dataDir := t.TempDir()
-	cfg := nextTestConfig(dataDir)
+	// The pair also points CAB_DATA_DIR at its base. replyRun re-loads the config and
+	// resolves the session from the REAL cwd, so without this a call made through it
+	// sends a real message from whatever session owns the directory the suite runs in,
+	// and closes that peer's open asks. It did.
+	dataDir := useBase(t, t.TempDir())
+	cfg := nextTestConfig(t, dataDir)
 	plantOverviewSession(t, dataDir, replySelf, session.RoleEsc, "ESC-reply", "/repo/r", "", "working")
 	plantOverviewSession(t, dataDir, replyPeer, session.RoleVal, "VAL-reply", "/repo/r", "", session.StateOrchestrating)
 	return newSessionManager(cfg), cfg, dataDir
@@ -428,10 +432,6 @@ func TestReply_DoesNotCloseWhatWasNeverShown(t *testing.T) {
 // refused it forever and the ask stayed open with no way back.
 func TestReply_SecondInitializerResumesTheFirstJournal(t *testing.T) {
 	mgr, _, dataDir := newReplyPair(t)
-	// replyRun re-loads the config and resolves the session from the REAL cwd,
-	// so without this the call below sends a real message from whatever session
-	// owns this directory — and closes that peer's open asks. It did.
-	t.Setenv("CAB_DATA_DIR", dataDir)
 	deliverAndNotify(t, mgr, dataDir, "msg-aaaaaaaaaaaa", "brief", time.Now().UTC())
 
 	first := newTxn(replySelf, []string{"msg-aaaaaaaaaaaa"}, "the first answer")
@@ -681,7 +681,6 @@ func deliverPage(t *testing.T, mgr *session.Manager, dataDir string, sent, page 
 // archived by the "done A as asked" that never considered it.
 func TestReply_DoesNotCloseAnAskFromALaterDelivery(t *testing.T) {
 	mgr, cfg, dataDir := newReplyPair(t)
-	t.Setenv("CAB_DATA_DIR", dataDir)
 	t.Setenv("CAB_SESSION_ID", replySelf)
 	base := time.Now().UTC().Add(-time.Hour)
 
@@ -730,7 +729,6 @@ func requireCursor(t *testing.T, mgr *session.Manager) (*session.WakeCursor, err
 // delivery, and one reply closes all of them.
 func TestReply_ClosesTheWholeDeliveryItAnswers(t *testing.T) {
 	mgr, cfg, dataDir := newReplyPair(t)
-	t.Setenv("CAB_DATA_DIR", dataDir)
 	t.Setenv("CAB_SESSION_ID", replySelf)
 	base := time.Now().UTC().Add(-time.Hour)
 
@@ -753,7 +751,6 @@ func TestReply_ClosesTheWholeDeliveryItAnswers(t *testing.T) {
 // oldestPage's comment cannot drift away from the behaviour.
 func TestReply_AfterAJoinReplayTheMergedPageClosesTogether(t *testing.T) {
 	mgr, cfg, dataDir := newReplyPair(t)
-	t.Setenv("CAB_DATA_DIR", dataDir)
 	t.Setenv("CAB_SESSION_ID", replySelf)
 	base := time.Now().UTC().Add(-time.Hour)
 
@@ -920,8 +917,7 @@ func TestResolveMessagePayload_ArgumentStillWinsWithoutRedirection(t *testing.T)
 // somebody else. Sending is when it matters: you have just spoken to someone.
 func TestWarnNotListening(t *testing.T) {
 	dataDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
 
 	plantOverviewSession(t, dataDir, "wrnlive1", session.RoleEsc, "ESC-w", "/repo/w", "", "working")

@@ -268,7 +268,7 @@ func runNext(args []string) error {
 	}
 	mgr := newSessionManager(cfg)
 
-	sid, err := resolveCurrentSession(mgr, "next", "")
+	sid, err := resolveCurrentSession(cfg, mgr, "next", "")
 	if err != nil {
 		return err
 	}

@@ -198,19 +198,19 @@ func resolveRecipientByName(cfg config.Config, mgr *session.Manager, token, self
 			// The question here is "wrong name, or wrong project?", and it is not
 			// answerable without the list of projects. Naming only the agents would
 			// answer half of it.
-			return "", fmt.Errorf("no agent named %q in project %q — projects with agents: %s%s",
-				name, rcpt.scope, strings.Join(knownScopes(peers), ", "), volumeHint(rcpt.scope))
+			return "", fmt.Errorf("no agent named %q in project %q — projects with agents: %s%s%s",
+				name, rcpt.scope, strings.Join(knownScopes(peers), ", "), volumeHint(rcpt.scope), legacyRecipientHint(cfg))
 		}
 		known := knownAgentNames(inScope, selfSID)
 		if len(known) == 0 {
 			// An EMPTY scope is the likeliest place to be looking for somebody who
 			// works elsewhere, so this is the message that most needs the other
 			// form — it was the one without it.
-			return "", fmt.Errorf("no agent named %q in this scope, and no other agent is registered here (another project: %s%s<project>, from the SCOPE column of `peers --all-scopes`)",
-				name, name, session.ScopeSeparator)
+			return "", fmt.Errorf("no agent named %q in this scope, and no other agent is registered here (another project: %s%s<project>, from the SCOPE column of `peers --all-scopes`)%s",
+				name, name, session.ScopeSeparator, legacyRecipientHint(cfg))
 		}
-		return "", fmt.Errorf("no agent named %q in this scope — registered here: %s (another project: %s%s<project>)",
-			name, strings.Join(known, ", "), name, session.ScopeSeparator)
+		return "", fmt.Errorf("no agent named %q in this scope — registered here: %s (another project: %s%s<project>)%s",
+			name, strings.Join(known, ", "), name, session.ScopeSeparator, legacyRecipientHint(cfg))
 	default:
 		// List WHAT distinguishes them (CRI2 P2-6). The old message named no
 		// discriminator — "which of the two?" — while advising to destroy a
@@ -502,7 +502,7 @@ func runSendVerb(verb, msgType string, args []string, stdin io.Reader, stdout, s
 		return err
 	}
 	mgr := newSessionManager(cfg)
-	sid, err := resolveCurrentSession(mgr, verb, "")
+	sid, err := resolveCurrentSession(cfg, mgr, verb, "")
 	if err != nil {
 		return err
 	}
@@ -654,7 +654,7 @@ func replyRun(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return err
 	}
 	mgr := newSessionManager(cfg)
-	sid, err := resolveCurrentSession(mgr, "reply", "")
+	sid, err := resolveCurrentSession(cfg, mgr, "reply", "")
 	if err != nil {
 		return err
 	}

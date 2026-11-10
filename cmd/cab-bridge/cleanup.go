@@ -106,7 +106,7 @@ func runCleanup(args []string) error {
 	}
 
 	if *scope == cleanup.ScopeMySession {
-		sid, err := resolveCurrentSession(mgr, "cleanup", *sessionIDFlag)
+		sid, err := resolveCurrentSession(cfg, mgr, "cleanup", *sessionIDFlag)
 		if err != nil {
 			return err
 		}

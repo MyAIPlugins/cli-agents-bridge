@@ -17,8 +17,7 @@ import (
 func testCfgMgr(t *testing.T) (config.Config, *session.Manager, string) {
 	t.Helper()
 	dataDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := session.NewManager(dataDir, time.Second)
 	return cfg, mgr, dataDir
 }

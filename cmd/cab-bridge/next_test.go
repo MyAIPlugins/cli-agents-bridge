@@ -22,9 +22,9 @@ import (
 
 // --- helpers ---------------------------------------------------------------
 
-func nextTestConfig(dataDir string) config.Config {
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+func nextTestConfig(t *testing.T, dataDir string) config.Config {
+	t.Helper()
+	cfg := fixtureConfig(t, dataDir)
 	cfg.PollIntervalMs = 10
 	cfg.HeartbeatTickMs = 50
 	return cfg
@@ -87,7 +87,7 @@ func messageIDs(p nextPayload) []string {
 func newNextSession(t *testing.T) (*session.Manager, config.Config, string, string) {
 	t.Helper()
 	dataDir := t.TempDir()
-	cfg := nextTestConfig(dataDir)
+	cfg := nextTestConfig(t, dataDir)
 	const sid = "nxtses01"
 	plantOverviewSession(t, dataDir, sid, session.RoleEsc, "ESC-next", "/repo/next", "", "working")
 	return newSessionManager(cfg), cfg, sid, dataDir

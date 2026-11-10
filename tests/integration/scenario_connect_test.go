@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 )
 
 // TestScenarioConnect_BUG9CmdLevel covers the cmd-level wiring of BUG-9:
@@ -43,7 +45,7 @@ func TestScenarioConnect_BUG9CmdLevel(t *testing.T) {
 	// We can't easily mock time inside a subprocess, so we tamper with
 	// the on-disk manifest directly — this is the same shape the bug
 	// would produce in production (a long-idle session).
-	manifestPath := filepath.Join(dataDir, "sessions", valID, "manifest.json")
+	manifestPath := filepath.Join(dataDir, config.LayoutDir, "sessions", valID, "manifest.json")
 	backdateManifest(t, manifestPath, time.Now().Add(-5*time.Minute))
 
 	// Run connect from VAL

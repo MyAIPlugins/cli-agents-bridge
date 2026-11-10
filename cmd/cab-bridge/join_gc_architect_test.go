@@ -15,7 +15,7 @@ import (
 func plantAbandoned(t *testing.T, dataDir, id, role, name, scope string) {
 	t.Helper()
 	plantSessionFull(t, dataDir, id, role, name, scope, filepath.Join(scope, ".planted", id), "idle")
-	mgr := newSessionManager(nextTestConfig(dataDir))
+	mgr := newSessionManager(nextTestConfig(t, dataDir))
 	mf, err := mgr.LoadManifest(id)
 	require.NoError(t, err)
 	mf.PID = deadPID
@@ -29,14 +29,14 @@ func plantAbandoned(t *testing.T, dataDir, id, role, name, scope string) {
 func TestJoin_TheSweepOnJoinLeavesAStaleArchitectAndCollectsTheOtherSessions(t *testing.T) {
 	dataDir := t.TempDir()
 	proj := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir = useBase(t, dataDir)
 	t.Setenv("CAB_AUTO_GC_HOURS", "0") // learn the scope the join derives, with the sweep off
 	args := []string{"--role=esc", "--agent-name=ESC-arriving", "--project-path=" + proj}
 	captureStdout(t, func() { require.NoError(t, runJoin(args)) })
 	entries, err := os.ReadDir(filepath.Join(dataDir, "sessions"))
 	require.NoError(t, err)
 	require.Len(t, entries, 1)
-	mf, err := newSessionManager(nextTestConfig(dataDir)).LoadManifest(entries[0].Name())
+	mf, err := newSessionManager(nextTestConfig(t, dataDir)).LoadManifest(entries[0].Name())
 	require.NoError(t, err)
 	scope := session.EffectiveScope(mf)
 	require.NotEmpty(t, scope)

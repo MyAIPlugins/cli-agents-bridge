@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
@@ -65,8 +64,7 @@ func TestScopeMatchesHint_AbsoluteWindowsPathResolves(t *testing.T) {
 func TestResolveRecipient_ARootedPathWithNoDriveSaysWhy(t *testing.T) {
 	t.Parallel()
 	dataDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.DataDir = dataDir
+	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
 
 	planted(t, dataDir, "valmine1", session.RoleVal, "VAL-bridge", filepath.Join(t.TempDir(), "mine"))

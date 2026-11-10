@@ -106,7 +106,7 @@ func runOverview(args []string) error {
 	// wins (worktree / shared scope, F-86); otherwise the id-free cwd lookup
 	// (F-42 default) with the scope-collision guardrail (hard-ambiguity reject,
 	// shared-scope warning on stderr — never polluting the --json stdout below).
-	sid, err := resolveCurrentSession(mgr, "overview", *sessionIDFlag)
+	sid, err := resolveCurrentSession(cfg, mgr, "overview", *sessionIDFlag)
 	if err != nil {
 		return err
 	}

@@ -86,8 +86,7 @@ func TestRunAutoGC_DisabledIsNoOp(t *testing.T) {
 // AutoGCHours on and an orphan present, `register` removes the orphan and then
 // creates exactly one fresh session.
 func TestRunRegister_AutoGCSweepsOrphanThenCreates(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	t.Setenv("CAB_AUTO_GC_HOURS", "24")
 
 	plantSession(t, dataDir, "orphan01", deadPID, time.Now().UTC().Add(-48*time.Hour))
@@ -120,8 +119,7 @@ func TestRunRegister_AutoGCSweepsOrphanThenCreates(t *testing.T) {
 // scope (resolveScope walks up from the --project-path). A marker-less path
 // would instead store itself (the cwd fallback), also asserted.
 func TestRunRegister_PopulatesScope(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	t.Setenv("CAB_AUTO_GC_HOURS", "0")
 
 	root := t.TempDir()

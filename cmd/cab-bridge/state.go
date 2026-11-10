@@ -43,7 +43,7 @@ func runState(args []string) error {
 	}
 	mgr := newSessionManager(cfg)
 
-	sid, err := resolveCurrentSession(mgr, "state", *sessionIDFlag)
+	sid, err := resolveCurrentSession(cfg, mgr, "state", *sessionIDFlag)
 	if err != nil {
 		return err
 	}

@@ -21,13 +21,24 @@ import (
 // Returns the resolved config; on load or integrity failure returns a wrapped
 // error the caller surfaces with exit 1.
 func loadConfigOrFail() (config.Config, error) {
-	// TWO PHASES, because there is a redirect BEFORE the one SC-7 used to guard.
-	// config.json lives inside the data dir, so reading it means traversing that
-	// directory — and the file itself can then MOVE the data dir somewhere else.
-	// Checking only the final destination left the first one, the one actually
-	// walked to obtain the config, verified by nobody (CRI diff-gate).
-	initial := config.InitialDataDir()
-	if err := bootstrapDataDir(initial); err != nil {
+	// THREE CHECKS, in this order, and none of them looks at the old layout.
+	//
+	// 1. The BASE before config.json is read. config.json lives inside the base,
+	//    so reading it means traversing that directory — and the file itself can
+	//    then MOVE the base somewhere else. Checking only the final destination
+	//    left the first one, the one actually walked to obtain the config,
+	//    verified by nobody (CRI diff-gate).
+	// 2. The base again, only if the config moved it: same check, new destination.
+	// 3. The STATE dir (<base>/layout-2), always — the second phase of the
+	//    base/state split of F-160, not of the config move. It gets the full
+	//    check, including the two fixed children, because it is the tree this
+	//    binary will write.
+	//
+	// What is NOT checked is <base>/sessions and <base>/archive: they belong to
+	// the binaries that came before, this one never opens them, and a link or a
+	// foreign owner there must not stop a binary that does not use them (CRI2 N1).
+	initial := config.InitialBaseDir()
+	if err := bootstrapBaseDir(initial); err != nil {
 		return config.Config{}, err
 	}
 
@@ -39,18 +50,22 @@ func loadConfigOrFail() (config.Config, error) {
 		fmt.Fprintln(os.Stderr, "config warning:", w)
 	}
 
-	// Phase two only when the config moved us: same check, new destination.
-	if filepath.Clean(cfg.DataDir) != filepath.Clean(initial) {
-		if err := bootstrapDataDir(cfg.DataDir); err != nil {
+	if filepath.Clean(cfg.BaseDir) != filepath.Clean(initial) {
+		if err := bootstrapBaseDir(cfg.BaseDir); err != nil {
 			return cfg, err
 		}
+	}
+	if err := bootstrapDataDir(cfg.DataDir); err != nil {
+		return cfg, err
 	}
 	return cfg, nil
 }
 
-// bootstrapDataDir performs the SC-7 base-directory integrity check (PLAN §9,
-// FINDING-1). It runs on every subcommand via loadConfigOrFail, before any
-// session file is touched, on the already-absolute DataDir (FINDING-11).
+// bootstrapBaseDir performs the SC-7 directory integrity check (PLAN §9,
+// FINDING-1) on ONE directory, without looking at what is inside it. It runs on
+// every subcommand via loadConfigOrFail, before any session file is touched,
+// on the already-absolute directory (FINDING-11): on the base, and — through
+// bootstrapDataDir, which adds the children — on the state dir.
 //
 // Sequence (OpenSSH safe_path / gpg-agent pattern, security audit R2):
 //   - missing dir        → first run: create it 0o700, return nil (NOT an attack)
@@ -68,7 +83,7 @@ func loadConfigOrFail() (config.Config, error) {
 // and the perms line NEVER fires — the mode carries no meaning, so the sequence
 // is symlink, directory, owner, and the inherited ACL of %USERPROFILE% is what
 // the auto-repair would otherwise have stood for.
-func bootstrapDataDir(dataDir string) error {
+func bootstrapBaseDir(dataDir string) error {
 	info, err := os.Lstat(dataDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -108,7 +123,19 @@ func bootstrapDataDir(dataDir string) error {
 		}
 	}
 
-	// THE PATH, not just the base. Checking this directory and then trusting
+	return nil
+}
+
+// bootstrapDataDir is bootstrapBaseDir plus the two fixed children of a STATE
+// dir: it is what loadConfigOrFail runs on <base>/layout-2, the tree this binary
+// writes. It is NOT run on the base, so the old layout's <base>/sessions and
+// <base>/archive are never inspected.
+func bootstrapDataDir(dataDir string) error {
+	if err := bootstrapBaseDir(dataDir); err != nil {
+		return err
+	}
+
+	// THE PATH, not just the directory. Checking this directory and then trusting
 	// everything under it is what the CRI diff-gate broke in thirty seconds: an
 	// empty data dir with `sessions` pointing at the real one passed every check
 	// we had — SC-7 because the base genuinely was ours and 0700, SC-3 because
@@ -119,9 +146,9 @@ func bootstrapDataDir(dataDir string) error {
 	// RemoveAll on <target>/<date>, i.e. deletes OUTSIDE the data dir entirely.
 	//
 	// Once per command, on the two fixed components, and only AFTER the chmod
-	// above: from that moment nobody else can alter the tree, so proving it once
-	// is enough — no per-read path walk. They are checked only if they exist; a
-	// first run has neither, and creating them is our own job.
+	// done by bootstrapBaseDir: from that moment nobody else can alter the tree,
+	// so proving it once is enough — no per-read path walk. They are checked only
+	// if they exist; a first run has neither, and creating them is our own job.
 	for _, sub := range []string{"sessions", "archive"} {
 		p := filepath.Join(dataDir, sub)
 		if _, statErr := os.Lstat(p); statErr != nil {
@@ -253,7 +280,11 @@ func resolveScope(path string) string {
 // session was cleaned up, or came from another data dir) must not silently fall
 // back to the cwd, because that would resurrect exactly the ambiguity this
 // variable removes. AllOrNothing: no implicit fallback.
-func resolveEnvSessionID(mgr *session.Manager, cmdName string) (sid string, ok bool, err error) {
+//
+// cfg is here only for the error of a stale id: when the id exists in the OLD
+// layout's tree, the message says so (legacy_tree.go). It is passed in, never
+// reloaded in the error branch.
+func resolveEnvSessionID(cfg config.Config, mgr *session.Manager, cmdName string) (sid string, ok bool, err error) {
 	raw := strings.TrimSpace(os.Getenv("CAB_SESSION_ID"))
 	if raw == "" {
 		return "", false, nil
@@ -263,7 +294,7 @@ func resolveEnvSessionID(mgr *session.Manager, cmdName string) (sid string, ok b
 		return "", false, fmt.Errorf("%s: CAB_SESSION_ID=%q is not a valid session id: %w (unset it, or fix it — it is not ignored)", cmdName, raw, verr)
 	}
 	if _, lerr := mgr.LoadManifest(sid); lerr != nil {
-		return "", false, fmt.Errorf("%s: CAB_SESSION_ID=%s names a session that does not exist in this data dir — unset it or point it at a live session; it is NOT ignored in favour of the current directory", cmdName, sid)
+		return "", false, fmt.Errorf("%s: CAB_SESSION_ID=%s names a session that does not exist in this data dir — unset it or point it at a live session; it is NOT ignored in favour of the current directory%s", cmdName, sid, legacySessionHint(cfg, sid))
 	}
 	return sid, true, nil
 }
@@ -367,7 +398,7 @@ func formatSharedScopeWarning(cmdName, cwd string, res session.Resolution) strin
 //     shared-scope hazard warns on stderr (or, with
 //     CAB_BRIDGE_STRICT_SESSION_LOOKUP=1, is rejected). The warning is stderr
 //     only — stdout stays clean for --json / --emit consumers.
-func resolveCurrentSession(mgr *session.Manager, cmdName, sessionIDFlag string) (string, error) {
+func resolveCurrentSession(cfg config.Config, mgr *session.Manager, cmdName, sessionIDFlag string) (string, error) {
 	if sessionIDFlag != "" {
 		// Explicit id: bypass the guardrail (no lookup, no warning). Wrap the
 		// validation error with cmdName so the bypass path is as well-labelled as
@@ -378,7 +409,7 @@ func resolveCurrentSession(mgr *session.Manager, cmdName, sessionIDFlag string) 
 		}
 		return sid, nil
 	}
-	if sid, ok, err := resolveEnvSessionID(mgr, cmdName); err != nil {
+	if sid, ok, err := resolveEnvSessionID(cfg, mgr, cmdName); err != nil {
 		return "", err
 	} else if ok {
 		return sid, nil

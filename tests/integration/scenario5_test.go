@@ -9,6 +9,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 )
 
 // TestScenario5_MigrateFromPatil implements PLAN §7.3 scenario 5:
@@ -68,7 +70,7 @@ func TestScenario5_MigrateFromPatil(t *testing.T) {
 	assert.Contains(t, out, "evilss1", "dry-run must mention rejected RC-3 traversal session")
 
 	// Verify NO target writes happened (dry-run)
-	_, err := os.Stat(filepath.Join(dataDir, "sessions", "legac001"))
+	_, err := os.Stat(filepath.Join(dataDir, config.LayoutDir, "sessions", "legac001"))
 	assert.True(t, os.IsNotExist(err), "dry-run must NOT write to target")
 
 	// Run 2: real migration
@@ -80,7 +82,7 @@ func TestScenario5_MigrateFromPatil(t *testing.T) {
 
 	// Verify 3 legitimate sessions migrated
 	for _, sid := range []string{"legac001", "legac002", "legac003"} {
-		mfPath := filepath.Join(dataDir, "sessions", sid, "manifest.json")
+		mfPath := filepath.Join(dataDir, config.LayoutDir, "sessions", sid, "manifest.json")
 		_, err := os.Stat(mfPath)
 		require.NoError(t, err, "session %s manifest must exist post-migration", sid)
 
@@ -94,7 +96,7 @@ func TestScenario5_MigrateFromPatil(t *testing.T) {
 	}
 
 	// RC-3: traversal session must NOT have been migrated
-	_, err = os.Stat(filepath.Join(dataDir, "sessions", "evilss1"))
+	_, err = os.Stat(filepath.Join(dataDir, config.LayoutDir, "sessions", "evilss1"))
 	assert.True(t, os.IsNotExist(err),
 		"RC-3 security: session with projectPath containing '..' must be REJECTED, not migrated")
 	assert.Contains(t, out, "evilss1", "result must report skippedInvalid for traversal attempt")
@@ -102,12 +104,13 @@ func TestScenario5_MigrateFromPatil(t *testing.T) {
 
 	// Verify .migrated marker present
 	for _, sid := range []string{"legac001", "legac002", "legac003"} {
-		_, err := os.Stat(filepath.Join(dataDir, "sessions", sid, ".migrated"))
+		_, err := os.Stat(filepath.Join(dataDir, config.LayoutDir, "sessions", sid, ".migrated"))
 		assert.NoError(t, err, "session %s must have .migrated marker for idempotency", sid)
 	}
 
 	// Verify backup folder created
-	entries, err := os.ReadDir(dataDir)
+	// F-160: the backup lives next to the sessions it protects, in the state dir.
+	entries, err := os.ReadDir(filepath.Join(dataDir, config.LayoutDir))
 	require.NoError(t, err)
 	foundBackup := false
 	for _, e := range entries {

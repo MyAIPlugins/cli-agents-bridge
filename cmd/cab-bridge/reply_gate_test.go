@@ -138,7 +138,7 @@ func TestBeginReply_UnknownJournalStateIsAnErrorNotSent(t *testing.T) {
 func plantRolePair(t *testing.T, selfRole, peerRole string) (*session.Manager, string) {
 	t.Helper()
 	dataDir := t.TempDir()
-	cfg := nextTestConfig(dataDir)
+	cfg := nextTestConfig(t, dataDir)
 	plantOverviewSession(t, dataDir, replySelf, selfRole, "SELF-gate", "/repo/g", "", session.StateIdle)
 	plantOverviewSession(t, dataDir, replyPeer, peerRole, "PEER-gate", "/repo/g", "", session.StateIdle)
 	return newSessionManager(cfg), dataDir
@@ -182,7 +182,7 @@ func TestReplyRouting_AnswersObeyTheSamePolicyAsAsks(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			mgr, dataDir := plantRolePair(t, tc.self, tc.peer)
-			cfg := nextTestConfig(dataDir)
+			cfg := nextTestConfig(t, dataDir)
 			txn := newTxn(replySelf, []string{"msg-aaaaaaaaaaaa"}, "the answer")
 
 			// 1. the gate in front of the journal
@@ -209,7 +209,7 @@ func TestReplyRouting_AnswersObeyTheSamePolicyAsAsks(t *testing.T) {
 // ask it was answering is left open: the answer was refused, not the question.
 func TestReplyRouting_ForbiddenReplyLeavesNoJournalAndTheAskOpen(t *testing.T) {
 	mgr, dataDir := plantRolePair(t, session.RoleObserver, session.RoleVal)
-	cfg := nextTestConfig(dataDir)
+	cfg := nextTestConfig(t, dataDir)
 	deliverAndNotify(t, mgr, dataDir, "msg-aaaaaaaaaaaa", "brief", time.Now().UTC())
 
 	_, err := beginReply(mgr, replySelf, cliReplySelector(mgr, cfg, replySelf, []string{"the report"}, nopReader()), routingReplyGate(mgr, replySelf))

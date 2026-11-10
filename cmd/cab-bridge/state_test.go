@@ -38,8 +38,7 @@ func plantStateSession(t *testing.T, dataDir, id, state string, heartbeat time.T
 
 func TestRunState_SetsValidState(t *testing.T) {
 	// Not parallel: t.Setenv.
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	mgr := session.NewManager(dataDir, time.Second)
 	mf, rel, err := mgr.Register(context.Background(), session.RegisterOpts{ProjectPath: t.TempDir(), Role: session.RoleEsc})
 	require.NoError(t, err)
@@ -96,8 +95,7 @@ func TestCollectPeers_OrchestratingNotStale_LegacyStale(t *testing.T) {
 
 func TestRunStatus_ShowsStateAndOrchestratingNotStale(t *testing.T) {
 	// Not parallel: t.Setenv.
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	plantStateSession(t, dataDir, "orchstat", session.StateOrchestrating, time.Now().UTC().Add(-1*time.Hour))
 
 	var runErr error
@@ -112,8 +110,7 @@ func TestRunStatus_ShowsStateAndOrchestratingNotStale(t *testing.T) {
 
 func TestRunWhoami_ShowsState(t *testing.T) {
 	// Not parallel: t.Setenv.
-	dataDir := t.TempDir()
-	t.Setenv("CAB_DATA_DIR", dataDir)
+	dataDir := useBase(t, t.TempDir())
 	plantStateSession(t, dataDir, "whoamist", session.StateWorking, time.Now().UTC())
 
 	var runErr error
