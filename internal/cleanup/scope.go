@@ -311,8 +311,25 @@ var messageSubdirs = []string{"inbox", "outbox", "processed"}
 // something to delete blind.
 //
 // afterRelease is a test seam, nil in production: it runs after the lock is
-// released and before the lock file and the directory are removed.
+// released and before the lock file and the directory are removed. The other seam,
+// underLock, is in retireSeams.
 func archiveAndRemoveSession(dataDir, sid string, now func() time.Time, afterRelease func()) error {
+	return retireWithSeams(dataDir, sid, now, retireSeams{afterRelease: afterRelease})
+}
+
+// retireSeams are the test seams of the retirement, all nil in production.
+type retireSeams struct {
+	// underLock runs inside the section that holds the session lock, at its end: the
+	// manifest and every other entry are gone, the lock file is not, and the lock has
+	// not been released yet. It exists so a test can put a real process in contention
+	// with the section that cleanup actually runs, not with a copy of it.
+	underLock func()
+	// afterRelease runs after the lock is released and before the lock file and the
+	// directory are removed.
+	afterRelease func()
+}
+
+func retireWithSeams(dataDir, sid string, now func() time.Time, seams retireSeams) error {
 	sessionDir := filepath.Join(dataDir, "sessions", sid)
 	dateDir := now().UTC().Format("2006-01-02")
 
@@ -329,7 +346,7 @@ func archiveAndRemoveSession(dataDir, sid string, now func() time.Time, afterRel
 		return fmt.Errorf("cleanup: session %q: acquire lock: %w", sid, lerr)
 	}
 
-	rerr := retireSession(dataDir, sid, sessionDir, dateDir)
+	rerr := retireSession(dataDir, sid, sessionDir, dateDir, seams.underLock)
 	if uerr := release(); uerr != nil {
 		rerr = errors.Join(rerr, fmt.Errorf("cleanup: session %q: release lock: %w", sid, uerr))
 	}
@@ -337,8 +354,8 @@ func archiveAndRemoveSession(dataDir, sid string, now func() time.Time, afterRel
 		return rerr
 	}
 
-	if afterRelease != nil {
-		afterRelease()
+	if seams.afterRelease != nil {
+		seams.afterRelease()
 	}
 	return removeLockAndDir(sid, sessionDir)
 }
@@ -346,7 +363,7 @@ func archiveAndRemoveSession(dataDir, sid string, now func() time.Time, afterRel
 // retireSession is the part of the removal that runs under the session lock: the
 // reply-transaction check, the archive, the removal of the manifest and then of
 // every other entry except the lock file.
-func retireSession(dataDir, sid, sessionDir, dateDir string) error {
+func retireSession(dataDir, sid, sessionDir, dateDir string, underLock func()) error {
 	if _, err := os.Stat(filepath.Join(sessionDir, "reply-txn.json")); err == nil {
 		return fmt.Errorf("%w: session %q has a reply transaction in flight", ErrSessionBusy, sid)
 	}
@@ -387,6 +404,9 @@ func retireSession(dataDir, sid, sessionDir, dateDir string) error {
 		if err := os.RemoveAll(filepath.Join(sessionDir, e.Name())); err != nil {
 			failures = append(failures, fmt.Errorf("cleanup: session %q: remove %s: %w", sid, e.Name(), err))
 		}
+	}
+	if underLock != nil {
+		underLock()
 	}
 	return errors.Join(failures...)
 }

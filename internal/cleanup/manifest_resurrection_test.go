@@ -110,22 +110,32 @@ func (b *stderrBuf) String() string {
 	return b.buf.String()
 }
 
-type setStateChild struct {
+// helperChild is a child process of this test binary, driven through files in a
+// markers directory: it says "loaded" when it is in position, waits for "go", and
+// leaves "result". Every wait on either side has a limit.
+type helperChild struct {
 	markers string
 	done    chan struct{}
 	stderr  *stderrBuf
 }
 
-func startSetStateChild(t *testing.T, dataDir, sid string, stall bool) *setStateChild {
+func startSetStateChild(t *testing.T, dataDir, sid string, stall bool) *helperChild {
 	t.Helper()
-	child := &setStateChild{markers: t.TempDir(), done: make(chan struct{}), stderr: &stderrBuf{}}
 	stallFlag := "0"
 	if stall {
 		stallFlag = "1"
 	}
-	cmd := exec.Command(os.Args[0], "-test.run=^TestHelperProcess_StalledSetState$")
-	cmd.Env = append(os.Environ(), stallEnv+"=1", stallEnvData+"="+dataDir, stallEnvSID+"="+sid,
-		stallEnvMarkers+"="+child.markers, stallEnvStall+"="+stallFlag)
+	return startHelperChild(t, "TestHelperProcess_StalledSetState", func(markers string) []string {
+		return []string{stallEnv + "=1", stallEnvData + "=" + dataDir, stallEnvSID + "=" + sid,
+			stallEnvMarkers + "=" + markers, stallEnvStall + "=" + stallFlag}
+	})
+}
+
+func startHelperChild(t *testing.T, helperTest string, env func(markers string) []string) *helperChild {
+	t.Helper()
+	child := &helperChild{markers: t.TempDir(), done: make(chan struct{}), stderr: &stderrBuf{}}
+	cmd := exec.Command(os.Args[0], "-test.run=^"+helperTest+"$")
+	cmd.Env = append(os.Environ(), env(child.markers)...)
 	cmd.Stderr = child.stderr
 	require.NoError(t, cmd.Start())
 	go func() {
@@ -143,16 +153,16 @@ func startSetStateChild(t *testing.T, dataDir, sid string, stall bool) *setState
 	return child
 }
 
-func (c *setStateChild) waitLoaded() bool {
+func (c *helperChild) waitLoaded() bool {
 	return waitForFile(filepath.Join(c.markers, "loaded"), stallBound)
 }
 
-func (c *setStateChild) letGo(t *testing.T) {
+func (c *helperChild) letGo(t *testing.T) {
 	t.Helper()
 	require.NoError(t, os.WriteFile(filepath.Join(c.markers, "go"), nil, 0o600))
 }
 
-func (c *setStateChild) running() bool {
+func (c *helperChild) running() bool {
 	select {
 	case <-c.done:
 		return false
@@ -161,7 +171,7 @@ func (c *setStateChild) running() bool {
 	}
 }
 
-func (c *setStateChild) waitExit(t *testing.T) {
+func (c *helperChild) waitExit(t *testing.T) {
 	t.Helper()
 	select {
 	case <-c.done:
@@ -170,7 +180,7 @@ func (c *setStateChild) waitExit(t *testing.T) {
 	}
 }
 
-func (c *setStateChild) result(t *testing.T) string {
+func (c *helperChild) result(t *testing.T) string {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join(c.markers, "result"))
 	require.NoError(t, err, "the child left no result; stderr: %s", c.stderr.String())
@@ -231,7 +241,7 @@ func TestRetirement_ASetStateAfterTheRetirementIsRefusedAndCreatesNothing(t *tes
 	dataDir := t.TempDir()
 	plantStale(t, dataDir, id)
 
-	var child *setStateChild
+	var child *helperChild
 	err := archiveAndRemoveSession(dataDir, id, fixedNow, func() {
 		child = startSetStateChild(t, dataDir, id, false)
 		child.waitExit(t)
