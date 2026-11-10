@@ -164,7 +164,9 @@ func bootstrapDataDir(dataDir string) error {
 // newSessionManager builds a session.Manager from a loaded config. All
 // subcommands that touch sessions share this constructor for consistency.
 func newSessionManager(cfg config.Config) *session.Manager {
-	return session.NewManager(cfg.DataDir, time.Duration(cfg.HeartbeatTickMs)*time.Millisecond)
+	mgr := session.NewManager(cfg.DataDir, time.Duration(cfg.HeartbeatTickMs)*time.Millisecond)
+	mgr.LockWait = time.Duration(cfg.SessionLockWaitMs) * time.Millisecond
+	return mgr
 }
 
 // runAutoGC sweeps orphan sessions (v0.2.1, F10) and logs each removal to logw.

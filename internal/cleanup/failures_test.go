@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -13,6 +12,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/myAIPlugins/cli-agents-bridge/internal/fslock"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
 // F-160 C2: cleanup used to report ANY lock error as "busy" and then swallow it
@@ -27,13 +29,19 @@ func plantStale(t *testing.T, dataDir, id string) {
 	plantSession(t, dataDir, id, deadPID, failuresBase.Add(-48*time.Hour))
 }
 
-// holdLockAsBusy makes the session look held by a live foreign process: the
-// lock carries the pid of the test's parent. (F-160 C5 replaces the lock with a
-// kernel lock; this helper is the only place that knows how to fake a holder.)
+// holdLockAsBusy makes the session look held by someone else: it takes the kernel
+// lock on a descriptor of its own, which is NOT in the session package's registry, so
+// cleanup (same process) has to contend for it like any other process would. Taking
+// it through session.AcquireSessionLock would be re-entrant and prove nothing.
 func holdLockAsBusy(t *testing.T, dataDir, id string) {
 	t.Helper()
-	lock := filepath.Join(dataDir, "sessions", id, "lock")
-	require.NoError(t, os.WriteFile(lock, []byte(fmt.Sprintf("%d\n", os.Getppid())), 0o600))
+	release, err := fslock.TryLock(filepath.Join(dataDir, "sessions", id, session.LockFileName))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		if err := release(); err != nil {
+			t.Logf("release the held lock of %s: %v", id, err)
+		}
+	})
 }
 
 // lockOutDir makes creating files inside the session dir fail with a permission
@@ -103,7 +111,7 @@ func TestArchiveAndRemoveSession_ALockErrorIsNotErrSessionBusy(t *testing.T) {
 	plantStale(t, dataDir, "bbbbbbbb")
 	lockOutDir(t, dataDir, "bbbbbbbb")
 
-	err := archiveAndRemoveSession(dataDir, "bbbbbbbb", func() time.Time { return failuresBase })
+	err := archiveAndRemoveSession(dataDir, "bbbbbbbb", func() time.Time { return failuresBase }, nil)
 
 	require.Error(t, err)
 	assert.False(t, errors.Is(err, ErrSessionBusy), "got %v", err)
@@ -115,10 +123,12 @@ func TestArchiveAndRemoveSession_ContentionIsErrSessionBusy(t *testing.T) {
 	plantStale(t, dataDir, "bbbbbbbb")
 	holdLockAsBusy(t, dataDir, "bbbbbbbb")
 
-	err := archiveAndRemoveSession(dataDir, "bbbbbbbb", func() time.Time { return failuresBase })
+	err := archiveAndRemoveSession(dataDir, "bbbbbbbb", func() time.Time { return failuresBase }, nil)
 
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrSessionBusy), "got %v", err)
+	assert.DirExists(t, filepath.Join(dataDir, "sessions", "bbbbbbbb"), "a busy session is left whole")
+	assert.NoDirExists(t, filepath.Join(dataDir, "archive"), "and nothing was archived")
 }
 
 func TestGCOrphans_ReturnsWhatItRemovedTogetherWithTheFailures(t *testing.T) {

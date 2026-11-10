@@ -14,6 +14,16 @@ import (
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
 )
 
+// plantLiveSession gives the session a manifest owned by this process. Since F-160
+// the manifest is the proof that a session exists: every method that takes its lock
+// (the wake cursor the tidy tests commit, for one) refuses a directory without one
+// with ErrSessionGone, because that is what a session looks like once cleanup has
+// retired it.
+func plantLiveSession(t *testing.T, dataDir, sid string) {
+	t.Helper()
+	plantSession(t, dataDir, sid, os.Getpid(), time.Now().UTC())
+}
+
 // plantMsg writes a valid v2 message JSON into dataDir/sessions/<sid>/<box>/ so
 // the read-only listing can be driven without a full register/listen cycle.
 func plantMsg(t *testing.T, dataDir, sid, box, id, from, agentName, msgType, content string) {
@@ -131,6 +141,7 @@ func TestTidyInbox_ArchivesWellFormedLeavesForensics(t *testing.T) {
 	sid := "tidyts1"
 	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
+	plantLiveSession(t, dataDir, sid)
 
 	plantMsg(t, dataDir, sid, "inbox", "msg-aaaaaaaaaaaa", "val12345", "VAL-x", message.TypeNotify, "one")
 	plantMsg(t, dataDir, sid, "inbox", "msg-bbbbbbbbbbbb", "val12345", "VAL-x", message.TypeResponse, "two")
@@ -182,6 +193,7 @@ func TestTidyInbox_LeavesOpenAsksAndUnread(t *testing.T) {
 	sid := "tidyts5"
 	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
+	plantLiveSession(t, dataDir, sid)
 
 	plantMsg(t, dataDir, sid, "inbox", "msg-aaaaaaaaaaaa", "val12345", "VAL-x", message.TypeNotify, "read tell")
 	plantMsg(t, dataDir, sid, "inbox", "msg-bbbbbbbbbbbb", "val12345", "VAL-x", message.TypeQuery, "open ask")
@@ -230,6 +242,7 @@ func TestRunInbox_Tidy_JSONCount(t *testing.T) {
 	sid := "tidyts2"
 	cfg := fixtureConfig(t, dataDir)
 	mgr := newSessionManager(cfg)
+	plantLiveSession(t, dataDir, sid)
 	// A handled tell (sweepable) plus an open ask (F-115: never sweepable), so
 	// the JSON has to carry all three numbers and not just the flattering one.
 	plantMsg(t, dataDir, sid, "inbox", "msg-aaaaaaaaaaaa", "val12345", "VAL-x", message.TypeNotify, "one")

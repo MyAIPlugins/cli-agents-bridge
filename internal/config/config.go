@@ -170,6 +170,18 @@ type Config struct {
 	// not been measured. Env override: CAB_MCP_MAX_RESULT_BYTES.
 	MCPMaxResultBytes int `json:"mcp_max_result_bytes"`
 
+	// SessionLockWaitMs is how long a command that needs a session lock keeps
+	// trying while another process holds it (F-160). The holds are milliseconds
+	// long, so the wait is normally invisible; the value is a default and not a
+	// maximum, and it only bounds how long a command waits before it fails with the
+	// lock path and the time it waited. <= 0 means do not wait: one attempt.
+	// Default: 5000.
+	// Env override: CAB_SESSION_LOCK_WAIT_MS. NOTE: a 0 in the user config.json is
+	// ignored (applyUserFile skips zero-values) — turn the wait off via the env var.
+	// Do not write this key in config.json while a cab-bridge from before F-160 is
+	// still in use: that version refuses a file with a key it does not know.
+	SessionLockWaitMs int `json:"session_lock_wait_ms"`
+
 	// FindingsStaleDays is how many days a finding may stay open before
 	// `cab-bridge findings stale` lists it (F-156). Must be >= 1; `stale`
 	// refuses a smaller value. Default 7. Env override: CAB_FINDINGS_STALE_DAYS.
@@ -208,6 +220,8 @@ func DefaultConfig() Config {
 		MCPScanBudgetSeconds:      5,
 		MCPChildTimeoutSeconds:    20,
 		MCPMaxResultBytes:         24576,
+
+		SessionLockWaitMs: 5000,
 
 		FindingsStaleDays: 7,
 	}
@@ -345,6 +359,9 @@ func applyUserFile(cfg *Config, path string) error {
 	if override.MCPMaxResultBytes != 0 {
 		cfg.MCPMaxResultBytes = override.MCPMaxResultBytes
 	}
+	if override.SessionLockWaitMs != 0 {
+		cfg.SessionLockWaitMs = override.SessionLockWaitMs
+	}
 	if override.FindingsStaleDays != 0 {
 		cfg.FindingsStaleDays = override.FindingsStaleDays
 	}
@@ -407,6 +424,7 @@ func applyEnv(cfg *Config) []string {
 		{"CAB_MCP_SCAN_BUDGET_SECONDS", &cfg.MCPScanBudgetSeconds},
 		{"CAB_MCP_CHILD_TIMEOUT_SECONDS", &cfg.MCPChildTimeoutSeconds},
 		{"CAB_MCP_MAX_RESULT_BYTES", &cfg.MCPMaxResultBytes},
+		{"CAB_SESSION_LOCK_WAIT_MS", &cfg.SessionLockWaitMs},
 		{"CAB_FINDINGS_STALE_DAYS", &cfg.FindingsStaleDays},
 	} {
 		if w := envInt(e.name, e.dst); w != "" {

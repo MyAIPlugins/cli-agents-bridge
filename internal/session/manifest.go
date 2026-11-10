@@ -277,6 +277,6 @@ func (m *Manifest) ApplyV1Defaults() {
 		m.AgentName = strings.ReplaceAll(m.ProjectName, ScopeSeparator, derivedNameReplacement)
 	}
 	// PID stays 0 — there is no safe inference for a v1 manifest's owning
-	// process. Lock acquisition logic must handle PID=0 as "no lock holder
-	// inferable, treat as stale" (PLAN §9 SC-6).
+	// process. Whatever judges liveness from the PID must handle PID=0 as "no
+	// owning process inferable" (IsProcessAlive(0) is false).
 }

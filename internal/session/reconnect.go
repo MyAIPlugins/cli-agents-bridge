@@ -71,9 +71,10 @@ type identityMatch struct {
 // claim to that session's continuity, so we reclaim it: revoke the previous
 // listener (a new token via reclaimListenerLocked → the orphan's IsListenerCurrent
 // goes false, it stops consuming) then adopt. Two SIMULTANEOUS --resume of the
-// same identity is an operator error (one wins the lock; the other gets a
-// contended error) — a deliberate second instance uses --force-new (which never
-// enters tryReuse). The lock is held across revoke+adopt so they are atomic.
+// same identity do not collide: the second waits for the first claim to finish
+// and then supersedes it, like any later resume. A deliberate second instance
+// uses --force-new (which never enters tryReuse). The lock is held across
+// revoke+adopt so they are atomic.
 func (m *Manager) tryReuse(absProj string, opts RegisterOpts) (*Manifest, func() error, error) {
 	matches, err := m.findIdentityMatches(absProj, opts)
 	if err != nil {
@@ -147,14 +148,11 @@ func (m *Manager) tryReuse(absProj string, opts RegisterOpts) (*Manifest, func()
 			ErrUnaddressableResume, c.mf.AgentName, verr,
 			shellarg.Quote(defaultIfEmpty(opts.Role, RoleNeutral)), SuggestAddressableName(c.mf.AgentName), shellarg.Quote(c.mf.ProjectPath))
 	}
-	release, lerr := AcquireLock(filepath.Join(m.sessionDir(c.id), "lock"), false)
+	// Waits for the lock like every other caller. A second --resume of the same
+	// identity does not collide with the first: it waits for the first claim to
+	// finish and then supersedes it, as any later resume would.
+	release, lerr := m.AcquireSessionLock(c.id, m.LockWait)
 	if lerr != nil {
-		if errors.Is(lerr, ErrLockHeld) {
-			// Another register/reconnect is mid-claim on this very session: do not
-			// race it into a duplicate (two simultaneous --resume of the same
-			// identity is an operator error). --force-new for a 2nd instance.
-			return nil, nil, fmt.Errorf("reuse: %s claim contended: %w (use --force-new for a deliberate second instance)", c.id, lerr)
-		}
 		return nil, nil, fmt.Errorf("reuse: lock %s: %w", c.id, lerr)
 	}
 

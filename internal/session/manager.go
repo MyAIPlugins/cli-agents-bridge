@@ -50,6 +50,12 @@ type Manager struct {
 	// reentrant).
 	manifestMu sync.Mutex
 
+	// LockWait is how long a caller that waits for the session lock keeps trying
+	// before it gives up with ErrLockHeld. NewManager sets DefaultLockWait; the
+	// command layer sets it from config session_lock_wait_ms, where <= 0 means "do
+	// not wait". The heartbeat and cleanup never wait, whatever this says.
+	LockWait time.Duration
+
 	// genID is the test seam for the session id. Nil means generateSessionID.
 	// It exists so a test can force the 1-in-2^32 collision that Register must
 	// survive without touching the other session's directory (F-160 C1).
@@ -70,6 +76,7 @@ func NewManager(dataDir string, heartbeatInterval time.Duration) *Manager {
 		DataDir:           dataDir,
 		HeartbeatInterval: heartbeatInterval,
 		Now:               time.Now,
+		LockWait:          DefaultLockWait,
 	}
 }
 
@@ -100,10 +107,10 @@ type RegisterOpts struct {
 }
 
 // Register creates a new session: generates a session ID, writes manifest.json
-// atomically, and acquires the PID lock. Returns the created Manifest plus a
+// atomically, and takes the session lock. Returns the created Manifest plus a
 // release function for the lock (caller must defer release()).
 //
-// BUG-6 fix: lock acquired via O_EXCL semantics in AcquireLock. If a session
+// BUG-6 fix: if a session
 // already exists for this ProjectPath (same .claude/bridge-session-style
 // collision via longest-prefix-match), Register does NOT silently reuse it —
 // the caller decides whether to resume or force a new ID via opts.ForceNew.
@@ -189,21 +196,14 @@ func (m *Manager) Register(ctx context.Context, opts RegisterOpts) (*Manifest, f
 	// does not chmod existing dirs back down).
 	_ = os.Chmod(sessionDir, 0o700)
 
-	release, err := AcquireLock(filepath.Join(sessionDir, "lock"), opts.ForceNew)
+	// No validate and no precheck, the one caller that has neither: the manifest
+	// does not exist yet. The directory was created a moment ago by this call, so
+	// nobody else can hold a lock in it; the lock is taken to hand it to the caller
+	// for as long as the session is being set up. A failure here rolls back only
+	// what this call created.
+	release, err := AcquireLock(m.lockBase(sessionID), m.LockWait, nil)
 	if err != nil {
-		// Failed lock: rollback the session dir we just created to avoid
-		// leaving an orphan. Best-effort.
 		_ = os.RemoveAll(sessionDir)
-		// NO --force-new advice here, and the reason is worth the line because
-		// it is not the obvious one. This IS the only AcquireLock caller whose
-		// forceNew comes from the flag, so by signature it looks like the place
-		// for the remedy — but sessionDir was created exclusively (os.Mkdir)
-		// above, so an ID collision with a live holder stops THERE and never
-		// reaches this branch, and nobody else can hold a lock inside a
-		// directory that did not exist a moment ago. No test can get here, which
-		// makes any sentence written here a sentence nobody will ever read: the
-		// class F-126 is about. The advice the user actually meets lives at the
-		// two reachable refusals — ErrSessionExistsForProject above, and tryReuse.
 		return nil, nil, fmt.Errorf("register: %w", err)
 	}
 
@@ -594,14 +594,18 @@ func (m *Manager) warnHeartbeatFailure(sessionID string, consecutive int, err er
 //
 // Returns evicted=true when the under-lock re-check fails (a reclaim happened):
 // the caller stops the heartbeat. Lock contention (a concurrent claim/reclaim)
-// returns evicted=false — best-effort, skip this beat and retry next tick.
+// returns evicted=false — best-effort, skip this beat and retry next tick. Any
+// other lock error, a retired session included, is returned: it is a failure.
 func (m *Manager) touchHeartbeatOwned(sessionID string, ownerOK func() bool) (evicted bool, err error) {
-	release, lerr := AcquireLock(filepath.Join(m.sessionDir(sessionID), "lock"), false)
+	release, lerr := m.AcquireSessionLock(sessionID, 0)
 	if lerr != nil {
-		// Contended — skip this beat (best-effort). NOT reported as a failure:
-		// a concurrent claim/reclaim is normal and self-resolving, and counting
-		// it would produce warnings about a healthy system.
-		return false, nil
+		if errors.Is(lerr, ErrLockHeld) {
+			// Contended — skip this beat (best-effort). NOT reported as a failure:
+			// a concurrent claim/reclaim is normal and self-resolving, and counting
+			// it would produce warnings about a healthy system.
+			return false, nil
+		}
+		return false, fmt.Errorf("heartbeat: %w", lerr)
 	}
 	defer func() { _ = release() }()
 	if !ownerOK() {

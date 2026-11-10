@@ -17,12 +17,15 @@ func mustLoadHB(t *testing.T, mgr *Manager, sid string) time.Time {
 	return mf.LastHeartbeat
 }
 
-// newListenerMgr returns a Manager over a temp data dir with the session dir
-// pre-created (AcquireLock needs sessions/<id>/ to exist to write the lock file).
+// newListenerMgr returns a Manager over a temp data dir with a live session: its
+// directory AND its manifest. F-160 made the manifest the proof that a session
+// exists (a directory without one is a session cleanup has retired, and every
+// method that takes the session lock refuses it with ErrSessionGone), so a bare
+// directory is no longer a session these tests can claim a listener on.
 func newListenerMgr(t *testing.T, sid string) *Manager {
 	t.Helper()
 	mgr := NewManager(t.TempDir(), time.Second)
-	require.NoError(t, os.MkdirAll(mgr.sessionDir(sid), 0o700))
+	plantManifestDetails(t, mgr, sid, hostPath(t, "/repo/listener"), hostPath(t, "/repo/listener"), "ESC-listener", RoleEsc)
 	return mgr
 }
 

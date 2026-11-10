@@ -137,11 +137,15 @@ type sweepOutcome struct {
 // record files the error of one session's removal: busy is a skip, anything
 // else is a failure the caller must be told about.
 func (o *sweepOutcome) record(id string, err error) {
-	if errors.Is(err, ErrSessionBusy) {
+	switch {
+	case errors.Is(err, ErrSessionBusy):
 		o.skippedBusy++
-		return
+	case errors.Is(err, session.ErrSessionGone):
+		// Retired by somebody else between the listing and the lock: already done,
+		// not a failure and not a removal of ours.
+	default:
+		o.failed = append(o.failed, SessionFailure{ID: id, Error: err.Error()})
 	}
-	o.failed = append(o.failed, SessionFailure{ID: id, Error: err.Error()})
 }
 
 // scopeOfSession reads a session's scope BEFORE it is removed. "(no scope)" for
@@ -174,7 +178,7 @@ func Run(_ context.Context, opts Options) (*Result, error) {
 			return nil, ErrOwnSessionRequired
 		}
 		sc := scopeOfSession(opts.DataDir, opts.OwnSessionID)
-		if err := archiveAndRemoveSession(opts.DataDir, opts.OwnSessionID, opts.Now); err != nil {
+		if err := archiveAndRemoveSession(opts.DataDir, opts.OwnSessionID, opts.Now, nil); err != nil {
 			return nil, fmt.Errorf("cleanup my-session: %w", err)
 		}
 		res.SessionsRemoved = append(res.SessionsRemoved, opts.OwnSessionID)
@@ -253,7 +257,7 @@ func globalSweep(opts Options) (sweepOutcome, error) {
 		if sc == "" {
 			sc = "(no scope)"
 		}
-		if err := archiveAndRemoveSession(opts.DataDir, e.Name(), opts.Now); err != nil {
+		if err := archiveAndRemoveSession(opts.DataDir, e.Name(), opts.Now, nil); err != nil {
 			out.record(e.Name(), err)
 			continue
 		}
@@ -269,9 +273,10 @@ func globalSweep(opts Options) (sweepOutcome, error) {
 var messageSubdirs = []string{"inbox", "outbox", "processed"}
 
 // archiveAndRemoveSession archives every message-bearing subdir (inbox/,
-// outbox/, processed/) into archive/<date>/<sid>/<subdir>/ then RemoveAll-s
-// the session dir. Failures inside the archive copy are silenced so a missing
-// or empty subdir does not block delete (best-effort).
+// outbox/, processed/) into archive/<date>/<sid>/<subdir>/ and then retires the
+// session: its manifest goes first, then everything else, and last the lock file
+// and the directory, after the lock is released. Failures inside the archive copy
+// are silenced so a missing or empty subdir does not block delete (best-effort).
 //
 // AUDIT-1 fix: previously only processed/ was archived, so RemoveAll silently
 // dropped any UNREAD inbox messages (and sent outbox copies) — reintroducing
@@ -283,21 +288,36 @@ var messageSubdirs = []string{"inbox", "outbox", "processed"}
 // Subdir layout (vs a flat dir) keeps provenance explicit and removes any
 // name-collision risk between a message that sits in inbox/ and a same-named
 // copy in processed/.
-// FENCING (CRI diff-gate P0-2): the whole decide-archive-remove runs while
+//
+// FENCING (CRI diff-gate P0-2): the whole decide-archive-retire runs while
 // holding the session lock, and refuses outright if a reply transaction is in
 // flight. Without it, cleanup could snapshot inbox/, a concurrent reply could
-// link(2) its response in and report success, and the following RemoveAll would
+// link(2) its response in and report success, and the following removal would
 // delete that brand-new file — leaving the ask CLOSED, the response gone from
 // both inbox and archive, and the journal removed. No retry can repair that:
 // it is a direct violation of the guarantee the transaction exists for.
 //
 // Refusing is right rather than merely delaying: a session mid-transaction is
 // by definition not abandoned, and the next cleanup pass will find it again.
-func archiveAndRemoveSession(dataDir, sid string, now func() time.Time) error {
+//
+// THE ORDER OF RETIREMENT IS THE POINT (F-160). A process that waits for the lock
+// may have opened the lock file just before it is unlinked, and would then lock an
+// inode nobody contends for any more. What stops it is the check every session
+// lock does on the lock once taken: the manifest must exist. So the manifest is
+// removed first, under the lock, before anything else and before the lock file; a
+// late waiter then finds the session gone (session.ErrSessionGone) and writes
+// nothing. The lock file is removed only after release, and the directory last, with
+// a plain rmdir: a leftover nobody expected is an error returned to the caller, not
+// something to delete blind.
+//
+// afterRelease is a test seam, nil in production: it runs after the lock is
+// released and before the lock file and the directory are removed.
+func archiveAndRemoveSession(dataDir, sid string, now func() time.Time, afterRelease func()) error {
 	sessionDir := filepath.Join(dataDir, "sessions", sid)
 	dateDir := now().UTC().Format("2006-01-02")
 
-	release, lerr := session.AcquireLock(filepath.Join(sessionDir, "lock"), false)
+	mgr := session.NewManager(dataDir, time.Second) // only to take the lock
+	release, lerr := mgr.AcquireSessionLock(sid, 0)
 	if lerr != nil {
 		// Only contention is "busy". Any other error (permissions, a missing
 		// parent, a file where the lock should be) is a failure the caller must
@@ -308,8 +328,25 @@ func archiveAndRemoveSession(dataDir, sid string, now func() time.Time) error {
 		}
 		return fmt.Errorf("cleanup: session %q: acquire lock: %w", sid, lerr)
 	}
-	defer func() { _ = release() }()
 
+	rerr := retireSession(dataDir, sid, sessionDir, dateDir)
+	if uerr := release(); uerr != nil {
+		rerr = errors.Join(rerr, fmt.Errorf("cleanup: session %q: release lock: %w", sid, uerr))
+	}
+	if rerr != nil {
+		return rerr
+	}
+
+	if afterRelease != nil {
+		afterRelease()
+	}
+	return removeLockAndDir(sid, sessionDir)
+}
+
+// retireSession is the part of the removal that runs under the session lock: the
+// reply-transaction check, the archive, the removal of the manifest and then of
+// every other entry except the lock file.
+func retireSession(dataDir, sid, sessionDir, dateDir string) error {
 	if _, err := os.Stat(filepath.Join(sessionDir, "reply-txn.json")); err == nil {
 		return fmt.Errorf("%w: session %q has a reply transaction in flight", ErrSessionBusy, sid)
 	}
@@ -334,8 +371,34 @@ func archiveAndRemoveSession(dataDir, sid string, now func() time.Time) error {
 		}
 	}
 
-	if err := os.RemoveAll(sessionDir); err != nil {
-		return fmt.Errorf("remove session %q: %w", sid, err)
+	// The retirement itself: from here on every lock on this session is refused.
+	if err := os.Remove(filepath.Join(sessionDir, "manifest.json")); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("cleanup: session %q: retire (remove manifest): %w", sid, err)
+	}
+	entries, err := os.ReadDir(sessionDir)
+	if err != nil {
+		return fmt.Errorf("cleanup: session %q: list before removal: %w", sid, err)
+	}
+	var failures []error
+	for _, e := range entries {
+		if e.Name() == session.LockFileName {
+			continue // held by us until release; removed after it
+		}
+		if err := os.RemoveAll(filepath.Join(sessionDir, e.Name())); err != nil {
+			failures = append(failures, fmt.Errorf("cleanup: session %q: remove %s: %w", sid, e.Name(), err))
+		}
+	}
+	return errors.Join(failures...)
+}
+
+// removeLockAndDir is the last step, after the lock is released: the lock file,
+// then the (by now empty) session directory with a non-recursive remove.
+func removeLockAndDir(sid, sessionDir string) error {
+	if err := os.Remove(filepath.Join(sessionDir, session.LockFileName)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("cleanup: session %q retired but its lock file could not be removed: %w", sid, err)
+	}
+	if err := os.Remove(sessionDir); err != nil {
+		return fmt.Errorf("cleanup: session %q retired but its directory could not be removed: %w", sid, err)
 	}
 	return nil
 }

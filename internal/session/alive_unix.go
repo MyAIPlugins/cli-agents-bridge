@@ -18,9 +18,9 @@ import (
 // Return semantics:
 //   - nil err: process exists and we have permission to signal it.
 //   - EPERM:    process exists but is owned by another UID. Still "alive".
-//   - ESRCH:    no such process. Stale lock.
+//   - ESRCH:    no such process.
 //   - other:    unexpected — log warning and conservatively report alive
-//     (false positive is safer than overwriting a live lock).
+//     (false positive is safer than treating a live session as abandoned).
 //
 // Negative or zero pid is treated as not-alive (PID=0 cannot be killed,
 // PID<0 means "process group" which we never write).
@@ -42,7 +42,7 @@ func IsProcessAlive(pid int) bool {
 	if errors.Is(err, syscall.ESRCH) {
 		return false
 	}
-	// Conservative: unknown error → assume alive to avoid overwriting a
-	// legitimate live lock by mistake.
+	// Conservative: unknown error → assume alive to avoid evicting a live
+	// session by mistake.
 	return true
 }

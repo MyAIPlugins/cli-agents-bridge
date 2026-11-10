@@ -18,10 +18,10 @@ import (
 // where the caller's forceNew argument comes from it. Anywhere else, printing
 // that advice sends the reader to a flag their command refuses.
 var filesAllowedToAdviseForceNew = map[string]bool{
-	"cmd/cab-bridge/register.go":     true, // declares --force-new
-	"cmd/cab-bridge/join.go":         true, // declares --force-new
-	"internal/session/manager.go":    true, // Register: the only AcquireLock caller fed by the flag
-	"internal/session/reconnect.go":  true, // resume, whose way out is register --force-new
+	"cmd/cab-bridge/register.go":     true,  // declares --force-new
+	"cmd/cab-bridge/join.go":         true,  // declares --force-new
+	"internal/session/manager.go":    true,  // Register: the project-collision error, not a lock error (the lock names no remedy)
+	"internal/session/reconnect.go":  false, // F-160: a second --resume waits and supersedes the first; no lock error advises anything
 	"internal/cleanup/scope.go":      false,
 	"internal/session/lock.go":       false, // the primitive: F-126 took it out of here
 	"internal/session/listener.go":   false,

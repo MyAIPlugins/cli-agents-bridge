@@ -16,5 +16,6 @@
   "mcp_scan_budget_seconds": 5,
   "mcp_child_timeout_seconds": 20,
   "mcp_max_result_bytes": 24576,
+  "session_lock_wait_ms": 5000,
   "findings_stale_days": 7
 }

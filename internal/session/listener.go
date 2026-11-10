@@ -186,7 +186,7 @@ func (m *Manager) reclaimListenerLocked(sessionID string) (ReclaimInfo, error) {
 // hold the lock for its lifetime (only the claim's read-modify-write is
 // serialized), matching the register/reconnect convention.
 func (m *Manager) ClaimListener(sessionID string) (ListenerOwner, error) {
-	release, err := AcquireLock(filepath.Join(m.sessionDir(sessionID), "lock"), false)
+	release, err := m.AcquireSessionLock(sessionID, m.LockWait)
 	if err != nil {
 		return ListenerOwner{}, fmt.Errorf("claim listener %s: %w", sessionID, err)
 	}
@@ -199,7 +199,7 @@ func (m *Manager) ClaimListener(sessionID string) (ListenerOwner, error) {
 // admin path; the register --resume reclaim instead uses reclaimListenerLocked
 // under the lock it already holds, so revoke + adopt are atomic (tryReuse).
 func (m *Manager) ReclaimListener(sessionID string) (ReclaimInfo, error) {
-	release, err := AcquireLock(filepath.Join(m.sessionDir(sessionID), "lock"), false)
+	release, err := m.AcquireSessionLock(sessionID, m.LockWait)
 	if err != nil {
 		return ReclaimInfo{}, fmt.Errorf("reclaim listener %s: %w", sessionID, err)
 	}
@@ -223,7 +223,7 @@ func (m *Manager) ReclaimListener(sessionID string) (ReclaimInfo, error) {
 // after (and this waiter's token is stale, so its ownerOK goes false and its
 // watcher exits).
 func (m *Manager) StartWait(sessionID string) (ListenerOwner, error) {
-	release, err := AcquireLock(filepath.Join(m.sessionDir(sessionID), "lock"), false)
+	release, err := m.AcquireSessionLock(sessionID, m.LockWait)
 	if err != nil {
 		return ListenerOwner{}, fmt.Errorf("start wait %s: %w", sessionID, err)
 	}

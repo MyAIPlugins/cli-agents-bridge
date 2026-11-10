@@ -15,10 +15,10 @@ const stillActive = 259
 
 // IsProcessAlive answers the same question as the Unix version (alive_unix.go)
 // with the same CONSERVATIVE BIAS: anything we fail to understand counts as
-// alive, because all four callers — stale-lock recovery (lock.go), ownership of
-// the next wait (listener.go), collision/resume in join (manager.go) and the
-// auto-gc sweep (cleanup/gc.go) — would rather leave a dead session alone than
-// evict a live one.
+// alive, because all the callers — ownership of the next wait (listener.go),
+// collision/resume in join (manager.go) and the auto-gc sweep (cleanup/gc.go) —
+// would rather leave a dead session alone than evict a live one. (The session
+// lock no longer asks: it is a kernel lock, see lock.go.)
 //
 // The mapping, and each line is the counterpart of one on Unix:
 //
@@ -33,8 +33,8 @@ const stillActive = 259
 // failing for a reason we would have to guess at.
 //
 // KNOWN LIMIT, and it is worse here than on Unix: Windows recycles PIDs
-// aggressively (multiples of 4, reassigned as soon as they are free), so a stale
-// lock whose PID has been handed to an unrelated process reads as ALIVE — the
+// aggressively (multiples of 4, reassigned as soon as they are free), so a dead
+// session whose PID has been handed to an unrelated process reads as ALIVE — the
 // session is never recovered, the wait never reclaimed, the gc never sweeps it,
 // and every command reports ok. Nothing in this function can see that; closing
 // it needs the process start time stored alongside the PID, which changes the

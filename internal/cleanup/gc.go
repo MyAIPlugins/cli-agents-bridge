@@ -134,10 +134,11 @@ func GCOrphans(dataDir, scope string, gcHours int, now func() time.Time) ([]Orph
 			continue // heartbeat still fresh — possibly just registered, not abandoned
 		}
 		idle := now().Sub(mf.LastHeartbeat)
-		if err := archiveAndRemoveSession(dataDir, e.Name(), now); err != nil {
+		if err := archiveAndRemoveSession(dataDir, e.Name(), now, nil); err != nil {
 			// A single failure must not block the rest, but it must not vanish
 			// either. Busy is not a failure: the next pass finds the session again.
-			if !errors.Is(err, ErrSessionBusy) {
+			// Neither is a session somebody else retired a moment ago.
+			if !errors.Is(err, ErrSessionBusy) && !errors.Is(err, session.ErrSessionGone) {
 				failures = append(failures, fmt.Errorf("gc orphans: session %s: %w", e.Name(), err))
 			}
 			continue
