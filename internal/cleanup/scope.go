@@ -391,14 +391,20 @@ func retireSession(dataDir, sid, sessionDir, dateDir string) error {
 	return errors.Join(failures...)
 }
 
+// leftoverNote ends the error of a retirement that stopped halfway. The manifest is
+// already gone, which is what retired the session, and every sweep lists sessions by
+// their manifest: the folder that is left is not a session to any of them, so none
+// will ever come back to it.
+const leftoverNote = "the folder holds no session any more and no cleanup pass will collect it: it has to be removed by hand"
+
 // removeLockAndDir is the last step, after the lock is released: the lock file,
 // then the (by now empty) session directory with a non-recursive remove.
 func removeLockAndDir(sid, sessionDir string) error {
 	if err := os.Remove(filepath.Join(sessionDir, session.LockFileName)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("cleanup: session %q retired but its lock file could not be removed: %w", sid, err)
+		return fmt.Errorf("cleanup: session %q retired but its lock file could not be removed (%s): %w", sid, leftoverNote, err)
 	}
 	if err := os.Remove(sessionDir); err != nil {
-		return fmt.Errorf("cleanup: session %q retired but its directory could not be removed: %w", sid, err)
+		return fmt.Errorf("cleanup: session %q retired but its directory could not be removed (%s): %w", sid, leftoverNote, err)
 	}
 	return nil
 }

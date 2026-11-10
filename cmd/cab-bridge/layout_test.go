@@ -27,9 +27,11 @@ import (
 // compare the old tree byte for byte, mode and mtime included.
 //
 // What the snapshot proves is that nothing in the old tree was WRITTEN, renamed
-// or removed. It does not prove nothing was READ: that half is closed by
-// TestStructure_OnlyLegacyTreeGoVisitsTheOldTree and the AST test on
-// legacy_tree.go, which fix the set of files and of os calls that can reach it.
+// or removed. It does not prove nothing was READ: that half is closed by two
+// structural tests in layout_structure_test.go, which fix the set of files that can
+// name the old tree's children (TestStructure_OnlyLegacyTreeGoNamesTheOldChildren)
+// and the os calls legacy_tree.go can make
+// (TestStructure_TheOldTreeIsReadOnlyByLegacyTreeGo).
 
 var frozenAt = time.Date(2020, 1, 1, 12, 0, 0, 0, time.UTC)
 

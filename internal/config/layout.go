@@ -19,7 +19,7 @@ const LayoutDir = "layout-2"
 
 // layoutDir is the ONLY place that turns a base dir into this generation's state
 // dir. Load and DefaultConfig call it; nothing else may build the path, and a
-// structural test fixes that (tests/integration/layout_structure_test.go).
+// structural test fixes that (cmd/cab-bridge/layout_structure_test.go).
 func layoutDir(base string) string {
 	return filepath.Join(base, LayoutDir)
 }

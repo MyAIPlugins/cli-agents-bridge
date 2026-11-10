@@ -114,10 +114,10 @@ type RegisterOpts struct {
 // atomically, and takes the session lock. Returns the created Manifest plus a
 // release function for the lock (caller must defer release()).
 //
-// BUG-6 fix: if a session
-// already exists for this ProjectPath (same .claude/bridge-session-style
-// collision via longest-prefix-match), Register does NOT silently reuse it —
-// the caller decides whether to resume or force a new ID via opts.ForceNew.
+// BUG-6 fix: if a session already exists for this ProjectPath (same
+// .claude/bridge-session-style collision via longest-prefix-match), Register does
+// NOT silently reuse it — the caller decides whether to resume or force a new ID
+// via opts.ForceNew.
 // Resume semantics are deferred to Sprint 2 (BUG-6 MVP scope is collision
 // prevention, not resume UX).
 func (m *Manager) Register(ctx context.Context, opts RegisterOpts) (*Manifest, func() error, error) {

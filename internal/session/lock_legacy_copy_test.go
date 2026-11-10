@@ -18,6 +18,11 @@ package session
 // were, renamed with a "legacy" prefix, plus TWO hook calls marked HOOK that do
 // nothing while the hooks are nil. It is !windows because its search for a stale
 // holder is kill(pid, 0).
+//
+// LIFETIME: this file is deleted together with cmd/cab-bridge/legacy_tree.go, when no
+// binary older than layout-2 is in use any more. From then on the old algorithm is in
+// git (c0649ad, the blob above), and the detector keeps its positive control in
+// TestSessionLock_TheDetectorSeesAForcedOverlap, which needs no copy of anything.
 
 import (
 	"errors"

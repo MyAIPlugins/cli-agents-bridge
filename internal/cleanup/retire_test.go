@@ -121,10 +121,51 @@ func TestArchiveAndRemoveSession_ALeftoverAfterTheReleaseIsAnErrorAndIsKept(t *t
 	require.Error(t, err)
 	assert.False(t, errors.Is(err, ErrSessionBusy), "got %v", err)
 	assert.Contains(t, err.Error(), "directory could not be removed")
+	assert.Contains(t, err.Error(), "holds no session any more and no cleanup pass will collect it", "the error says nobody will come back to the folder")
+	assert.Contains(t, err.Error(), "removed by hand")
+	assert.NotContains(t, err.Error(), "cab-bridge", "and it names no command")
 	content, rerr := os.ReadFile(late)
 	require.NoError(t, rerr, "the leftover is still there")
 	assert.Equal(t, "arrived after the sweep", string(content))
 	assert.NoFileExists(t, sessionPath(dataDir, "aaaaaaac", session.LockFileName), "the lock file went, as planned")
+}
+
+// The sentence is true: a folder with no manifest is not listed by any sweep, so a
+// second pass over the same data dir leaves the leftover alone and says nothing about
+// it. This is the fact the error states, held by a test instead of a comment.
+func TestArchiveAndRemoveSession_ALeftoverFolderIsNotCollectedByALaterPass(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	plantStale(t, dataDir, "aaaaaa0c")
+	late := sessionPath(dataDir, "aaaaaa0c", "late.json")
+	require.Error(t, archiveAndRemoveSession(dataDir, "aaaaaa0c", func() time.Time { return failuresBase }, func() {
+		writeFileIn(t, late, "arrived after the sweep")
+	}))
+
+	orphans, err := GCOrphans(dataDir, "", 1, func() time.Time { return failuresBase })
+
+	require.NoError(t, err, "a later pass does not even notice the folder")
+	assert.Empty(t, orphans)
+	assert.FileExists(t, late, "and it does not collect it")
+}
+
+// The lock file that cannot be removed leaves the same folder behind, and says the same.
+func TestArchiveAndRemoveSession_ALockFileThatCannotBeRemovedLeavesTheSameNote(t *testing.T) {
+	requirePOSIXNonRoot(t)
+	t.Parallel()
+	dataDir := t.TempDir()
+	plantStale(t, dataDir, "aaaaaa0d")
+	dir := sessionPath(dataDir, "aaaaaa0d")
+
+	err := archiveAndRemoveSession(dataDir, "aaaaaa0d", func() time.Time { return failuresBase }, func() {
+		require.NoError(t, os.Chmod(dir, 0o500)) // the lock file can no longer be unlinked
+		t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "lock file could not be removed")
+	assert.Contains(t, err.Error(), "no cleanup pass will collect it")
+	assert.FileExists(t, sessionPath(dataDir, "aaaaaa0d", session.LockFileName), "the lock file is still there")
 }
 
 // Something under the session that cannot be removed: the sweep fails with the
