@@ -53,10 +53,13 @@ a more capable model does not touch that line.*
 inert), opening the bridge repo (the limit is upstream), or asking the agent to wait longer
 (it cannot).
 
-🟢 **The lever that works today**: **a Codex peer is not kept listening when it has no task.** It
-is reactivated when there is material: turning it back on costs much less than ~130k tokens an hour of silence.
-⇒ And whoever orchestrates should know this **before** engaging it "so it's ready": with Codex, *ready* is paid for.
-⇒ In practice, with the peer paused: **write to it with `ask`, not with `tell`.** An ask that does not close stays
+🟢 **Today this cost is not paid, because no Codex waits with a goal any more**: with the 12/09
+method (thread id + `codex queue`) an **idle Codex peer consumes no tokens** (observed over
+dozens of sessions, confirmed on 11/11; the numbers above measure the goal, not the idle peer).
+⇒ Keeping it open between tasks is free: whether to keep it or close it is decided by **how relevant
+its context is to the next task**, not by cost. ⚠️ The wake-up is still needed: an idle peer does not
+know mail has arrived, and its silence is indistinguishable from a broken peer's.
+⇒ In practice, with the peer idle: **write to it with `ask`, not with `tell`.** An ask that does not close stays
 open and the `next` on wake-up **redelivers** it (`redelivered`); a `tell` that its listener has
 already marked `NOTIFIED` while it was asleep does not reappear on its own. *(`[L]`, deduced from the mailbox model,
 not yet measured: `ask` is the right form for a task anyway, so it costs nothing.)*
