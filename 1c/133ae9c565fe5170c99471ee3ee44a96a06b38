@@ -1,0 +1,37 @@
+cmd/cab-bridge/common.go
+  s_d5e186cda02d82::t_6b1af646a9f5e9 159-162
+cmd/cab-bridge/cleanup.go
+  s_d5e186cda02d82::t_cb0a31472a246d 161-172
+cmd/cab-bridge/autogc_failures_test.go
+  s_d5e186cda02d82::t_0e52a8a1343329 1-46
+internal/cleanup/scope.go
+  s_d5e186cda02d82::t_410b22aa6a4057 184,188-192
+  s_d5e186cda02d82::t_88d8d71a3870f9 99-110
+  s_d5e186cda02d82::t_9ecbdf7c44260c 249,257-258,260-261,263
+  s_d5e186cda02d82::t_ba3d05a2f4e16d 121-146
+  s_d5e186cda02d82::t_612b2aaf49ed1f 209-210
+  s_d5e186cda02d82::t_8be4e1f452ae71 302-309
+  s_d5e186cda02d82::t_06cda9a74e4fac 215,217-218,222,224
+internal/cleanup/failures_test.go
+  s_d5e186cda02d82::t_52249bd3e94cea 1-153
+internal/cleanup/gc.go
+  s_d5e186cda02d82::t_d84afc27e893c0 75-82
+  s_d5e186cda02d82::t_b39fb00fc57137 103
+  s_d5e186cda02d82::t_2dda0d9147bfca 138-143,147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1c133ae9c565fe5170c99471ee3ee44a96a06b38",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
