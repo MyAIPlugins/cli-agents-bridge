@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/myAIPlugins/cli-agents-bridge/internal/fslock"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 )
 
@@ -126,11 +127,12 @@ func (m *Manager) AcquireIdentityLock(identity string) (*IdentityLock, error) {
 		return nil, fmt.Errorf("identity lock: %w", err)
 	}
 
-	if err := lockExclusiveNonBlocking(f); err != nil {
-		held := errors.Is(err, errLockContended)
+	if err := fslock.Lock(f); err != nil {
+		held := errors.Is(err, fslock.ErrBusy)
 		_ = f.Close()
 		if !held {
-			return nil, fmt.Errorf("identity lock: lock %s: %w", path, err)
+			// fslock names the file in its error already.
+			return nil, fmt.Errorf("identity lock: %w", err)
 		}
 		return nil, &HeldError{PID: readHolderPID(path), Path: path}
 	}
