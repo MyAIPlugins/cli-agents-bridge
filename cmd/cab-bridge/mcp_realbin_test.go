@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
 // These tests run the REAL binary: the server as Claude Desktop starts it (its own
@@ -59,14 +60,41 @@ type sandbox struct {
 // that look at the disk read it, not data.
 func (sb *sandbox) state() string { return filepath.Join(sb.data, config.LayoutDir) }
 
+// newSandbox makes the repository by creating its `.git` directory and NOT by running
+// `git init` (F-158). The binary under test never runs git: to find the project it only
+// asks whether `.git` exists and is a directory (session.gitMarkerRoot, reached from
+// FindProjectRoot; findingsRoot adds one more Lstat of the same entry), so the marker is
+// all the tests need. A real `git init` made them depend on the machine that runs them:
+// on a Mac where `~/.gitconfig` sets `trace2.eventtarget` to the git-ai daemon, every git
+// process, whichever binary, tells the daemon, which creates `.git/ai/logs` a few
+// milliseconds later. The test lasts 0.13 s, so the folder appeared while t.TempDir was
+// removing the tree and the cleanup failed with "unlinkat .../.git: directory not empty",
+// about 3 times in 60 full suites. Starting git with another HOME would have made it
+// right today; not starting it cannot go wrong tomorrow, whatever the next hook of the
+// next machine is.
 func newSandbox(t *testing.T, bin string) *sandbox {
 	t.Helper()
 	root := t.TempDir()
 	sb := &sandbox{t: t, bin: bin, home: filepath.Join(root, "home"), data: filepath.Join(root, "data"), repo: filepath.Join(root, "home", "repo")}
-	require.NoError(t, os.MkdirAll(sb.repo, 0o755))
-	out, err := exec.Command("git", "init", "-q", sb.repo).CombinedOutput()
-	require.NoError(t, err, string(out))
+	require.NoError(t, os.MkdirAll(filepath.Join(sb.repo, ".git"), 0o755))
 	return sb
+}
+
+// The two halves of the choice made in newSandbox, fixed so that a comment is not the
+// only thing keeping `git init` out: the marker is enough for the binary to find the
+// project, and nothing in the sandbox has ever been touched by a git process (git init
+// fills `.git` with HEAD, config, hooks, objects; an empty one means none ran).
+func TestNewSandbox_TheMarkerIsEnoughAndGitNeverRan(t *testing.T) {
+	t.Parallel()
+	sb := newSandbox(t, "")
+
+	entries, err := os.ReadDir(filepath.Join(sb.repo, ".git"))
+	require.NoError(t, err)
+	assert.Empty(t, entries, "a git process has been here: it would tell the git-ai daemon (F-158)")
+
+	root, err := session.FindProjectRoot(sb.repo, sb.home)
+	require.NoError(t, err)
+	assert.Equal(t, sb.repo, root, "the project root found from the repository is the repository")
 }
 
 // env is what Claude Desktop gives a server: five variables, no CAB_ ones but the data
