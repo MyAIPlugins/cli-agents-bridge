@@ -381,11 +381,58 @@ func TestLockWait_Reply(t *testing.T) {
 		remaining := jsonFiles(t, p.sessionPath(p.escID, "inbox"))
 		require.Len(t, remaining, 1, "the second ask is still open")
 		assert.False(t, hasMessage(remaining, askID))
-		// The reply does not name the id of what it left open (F-109): it counts it, and
-		// says that this reply closed none of it.
+		// UNREAD case: the second ask was never shown to the replier, so the reply cannot
+		// name it (F-109): it counts it, and says that this reply closed none of it. An ask
+		// that `next` HAD shown is named instead, and has its own case right below.
 		assert.Contains(t, out+errOut, "1 message(s) arrived that you have not seen yet", "and the reply says so")
 		assert.Contains(t, out+errOut, "none was closed by this reply")
 		assert.NoFileExists(t, p.sessionPath(p.escID, "reply-txn.json"), "the journal is gone")
+	})
+
+	// Case B2: same stuck delivery, but the second ask is shown to the replier by a
+	// `next` BEFORE the retry (it is NOTIFIED, not UNREAD). The retry finishes the
+	// frozen reply, does not close the second ask, names it with its text, puts it back
+	// in the queue (the wake cursor forgets it was notified and marks it replayed), and
+	// leaves it in the inbox.
+	t.Run("B2: a second ask already shown by next is named and requeued", func(t *testing.T) {
+		t.Parallel()
+		const lateText = "stop, do not do A"
+		p, askID := lwAsked(t)
+		release := p.holdSessionLock(t, p.valID)
+
+		_, errOut, exit := run(t, []string{"reply", "the answer"}, p.env(p.escID, lwReplyWait))
+		require.Equal(t, 1, exit, "the first attempt must be stuck: %s", errOut)
+		_, errOut, exit = run(t, []string{"ask", "ESC-lw", lateText}, p.env(p.valID, lwLongWait))
+		require.Equal(t, 0, exit, "the second ask: %s", errOut)
+
+		var lateID string
+		for _, name := range jsonFiles(t, p.sessionPath(p.escID, "inbox")) {
+			if id := strings.TrimSuffix(name, ".json"); id != askID {
+				lateID = id
+			}
+		}
+		require.NotEmpty(t, lateID, "premise: the second ask is in the inbox")
+		out, errOut, exit := run(t, []string{"next"}, p.env(p.escID, lwLongWait))
+		require.Equal(t, 0, exit, "next: %s", errOut)
+		require.Contains(t, out, lateID, "premise: the replier was shown the second ask, so it is NOTIFIED")
+		mgr := session.NewManager(p.state(), time.Second)
+		cursor, _, err := mgr.ReadWakeCursor(p.escID)
+		require.NoError(t, err)
+		require.True(t, cursor.IsNotified(lateID), "premise: the cursor says it was notified")
+
+		release()
+		out, errOut, exit = run(t, []string{"reply", "ignored retry text"}, p.env(p.escID, lwReplyWait))
+		require.Equal(t, 0, exit, "after the release: %s", errOut)
+
+		assert.Contains(t, out+errOut, lateID, "the reply names the ask it left open")
+		assert.Contains(t, out+errOut, "still open")
+		assert.Contains(t, out+errOut, lateText, "and shows what it says")
+		cursor, _, err = mgr.ReadWakeCursor(p.escID)
+		require.NoError(t, err)
+		assert.False(t, cursor.IsNotified(lateID), "it is back in the queue: no longer notified")
+		assert.True(t, cursor.WasReplayed(lateID), "and marked replayed, so the next `next` says redelivered")
+		assert.Equal(t, []string{lateID + ".json"}, jsonFiles(t, p.sessionPath(p.escID, "inbox")), "it stayed in the inbox")
+		assertReplyCompleted(t, p, askID)
 	})
 
 	// Case C: the hold ends inside the wait. The reply goes through at the first

@@ -37,8 +37,10 @@ import (
 )
 
 const (
-	oldWorldMail = "ping from the old world"
-	newWorldMail = "mail from the new world"
+	oldWorldMail  = "ping from the old world"
+	oldWorldAsk   = "question from the old world"
+	oldWorldReply = "answer from the old world"
+	newWorldMail  = "mail from the new world"
 )
 
 // runBinary runs bin to completion, like run does for this tree's binary.
@@ -126,6 +128,7 @@ func TestOldAndNewBinariesNeverShareAFile(t *testing.T) {
 
 	escOld := register(oldBin, oldEnv, "esc", "ESC-old")
 	valOld := register(oldBin, oldEnv, "val", "VAL-old")
+	critOld := register(oldBin, oldEnv, "critic", "CRI-old")
 	require.FileExists(t, filepath.Join(base, "sessions", escOld, "manifest.json"),
 		"premise: CAB_OLD_BINARY writes <base>/sessions, i.e. it is a binary from before layout-2")
 	require.NoDirExists(t, filepath.Join(base, config.LayoutDir), "premise: nothing of the new world exists yet")
@@ -135,12 +138,17 @@ func TestOldAndNewBinariesNeverShareAFile(t *testing.T) {
 	// could see it.
 	backdateManifest(t, filepath.Join(base, "sessions", valOld, "manifest.json"), time.Now().Add(-48*time.Hour))
 
-	// A live old consumer.
-	oldNext := startBinary(t, oldBin, append(oldEnv, "CAB_SESSION_ID="+escOld), "next")
-	listener := filepath.Join(base, "sessions", escOld, "listener.json")
-	require.Eventually(t, func() bool { _, serr := os.Stat(listener); return serr == nil }, 10*time.Second, 50*time.Millisecond,
-		"premise: the old next claimed its session; stderr: %s", oldNext.stderr.String())
-	require.True(t, oldNext.running(), "premise: the old next is waiting for mail")
+	// Two live old consumers, each waiting for mail in its own process.
+	startOldNext := func(id string) *liveCmd {
+		c := startBinary(t, oldBin, append(oldEnv, "CAB_SESSION_ID="+id), "next")
+		listener := filepath.Join(base, "sessions", id, "listener.json")
+		require.Eventually(t, func() bool { _, serr := os.Stat(listener); return serr == nil }, 10*time.Second, 50*time.Millisecond,
+			"premise: the old next of %s claimed its session; stderr: %s", id, c.stderr.String())
+		require.True(t, c.running(), "premise: the old next of %s is waiting for mail", id)
+		return c
+	}
+	oldNext := startOldNext(escOld)
+	critNext := startOldNext(critOld)
 	before := oldTreeSnapshot(t, base)
 
 	// ---- the new world acts: register, list, try to reach the old agent, sweep.
@@ -164,6 +172,7 @@ func TestOldAndNewBinariesNeverShareAFile(t *testing.T) {
 	// ---- the old world is exactly as it was.
 	assert.Equal(t, before, oldTreeSnapshot(t, base), "nothing in <base>/sessions or <base>/archive changed")
 	assert.True(t, oldNext.running(), "the old next is still running: nothing retired it")
+	assert.True(t, critNext.running(), "and so is the second one")
 	assert.DirExists(t, filepath.Join(base, "sessions", valOld), "the old orphan was not swept by the new binary")
 	assert.Empty(t, jsonFiles(t, filepath.Join(base, "sessions", escOld, "inbox")), "and no mail was delivered to the old agent")
 	for _, id := range []string{escOld, valOld} {
@@ -178,6 +187,23 @@ func TestOldAndNewBinariesNeverShareAFile(t *testing.T) {
 	require.Equal(t, 0, oldNext.exit, "stderr: %s", oldNext.stderr.String())
 	assert.Contains(t, oldNext.stdout.String(), oldWorldMail, "the old next received the old world's mail")
 	assert.NotContains(t, oldNext.stdout.String(), newWorldMail)
+
+	// ... and a whole round trip of the old world, ask -> next -> reply, between the
+	// other two old agents, works after the new binary has run.
+	valEnv := append(append([]string{}, oldEnv...), "CAB_SESSION_ID="+valOld)
+	critEnv := append(append([]string{}, oldEnv...), "CAB_SESSION_ID="+critOld)
+	_, errOut, exit = runBinary(t, oldBin, []string{"ask", "CRI-old", oldWorldAsk}, valEnv)
+	require.Equal(t, 0, exit, "the old ask: %s", errOut)
+	critNext.wait(t)
+	require.Equal(t, 0, critNext.exit, "stderr: %s", critNext.stderr.String())
+	assert.Contains(t, critNext.stdout.String(), oldWorldAsk, "the second old next received the ask")
+	_, errOut, exit = runBinary(t, oldBin, []string{"reply", oldWorldReply}, critEnv)
+	require.Equal(t, 0, exit, "the old reply: %s", errOut)
+	answers := jsonFiles(t, filepath.Join(base, "sessions", valOld, "inbox"))
+	require.Len(t, answers, 1, "exactly one answer reached the old asker")
+	answer, err := os.ReadFile(filepath.Join(base, "sessions", valOld, "inbox", answers[0]))
+	require.NoError(t, err)
+	assert.Contains(t, string(answer), oldWorldReply, "and it is the one that was sent")
 
 	// ---- and the other direction: the old binary does not see the new session.
 	out, errOut, exit = runBinary(t, oldBin, []string{"peers", "--all-scopes", "--json"}, oldEnv)

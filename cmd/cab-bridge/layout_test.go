@@ -58,6 +58,9 @@ func seedOldTree(t *testing.T, base, scope string) {
 	archived := filepath.Join(base, "archive", "2020-01-01", "oldsess9")
 	require.NoError(t, os.MkdirAll(archived, 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(archived, "manifest.json"), []byte(`{"sessionId":"oldsess9"}`), 0o600))
+	// A config.json both generations read. A valid one: an invalid file would stop
+	// every command before it did anything, and the test would prove nothing.
+	require.NoError(t, os.WriteFile(filepath.Join(base, "config.json"), []byte(`{"stale_seconds": 7200}`), 0o600))
 
 	var paths []string
 	require.NoError(t, filepath.WalkDir(base, func(p string, _ fs.DirEntry, err error) error {
@@ -74,10 +77,12 @@ func seedOldTree(t *testing.T, base, scope string) {
 	}
 }
 
-// snapshotBase describes everything under base EXCEPT the new state dir and the
-// config file: kind, permissions, size, mtime and a content hash (or link target).
-// The base directory itself is described only by its child names, because its mtime
-// legitimately changes when layout-2 appears.
+// snapshotBase describes everything under base EXCEPT the new state dir: kind,
+// permissions, size, mtime and a content hash (or link target). config.json is IN: it
+// is read by both generations and written by neither, and a binary that rewrote it on
+// every command (even with the same bytes) must move the mtime and fail the test (CRI
+// diff-gate, M3). The base directory itself is described only by its child names,
+// because its mtime legitimately changes when layout-2 appears.
 func snapshotBase(t *testing.T, base string) map[string]string {
 	t.Helper()
 	snap := map[string]string{}
@@ -87,18 +92,15 @@ func snapshotBase(t *testing.T, base string) map[string]string {
 		}
 		rel, rerr := filepath.Rel(base, p)
 		require.NoError(t, rerr)
-		if rel == config.LayoutDir || rel == "config.json" {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
+		if rel == config.LayoutDir {
+			return filepath.SkipDir
 		}
 		if rel == "." {
 			var names []string
 			entries, derr := os.ReadDir(base)
 			require.NoError(t, derr)
 			for _, e := range entries {
-				if e.Name() != config.LayoutDir && e.Name() != "config.json" {
+				if e.Name() != config.LayoutDir {
 					names = append(names, e.Name())
 				}
 			}
@@ -190,6 +192,14 @@ func TestLayout_NewBinaryNeverTouchesTheOldTree(t *testing.T) {
 	// content unchanged in length, moves the mtime and fails the comparison.
 	require.NoError(t, os.WriteFile(filepath.Join(base, "sessions", "oldsess1", "lock"), []byte("12345\n"), 0o600))
 	assert.NotEqual(t, before, snapshotBase(t, base), "a rewrite of one file in the old tree is visible to the snapshot")
+
+	// POSITIVE CONTROL 3: the same for config.json, rewritten with the SAME bytes.
+	reset := snapshotBase(t, base)
+	cfgPath := filepath.Join(base, "config.json")
+	same, err := os.ReadFile(cfgPath)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(cfgPath, same, 0o600))
+	assert.NotEqual(t, reset, snapshotBase(t, base), "a rewrite of config.json, bytes unchanged, is visible to the snapshot")
 }
 
 func TestLayout_OldTreeWorksAfterTheNewBinaryRan(t *testing.T) {
