@@ -1,0 +1,63 @@
+internal/fslock/locktest/locktest.go
+  s_d5e186cda02d82::t_a262322acca714 19
+  s_d5e186cda02d82::t_3716e6410fd61b 59-82
+  s_d5e186cda02d82::t_d1afc50497559e 1-18,20-58,83-96
+internal/session/lock_sequence_test.go
+  s_d5e186cda02d82::t_2ad2120a101b6a 130-131
+  s_d5e186cda02d82::t_3f1c77bbf0c929 57-60
+internal/session/lock.go
+  s_d5e186cda02d82::t_e4467b74c1f45b 22-25
+internal/session/lock_helper_test.go
+  s_d5e186cda02d82::t_6ce557ca94aa65 73-93
+  s_d5e186cda02d82::t_56c8922d7c2c69 94-103
+  s_d5e186cda02d82::t_1866470e45eb11 19
+internal/session/lock_exclusion_holder_test.go
+  s_d5e186cda02d82::t_52706bcd2c30d6 85-88
+  s_d5e186cda02d82::t_01295ad3d70d0e 89-90
+internal/session/lock_reentrant_test.go
+  s_d5e186cda02d82::t_8b88ffef07a5e0 33
+  s_d5e186cda02d82::t_3d2e627e3cd1e7 112
+  s_d5e186cda02d82::t_54cc95e5e08c42 51
+  s_d5e186cda02d82::t_f523fb0ecdc33c 152
+internal/fslock/locktest/locktest_test.go
+  s_d5e186cda02d82::t_68144e65df83e4 1-4,6,8-74,153-175
+  s_d5e186cda02d82::t_f244deadf9e31c 5,7
+  s_d5e186cda02d82::t_b4413115d3c9a8 75-152
+internal/session/lock_test.go
+  s_d5e186cda02d82::t_8e4b7cec07c1ea 73-77
+  s_d5e186cda02d82::t_d3bca1205ee4d4 5
+  s_d5e186cda02d82::t_553be63b5147d0 15
+internal/cleanup/scope_test.go
+  s_d5e186cda02d82::t_8df149496d627f 57-58,61-64
+  s_d5e186cda02d82::t_3591337757552c 40,44-56,59-60,65-66
+  s_d5e186cda02d82::t_3b18aa6fffe094 5,15-16
+  s_d5e186cda02d82::t_5cf6db4c2c283b 67
+internal/cleanup/retire_test.go
+  s_d5e186cda02d82::t_a3575dd28dad08 273
+  s_d5e186cda02d82::t_83adf4ccecb800 98
+internal/session/identitylock.go
+  s_d5e186cda02d82::t_09c9ed50782876 57-58
+internal/fslock/fslock.go
+  s_d5e186cda02d82::t_81c97de5dd7e99 12-20
+internal/session/lock_removed_unix_test.go
+  s_d5e186cda02d82::t_0c2c14effbcfbc 33,35
+internal/session/identitylock_unix_test.go
+  s_d5e186cda02d82::t_d5503431d70e52 22-23
+  s_d5e186cda02d82::t_f61d7806f34f96 137-141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "129a8fc1d78179b1bce6dac2c7d6919399b6fc0b",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
