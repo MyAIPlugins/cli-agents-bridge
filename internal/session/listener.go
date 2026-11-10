@@ -210,9 +210,10 @@ func (m *Manager) ReclaimListener(sessionID string) (ReclaimInfo, error) {
 // StartWait atomically adopts the session PID and claims wait ownership under a
 // SINGLE hold of the cross-process session lock.
 //
-// Doing the two separately is exploitable (CRI diff-gate P0-1): AdoptPID takes
-// only the in-process manifestMu, so a `register --resume` running in another
-// process could revoke the old waiter between its adopt and its claim — and the
+// Doing the two separately is exploitable (CRI diff-gate P0-1): AdoptPID holds
+// the session lock only for its own write and lets it go before the claim (it took
+// no cross-process lock at all until F-160), so a `register --resume` running in
+// another process could revoke the old waiter between its adopt and its claim — and the
 // old waiter's subsequent ClaimListener, which writes a fresh token
 // unconditionally, would hand ownership straight back to the process the resume
 // had just evicted. Revocation must be monotonic: once a resume has taken over,
