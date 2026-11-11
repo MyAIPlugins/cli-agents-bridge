@@ -34,8 +34,14 @@ import (
 // os.Rename is MoveFileEx(MOVEFILE_REPLACE_EXISTING), which does not use POSIX
 // semantics: it cannot supersede a target that still has an open handle,
 // because the NAME stays occupied by a file in delete-pending state until the
-// last handle closes. os.Remove, which DOES use them, succeeds on the very same
-// held file — which is how the two halves were told apart.
+// last handle closes. os.Remove is DeleteFileW and Go asks it for no POSIX flag
+// (os/file_windows.go in Go 1.27.1), yet it succeeds on the very same held file,
+// which is how the two halves were told apart. Measured on a Windows Server 2025
+// runner (F-154, run 43017039092): a file deleted while a share-delete reader
+// holds it loses its NAME at once, so what os.Remove does there is POSIX in
+// effect, and the OS provides it, not Go. Other Windows builds were not measured.
+// The refusal F-154 is about is a different thing: a name that is being deleted
+// answering "Access is denied" for a few milliseconds while the delete runs.
 //
 // SO IT TAKES BOTH HALVES, and they are not interchangeable:
 //
