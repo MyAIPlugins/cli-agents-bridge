@@ -3,6 +3,7 @@
 package security
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -263,6 +264,33 @@ func isLinkByHandle(h windows.Handle) (bool, error) {
 // the same reason: without it CreateFile refuses a directory outright, and
 // openOwned's IsRegular() check — which answers "not a regular file" rather than
 // "access denied" — would never get to run.
+//
+// F-154 — A NAME THAT IS BEING DELETED ANSWERS "ACCESS DENIED" FOR A MOMENT.
+// Measured on windows-latest (PR #25): while another goroutine deletes the file,
+// an open or a stat of the same name — the Lstat below as much as the CreateFile
+// — is sometimes refused with ACCESS_DENIED, and a moment later the answer is the
+// true one: the file is gone, or it is the new file. The longest denial of the
+// sample lasted 11.84 ms. A reader that gave up on the first answer reported a
+// permission problem about a file that was about to not exist.
+//
+// WHAT IS KNOWN AND WHAT IS NOT. Known: the trigger is the delete (the same race
+// with a replace and no delete produced no denial), and the denial is
+// transient. NOT known: the kernel state behind it. The working hypothesis, not
+// yet measured when this was written, is a delete IN FLIGHT: the deleting handle
+// has the delete disposition set and is not yet closed, so a concurrent open by
+// name gets STATUS_DELETE_PENDING, which Win32 reports as ACCESS_DENIED. What it
+// is NOT, measured: a name that stays occupied after the delete returns — on a
+// Windows Server 2025 runner a file deleted while a share-delete reader holds it
+// loses its name at once (twin run 43017039092). The retry below does not depend
+// on which it is, because it reacts to the error code and repeats every check.
+//
+// So an ACCESS_DENIED is asked again, briefly (see denied_retry.go for the
+// bound), and only that error: a symlink, an ownership mismatch or a missing
+// file come back on the first attempt. Each attempt repeats the WHOLE Lstat +
+// open + handle check, so a name that turns into a link during the wait is
+// refused like any other link. A denial that outlasts the budget — a real ACL, a
+// very long antivirus scan — still comes back as ACCESS_DENIED, with the number
+// of attempts in the message.
 func openNoFollow(path string) (*os.File, error) {
 	return openNoFollowSleeping(path, time.Sleep)
 }
@@ -271,7 +299,25 @@ func openNoFollow(path string) (*os.File, error) {
 // close the holder of a delete-pending name at an exact attempt instead of
 // racing a real clock. Production passes time.Sleep and nothing else.
 func openNoFollowSleeping(path string, sleep func(time.Duration)) (*os.File, error) {
-	return openNoFollowOnce(path)
+	var f *os.File
+	err := retryWhile(deniedAttempts, deniedFirstDelay, sleep, isAccessDenied, func() error {
+		var openErr error
+		f, openErr = openNoFollowOnce(path)
+		return openErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
+}
+
+// isAccessDenied is the one error worth asking again about: it is how the
+// transient refusal of F-154 arrives. A permanent denial (an ACL) arrives the
+// same way and cannot be told apart from it by the code, so it pays the whole
+// budget before the real error comes back; that cost is accepted and declared.
+// Nothing else is retried.
+func isAccessDenied(err error) bool {
+	return errors.Is(err, windows.ERROR_ACCESS_DENIED)
 }
 
 // openNoFollowOnce is ONE attempt: the Lstat, the symlink refusal, the open and
