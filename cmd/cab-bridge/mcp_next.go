@@ -88,7 +88,7 @@ func (a *mcpApp) look(ctx context.Context, p *mcpProject) (pass, error) {
 	defer cancel()
 	scan, err := scanInboxWithin(scanCtx, &p.guard, filepath.Join(a.cfg.DataDir, "sessions", p.sid, "inbox"), a.cfg.MaxMessageBytes)
 	if err != nil {
-		if errors.Is(err, errInboxScanTimeout) {
+		if errors.Is(err, errInboxScanTimeout) || errors.Is(err, errInboxScanBusy) {
 			return pass{}, err
 		}
 		return pass{}, fmt.Errorf("could not read the inbox: %w", err)

@@ -24,6 +24,12 @@ import (
 // the inbox is how a message goes missing without anybody being told.
 var errInboxScanTimeout = mcp.Refuse("the inbox could not be read within the time allowed for one call")
 
+// errInboxScanBusy is returned at once when an earlier read of the same inbox is still
+// running. It is a different fact from errInboxScanTimeout and the text says so: this
+// call did not start to read, and the agent that asks again in a moment loses nothing
+// (`next` over MCP only reads).
+var errInboxScanBusy = mcp.Refuse("an earlier read of this inbox is still running and only one runs at a time, so this call did not read it: ask again in a moment")
+
 // errMessageNotFound is returned by locateMessage for an id that is in neither the
 // inbox nor processed/.
 var errMessageNotFound = errors.New("no such message in the inbox or in processed/")
@@ -33,9 +39,17 @@ var errMessageNotFound = errors.New("no such message in the inbox or in processe
 const maxAckBatch = 20
 
 // scanGuard stops scans from piling up behind one that is slow: a second scan of
-// the same inbox while the first still runs is refused as a timeout instead of
+// the same inbox while the first still runs is refused (errInboxScanBusy) instead of
 // doubling the work.
 type scanGuard struct{ busy atomic.Bool }
+
+// scanSeams is what a test replaces: the read itself, and a point after the result
+// was handed over where a test can park the worker to observe the guard at that very
+// moment. Production passes only `read`.
+type scanSeams struct {
+	read         func(inboxDir string, maxContentBytes int) ([]mailboxEntry, []string, []string, error)
+	afterHandOff func()
+}
 
 // inboxScan is one read of the inbox.
 type inboxScan struct {
@@ -48,8 +62,12 @@ type inboxScan struct {
 // policy `next` has: delivering from a mailbox that holds a file nobody can vouch
 // for is the one thing worth stopping for.
 func scanInboxWithin(ctx context.Context, guard *scanGuard, inboxDir string, maxContentBytes int) (inboxScan, error) {
+	return scanInboxWithSeams(ctx, guard, inboxDir, maxContentBytes, scanSeams{read: readMailbox})
+}
+
+func scanInboxWithSeams(ctx context.Context, guard *scanGuard, inboxDir string, maxContentBytes int, seams scanSeams) (inboxScan, error) {
 	if !guard.busy.CompareAndSwap(false, true) {
-		return inboxScan{}, errInboxScanTimeout
+		return inboxScan{}, errInboxScanBusy
 	}
 	type outcome struct {
 		scan inboxScan
@@ -57,8 +75,14 @@ func scanInboxWithin(ctx context.Context, guard *scanGuard, inboxDir string, max
 	}
 	done := make(chan outcome, 1)
 	go func() {
-		defer guard.busy.Store(false)
-		entries, corrupt, foreign, err := readMailbox(inboxDir, maxContentBytes)
+		entries, corrupt, foreign, err := seams.read(inboxDir, maxContentBytes)
+		// The guard is freed BEFORE the result is handed over, never after. The
+		// caller that receives it may ask again at once, and a guard still held by a
+		// worker that has already delivered refuses that call with a busy error that
+		// is not true (F-153). The timeout branch is unchanged: a read that
+		// outlives its deadline holds the guard until it ends, because that refusal
+		// is true.
+		guard.busy.Store(false)
 		switch {
 		case err != nil:
 			done <- outcome{err: err}
@@ -66,6 +90,9 @@ func scanInboxWithin(ctx context.Context, guard *scanGuard, inboxDir string, max
 			done <- outcome{err: fmt.Errorf("refusing to read an inbox that holds files not owned by this user: %w (%d file(s); inspect them with the CLI)", security.ErrOwnershipMismatch, len(foreign))}
 		default:
 			done <- outcome{scan: inboxScan{entries: entries, corrupt: corrupt}}
+		}
+		if seams.afterHandOff != nil {
+			seams.afterHandOff()
 		}
 	}()
 	select {

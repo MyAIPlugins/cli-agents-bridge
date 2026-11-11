@@ -257,7 +257,8 @@ func TestMCPNext_AScanThatCannotFinishIsAnErrorNotAPartialInbox(t *testing.T) {
 
 	res := j.next(0)
 	require.True(t, res.IsError)
-	assert.Contains(t, res.Text(), "could not be read within the time")
+	assert.Contains(t, res.Text(), "an earlier read of this inbox is still running", "the guard was busy: the text says that")
+	assert.NotContains(t, res.Text(), "within the time", "and not that a deadline was missed")
 	assert.NotContains(t, res.Raw, "should not appear partially")
 }
 

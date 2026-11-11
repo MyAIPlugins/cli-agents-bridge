@@ -86,7 +86,119 @@ func TestScanInboxWithin_ASecondScanWhileOneIsRunningIsRefusedNotStacked(t *test
 	guard := &scanGuard{}
 	guard.busy.Store(true) // a slow scan is in flight
 	_, err := scanInboxWithin(context.Background(), guard, t.TempDir(), 65536)
+	require.ErrorIs(t, err, errInboxScanBusy)
+	assert.NotErrorIs(t, err, errInboxScanTimeout, "no deadline was missed: the call never started to read")
+}
+
+// blockingRead is a read the test controls: it signals that it started and waits to be
+// released, so two scans can be made to overlap for real instead of by planting the
+// guard flag.
+func blockingRead(started chan<- struct{}, release <-chan struct{}) func(string, int) ([]mailboxEntry, []string, []string, error) {
+	return func(string, int) ([]mailboxEntry, []string, []string, error) {
+		started <- struct{}{}
+		<-release
+		return nil, nil, nil, nil
+	}
+}
+
+// F-153. The worker hands the result over and the caller may ask again at once, so
+// the guard has to be free by then. The seam parks the worker right AFTER the
+// hand-off, which is the moment the old code still held the guard: with the release
+// after the send, this test fails every time, not one run in twenty thousand.
+func TestScanInboxWithin_TheGuardIsFreeWhenTheResultIsDelivered(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	plantInboxAt(t, dataDir, inboxSID, "msg-aaaaaaaaaaaa", "valinbox1", message.TypeNotify, "x", inboxT0)
+	inbox := filepath.Join(sessionDirOf(dataDir), "inbox")
+
+	guard := &scanGuard{}
+	parked := make(chan struct{})
+	resume := make(chan struct{})
+	workerDone := make(chan struct{})
+	t.Cleanup(func() {
+		close(resume)
+		<-workerDone // the worker is gone before the test is
+	})
+
+	scan, err := scanInboxWithSeams(context.Background(), guard, inbox, 65536, scanSeams{
+		read: readMailbox,
+		afterHandOff: func() {
+			close(parked)
+			<-resume
+			close(workerDone)
+		},
+	})
+	require.NoError(t, err)
+	assert.Len(t, scan.entries, 1)
+	<-parked // the worker has delivered and is held where the old code still owned the guard
+
+	assert.False(t, guard.busy.Load(), "a delivered result with the guard still held refuses the very next call with a busy error that is not true")
+	again, err := scanInboxWithin(context.Background(), guard, inbox, 65536)
+	require.NoError(t, err, "the next call, right after the result, is not refused")
+	assert.Len(t, again.entries, 1)
+}
+
+// The overlap the guard exists for: two scans of the same inbox that really run at
+// the same time. The second is refused at once, with the busy error, and the first
+// is not disturbed; when it ends the guard is free.
+func TestScanInboxWithin_TwoScansReallyAtTheSameTimeStayRefused(t *testing.T) {
+	t.Parallel()
+	guard := &scanGuard{}
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	seams := scanSeams{read: blockingRead(started, release)}
+
+	first := make(chan error, 1)
+	go func() {
+		_, err := scanInboxWithSeams(context.Background(), guard, t.TempDir(), 65536, seams)
+		first <- err
+	}()
+	<-started // the first read is inside the guard
+
+	_, err := scanInboxWithin(context.Background(), guard, t.TempDir(), 65536)
+	require.ErrorIs(t, err, errInboxScanBusy)
+	assert.NotErrorIs(t, err, errInboxScanTimeout)
+
+	close(release)
+	require.NoError(t, <-first, "the refusal of the second did not touch the first")
+	assert.False(t, guard.busy.Load(), "the first one ended, so the guard is free when its result is back")
+	_, err = scanInboxWithin(context.Background(), guard, t.TempDir(), 65536)
+	require.NoError(t, err)
+}
+
+// The deadline branch is the one F-153 leaves as it was: the caller gives up with the
+// timeout error (not the busy one), and the guard stays held while the read that
+// outlived the deadline still runs, because a refusal in that window is true.
+func TestScanInboxWithin_AReadThatOutlivesItsDeadlineKeepsTheGuardUntilItEnds(t *testing.T) {
+	t.Parallel()
+	guard := &scanGuard{}
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	workerDone := make(chan struct{})
+	seams := scanSeams{
+		read:         blockingRead(started, release),
+		afterHandOff: func() { close(workerDone) },
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		_, err := scanInboxWithSeams(ctx, guard, t.TempDir(), 65536, seams)
+		result <- err
+	}()
+	<-started
+	cancel()
+	err := <-result
 	require.ErrorIs(t, err, errInboxScanTimeout)
+	assert.NotErrorIs(t, err, errInboxScanBusy, "the call did start and missed its deadline")
+	assert.True(t, guard.busy.Load(), "the abandoned read is still running: the guard is held, as before")
+
+	_, err = scanInboxWithin(context.Background(), guard, t.TempDir(), 65536)
+	require.ErrorIs(t, err, errInboxScanBusy, "while it runs, a new call is refused: that refusal is true")
+
+	close(release)
+	<-workerDone
+	assert.False(t, guard.busy.Load(), "the abandoned read ended and freed the guard")
 }
 
 func TestLocateMessage(t *testing.T) {
