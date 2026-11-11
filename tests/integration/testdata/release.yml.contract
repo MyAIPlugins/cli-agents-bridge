@@ -13,11 +13,13 @@ jobs:
   goreleaser:
     name: GoReleaser
     runs-on: ubuntu-latest
-    # Measured on the last 10 runs (30 May to 1 Nov 2026): longest 73 s, so 3
-    # minutes is 2.5 times. Those runs had the Go cache that `cache: false` below
-    # takes away, so the first run at a tag measures the cold duration: tune this
-    # line then, with that number in hand.
-    timeout-minutes: 3
+    # 5 minutes, by Alan's exception to the F-164 rule of 2-3 times the measured
+    # duration (decided on 11 Nov 2026): 5 is 4.1 times the longest of the last 10
+    # runs (73 s, 30 May to 1 Nov 2026). Those runs had the Go cache that
+    # `cache: false` below takes away, so the number to size this from does not
+    # exist yet. The first run at a tag measures the release cold; this line is
+    # then set to 2-3 times THAT measure.
+    timeout-minutes: 5
     permissions:
       contents: write # creates the draft release and uploads its archives (.goreleaser.yml: release.github, draft: true); nothing else is written
     steps:
