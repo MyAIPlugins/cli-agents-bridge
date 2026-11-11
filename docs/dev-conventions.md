@@ -299,6 +299,14 @@ defaulting to `~/.claude/session-bridge`, so a test injects a temp dir instead o
 
 On Unix a `flock` belongs to the open file description, and a fork in flight in the same process carries a copy of the descriptor until its exec. So a lock released in this process can still look busy for a few milliseconds. A test that asks "is it free?" right after a release in the same process asks "does it become free?" (`internal/fslock/locktest.Take`, with its numeric bound). A fixture that releases a lock and hands it to code that does not wait uses `locktest.Settle`. A test that asserts the lock is HELD uses neither: the window only makes a free lock look held.
 
+### A test that bets on winning a race (F-163)
+
+A test that needs one side of a race to win, and repeats the round when it loses, must have that probability measured, not stated. `TestLock_ASuccessorKeepsItsLockWhileAContenderPolls` said the successor wins "almost always"; measured, the contender won about one round in ten, so three lost rounds in a row came up on the first macOS runner. Make the interleaving happen instead (a seam that parks one side, as `acquire`'s `afterOpen` does), or measure the odds and size the repetitions on them.
+
+### Tests that depend on the volume (F-163)
+
+The CI step "The volume, and the tests that depend on it" in `.github/workflows/ci.yml` prints what the runner's volume does (case, NFC/NFD, firmlink), runs by name the tests that depend on it, and fails when one of them is skipped where its property holds. A new test that depends on the volume is added to that step's `-run` and to a `check` line: otherwise it runs, but nobody sees whether it was skipped. `TestWorkflows_TheVolumeStepNamesTestsThatExist` catches a rename, not a test that was never added.
+
 ### File identity on Windows (F-160)
 
 On Windows `os.Stat` and `os.Lstat` record the path and load the file identity lazily, at the first `os.SameFile`, by opening the path again at that moment (Go 1.27.1). Two `os.Stat` of the same path therefore always compare as the same file, even when the file was replaced between them. To compare identities taken at two moments, take one from an open handle (`File.Stat` loads it at once) or, in tests, force the load with `internal/fslock/locktest.Identity`. With two `os.Stat`, an assertion that two files differ fails on Windows even when they do, and an assertion that they are the same passes without testing anything: in F-160 the CI caught one of the first kind, and three of the second were found next to it.
