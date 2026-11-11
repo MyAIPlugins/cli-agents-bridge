@@ -1,0 +1,21 @@
+CHANGELOG.md
+  s_f8849908940048::t_53857b48aad28c 17
+ROADMAP.md
+  s_f8849908940048::t_a1bb307ab52a82 28,36-37,52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5cf2614d35901682299382e10760d45318e7015d",
+  "prompts": {},
+  "sessions": {
+    "s_f8849908940048": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "37bcf92a-1982-4e9a-a4d3-17eecb17eeb9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
