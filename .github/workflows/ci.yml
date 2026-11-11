@@ -38,7 +38,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: Set up Go (the toolchain line of go.mod)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           # `go-version-file: go.mod`, NOT `go-version: stable`, and this is the
           # line that broke the gate on 11 August without anybody touching the
@@ -51,10 +52,25 @@ jobs:
           # Now the number lives in go.mod's `toolchain` line — one source for
           # this workflow, the release workflow, the Mac, WSL2 and the Windows
           # PC. The `go` line above it stays the LANGUAGE minimum: what the
-          # module needs to compile, not what builds it. When setup-go honours
-          # only that line, GOTOOLCHAIN=auto downloads the toolchain anyway —
-          # either way the `go version` printed below is the proof, which is why
-          # it is worth reading.
+          # module needs to compile, not what builds it.
+          #
+          # setup-go reads the `toolchain` line first (the `go` line only when
+          # there is none), installs exactly that Go, and sets GOTOOLCHAIN=local
+          # for every later step. So `go` never switches to another toolchain and
+          # no job downloads one. The previous pin (v5) read only the `go` line,
+          # installed that older Go, and left GOTOOLCHAIN=auto to fetch the real
+          # one from the network in EVERY job: eight downloads a run, one of
+          # which failed on 9 November and turned a PR red for a reason nobody
+          # had written. The action itself logs `go version` right after
+          # installing, so the proof is in the log of every job, those that print
+          # nothing of their own included.
+          #
+          # One limit, read in the action's source and not tested here: the
+          # `toolchain` line is honoured only while GOTOOLCHAIN is not already
+          # `local` when the action starts; otherwise it falls back to the `go`
+          # line. Safe in this file, where each job calls setup-go once on a
+          # runner that starts without it. A second setup-go in the same job
+          # would silently install the language minimum.
           go-version-file: go.mod
           cache: true
       - name: go vet (every GOOS)
@@ -122,7 +138,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: Set up Go (the toolchain line of go.mod)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
@@ -176,7 +193,8 @@ jobs:
             ext: .exe
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: Set up Go (the toolchain line of go.mod)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
