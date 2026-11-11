@@ -1,0 +1,94 @@
+name: F-170 probe 3
+
+# MEASUREMENT ONLY. This workflow exists on probe/f170-windows-3 and is never merged.
+#
+# It runs internal/session/zz_probe3_f170_windows_test.go on a real Windows runner, twice:
+# with the race detector (the CI's own configuration, where the denied delete was seen) and
+# without it. The probe records the outcome of every side (deleter, replacer, reader) and
+# classifies each denied delete by what it overlapped. Read the tables in the log of each
+# step; the job is green when the probe ran and its premises held, whatever the tables say.
+#
+# The probe test fails on purpose (it prints its tables through t.Error so that a run with no
+# denial is distinguishable from a probe that did not run), so the step does not use the exit
+# code of go test: it checks that the tables were printed and that no premise failed.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  probe3:
+    name: Probe 3 on Windows
+    runs-on: windows-latest
+    # The variants are time-bounded (30 + 45 + 45 + 120 + 60 + 60 = 360 s of stress per run,
+    # plus the lab and a little setup). Two runs: about 13 minutes. 40 leaves room for a slow
+    # runner without hiding a hang.
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false # nothing in this job pushes
+      - name: Set up Go (the toolchain line of go.mod)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      # Same step as in ci.yml.
+      - name: The Go that runs is the toolchain line of go.mod
+        run: |
+          want="$(awk '$1 == "toolchain" { print $2; exit }' go.mod | tr -d '\r')"
+          got="$(go env GOVERSION | tr -d '\r')"
+          if [ -z "${want}" ] || [ "${got}" != "${want}" ]; then
+            echo "::error title=wrong Go toolchain::go.mod asks for '${want:-<no toolchain line>}', this job runs '${got}'"
+            exit 1
+          fi
+          echo "Go ${got} is the toolchain line of go.mod"
+      - name: The probe file is there
+        run: test -f internal/session/zz_probe3_f170_windows_test.go
+      - name: Probe 3 with the race detector
+        id: race
+        env:
+          F170_PROBE: "1"
+        run: |
+          go test -race -count=1 -timeout 25m -run '^TestProbe3DeleteDenied$' -v ./internal/session/ > probe3-race.log 2>&1 || true
+          cat probe3-race.log
+      - name: Probe 3 without the race detector
+        id: plain
+        if: ${{ !cancelled() }}
+        env:
+          F170_PROBE: "1"
+        run: |
+          go test -count=1 -timeout 25m -run '^TestProbe3DeleteDenied$' -v ./internal/session/ > probe3-plain.log 2>&1 || true
+          cat probe3-plain.log
+      - name: The probe ran, and its premises held
+        if: ${{ !cancelled() }}
+        run: |
+          status=0
+          for log in probe3-race.log probe3-plain.log; do
+            if [ ! -f "${log}" ]; then
+              echo "::error title=no log::${log} was not written"
+              status=1
+              continue
+            fi
+            if ! grep -q 'PROBE 3 delete denied' "${log}"; then
+              echo "::error title=the probe did not print its tables::${log}"
+              status=1
+            fi
+            if grep -q -- '--- SKIP' "${log}"; then
+              echo "::error title=the probe was skipped::${log}"
+              status=1
+            fi
+            if grep -q 'PREMISE NOT REPRODUCED' "${log}"; then
+              echo "::error title=premise not reproduced::${log}"
+              grep 'PREMISE NOT REPRODUCED' "${log}"
+              status=1
+            fi
+          done
+          exit "${status}"
