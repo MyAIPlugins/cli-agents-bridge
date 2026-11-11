@@ -34,8 +34,11 @@ import (
 // os.Rename is MoveFileEx(MOVEFILE_REPLACE_EXISTING), which does not use POSIX
 // semantics: it cannot supersede a target that still has an open handle,
 // because the NAME stays occupied by a file in delete-pending state until the
-// last handle closes. os.Remove, which DOES use them, succeeds on the very same
-// held file — which is how the two halves were told apart.
+// last handle closes. os.Remove does not use POSIX semantics either (it is
+// DeleteFileW, os/file_windows.go in Go 1.27.1), but a delete only MARKS the
+// file: it succeeds on the very same held file and leaves the name
+// delete-pending, which is how the two halves were told apart. That state is
+// also F-154's: until the last handle closes an open by name is denied.
 //
 // SO IT TAKES BOTH HALVES, and they are not interchangeable:
 //
