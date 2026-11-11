@@ -39,8 +39,8 @@ import (
 //	does not
 //
 // It also says whether the denial fell INSIDE a call of the opener or of the closer, or
-// how long after one had ended. It fails (so that CI prints the table) only if it saw a
-// denial; otherwise it passes without a word.
+// how long after one had ended. It always fails, so that CI prints the table whether or
+// not it saw a denial (the end of the test says why).
 //
 // COMPILED FOR WINDOWS, NEVER RUN BY ITS AUTHOR: there is no Windows machine on the
 // author's side. A first run whose table looks wrong is a bug in the probe before it is
@@ -229,9 +229,9 @@ func TestProbeDesktopGrantDenied(t *testing.T) {
 			e.api, e.variant, e.at.Round(time.Millisecond), e.stayed.Round(time.Microsecond), e.then,
 			e.inOpen, e.inClose, e.sinceOpenEnd.Round(time.Microsecond), e.sinceClose.Round(time.Microsecond))
 	}
-	if denied > 0 {
-		t.Error(b.String())
-		return
-	}
-	t.Log(b.String())
+	// ALWAYS an error, denials or not: `go test ./...` prints nothing for a package that
+	// passes, so a run that saw no denial would be indistinguishable from a probe that did
+	// not run. The counts in the table (ok, notexist per reader) are the proof that the
+	// readers did run. This branch is never merged, so a red package costs nothing.
+	t.Error(b.String())
 }
