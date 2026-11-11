@@ -1,0 +1,21 @@
+internal/security/perms_windows.go
+  s_d5e186cda02d82::t_f05d6537b7c045 268-293
+  s_d5e186cda02d82::t_71720bde9c1f5a 6,267,302-313,319-320
+  s_d5e186cda02d82::t_c2856c0ca8b93e 314-318
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dfb0b3a5f16b701b1b23c3c3064fdd1397d91ecc",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
