@@ -1,0 +1,23 @@
+cmd/cab-bridge/mcp_next_test.go
+  s_d5e186cda02d82::t_81bea3b4225009 250-252
+cmd/cab-bridge/mcp_inbox_test.go
+  s_d5e186cda02d82::t_a66a2a9f45b12a 107-108
+cmd/cab-bridge/mcp_next.go
+  s_d5e186cda02d82::t_a68d9259809490 91-94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a4702d3db383e4978bfe71798ced2b1532521d79",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
