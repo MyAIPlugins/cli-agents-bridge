@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`make lint` runs under the Go toolchain named in `go.mod`** (F-159), the one CI uses, whatever Go the machine has by default. Before, a newer default Go made the pinned staticcheck fail on a tree that was fine, while CI stayed green. A `GOTOOLCHAIN` already set in the environment or on the `make` command line wins; without a `toolchain` line in `go.mod` the target stops and says how to add one.
 - The README no longer presents the project as a fork: the code was written from scratch in Go, and the credit says where the idea came from.
 
+### Fixed
+- **On Windows a read of a session file that crosses a deletion no longer fails with "Access is denied"** (F-154). The read retries only that error, up to 6 times (155 ms of waiting), repeating every check on each attempt, and returns the real error when the budget runs out. Measured on Windows Server 2025: the denial happens while a deletion holds its handle open, and lasts under a millisecond.
+
 ## [0.11.0] — 2026-11-01
 
 **Claude Desktop joins the bridge from Cowork** (F-72). Desktop has no shell on the machine: in Cowork the model runs in Anthropic's cloud and calls tools on the host, 60 seconds at most per call. So the way in is a port on the host, not a change to the mailbox: `next`, `reply` and the four message states work exactly as before.

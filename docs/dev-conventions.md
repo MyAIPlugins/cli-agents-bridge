@@ -299,6 +299,10 @@ defaulting to `~/.claude/session-bridge`, so a test injects a temp dir instead o
 
 On Unix a `flock` belongs to the open file description, and a fork in flight in the same process carries a copy of the descriptor until its exec. So a lock released in this process can still look busy for a few milliseconds. A test that asks "is it free?" right after a release in the same process asks "does it become free?" (`internal/fslock/locktest.Take`, with its numeric bound). A fixture that releases a lock and hands it to code that does not wait uses `locktest.Settle`. A test that asserts the lock is HELD uses neither: the window only makes a free lock look held.
 
+### A test's premise is asserted, never skipped (F-154)
+
+A test that needs an operating-system state to exist first checks that the state is there, and fails with "premise not reproduced" when it is not, never `t.Skip`. In F-154 this stopped two wrong models of the Windows mechanism before the merge: a test built on "the name stays delete-pending after `os.Remove`" failed on the first runner instead of passing or skipping in silence. A measurement probe follows the same rule, and it records the outcome of every side it exercises: the second probe of F-154 discarded the error of the side that deleted, so it could not say anything about it.
+
 ### A test that bets on winning a race (F-163)
 
 A test that needs one side of a race to win, and repeats the round when it loses, must have that probability measured, not stated. `TestLock_ASuccessorKeepsItsLockWhileAContenderPolls` said the successor wins "almost always"; measured, the contender won about one round in ten, so three lost rounds in a row came up on the first macOS runner. Make the interleaving happen instead (a seam that parks one side, as `acquire`'s `afterOpen` does), or measure the odds and size the repetitions on them.
