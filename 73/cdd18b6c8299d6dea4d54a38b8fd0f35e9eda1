@@ -1,0 +1,26 @@
+.github/workflows/ci.yml
+  s_d5e186cda02d82::t_33fa614a6ddcdb 41-42,55-63,67-73
+  s_d5e186cda02d82::t_56d6ce59256013 196-197
+  s_d5e186cda02d82::t_d56e9e99fe2e85 64-66
+  s_d5e186cda02d82::t_611afc105903a5 141-142
+.github/workflows/release.yml
+  s_d5e186cda02d82::t_1b7d93f1e6059d 19
+tests/integration/testdata/release.yml.contract
+  s_d5e186cda02d82::t_416aa8ce5917e3 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "73cdd18b6c8299d6dea4d54a38b8fd0f35e9eda1",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
