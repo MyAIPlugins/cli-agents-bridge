@@ -8,14 +8,21 @@
   s_d5e186cda02d82::t_d1eba66927e80a 214-215
   s_d5e186cda02d82::t_637634bf345cce 207-210
   s_d5e186cda02d82::t_dd604e786324fc 204-206
+  s_d5e186cda02d82::t_21f114465881f1 1-45,48-75,77-119,124,127,131-146,149,153-200,201-203,211-213,216,220-238
+  s_d5e186cda02d82::t_717eac852923ac 128-130,150-152,217-219
 tools/f154/judge.sh
   s_d5e186cda02d82::t_7079c66df06471 78
   s_d5e186cda02d82::t_952c1ff4564d12 1-77,79-134
+  s_d5e186cda02d82::t_f06b62253c94cb 87
+  s_d5e186cda02d82::t_90d5d20fbe6c25 1-77,79-86,88-134
 cmd/cab-bridge/zz_f154_cost_probe_windows_test.go
   s_d5e186cda02d82::t_952c1ff4564d12 1-23,25-146
   s_d5e186cda02d82::t_7079c66df06471 24
+  s_d5e186cda02d82::t_91c5ebbeca5679 1-23,25-146
 tools/f154/judge_selftest.sh
   s_d5e186cda02d82::t_952c1ff4564d12 1-120
+  s_d5e186cda02d82::t_710fbf8f5a5f02 1-97,101-120
+  s_d5e186cda02d82::t_c496c2cafcc29e 98-100
 ---
 {
   "schema_version": "authorship/3.0.0",
