@@ -1,0 +1,42 @@
+tests/integration/workflow_standards_test.go
+  s_d5e186cda02d82::t_1f307aa11d130f 1-76,103-105,108,118,121-159,163-231
+  s_d5e186cda02d82::t_4ad2849635ba0b 160-162
+  s_d5e186cda02d82::t_0d77a48cbe80e3 77-102,106-107,109-117,119-120
+tests/integration/testdata/release.yml.contract
+  s_d5e186cda02d82::t_786b0ca0ada444 8-10,16-22,24,27-32,37-51
+  s_d5e186cda02d82::t_3d2dc0fa17562c 90
+.github/workflows/release.yml
+  s_d5e186cda02d82::t_e17e144fce09eb 8-10,16-22,24,27-32,37-51
+  s_d5e186cda02d82::t_b296c52f84cbd3 90
+.github/workflows/ci.yml
+  s_d5e186cda02d82::t_49961c985cb545 228-230
+  s_d5e186cda02d82::t_3e6a12d3ac14c8 9-20
+  s_d5e186cda02d82::t_ca5e253770be7a 91-98,100-108
+  s_d5e186cda02d82::t_223ef786d00d5e 163-166
+  s_d5e186cda02d82::t_4b461d768b0ec4 46-48,53-55
+  s_d5e186cda02d82::t_383a79d9b949b4 247-249,255-265,267-271,276,280,283,287-290
+  s_d5e186cda02d82::t_90a80746fbe032 99
+  s_d5e186cda02d82::t_c6c6014b24a589 177-179,185-194
+.github/dependabot.yml
+  s_d5e186cda02d82::t_b61f67dc81ea10 1-32
+tests/integration/workflow_toolchain_check_test.go
+  s_d5e186cda02d82::t_7f67798f89523e 85-86
+  s_d5e186cda02d82::t_e28ba5915b13ad 108,116,122
+  s_d5e186cda02d82::t_c519d0a789c0cb 1-84,87-107,109-115,117-121,123-150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7bb4e8f80860821c4cd237eeb5a233cba8e410e5",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
