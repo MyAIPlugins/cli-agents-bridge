@@ -402,6 +402,7 @@ type p3Tally struct {
 	deleter, writer, reader, rightAfter    map[string]int
 	retryEnds                              map[string]int
 	denied, overRep, overDel, overBoth, no int
+	overRead                               int // denials that overlapped a reader call, whatever else they overlapped
 	maxStay                                time.Duration
 	delSum, delMax                         time.Duration
 	events                                 []string
@@ -423,6 +424,7 @@ func (a *p3Tally) merge(o *p3Tally) {
 	a.overDel += o.overDel
 	a.overBoth += o.overBoth
 	a.no += o.no
+	a.overRead += o.overRead
 	a.delSum += o.delSum
 	if o.maxStay > a.maxStay {
 		a.maxStay = o.maxStay
@@ -443,7 +445,15 @@ type p3Env struct {
 	stop    atomic.Bool
 	repSeq  atomic.Int64
 	delSeq  [2]atomic.Int64
+	readSeq atomic.Int64
+	// prev is how each deleter's PREVIOUS call ended. Only deleter idx touches prev[idx].
+	prev    [2]p3Prev
 	started time.Time
+}
+
+type p3Prev struct {
+	end   time.Time
+	class string
 }
 
 func (e *p3Env) span(seq *atomic.Int64, f func() error) error {
@@ -457,11 +467,13 @@ func (e *p3Env) span(seq *atomic.Int64, f func() error) error {
 // overlapped, the NTSTATUS right after, and how a retry of the same call ended.
 func (e *p3Env) del(idx int, ta *p3Tally, f func() error) {
 	other := &e.delSeq[1-idx]
-	r0, d0 := e.repSeq.Load(), other.Load()
+	r0, d0, q0 := e.repSeq.Load(), other.Load(), e.readSeq.Load()
+	prev := e.prev[idx]
 	start := time.Now()
 	err := e.span(&e.delSeq[idx], f)
 	took := time.Since(start)
-	r1, d1 := e.repSeq.Load(), other.Load()
+	r1, d1, q1 := e.repSeq.Load(), other.Load(), e.readSeq.Load()
+	e.prev[idx] = p3Prev{end: time.Now(), class: p3Class(err)}
 
 	ta.calls++
 	ta.deleter[p3Class(err)]++
@@ -475,6 +487,10 @@ func (e *p3Env) del(idx int, ta *p3Tally, f func() error) {
 	ta.denied++
 	overRep := r0&1 == 1 || r0 != r1
 	overDel := d0&1 == 1 || d0 != d1
+	overRead := q0&1 == 1 || q0 != q1
+	if overRead {
+		ta.overRead++
+	}
 	switch {
 	case overRep && overDel:
 		ta.overBoth++
@@ -500,8 +516,12 @@ func (e *p3Env) del(idx int, ta *p3Tally, f func() error) {
 		ta.maxStay = stay
 	}
 	if len(ta.events) < p3MaxEvents {
-		ta.events = append(ta.events, fmt.Sprintf("at %s: %v | over replace=%v over other delete=%v | retry ended %s after %s",
-			at.Sub(e.started).Round(time.Millisecond), err, overRep, overDel, then, time.Since(at).Round(time.Microsecond)))
+		gap := "none"
+		if !prev.end.IsZero() {
+			gap = fmt.Sprintf("%s ended %s before this call started", prev.class, start.Sub(prev.end).Round(time.Microsecond))
+		}
+		ta.events = append(ta.events, fmt.Sprintf("at %s: %v | over replace=%v over other delete=%v over reader=%v | this call took %s | previous call of this deleter: %s | retry ended %s after %s",
+			at.Sub(e.started).Round(time.Millisecond), err, overRep, overDel, overRead, took.Round(time.Microsecond), gap, then, time.Since(at).Round(time.Microsecond)))
 	}
 }
 
@@ -591,8 +611,7 @@ func p3GrantActors(closers int) func(t *testing.T, e *p3Env) []p3Actor {
 			},
 			func(e *p3Env, ta *p3Tally) {
 				p3Loop(e, func(int) {
-					_, _, err := mgr.ReadDesktopGrant(sid)
-					ta.reader[p3Class(err)]++
+					ta.reader[p3Class(e.span(&e.readSeq, func() error { _, _, err := mgr.ReadDesktopGrant(sid); return err }))]++
 				})
 			},
 		}
@@ -654,7 +673,7 @@ func p3Report(v p3Variant, ta *p3Tally, took time.Duration) string {
 	}
 	fmt.Fprintf(&b, "    DELETER DENIALS   %s\n", rate)
 	if ta.denied > 0 {
-		fmt.Fprintf(&b, "      overlap: over a replace only %d, over the other delete only %d, over both %d, over NEITHER %d\n", ta.overRep, ta.overDel, ta.overBoth, ta.no)
+		fmt.Fprintf(&b, "      overlap: over a replace only %d, over the other delete only %d, over both %d, over NEITHER %d (over a reader, with or without the others: %d)\n", ta.overRep, ta.overDel, ta.overBoth, ta.no, ta.overRead)
 		fmt.Fprintf(&b, "      NTSTATUS right after: %s\n", p3Counts(ta.rightAfter))
 		fmt.Fprintf(&b, "      the same call retried ended: %s (longest %s)\n", p3Counts(ta.retryEnds), ta.maxStay.Round(time.Microsecond))
 		for _, ev := range ta.events {
