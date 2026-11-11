@@ -1,0 +1,26 @@
+internal/security/denied_retry.go
+  s_d5e186cda02d82::t_e6c09328b52e0d 13-19
+internal/transport/fs/rename_windows.go
+  s_d5e186cda02d82::t_e6c09328b52e0d 40
+  s_d5e186cda02d82::t_f5a3cb982edbc3 41-43
+internal/security/perms_windows.go
+  s_d5e186cda02d82::t_e6c09328b52e0d 276-295
+internal/security/perms_windows_denied_test.go
+  s_d5e186cda02d82::t_e6c09328b52e0d 21-26,39-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cc5e13d75687bfeb54949cb27f7cd85bc8ba430d",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
