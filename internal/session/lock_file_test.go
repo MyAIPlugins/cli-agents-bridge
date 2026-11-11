@@ -8,11 +8,13 @@ package session
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -176,53 +178,71 @@ func TestLock_AContenderNeverRemovesOrReplacesTheFile(t *testing.T) {
 // hand-off disturbs nothing: the file is the same inode before and after, and
 // whoever holds the lock afterwards is still holding it when the polling is over.
 //
-// The successor is a tight loop and the contender polls every lockPoll, so the
-// successor wins the hand-off almost always. If the contender wins it, that round
-// proves nothing and is repeated, at most three times, with a fresh lock.
+// The hand-off is made to happen, not hoped for. The first version raced a tight
+// loop of the successor against the contender's poll and counted on the successor
+// winning; it does not win often enough. Measured on a Mac (F-163, 11 Nov 2026, 300
+// rounds each): the contender took the lock in the gap in 29 rounds on a quiet
+// machine and in 25 on a loaded one, each time before the successor's loop was over,
+// and the macOS runner lost three rounds in a row. The cause is the race, not a
+// descriptor copied by a fork (locktest): in none of the 600 rounds did the contender
+// get the lock after the successor's loop was over.
+//
+// So the contender is parked by the afterOpen seam inside its first attempt, with its
+// file open and not yet locked, which is the position a poll across a hand-off is
+// in. While it is parked the holder lets go and the successor takes the lock, with no
+// competitor; then the contender is released, locks, finds the successor and keeps
+// polling until its wait is over.
 func TestLock_ASuccessorKeepsItsLockWhileAContenderPolls(t *testing.T) {
-	const maxRounds = 3
-	for round := 0; round < maxRounds; round++ {
-		lockPath := filepath.Join(t.TempDir(), "session.lock")
-		releaseH, err := fslock.TryLock(lockPath)
-		require.NoError(t, err)
-		before, err := locktest.Identity(lockPath) // the identity now: see locktest.Identity
-		require.NoError(t, err)
+	const (
+		contenderWait = 100 * time.Millisecond // 11 attempts, lockPoll apart
+		parkedBound   = 5 * time.Second        // how long to wait for the contender to reach its first attempt
+	)
+	lockPath := filepath.Join(t.TempDir(), "session.lock")
+	releaseH, err := fslock.TryLock(lockPath)
+	require.NoError(t, err)
+	before, err := locktest.Identity(lockPath) // the identity now: see locktest.Identity
+	require.NoError(t, err)
 
-		type result struct {
-			release func() error
-			err     error
-		}
-		contender := make(chan result, 1)
-		go func() {
-			rel, cerr := AcquireLock(lockPath, 300*time.Millisecond, nil)
-			contender <- result{rel, cerr}
-		}()
+	parked, proceed := make(chan struct{}), make(chan struct{})
+	var parkOnce, proceedOnce sync.Once
+	letGo := func() { proceedOnce.Do(func() { close(proceed) }) }
+	// A parked attempt holds the registry mutex of acquire: whatever fails below, the
+	// contender must not stay parked, or every later acquire in this package waits for it.
+	t.Cleanup(letGo)
+	hook := func() { parkOnce.Do(func() { close(parked); <-proceed }) }
 
-		time.Sleep(100 * time.Millisecond) // the contender is polling
-		require.NoError(t, releaseH())
-		var releaseN func() error
-		for i := 0; i < 2000 && releaseN == nil; i++ { // the successor, as fast as it can
-			if rel, terr := fslock.TryLock(lockPath); terr == nil {
-				releaseN = rel
-			}
-		}
-
-		got := <-contender
-		if releaseN == nil {
-			// The contender took it in the gap, so there is no successor to check:
-			// give its lock back and go again.
-			require.NoError(t, got.err)
-			require.NoError(t, got.release())
-			continue
-		}
-		t.Cleanup(func() { _ = releaseN() })
-		assert.ErrorIs(t, got.err, ErrLockHeld, "the contender gave up: the successor holds the lock")
-		after, err := locktest.Identity(lockPath)
-		require.NoError(t, err)
-		assert.True(t, os.SameFile(before, after), "the contender's polling did not remove or replace the file")
-		_, err = fslock.TryLock(lockPath)
-		assert.ErrorIs(t, err, fslock.ErrBusy, "the successor still holds its lock")
-		return
+	type result struct {
+		release func() error
+		err     error
 	}
-	t.Fatalf("the contender won the hand-off in %d rounds out of %d: nothing was checked", maxRounds, maxRounds)
+	contender := make(chan result, 1)
+	go func() {
+		rel, cerr := acquire(lockPath, acquireOpts{wait: contenderWait, afterOpen: hook})
+		contender <- result{rel, cerr}
+	}()
+
+	select {
+	case <-parked:
+	case <-time.After(parkedBound):
+		t.Fatalf("the contender did not reach its first attempt within %s", parkedBound)
+	}
+	require.NoError(t, releaseH())
+	// The lock is free and the only other file open on it is the parked one, so a busy
+	// answer here can only be a fork in flight: the bounded wait of locktest covers it.
+	releaseN, err := locktest.Take(
+		func(err error) bool { return errors.Is(err, fslock.ErrBusy) },
+		func() (func() error, error) { return fslock.TryLock(lockPath) },
+	)
+	require.NoError(t, err, "the successor takes the lock: the contender has not locked yet")
+	t.Cleanup(func() { _ = releaseN() })
+	letGo()
+
+	got := <-contender
+	assert.ErrorIs(t, got.err, ErrLockHeld, "the contender gave up: the successor holds the lock")
+	assert.Nil(t, got.release, "and it got nothing to release")
+	after, err := locktest.Identity(lockPath)
+	require.NoError(t, err)
+	assert.True(t, os.SameFile(before, after), "the contender's polling did not remove or replace the file")
+	_, err = fslock.TryLock(lockPath)
+	assert.ErrorIs(t, err, fslock.ErrBusy, "the successor still holds its lock")
 }

@@ -19,10 +19,10 @@ permissions: {}
 # minute is the smallest unit: 1 would be 1.5 times). Measure again when a job gets
 # slower. A kill is loud ("exceeded the maximum execution time"), never a green.
 #
-# EXCEPT the macOS leg of the test job (F-163), which has no measurement yet: its
-# 10 minutes are PROVISIONAL, the same as the slowest leg known, written so that
-# the first runs are not killed for a number nobody measured. They are replaced by
-# 2-3 times the longest of its first five runs (BAR F-163, criterion 5).
+# The macOS leg of the test job (F-163) was measured on its first five runs on
+# 11 November 2026 (run 42986266081 and its four siblings, job wall time): 222,
+# 233, 152, 194 and 164 s. The longest, 233 s, times 2.6 is the 10 minutes below.
+# That is a measure of five runs on one runner image: measure again as above.
 
 jobs:
   # LINT RUNS ONCE AND READS EVERY PLATFORM — which until this change it did not.
@@ -187,7 +187,7 @@ jobs:
           - os: windows-latest # the slow leg: 222 s against 150 s on ubuntu
             timeout: 10
           - os: macos-latest
-            timeout: 10 # PROVISIONAL, not measured yet: see TIMEOUTS at the top
+            timeout: 10 # 233 s the longest of five runs, 2.6 times: see TIMEOUTS at the top
     defaults:
       run:
         # bash on every runner, Git Bash on Windows: one shell means the steps
