@@ -2,7 +2,7 @@ module github.com/myAIPlugins/cli-agents-bridge
 
 go 1.25.0
 
-toolchain go1.27.2
+toolchain go1.27.0
 
 require (
 	github.com/stretchr/testify v1.11.1
