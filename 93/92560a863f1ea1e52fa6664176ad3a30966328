@@ -1,0 +1,21 @@
+tests/integration/workflow_steps_test.go
+  s_d5e186cda02d82::t_21b70182375736 1-10,14-15,38,43,47,84-85,87-147,161-162
+  s_d5e186cda02d82::t_b7e52ba89d590b 11-13,16-37,39-42,44-46,48-83,86
+  s_d5e186cda02d82::t_f67ee68678125d 148-160
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9392560a863f1ea1e52fa6664176ad3a30966328",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
