@@ -18,6 +18,11 @@ permissions: {}
 # 150 s -> 6 min, test on windows 222 s -> 10 min, cross-compile 40 s -> 2 min (a
 # minute is the smallest unit: 1 would be 1.5 times). Measure again when a job gets
 # slower. A kill is loud ("exceeded the maximum execution time"), never a green.
+#
+# EXCEPT the macOS leg of the test job (F-163), which has no measurement yet: its
+# 10 minutes are PROVISIONAL, the same as the slowest leg known, written so that
+# the first runs are not killed for a number nobody measured. They are replaced by
+# 2-3 times the longest of its first five runs (BAR F-163, criterion 5).
 
 jobs:
   # LINT RUNS ONCE AND READS EVERY PLATFORM — which until this change it did not.
@@ -157,17 +162,32 @@ jobs:
   # this job printed on the day it ran. Same for `make`, whose absence makes
   # makefile_lint_test SKIP rather than fail — a silent skip being the worst
   # sort of green.
+  #
+  # macOS joins for the reason Windows did (F-163): a platform nobody runs is a
+  # platform nobody tests. The tests that need a volume which does not tell upper
+  # from lower case apart (F-157, F-142) used to run only on the maintainer's Mac,
+  # so nobody else saw them fail and nothing but one person's gate kept them
+  # alive. It counts like the other two legs: same steps, same `fail-fast: false`.
+  # The last step of the job shows those tests by name and fails if one of them
+  # skipped on a volume where it applies.
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Windows is the slow leg: 222 s against 150 s on ubuntu (see TIMEOUTS above).
-    timeout-minutes: ${{ matrix.os == 'windows-latest' && 10 || 6 }}
+    # The timeout travels with the OS it was measured on, see `include` below.
+    timeout-minutes: ${{ matrix.timeout }}
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            timeout: 6
+          - os: windows-latest # the slow leg: 222 s against 150 s on ubuntu
+            timeout: 10
+          - os: macos-latest
+            timeout: 10 # PROVISIONAL, not measured yet: see TIMEOUTS at the top
     defaults:
       run:
         # bash on every runner, Git Bash on Windows: one shell means the steps
@@ -201,6 +221,58 @@ jobs:
           make --version || echo "no make on this runner — makefile tests will SKIP"
       - name: go test -race -count=1
         run: go test -race -count=1 ./...
+      # The tests that exist for a volume that does not tell upper from lower case
+      # apart, run again BY NAME so the log shows each of them and whether it ran.
+      # A skip is how such a test quietly stops existing: its own Go probe decides
+      # "this volume keeps the two spellings distinct" and the leg stays green having
+      # proved nothing. So the volume is probed here too, in shell and apart from
+      # the Go probe, and a test that skipped where its property holds fails the
+      # step. Linux is expected to skip them (printed, not hidden); macOS is the leg
+      # that must show them as PASS. There is no condition on the OS anywhere in
+      # this step: the probes decide, a leg does not get to opt out. Written for bash
+      # 3.2, the one macOS ships.
+      - name: The volume, and the tests that depend on it
+        run: |
+          # An explicit template in the directory Go writes its test files to
+          # (os.TempDir: $TMPDIR, else /tmp). A bare `mktemp -d` on macOS does not
+          # follow TMPDIR, and then this would probe a different volume from the
+          # one the tests use: a true answer about the wrong place.
+          dir="$(mktemp -d "${TMPDIR:-/tmp}/volume-probe.XXXXXX")"
+          touch "${dir}/CaseProbe" "${dir}/$(printf 'caf\303\251')"
+          ignores_case=no; [ -e "${dir}/caseprobe" ] && ignores_case=yes
+          one_unicode_name=no; [ -e "${dir}/$(printf 'cafe\314\201')" ] && one_unicode_name=yes
+          real="$(cd "${dir}" && pwd -P)"
+          has_firmlink=no; [ "${real}" -ef "/System/Volumes/Data${real}" ] && has_firmlink=yes
+          rm -r "${dir}"
+          echo "temp dir:                                      ${TMPDIR:-/tmp}"
+          echo "CaseProbe and caseprobe are one name:          ${ignores_case}"
+          echo "NFC and NFD spellings of cafe are one name:    ${one_unicode_name}"
+          echo "the temp dir is also reached through /System/Volumes/Data (firmlink): ${has_firmlink}"
+
+          log="$(mktemp)"
+          go test -race -count=1 -v \
+            -run '^(TestFindProjectRoot_HomeUnderAnotherSpelling_CaseAndUnicode|TestFindProjectRoot_HomeUnderAnotherSpelling_Firmlink|TestMakefile_SkillsOldCopyMessagesAreSafeToFollow)$' \
+            ./internal/session ./tests/integration > "${log}" 2>&1 || { cat "${log}"; exit 1; }
+          grep -E '^ *--- (PASS|SKIP|FAIL):.*(CaseAndUnicode|Firmlink|spelled_with_other_cases)' "${log}" \
+            || { echo "::error title=no volume test in the log::the -run pattern selected none of them (a rename?)"; cat "${log}"; exit 1; }
+
+          # property, what it is, the test that must show PASS when it holds, and the
+          # pattern of every test that must not SKIP when it holds.
+          check() {
+            [ "$1" = yes ] || return 0
+            if ! grep -q -E "^ *--- PASS:.*$3" "${log}"; then
+              echo "::error title=a volume test did not run::$2 holds here, and ${3} has no PASS line"
+              exit 1
+            fi
+            if grep -q -E "^ *--- SKIP:.*($4)" "${log}"; then
+              echo "::error title=a volume test was skipped where it applies::$2 holds here, and a test that needs it skipped"
+              exit 1
+            fi
+          }
+          check "${ignores_case}" "a volume that ignores case" 'CaseAndUnicode/case' 'CaseAndUnicode/case|spelled_with_other_cases'
+          check "${one_unicode_name}" "a volume with one name for NFC and NFD" 'CaseAndUnicode/unicode' 'CaseAndUnicode/unicode'
+          check "${has_firmlink}" "a firmlink to the data volume" 'Firmlink' 'Firmlink'
+          echo "no volume test skipped where its property holds"
 
   # Windows joins the matrix because we are about to support it, and a platform
   # nobody compiles is a platform nobody supports.
