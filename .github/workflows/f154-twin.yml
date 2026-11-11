@@ -1,0 +1,224 @@
+name: F-154 twin runs
+
+# MEASUREMENT ONLY. This workflow exists on probe/f154-twin and is never merged.
+#
+# It answers one question on a real Windows runner: does the F-154 fix remove the
+# "Access is denied" that TestDesktopGrant_ConcurrentOpenCloseNeverTearsTheFile
+# hits now and then, and what does it cost when a denial is permanent? BASE and FIX
+# run in the SAME job (the same runner, alternated), so a difference between them is
+# the code and not the machine.
+#
+# FOUR COMMITS, pinned below and checked before anything runs:
+#   BASE     main at the time the fix was written (the defect, as shipped)
+#   SEAM     the seam and the Windows tests, WITHOUT the fix (the tests must be red)
+#   FIX      the fix tip; its product code is the one that gets reviewed and merged
+#   MEASURE  the tip of this branch: FIX plus the measurement files, nothing else
+# MEASURE is checked to differ from FIX only by the files in the allowlist below,
+# so the cost probe measures the product code of FIX. The probe file is a tracked
+# file: checking out BASE or FIX removes it, so the job copies judge.sh aside first
+# and goes back to MEASURE explicitly before the probe runs.
+#
+# If FIX moves (a review correction), this branch is rebuilt on the new tip and
+# FIX_SHA below is updated: it is a measurement of one commit, not of "the branch".
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  twin:
+    name: Twin runs on Windows
+    runs-on: windows-latest
+    # PROVISIONAL. 4 x 100 runs of a race-enabled test plus a probe whose worst case
+    # is about 35 s of deliberate waiting; on this project's Mac 100 runs take 74 s.
+    # Windows is slower and not measured yet: the job prints its own durations and
+    # the VAL sets this from them (2-3 times the longest).
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      BASE_SHA: 231ee9404d7fcf86becd6a2d11bf6ea26c62a21e
+      SEAM_SHA: a232bd0c6de56a6d30ac83d78cfc45f74f7e4b14
+      FIX_SHA: 19d787ab064a892f78049edfa8969aa89b6a0e03
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      GRANT_RUNS: "100"
+      GRANT_ROUNDS: "2"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The PR head, not the merge commit GitHub would build by default, and the
+          # whole history: the job checks out four different commits locally.
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false # nothing in this job pushes
+      - name: Set up Go (the toolchain line of go.mod)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      # Same step as in ci.yml.
+      - name: The Go that runs is the toolchain line of go.mod
+        run: |
+          want="$(awk '$1 == "toolchain" { print $2; exit }' go.mod | tr -d '\r')"
+          got="$(go env GOVERSION | tr -d '\r')"
+          if [ -z "${want}" ] || [ "${got}" != "${want}" ]; then
+            echo "::error title=wrong Go toolchain::go.mod asks for '${want:-<no toolchain line>}', this job runs '${got}'"
+            exit 1
+          fi
+          echo "Go ${got} is the toolchain line of go.mod"
+
+      - name: The four commits, pinned and checked
+        run: |
+          set -euo pipefail
+          measure="$(git rev-parse HEAD)"
+          if [ "${measure}" != "${HEAD_SHA}" ]; then
+            echo "::error title=wrong checkout::HEAD is ${measure}, the PR head is ${HEAD_SHA}"
+            exit 1
+          fi
+          for sha in "${BASE_SHA}" "${SEAM_SHA}" "${FIX_SHA}"; do
+            git cat-file -e "${sha}^{commit}" || { echo "::error title=a pinned commit is missing::${sha}"; exit 1; }
+          done
+          git merge-base --is-ancestor "${BASE_SHA}" "${SEAM_SHA}" || { echo "::error title=history::BASE is not an ancestor of SEAM"; exit 1; }
+          git merge-base --is-ancestor "${SEAM_SHA}" "${FIX_SHA}" || { echo "::error title=history::SEAM is not an ancestor of FIX"; exit 1; }
+          git merge-base --is-ancestor "${FIX_SHA}" "${measure}" || { echo "::error title=history::FIX is not an ancestor of MEASURE"; exit 1; }
+
+          allowed=".github/workflows/f154-twin.yml cmd/cab-bridge/zz_f154_cost_probe_windows_test.go tools/f154/judge.sh tools/f154/judge_selftest.sh"
+          changed="$(git diff --name-only "${FIX_SHA}" "${measure}")"
+          for file in ${changed}; do
+            case " ${allowed} " in
+              *" ${file} "*) ;;
+              *) echo "::error title=MEASURE differs from FIX outside the measurement files::${file}"; exit 1 ;;
+            esac
+          done
+          for file in ${allowed}; do
+            case "${changed}" in
+              *"${file}"*) ;;
+              *) echo "::error title=a measurement file is missing from MEASURE::${file}"; exit 1 ;;
+            esac
+          done
+          echo "MEASURE ${measure} differs from FIX only by:"
+          echo "${changed}"
+          echo "BASE..SEAM changes (the seam and the tests, no fix):"
+          git diff --stat "${BASE_SHA}" "${SEAM_SHA}" | tail -5
+          echo "SEAM..FIX changes (the fix):"
+          git diff --stat "${SEAM_SHA}" "${FIX_SHA}" | tail -5
+
+          # The judge and its selftest live in files that BASE, SEAM and FIX do not
+          # have: copy them aside while MEASURE is checked out. The scratch dir is
+          # inside the repo and excluded from it, so no checkout touches it.
+          mkdir -p .f154-work
+          echo ".f154-work/" >> .git/info/exclude
+          cp tools/f154/judge.sh tools/f154/judge_selftest.sh .f154-work/
+          bash .f154-work/judge_selftest.sh
+
+      - name: The Windows tests, without the fix (they must be red) and with it
+        run: |
+          # The default shell stops at the first failing command. These steps run tests
+          # that are EXPECTED to fail somewhere and read the log instead, so -e is off.
+          set +e
+          set -uo pipefail
+          w=.f154-work
+          test_pattern='^TestOpenNoFollow_'
+
+          git checkout --detach -q "${SEAM_SHA}"
+          go test -race -count=1 -v -run "${test_pattern}" ./internal/security > "${w}/t2-seam.log" 2>&1
+          echo "SEAM go test exit code: $? (red is the expected result, the judge reads the log)"
+          bash "${w}/judge.sh" t2 "${w}/t2-seam.log" red || { grep -E '^(--- |    .*(Error|premise))' "${w}/t2-seam.log" | head -30; exit 1; }
+
+          git checkout --detach -q "${FIX_SHA}"
+          go test -race -count=1 -v -run "${test_pattern}" ./internal/security > "${w}/t2-fix.log" 2>&1
+          echo "FIX go test exit code: $?"
+          bash "${w}/judge.sh" t2 "${w}/t2-fix.log" pass || { grep -E '^(--- |    .*(Error|premise))' "${w}/t2-fix.log" | head -30; exit 1; }
+          grep -E '^--- (PASS|SKIP|FAIL): TestOpenNoFollow_' "${w}/t2-fix.log"
+
+      - name: Twin runs of the grant test, BASE and FIX alternated
+        run: |
+          # The default shell stops at the first failing command. These steps run tests
+          # that are EXPECTED to fail somewhere and read the log instead, so -e is off.
+          set +e
+          set -uo pipefail
+          w=.f154-work
+          test_name=TestDesktopGrant_ConcurrentOpenCloseNeverTearsTheFile
+          base_failed=0; base_reader_denied=0; base_writer=0
+          fix_failed=0; fix_errors=0
+          {
+            echo "### F-154 twin runs: ${test_name}, -race -count=${GRANT_RUNS}, ${GRANT_ROUNDS} rounds"
+            echo ""
+            echo "| round | ref | commit | exit | seconds | passed | failed | reader denials | writer errors |"
+            echo "|---|---|---|---|---|---|---|---|---|"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          val() { printf ' %s\n' "$1" | sed -n "s/.* $2=\\([0-9]*\\).*/\\1/p"; }
+
+          round=1
+          while [ "${round}" -le "${GRANT_ROUNDS}" ]; do
+            for ref in BASE FIX; do
+              if [ "${ref}" = BASE ]; then sha="${BASE_SHA}"; else sha="${FIX_SHA}"; fi
+              git checkout --detach -q "${sha}"
+              log="${w}/twin-${round}-${ref}.log"
+              started=${SECONDS}
+              go test -race -count="${GRANT_RUNS}" -run "^${test_name}\$" -v ./internal/session > "${log}" 2>&1
+              rc=$?
+              took=$((SECONDS - started))
+              line="$(bash "${w}/judge.sh" twin "${log}" "${GRANT_RUNS}")" || { echo "${line}"; tail -20 "${log}"; exit 1; }
+              echo "round ${round} ${ref} ${sha:0:7} exit=${rc} ${took}s ${line}"
+              echo "| ${round} | ${ref} | ${sha:0:7} | ${rc} | ${took} | $(val "${line}" passed) | $(val "${line}" failed) | $(val "${line}" reader_denied) | $(val "${line}" writer_errors) |" >> "${GITHUB_STEP_SUMMARY}"
+              grep -E 'torn read:|\.go:[0-9]+: (open|close): ' "${log}" | head -3
+              if [ "${ref}" = BASE ]; then
+                base_failed=$((base_failed + $(val "${line}" failed)))
+                base_reader_denied=$((base_reader_denied + $(val "${line}" reader_denied)))
+                base_writer=$((base_writer + $(val "${line}" writer_errors)))
+              else
+                fix_failed=$((fix_failed + $(val "${line}" failed)))
+                fix_errors=$((fix_errors + $(val "${line}" reader_errors) + $(val "${line}" writer_errors)))
+              fi
+            done
+            round=$((round + 1))
+          done
+
+          total=$((GRANT_RUNS * GRANT_ROUNDS))
+          echo "BASE: ${base_failed} of ${total} failed, of which ${base_reader_denied} with the reader signature (torn read, Access is denied), ${base_writer} writer errors"
+          echo "FIX:  ${fix_failed} of ${total} failed"
+          {
+            echo ""
+            echo "BASE: ${base_failed} of ${total} runs failed, ${base_reader_denied} with the F-154 reader signature, ${base_writer} writer errors."
+            echo "FIX: ${fix_failed} of ${total} runs failed."
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [ "${fix_failed}" -ne 0 ] || [ "${fix_errors}" -ne 0 ]; then
+            echo "::error title=the original test fails on FIX::${fix_failed} failed runs, ${fix_errors} error lines"
+            exit 1
+          fi
+          if [ "${base_reader_denied}" -eq 0 ]; then
+            echo "::warning title=BASE did not reproduce F-154::0 reader denials in ${total} runs on BASE: criterion 3 is NOT demonstrated by this run (raise the count or add CPU load, do not substitute the metric)"
+            echo "BASE DID NOT REPRODUCE: 0 reader denials in ${total} runs." >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Cost of a permanent denial, on MEASURE (which is FIX plus the probe)
+        run: |
+          # The default shell stops at the first failing command. These steps run tests
+          # that are EXPECTED to fail somewhere and read the log instead, so -e is off.
+          set +e
+          set -uo pipefail
+          w=.f154-work
+          # Back to MEASURE on purpose: the previous steps left BASE or FIX checked
+          # out, and the probe file does not exist there.
+          git checkout --detach -q "${HEAD_SHA}"
+          test "$(git rev-parse HEAD)" = "${HEAD_SHA}" || { echo "::error title=wrong checkout::not on MEASURE"; exit 1; }
+          test -f cmd/cab-bridge/zz_f154_cost_probe_windows_test.go || { echo "::error title=the probe is missing::checked out MEASURE has no probe file"; exit 1; }
+
+          F154_COST_PROBE=1 go test -count=1 -v -run '^TestF154Probe_PermanentDenialCost$' ./cmd/cab-bridge > "${w}/cost.log" 2>&1
+          echo "probe go test exit code: $?"
+          grep -E 'F154COST|^--- ' "${w}/cost.log"
+          table="$(bash "${w}/judge.sh" cost "${w}/cost.log")" || { echo "${table}"; tail -20 "${w}/cost.log"; exit 1; }
+          echo "${table}"
+          {
+            echo ""
+            echo "### F-154 cost of a permanent denial (MEASURE, icacls deny)"
+            echo ""
+            echo "${table}"
+          } >> "${GITHUB_STEP_SUMMARY}"
