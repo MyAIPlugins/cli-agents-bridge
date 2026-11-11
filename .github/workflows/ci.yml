@@ -44,6 +44,8 @@ jobs:
     name: Lint (vet + staticcheck, every GOOS)
     runs-on: ubuntu-latest
     timeout-minutes: 4
+    env:
+      GOTOOLCHAIN: local
     permissions:
       contents: read
     defaults:
