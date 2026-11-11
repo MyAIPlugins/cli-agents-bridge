@@ -37,9 +37,10 @@ import (
 // last handle closes. os.Remove is DeleteFileW and Go asks it for no POSIX flag
 // (os/file_windows.go in Go 1.27.1), yet it succeeds on the very same held file,
 // which is how the two halves were told apart. Measured on a Windows Server 2025
-// runner (F-154, run 43017039092): a file deleted while a share-delete reader
-// holds it loses its NAME at once, so what os.Remove does there is POSIX in
-// effect, and the OS provides it, not Go. Other Windows builds were not measured.
+// runner (F-154, run 43017039092, and lab row L1 of run 43020768866): a file
+// deleted while a share-delete reader holds it loses its NAME at once, so what
+// os.Remove does there is POSIX in effect, and the OS provides it, not Go. Other
+// Windows builds were not measured.
 // The refusal F-154 is about is a different thing: a name that is being deleted
 // answering "Access is denied" for a few milliseconds while the delete runs.
 //
