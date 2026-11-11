@@ -5,22 +5,50 @@ on:
     tags:
       - 'v*'
 
-permissions:
-  contents: write
+# Empty at workflow level (F-164): the one job below asks for what it writes, so a
+# job added later cannot inherit it.
+permissions: {}
 
 jobs:
   goreleaser:
     name: GoReleaser
     runs-on: ubuntu-latest
+    # Measured on the last 10 runs (30 May to 1 Nov 2026): longest 73 s, so 3
+    # minutes is 2.5 times. Those runs had the Go cache that `cache: false` below
+    # takes away, so the first run at a tag measures the cold duration: tune this
+    # line then, with that number in hand.
+    timeout-minutes: 3
+    permissions:
+      contents: write # creates the draft release and uploads its archives (.goreleaser.yml: release.github, draft: true); nothing else is written
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0          # goreleaser needs full tag history
+          # Nothing here pushes: .goreleaser.yml has release.github only (this
+          # repository, through the API with the GITHUB_TOKEN of the environment) and no
+          # tap, bucket or other repository to write to; the full history is
+          # already local because of fetch-depth. So the credential has no reason
+          # to stay in the workspace.
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod   # same toolchain as the gate — the release binaries
                                     # must not be built by a Go the gate never ran
-          cache: true
+          # No cache: a job that runs a few times a year gains little from one, and a
+          # cache restored in a workflow that publishes is a way in for a poisoned
+          # entry (zizmor: cache-poisoning). The price is a cold build.
+          cache: false
+      # Same step as in ci.yml (the note is in the lint job). Here it is the one
+      # that matters most: what this job builds is what users download.
+      - name: The Go that runs is the toolchain line of go.mod
+        run: |
+          want="$(awk '$1 == "toolchain" { print $2; exit }' go.mod | tr -d '\r')"
+          got="$(go env GOVERSION | tr -d '\r')"
+          if [ -z "${want}" ] || [ "${got}" != "${want}" ]; then
+            echo "::error title=wrong Go toolchain::go.mod asks for '${want:-<no toolchain line>}', this job runs '${got}'"
+            exit 1
+          fi
+          echo "Go ${got} is the toolchain line of go.mod"
       # THE TAG IS CHECKED HERE AND NOWHERE ELSE, because this is the only job
       # where a tag exists by construction: it runs on `push: tags`.
       #
@@ -59,7 +87,7 @@ jobs:
           grep -q '^--- PASS: @@TEST@@' "$log" || { echo "the tag guard was NOT executed"; cat "$log"; exit 1; }
 
       - name: GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           # PINNED, not a range, and this is a correction rather than a
           # precaution: .goreleaser.yml already uses `formats:` and

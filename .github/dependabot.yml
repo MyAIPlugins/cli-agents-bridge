@@ -1,0 +1,32 @@
+# Keeps the SHA pins in .github/workflows alive (F-164). A pin to a commit does not
+# move by itself: without this file the pins age until somebody notices, and that
+# is how the workflows ended up on actions that run on a runtime nobody supports.
+#
+# - weekly, with one group: at most one PR a week, covering every action.
+# - cooldown of 14 days: a release younger than two weeks is not proposed, the
+#   window in which a compromised release is usually found. It applies to version
+#   updates only; security updates have their own path and arrive when they arrive.
+# - the commit prefix follows docs/dev-conventions.md, <type>(<scope>): <subject>.
+#
+# MAINTENANCE STEP, every time a PR touches .github/workflows/release.yml.
+# tests/integration/testdata/release.yml.contract is compared with release.yml
+# byte for byte and Dependabot does not know it exists, so that PR is RED until a
+# reviewer applies the same change to the contract by hand, placeholders (@@ENV@@,
+# @@TEST@@) intact, and runs the gate again. The red is right and the test is not
+# to be softened: it is what keeps a change to the release workflow from going out
+# unseen. Never `cp release.yml` over the contract, the test says why.
+#
+# Go modules are not covered: this lot was about the actions.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      actions:
+        patterns: ["*"]

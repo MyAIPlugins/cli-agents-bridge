@@ -6,8 +6,18 @@ on:
   pull_request:
     branches: [main]
 
-permissions:
-  contents: read
+# No token permission at workflow level (F-164): every job below asks for what
+# it uses. A job added later without a `permissions:` block gets nothing, not the
+# repository default.
+permissions: {}
+
+# TIMEOUTS (F-164). The default is 360 minutes, so a hung job would hold a runner
+# for six hours before anyone saw it. Each job below has 2-3 times the longest
+# duration measured over the last 10 completed runs of this workflow (10-11
+# November 2026, `gh run view`, job wall time): lint 99 s -> 4 min, test on ubuntu
+# 150 s -> 6 min, test on windows 222 s -> 10 min, cross-compile 40 s -> 2 min (a
+# minute is the smallest unit: 1 would be 1.5 times). Measure again when a job gets
+# slower. A kill is loud ("exceeded the maximum execution time"), never a green.
 
 jobs:
   # LINT RUNS ONCE AND READS EVERY PLATFORM — which until this change it did not.
@@ -33,11 +43,16 @@ jobs:
   lint:
     name: Lint (vet + staticcheck, every GOOS)
     runs-on: ubuntu-latest
+    timeout-minutes: 4
+    permissions:
+      contents: read
     defaults:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false # nothing in this job pushes
       - name: Set up Go (the toolchain line of go.mod)
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -73,6 +88,24 @@ jobs:
           # would silently install the language minimum.
           go-version-file: go.mod
           cache: true
+      # The Go that RUNS must be the one go.mod names (F-164). setup-go honours
+      # the `toolchain` line only while GOTOOLCHAIN is not already `local` when it
+      # starts; otherwise it installs the `go` line, the language minimum, and says
+      # nothing: the job stays green on a compiler the gate never ran (F-162,
+      # finding 2). This step compares the two and fails showing both. A missing
+      # `toolchain` line fails too (AllOrNothing, as in `make lint`), and `tr`
+      # strips the CR a Windows checkout may leave in go.mod. There are four copies,
+      # one after each setup-go (here, test, cross-compile, release.yml): a test
+      # keeps them identical and requires one right after every setup-go.
+      - name: The Go that runs is the toolchain line of go.mod
+        run: |
+          want="$(awk '$1 == "toolchain" { print $2; exit }' go.mod | tr -d '\r')"
+          got="$(go env GOVERSION | tr -d '\r')"
+          if [ -z "${want}" ] || [ "${got}" != "${want}" ]; then
+            echo "::error title=wrong Go toolchain::go.mod asks for '${want:-<no toolchain line>}', this job runs '${got}'"
+            exit 1
+          fi
+          echo "Go ${got} is the toolchain line of go.mod"
       - name: go vet (every GOOS)
         run: |
           go version
@@ -127,6 +160,10 @@ jobs:
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Windows is the slow leg: 222 s against 150 s on ubuntu (see TIMEOUTS above).
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 10 || 6 }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -137,12 +174,24 @@ jobs:
         # below cannot mean two different things depending on the leg.
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false # nothing in this job pushes
       - name: Set up Go (the toolchain line of go.mod)
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
+      # Same step as in lint, see the note there.
+      - name: The Go that runs is the toolchain line of go.mod
+        run: |
+          want="$(awk '$1 == "toolchain" { print $2; exit }' go.mod | tr -d '\r')"
+          got="$(go env GOVERSION | tr -d '\r')"
+          if [ -z "${want}" ] || [ "${got}" != "${want}" ]; then
+            echo "::error title=wrong Go toolchain::go.mod asks for '${want:-<no toolchain line>}', this job runs '${got}'"
+            exit 1
+          fi
+          echo "Go ${got} is the toolchain line of go.mod"
       - name: toolchain report
         run: |
           go version
@@ -176,6 +225,9 @@ jobs:
     name: Cross-compile (${{ matrix.goos }}-${{ matrix.goarch }})
     needs: [lint, test]
     runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -192,25 +244,48 @@ jobs:
             goarch: amd64
             ext: .exe
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false # nothing in this job pushes
       - name: Set up Go (the toolchain line of go.mod)
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
+      # Same step as in lint, see the note there. Here it matters most: this job
+      # builds the binaries a user could download.
+      - name: The Go that runs is the toolchain line of go.mod
+        run: |
+          want="$(awk '$1 == "toolchain" { print $2; exit }' go.mod | tr -d '\r')"
+          got="$(go env GOVERSION | tr -d '\r')"
+          if [ -z "${want}" ] || [ "${got}" != "${want}" ]; then
+            echo "::error title=wrong Go toolchain::go.mod asks for '${want:-<no toolchain line>}', this job runs '${got}'"
+            exit 1
+          fi
+          echo "Go ${got} is the toolchain line of go.mod"
       - name: Build static binary (CGO_ENABLED=0)
+        # The matrix values reach the script through the environment, never
+        # through `${{ }}` inside it: an expression is pasted into the script text
+        # before bash sees it (zizmor: template-injection). These come from the
+        # static list above, so today it is harmless, but a build line that stays
+        # safe when somebody adds a matrix entry from elsewhere costs nothing.
         env:
           CGO_ENABLED: "0"
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          EXT: ${{ matrix.ext }}
         run: |
           mkdir -p bin
           go build -trimpath -ldflags="-s -w" \
-            -o bin/cab-bridge-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} \
+            -o "bin/cab-bridge-${GOOS}-${GOARCH}${EXT}" \
             ./cmd/cab-bridge
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cab-bridge-${{ matrix.goos }}-${{ matrix.goarch }}
           path: bin/cab-bridge-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
+          # `error`, not the default `warn`: the build line above derives the file
+          # name from the environment and this path from the matrix, and two names
+          # that stopped agreeing would otherwise upload nothing and stay green.
+          if-no-files-found: error
           retention-days: 30
