@@ -104,7 +104,8 @@ func blockingRead(started chan<- struct{}, release <-chan struct{}) func(string,
 // F-153. The worker hands the result over and the caller may ask again at once, so
 // the guard has to be free by then. The seam parks the worker right AFTER the
 // hand-off, which is the moment the old code still held the guard: with the release
-// after the send, this test fails every time, not one run in twenty thousand.
+// after the send, this test fails every time: how often the window shows up without
+// the seam depends on the scheduler, and the seam does not wait for it.
 func TestScanInboxWithin_TheGuardIsFreeWhenTheResultIsDelivered(t *testing.T) {
 	t.Parallel()
 	dataDir := t.TempDir()

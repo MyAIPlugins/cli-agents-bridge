@@ -247,8 +247,9 @@ func TestMCPNext_AGrantThatExpiresStopsShowingTheValsMessages(t *testing.T) {
 	assert.Contains(t, j.next(0).Text(), "id msg-aaaaaaaaaaaa", "reopened, it is visible again (as a pointer: it was shown)")
 }
 
-// An inbox that cannot be read in time is an error, never a half-read inbox.
-func TestMCPNext_AScanThatCannotFinishIsAnErrorNotAPartialInbox(t *testing.T) {
+// A scan refused because an earlier one still holds the guard is an error that says so,
+// never a half-read inbox.
+func TestMCPNext_ABusyGuardIsAnErrorNotAPartialInbox(t *testing.T) {
 	j := newJoinedDemo(t)
 	j.put("msg-aaaaaaaaaaaa", j.valSID, message.TypeNotify, "should not appear partially")
 	p := j.app.lookup(projectKey("/repo/demo", surfaceCowork))

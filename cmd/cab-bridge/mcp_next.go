@@ -88,6 +88,10 @@ func (a *mcpApp) look(ctx context.Context, p *mcpProject) (pass, error) {
 	defer cancel()
 	scan, err := scanInboxWithin(scanCtx, &p.guard, filepath.Join(a.cfg.DataDir, "sessions", p.sid, "inbox"), a.cfg.MaxMessageBytes)
 	if err != nil {
+		// The two refusals of the scan pass through as they are, for coherence with each
+		// other. No test can pin the busy half of this line: the server extracts the
+		// *ToolError with errors.As even through the wrapping below (internal/mcp/server.go)
+		// and returns only its text, so the agent reads the same words with or without it.
 		if errors.Is(err, errInboxScanTimeout) || errors.Is(err, errInboxScanBusy) {
 			return pass{}, err
 		}
