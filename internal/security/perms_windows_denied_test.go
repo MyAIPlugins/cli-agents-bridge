@@ -51,6 +51,15 @@ type fileDispositionInfo struct{ DeleteFile byte }
 // not finished: delete disposition set, deleting handle still open. release closes
 // that handle, which completes the delete; it is idempotent and also runs at
 // cleanup. The premise is asserted before returning.
+//
+// The deleting handle must stay the ONLY handle on the file: never hold a reader
+// open through this fixture. Measured (probe 2, run 43020768866, lab row L3): with
+// the legacy disposition used here, a share-delete reader that is still open keeps
+// the name DELETE_PENDING after the deleter has closed, so release() would not free
+// the name and a test waiting for "the file is gone" would fail for a reason that
+// is not the code under test (with DELETE|POSIX the name is free at once). The
+// premise probe below respects this: openNoFollowOnce returns no handle on error,
+// and closes the one it gets on success.
 func deleteInFlight(t *testing.T, dir, name string) (path string, release func()) {
 	t.Helper()
 	path = plantFile(t, filepath.Join(dir, name), "GRANT")
