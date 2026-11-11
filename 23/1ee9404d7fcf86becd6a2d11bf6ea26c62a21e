@@ -1,0 +1,24 @@
+internal/session/lock_file_test.go
+  s_d5e186cda02d82::t_5075880b788560 11,17
+  s_d5e186cda02d82::t_39a797cb20f3eb 181-184,186-194,196-204,206-247
+  s_d5e186cda02d82::t_4c31dd64caa139 185
+.github/workflows/ci.yml
+  s_d5e186cda02d82::t_b18bbadf8716ff 22-25
+  s_d5e186cda02d82::t_e44dba9c4b6944 190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "231ee9404d7fcf86becd6a2d11bf6ea26c62a21e",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
