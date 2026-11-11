@@ -234,9 +234,12 @@ jobs:
       - name: The volume, and the tests that depend on it
         run: |
           # An explicit template in the directory Go writes its test files to
-          # (os.TempDir: $TMPDIR, else /tmp). A bare `mktemp -d` on macOS does not
-          # follow TMPDIR, and then this would probe a different volume from the
-          # one the tests use: a true answer about the wrong place.
+          # (os.TempDir: $TMPDIR, else /tmp, on Unix). A bare `mktemp -d` on macOS
+          # does not follow TMPDIR, and then this would probe a different volume from
+          # the one the tests use: a true answer about the wrong place. On Windows Go
+          # reads TMP, TEMP, USERPROFILE instead, and the /tmp here is Git Bash's: a
+          # different directory on the same NTFS, so the probe agrees with the tests
+          # there by luck, not by construction.
           dir="$(mktemp -d "${TMPDIR:-/tmp}/volume-probe.XXXXXX")"
           touch "${dir}/CaseProbe" "${dir}/$(printf 'caf\303\251')"
           ignores_case=no; [ -e "${dir}/caseprobe" ] && ignores_case=yes
@@ -253,11 +256,14 @@ jobs:
           go test -race -count=1 -v \
             -run '^(TestFindProjectRoot_HomeUnderAnotherSpelling_CaseAndUnicode|TestFindProjectRoot_HomeUnderAnotherSpelling_Firmlink|TestMakefile_SkillsOldCopyMessagesAreSafeToFollow)$' \
             ./internal/session ./tests/integration > "${log}" 2>&1 || { cat "${log}"; exit 1; }
-          grep -E '^ *--- (PASS|SKIP|FAIL):.*(CaseAndUnicode|Firmlink|spelled_with_other_cases)' "${log}" \
+          grep -E '^ *--- (PASS|SKIP|FAIL):.*(CaseAndUnicode|Firmlink|spelled_with_other_cases|SafeToFollow \()' "${log}" \
             || { echo "::error title=no volume test in the log::the -run pattern selected none of them (a rename?)"; cat "${log}"; exit 1; }
 
           # property, what it is, the test that must show PASS when it holds, and the
-          # pattern of every test that must not SKIP when it holds.
+          # pattern of every test that must not SKIP when it holds. The Makefile test
+          # is in the case pattern by its PARENT name too: without `make` it skips at
+          # the top, with a line that has no `spelled_with_other_cases` in it, and its
+          # two volume subtests would vanish without a trace.
           check() {
             [ "$1" = yes ] || return 0
             if ! grep -q -E "^ *--- PASS:.*$3" "${log}"; then
@@ -269,7 +275,7 @@ jobs:
               exit 1
             fi
           }
-          check "${ignores_case}" "a volume that ignores case" 'CaseAndUnicode/case' 'CaseAndUnicode/case|spelled_with_other_cases'
+          check "${ignores_case}" "a volume that ignores case" 'CaseAndUnicode/case' 'CaseAndUnicode/case|spelled_with_other_cases|SkillsOldCopyMessagesAreSafeToFollow'
           check "${one_unicode_name}" "a volume with one name for NFC and NFD" 'CaseAndUnicode/unicode' 'CaseAndUnicode/unicode'
           check "${has_firmlink}" "a firmlink to the data volume" 'Firmlink' 'Firmlink'
           echo "no volume test skipped where its property holds"
