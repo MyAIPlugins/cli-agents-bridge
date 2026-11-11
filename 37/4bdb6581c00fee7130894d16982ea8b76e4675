@@ -1,0 +1,20 @@
+internal/session/zz_probe2_f154_windows_test.go
+  s_d5e186cda02d82::t_6096eb79ad4f7a 218-220,224
+  s_d5e186cda02d82::t_a956b265263fa3 1-217,221-223,225-532
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "374bdb6581c00fee7130894d16982ea8b76e4675",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "unknown"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
