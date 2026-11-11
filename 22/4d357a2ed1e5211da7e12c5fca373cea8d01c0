@@ -1,0 +1,21 @@
+.github/workflows/release.yml
+  s_d5e186cda02d82::t_a3389d091dadf4 16-22
+tests/integration/testdata/release.yml.contract
+  s_d5e186cda02d82::t_343c5be666b968 16-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "224d357a2ed1e5211da7e12c5fca373cea8d01c0",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
