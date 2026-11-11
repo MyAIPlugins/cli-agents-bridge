@@ -1,0 +1,26 @@
+internal/session/zz_probe3_f170_windows_test.go
+  s_d5e186cda02d82::t_17ec22c90bf920 523-524
+  s_d5e186cda02d82::t_6e2b269859ebdd 405,427,448-450,454-458,470-471,475-476,490-493,519-522,614,676
+.github/workflows/f170-probe3b.yml
+  s_d5e186cda02d82::t_f7308824977844 3,7-11,24,27-29
+  s_d5e186cda02d82::t_caefaa0b5c3770 1-2,4-6,12-23,25-26,30-96
+internal/session/zz_probe3b_f170_windows_test.go
+  s_d5e186cda02d82::t_a450745f9031b2 1-9,11-62,71-109,159-165,169-201
+  s_d5e186cda02d82::t_17ec22c90bf920 10,63-70,110-158,166-168
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d3fb0fb9e007475fc3c0c70e565a102bb7169fd8",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
