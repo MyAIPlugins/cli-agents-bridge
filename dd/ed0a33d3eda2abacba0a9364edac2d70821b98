@@ -1,0 +1,29 @@
+.github/workflows/ci.yml
+  s_d5e186cda02d82::t_0b711a1dd5f5b5 244-245
+  s_d5e186cda02d82::t_cf0a4101db8999 165-172
+  s_d5e186cda02d82::t_813946950121a1 21-25
+  s_d5e186cda02d82::t_62bc86a3079af9 176-177,183-190
+  s_d5e186cda02d82::t_07c7461e34020b 250
+  s_d5e186cda02d82::t_f179fa46c3bcff 232-233
+  s_d5e186cda02d82::t_33b0e0acb36205 236-240
+  s_d5e186cda02d82::t_2d7695c612ed71 224-231,234-235,241-243,246-249,251-275
+tests/integration/workflow_matrix_test.go
+  s_d5e186cda02d82::t_86a42064666b97 1-77,81-194
+  s_d5e186cda02d82::t_5ab42aaccb5bde 78-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dded0a33d3eda2abacba0a9364edac2d70821b98",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
