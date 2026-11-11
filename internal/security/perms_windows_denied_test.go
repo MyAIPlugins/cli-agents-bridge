@@ -18,9 +18,12 @@ import (
 // F-154, the half that needs the platform the defect lives on.
 //
 // WHAT THE FIXTURE IS, AND WHAT IT IS NOT. The field defect is a transient
-// ACCESS_DENIED on a name that another party is deleting (measured, PR #25). The
-// kernel state behind it is not established, and a first fixture built on
-// "os.Remove of a file somebody holds leaves the name pending" was REFUTED by the
+// ACCESS_DENIED on a name that another party is deleting (measured, PR #25), and
+// the state behind it is the one this fixture builds (probe 2, run 43020768866: a
+// deleting handle that has set the disposition and not yet closed answers
+// DELETE_PENDING in all three disposition flavours, and NOT_FOUND once it closes).
+// A first fixture built on "os.Remove of a file somebody holds leaves the name
+// pending" was REFUTED by the
 // first run on a Windows Server 2025 runner: there the name is free the moment
 // os.Remove returns (twin run 43017039092, the premise assertion below, which is
 // why it is an assertion and not an assumption).
@@ -33,7 +36,8 @@ import (
 // deterministic, released at an exact attempt through the injected wait, and
 // independent of how any Windows build implements DeleteFile. It proves what the
 // retry does with such an answer; that this is the answer the field defect gives
-// is what the cause measurement and the twin runs are for.
+// is what the race of probe 2 found (every denial overlapped a delete and was
+// DELETE_PENDING), on one run and one image.
 //
 // Every test that depends on the premise ASSERTS it: if the state is not
 // reproduced the test fails with that message, it does not skip. A skip here

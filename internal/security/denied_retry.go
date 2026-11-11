@@ -10,10 +10,13 @@ import (
 // file is gone, or it is the new one. That is MEASURED (PR #25, windows-latest:
 // 2763 denials, on a stat as much as on an open; of the 72 events kept, 64 ended
 // in "not found" and 8 in success, none was still denied after 3 s, the longest
-// lasted 11.84 ms). The kernel state behind it is NOT established;
-// perms_windows.go says what is hypothesised and what has been ruled out. A
-// reader that gave up on the first answer reported a permission problem about a
-// file that was about to not exist.
+// lasted 11.84 ms). The state behind it is measured too (probe 2, run
+// 43020768866): the name answers STATUS_DELETE_PENDING while a delete is in
+// flight, all 876 denials of the race overlapped a delete call, the longest denial
+// lasted 811 us and the longest delete call 18.9 ms, against the 155 ms of backoff
+// below. One run on one image: the tail is not bounded by it, and
+// perms_windows.go has the details. A reader that gave up on the first answer
+// reported a permission problem about a file that was about to not exist.
 //
 // The remedy is to ask again, briefly, and it does not depend on the cause: it
 // reacts to the error code and repeats every check. It lives in one place: this

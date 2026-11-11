@@ -273,16 +273,26 @@ func isLinkByHandle(h windows.Handle) (bool, error) {
 // sample lasted 11.84 ms. A reader that gave up on the first answer reported a
 // permission problem about a file that was about to not exist.
 //
-// WHAT IS KNOWN AND WHAT IS NOT. Known: the trigger is the delete (the same race
-// with a replace and no delete produced no denial), and the denial is
-// transient. NOT known: the kernel state behind it. The working hypothesis, not
-// yet measured when this was written, is a delete IN FLIGHT: the deleting handle
-// has the delete disposition set and is not yet closed, so a concurrent open by
-// name gets STATUS_DELETE_PENDING, which Win32 reports as ACCESS_DENIED. What it
-// is NOT, measured: a name that stays occupied after the delete returns — on a
-// Windows Server 2025 runner a file deleted while a share-delete reader holds it
-// loses its name at once (twin run 43017039092). The retry below does not depend
-// on which it is, because it reacts to the error code and repeats every check.
+// WHAT IS KNOWN. The trigger is the delete (the same race with a replace and no
+// delete produced no denial), and the denial is transient. The state behind it is
+// a delete IN FLIGHT, measured on windows-latest (probe 2, run 43020768866, one
+// run on one image): a name whose deleting handle has set the delete disposition
+// and not yet closed answers STATUS_DELETE_PENDING, which Win32 reports as
+// ACCESS_DENIED, to an open and to a stat alike, and answers "not found" the
+// moment that handle closes. It holds for the legacy disposition, for the
+// extended one and for the extended one with POSIX semantics, so it does not
+// depend on which flavour DeleteFile asks for. In a race with a delete, three
+// readers counted 876 denials and every one of them overlapped a delete call; the
+// 276 seen by the NtCreateFile reader were all DELETE_PENDING. The longest denial
+// lasted 811 us, the longest delete call 18.9 ms.
+//
+// WHAT IS NOT. A name that stays occupied after the delete returns: on a Windows
+// Server 2025 runner a file deleted while a share-delete reader holds it loses
+// its name at once (twin run 43017039092, and lab row L1 of probe 2). NOT
+// measured: the tail beyond this sample (one run, one image, a quiet machine; the
+// longest delete call is the bound of the window it saw, not a guarantee), and a
+// scanner holding the file. The retry below does not depend on any of it, because
+// it reacts to the error code and repeats every check.
 //
 // So an ACCESS_DENIED is asked again, briefly (see denied_retry.go for the
 // bound), and only that error: a symlink, an ownership mismatch or a missing
