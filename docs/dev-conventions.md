@@ -307,6 +307,8 @@ A test that needs an operating-system state to exist first checks that the state
 
 A test that needs one side of a race to win, and repeats the round when it loses, must have that probability measured, not stated. `TestLock_ASuccessorKeepsItsLockWhileAContenderPolls` said the successor wins "almost always"; measured, the contender won about one round in ten, so three lost rounds in a row came up on the first macOS runner. Make the interleaving happen instead (a seam that parks one side, as `acquire`'s `afterOpen` does), or measure the odds and size the repetitions on them.
 
+The odds can belong to the scheduler rather than to the code, and then they size nothing. F-153's defect was the order of two operations (the scan guard released after the result was handed over): on one machine the same loop of calls was refused from 0 to 16974 times in 20000 depending on the repetition, and 0 times in 26000 through the MCP layer. The test parks the worker right after the hand-off (`scanSeams.afterHandOff`) and fails every time on the old order.
+
 ### Tests that depend on the volume (F-163)
 
 The CI step "The volume, and the tests that depend on it" in `.github/workflows/ci.yml` prints what the runner's volume does (case, NFC/NFD, firmlink), runs by name the tests that depend on it, and fails when one of them is skipped where its property holds. A new test that depends on the volume is added to that step's `-run` and to a `check` line: otherwise it runs, but nobody sees whether it was skipped. `TestWorkflows_TheVolumeStepNamesTestsThatExist` catches a rename, not a test that was never added.
