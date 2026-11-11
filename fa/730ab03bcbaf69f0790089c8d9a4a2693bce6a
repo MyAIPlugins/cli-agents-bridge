@@ -1,0 +1,44 @@
+cmd/cab-bridge/zz_f154_cost_probe_windows_test.go
+  s_d5e186cda02d82::t_91c5ebbeca5679 1-12,14-23,31,41,46-60,64,70,87-89,100-101,103-104,106,108,111,113-114,116-117,119-133,135-136,144-174,176,178-179
+  s_d5e186cda02d82::t_94580f7f005b9a 13,24-30,32-40,42-45,61-63,65-69,71-86,90-99,102,105,107,109-110,112,115,118,134,137-143,175,177
+.github/workflows/f154-twin.yml
+  s_d5e186cda02d82::t_637634bf345cce 221-224
+  s_d5e186cda02d82::t_bcdfcf60deb4ba 76
+  s_d5e186cda02d82::t_d1eba66927e80a 228-229
+  s_d5e186cda02d82::t_f2ed6aa4dc9057 120-123,125-126
+  s_d5e186cda02d82::t_4f2a57433dba0e 253-263,267-278,280-288
+  s_d5e186cda02d82::t_900aba07be2ccc 147-148
+  s_d5e186cda02d82::t_f6a1129fdb486d 289-290,295,297-299
+  s_d5e186cda02d82::t_dd604e786324fc 218-220
+  s_d5e186cda02d82::t_0f164ba8a06cf7 46
+  s_d5e186cda02d82::t_21f114465881f1 1-33,39-45,48-49,51-75,77-119,124,127,131-146,149,153-200,215-217,225-227,230,234-248,250-252
+  s_d5e186cda02d82::t_717eac852923ac 128-130,150-152,231-233
+  s_d5e186cda02d82::t_07943a9c0a3d9e 34-38,47,50,201-214,249,264-266,279,291-294,296
+tools/f154/judge.sh
+  s_d5e186cda02d82::t_90d5d20fbe6c25 1-15,19-80,82-89,91-131,156-159,162
+  s_d5e186cda02d82::t_61181b2e3e4c5d 16-18,132-141,145-155,160-161
+  s_d5e186cda02d82::t_7079c66df06471 81
+  s_d5e186cda02d82::t_f06b62253c94cb 90
+  s_d5e186cda02d82::t_c9ea7b04dd46b0 142-144
+tools/f154/judge_selftest.sh
+  s_d5e186cda02d82::t_c9ea7b04dd46b0 120-132
+  s_d5e186cda02d82::t_61181b2e3e4c5d 119,133-136
+  s_d5e186cda02d82::t_c496c2cafcc29e 98-100
+  s_d5e186cda02d82::t_710fbf8f5a5f02 1-97,101-118,137-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fa730ab03bcbaf69f0790089c8d9a4a2693bce6a",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
