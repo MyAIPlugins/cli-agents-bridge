@@ -2,6 +2,8 @@ internal/security/perms_windows.go
   s_d5e186cda02d82::t_f05d6537b7c045 268-293
   s_d5e186cda02d82::t_71720bde9c1f5a 6,267,302-313,319-320
   s_d5e186cda02d82::t_c2856c0ca8b93e 314-318
+  s_d5e186cda02d82::t_936990ec7924d5 6
+  s_d5e186cda02d82::t_026dd1800e8f30 267,302-313,319-320
 ---
 {
   "schema_version": "authorship/3.0.0",
