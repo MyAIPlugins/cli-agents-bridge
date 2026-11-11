@@ -1,0 +1,35 @@
+.github/workflows/f154-twin.yml
+  s_d5e186cda02d82::t_0f164ba8a06cf7 46-47
+  s_d5e186cda02d82::t_900aba07be2ccc 147-148
+  s_d5e186cda02d82::t_bcdfcf60deb4ba 76
+  s_d5e186cda02d82::t_4f2a57433dba0e 239-271
+  s_d5e186cda02d82::t_952c1ff4564d12 1-45,48-75,77-119,124,127-146,149-203,211-213,216-238
+  s_d5e186cda02d82::t_f2ed6aa4dc9057 120-123,125-126
+  s_d5e186cda02d82::t_d1eba66927e80a 214-215
+  s_d5e186cda02d82::t_637634bf345cce 207-210
+  s_d5e186cda02d82::t_dd604e786324fc 204-206
+tools/f154/judge.sh
+  s_d5e186cda02d82::t_7079c66df06471 78
+  s_d5e186cda02d82::t_952c1ff4564d12 1-77,79-134
+cmd/cab-bridge/zz_f154_cost_probe_windows_test.go
+  s_d5e186cda02d82::t_952c1ff4564d12 1-23,25-146
+  s_d5e186cda02d82::t_7079c66df06471 24
+tools/f154/judge_selftest.sh
+  s_d5e186cda02d82::t_952c1ff4564d12 1-120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9d97676108cba4ee71df396f200c4b7df90d6912",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
