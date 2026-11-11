@@ -3,6 +3,7 @@
 package security
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -263,6 +264,20 @@ func isLinkByHandle(h windows.Handle) (bool, error) {
 // the same reason: without it CreateFile refuses a directory outright, and
 // openOwned's IsRegular() check — which answers "not a regular file" rather than
 // "access denied" — would never get to run.
+//
+// F-154 — THE SAME SHARE MODE HAS A SECOND EFFECT, and this is the half that
+// was not seen in F-133. A file removed while a reader holds it is not gone: it
+// is delete-pending, the name stays occupied, and an open by name — the Lstat
+// below as much as the CreateFile — answers ACCESS_DENIED until the last handle
+// closes. A reader that arrives in that window is not looking at a file it may
+// not read; it is looking at one that is about to not exist, and the true answer
+// is a few milliseconds away. So an ACCESS_DENIED is asked again, briefly (see
+// denied_retry.go for the bound), and only that error: a symlink, an ownership
+// mismatch or a missing file come back on the first attempt. Each attempt
+// repeats the WHOLE Lstat + open + handle check, so a name that turns into a
+// link during the wait is refused like any other link. A denial that outlasts
+// the budget — a real ACL, a very long antivirus scan — still comes back as
+// ACCESS_DENIED, with the number of attempts in the message.
 func openNoFollow(path string) (*os.File, error) {
 	return openNoFollowSleeping(path, time.Sleep)
 }
@@ -271,7 +286,22 @@ func openNoFollow(path string) (*os.File, error) {
 // close the holder of a delete-pending name at an exact attempt instead of
 // racing a real clock. Production passes time.Sleep and nothing else.
 func openNoFollowSleeping(path string, sleep func(time.Duration)) (*os.File, error) {
-	return openNoFollowOnce(path)
+	var f *os.File
+	err := retryWhile(deniedAttempts, deniedFirstDelay, sleep, isAccessDenied, func() error {
+		var openErr error
+		f, openErr = openNoFollowOnce(path)
+		return openErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
+}
+
+// isAccessDenied is the one error worth asking again about: it is how Windows
+// spells "this name is delete-pending". Nothing else is retried.
+func isAccessDenied(err error) bool {
+	return errors.Is(err, windows.ERROR_ACCESS_DENIED)
 }
 
 // openNoFollowOnce is ONE attempt: the Lstat, the symlink refusal, the open and
