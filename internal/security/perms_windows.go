@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"sync"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -263,6 +264,20 @@ func isLinkByHandle(h windows.Handle) (bool, error) {
 // openOwned's IsRegular() check — which answers "not a regular file" rather than
 // "access denied" — would never get to run.
 func openNoFollow(path string) (*os.File, error) {
+	return openNoFollowSleeping(path, time.Sleep)
+}
+
+// openNoFollowSleeping is openNoFollow with the wait injected, so a test can
+// close the holder of a delete-pending name at an exact attempt instead of
+// racing a real clock. Production passes time.Sleep and nothing else.
+func openNoFollowSleeping(path string, sleep func(time.Duration)) (*os.File, error) {
+	return openNoFollowOnce(path)
+}
+
+// openNoFollowOnce is ONE attempt: the Lstat, the symlink refusal, the open and
+// the check on the handle, exactly as they were before F-154. It closes the
+// handle on every error path of its own.
+func openNoFollowOnce(path string) (*os.File, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, err
