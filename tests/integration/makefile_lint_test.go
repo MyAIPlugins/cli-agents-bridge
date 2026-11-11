@@ -314,28 +314,6 @@ func pinnedVersion(t *testing.T, repoRoot string) string {
 	return strings.TrimSpace(string(raw))
 }
 
-// stepNamed returns the YAML block of a workflow step, from its `- name: <n>`
-// line to the next step at the same indentation — so an assertion about "the
-// staticcheck step" is about that step and not about the whole file.
-func stepNamed(t *testing.T, yaml, name string) string {
-	t.Helper()
-	lines := strings.Split(yaml, "\n")
-	start := -1
-	for i, l := range lines {
-		if strings.HasPrefix(strings.TrimSpace(l), "- name: ") && strings.Contains(l, name) {
-			start = i
-			break
-		}
-	}
-	require.GreaterOrEqual(t, start, 0, "step %q not found in the workflow", name)
-	for i := start + 1; i < len(lines); i++ {
-		if strings.HasPrefix(strings.TrimSpace(lines[i]), "- name: ") {
-			return strings.Join(lines[start:i], "\n")
-		}
-	}
-	return strings.Join(lines[start:], "\n")
-}
-
 // TestMakefile_InstallDevLinksWhatItJustBuilt covers the command that puts
 // cab-bridge on PATH — the only build artefact the agents actually use.
 //
