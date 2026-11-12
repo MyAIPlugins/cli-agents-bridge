@@ -134,6 +134,26 @@ func invalidUTF8Offset(s string) int {
 	return -1
 }
 
+// completeJournal removes the journal at the end of driveReplyTxn. Getting here means every
+// step of this reply is done: delivered, and every ask archived with its index recorded. So a
+// journal that is already gone, or that now belongs to another reply, is not a failure of THIS
+// reply, the end state it wanted is there; it is said and never silent, and another reply's
+// journal is not touched (CompleteReplyTxn leaves it as it found it).
+func completeJournal(mgr *session.Manager, sid string, txn *session.ReplyTxn, note func(format string, args ...any)) error {
+	err := mgr.CompleteReplyTxn(sid, txn)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, session.ErrReplyTxnGone):
+		note("reply: response %s is delivered and its asks are archived; its journal was already gone at the final check, so there was nothing left to remove\n", txn.ResponseID)
+		return nil
+	case errors.Is(err, session.ErrReplyTxnNotYours):
+		note("reply: response %s is delivered and its asks are archived; the journal now on disk belongs to another reply and was left as it was\n", txn.ResponseID)
+		return nil
+	}
+	return fmt.Errorf("reply: %w", err)
+}
+
 func runGate(gate replyGate, txn *session.ReplyTxn) error {
 	if gate == nil {
 		return nil

@@ -1056,7 +1056,10 @@ func driveReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *ses
 			return fmt.Errorf("reply: %w", err)
 		}
 		txn.State = session.ReplyTxnSent
-		if err := mgr.WithSessionLock(sid, func() error { return mgr.WriteReplyTxn(sid, txn) }); err != nil {
+		// Progress is recorded under the lock and only while the journal on disk is still this
+		// transaction: a driver that was overtaken stops here and says so, instead of
+		// overwriting a journal that is no longer its own (F-176).
+		if err := mgr.UpdateReplyTxn(sid, txn); err != nil {
 			return fmt.Errorf("reply: %w", err)
 		}
 		if !delivered {
@@ -1081,15 +1084,12 @@ func driveReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *ses
 			return fmt.Errorf("reply: archive %s: %w", id, err)
 		}
 		txn.ArchivedIndex++
-		if err := mgr.WithSessionLock(sid, func() error { return mgr.WriteReplyTxn(sid, txn) }); err != nil {
+		if err := mgr.UpdateReplyTxn(sid, txn); err != nil {
 			return fmt.Errorf("reply: %w", err)
 		}
 	}
 
-	if err := mgr.RemoveReplyTxn(sid); err != nil {
-		return fmt.Errorf("reply: %w", err)
-	}
-	return nil
+	return completeJournal(mgr, sid, txn, note)
 }
 
 // reportReplyTxn is the half that TELLS: the echo of what was sent, what it closed

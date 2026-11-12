@@ -48,8 +48,6 @@ var bareRemovals = map[string]struct {
 }{
 	"manager.go:Register": {2, "rolls back the session directory this very call created, on an error path, " +
 		"and discards the error: nothing else has the name yet, and a leftover directory is the lesser evil"},
-	"replytxn.go:RemoveReplyTxn": {1, "the reply journal: its name is reused by a different transaction, so the blind retry " +
-		"of RemoveFile would delete the journal that transaction just created (the F-170 plan gate, with an executed interleaving)"},
 }
 
 func TestBareRemovalsInSessionAreNamedExceptions(t *testing.T) {

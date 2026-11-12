@@ -31,6 +31,8 @@ import (
 // TestBareRemovalsInSessionAreNamedExceptions covers for the session package.
 var removeFileCallers = map[string]string{
 	"internal/session/desktopgrant.go": "the desktop grant: an open and a close that overlap have two valid orders, and a revoke may drop the newer grant",
+	"internal/session/replytxn.go": "the reply journal, ONLY under the exclusive session lock and AFTER the identity comparison in the same critical section " +
+		"(CompleteReplyTxn): the name is reused by other transactions, so what makes the blind retry safe here is that protocol and not the helper (F-176)",
 }
 
 const securityImportPath = "github.com/myAIPlugins/cli-agents-bridge/internal/security"

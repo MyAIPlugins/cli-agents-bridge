@@ -32,10 +32,18 @@ import (
 // name whose newer file must survive: a delete that has to leave a replacement
 // alone needs to dispose of the file it opened (by handle), not of the name, and
 // that primitive does not exist here. A caller that cannot accept losing the newer
-// file must not use this function. The reply journal is the case that was
-// examined and refused in the F-170 plan gate: the name is reused by a different
-// transaction, and the retry would delete the journal that transaction just
-// created (an executed interleaving, not a hypothesis).
+// file must not use this function.
+//
+// The reply journal was examined and refused in the F-170 plan gate: the name is
+// reused by a different transaction, and the retry would delete the journal that
+// transaction just created (an executed interleaving, not a hypothesis). It is a
+// caller since F-176, and only on two conditions that belong to the CALLER: the
+// removal runs under the exclusive session lock between processes, and after the
+// comparison of the journal on disk with the transaction being completed, in the
+// same critical section. With both, no writer that follows the protocol can put
+// another journal under the name between the check and the removal. The retry
+// alone protects nothing: remove either condition and the interleaving above is
+// back, so the guard of that caller is Manager.CompleteReplyTxn, not this helper.
 //
 // WHO MAY CALL IT is a list that fails: remove_callers_test.go enumerates every
 // caller in the repository and goes red on a new one, so adding a caller is a

@@ -172,6 +172,8 @@ func TestReply_AskArrivingAfterTheSnapshotStaysOpen(t *testing.T) {
 	// A third message lands after the snapshot was frozen.
 	deliverAndNotify(t, mgr, dataDir, "msg-cccccccccccc", "late correction", base.Add(2*time.Minute))
 
+	// The journal that beginReply creates in production. The driver no longer recreates a missing one (F-176).
+	require.NoError(t, mgr.WriteReplyTxn(replySelf, txn))
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, finishReplyTxn(mgr, cfg, replySelf, txn, &stdout, &stderr))
 
@@ -198,6 +200,8 @@ func TestReply_ClosesCarriesTheWholeSetAndInReplyToTheAnchor(t *testing.T) {
 	deliverAndNotify(t, mgr, dataDir, "msg-bbbbbbbbbbbb", "correction", base.Add(time.Minute))
 
 	txn := newTxn(replySelf, []string{"msg-aaaaaaaaaaaa", "msg-bbbbbbbbbbbb"}, "one answer for both")
+	// The journal that beginReply creates in production. The driver no longer recreates a missing one (F-176).
+	require.NoError(t, mgr.WriteReplyTxn(replySelf, txn))
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, finishReplyTxn(mgr, cfg, replySelf, txn, &stdout, &stderr))
 
@@ -412,6 +416,8 @@ func TestReply_DoesNotCloseWhatWasNeverShown(t *testing.T) {
 	assert.Equal(t, "msg-aaaaaaaaaaaa", open[0].id)
 
 	txn := newTxn(replySelf, []string{"msg-aaaaaaaaaaaa"}, "my answer")
+	// The journal that beginReply creates in production. The driver no longer recreates a missing one (F-176).
+	require.NoError(t, mgr.WriteReplyTxn(replySelf, txn))
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, finishReplyTxn(mgr, cfg, replySelf, txn, &stdout, &stderr))
 
@@ -560,6 +566,8 @@ func TestReply_CrashWithMultipleAsksAndOneArrivingMidTransaction(t *testing.T) {
 
 	second := newTxn(replySelf, []string{"msg-cccccccccccc"}, "answering the third")
 	assert.NotEqual(t, txn.ResponseID, second.ResponseID, "a different anchor means a different response id")
+	// The journal that beginReply creates in production. The driver no longer recreates a missing one (F-176).
+	require.NoError(t, mgr.WriteReplyTxn(replySelf, second))
 	var out2, err2 bytes.Buffer
 	require.NoError(t, finishReplyTxn(mgr, cfg, replySelf, second, &out2, &err2))
 
