@@ -330,6 +330,14 @@ func isAccessDenied(err error) bool {
 	return errors.Is(err, windows.ERROR_ACCESS_DENIED)
 }
 
+// transientRemoveDenial is what RemoveFile asks again about: the same one error as
+// the open, for the same reason (F-170 measured the delete side of the same
+// refusal). It is a name of its own so that Unix can answer differently and the
+// two readers of "what is worth retrying" are not welded together.
+func transientRemoveDenial(err error) bool {
+	return isAccessDenied(err)
+}
+
 // openNoFollowOnce is ONE attempt: the Lstat, the symlink refusal, the open and
 // the check on the handle, exactly as they were before F-154. It closes the
 // handle on every error path of its own.
