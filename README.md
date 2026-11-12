@@ -13,7 +13,7 @@ Let your AI coding agents talk to each other. Run Claude Code, Codex CLI or any 
 A common way to work with coding agents is to give them roles: one plans and reviews, another writes the code, a third looks for problems. Each agent runs in its own window, with its own conversation. cli-agents-bridge is the mailbox between them:
 
 - **One small program, `cab-bridge`.** No server, no account, nothing to keep running.
-- **Everything stays on your computer.** Messages are files in a folder in your home directory, readable only by you.
+- **Everything stays on your computer.** Messages are files in a folder in your home directory, readable only by you on macOS and Linux (Windows: see [Your data](#your-data)).
 - **Nothing gets lost.** A message stays in the agent's inbox until that agent answers it. If an agent is busy, restarted or compacted, the message is still there.
 - **Agents find each other by name**, inside the same project. Different projects stay separate.
 
