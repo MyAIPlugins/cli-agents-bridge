@@ -239,3 +239,21 @@ func TestOpenOwned_RefusesAnotherUsersFile(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrOwnershipMismatch)
 }
+
+// F-170: on Unix nothing a delete answers is a state that passes in a few
+// milliseconds, so RemoveFile asks again about nothing. EACCES and EPERM are the
+// two refusals a delete can give here (the directory's mode, the sticky bit); both
+// must come back on the first call, with no wait and no rewrite.
+func TestTransientRemoveDenial_IsFalseOnUnix(t *testing.T) {
+	for _, errno := range []syscall.Errno{syscall.EACCES, syscall.EPERM} {
+		refusal := &os.PathError{Op: "remove", Path: "grant", Err: errno}
+		assert.False(t, transientRemoveDenial(refusal), errno.Error())
+
+		var s sleeps
+		r := &scriptedRemove{t: t, results: []error{refusal}}
+		err := removeFileSleeping("grant", r.remove, s.sleep, transientRemoveDenial)
+		assert.Same(t, refusal, err, errno.Error())
+		assert.Equal(t, 1, r.calls, errno.Error())
+		assert.Empty(t, s.waits, errno.Error())
+	}
+}

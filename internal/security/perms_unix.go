@@ -78,6 +78,13 @@ func enforceMode(path string, current, want fs.FileMode) error {
 	return nil
 }
 
+// transientRemoveDenial is what RemoveFile asks again about, and on Unix the
+// answer is nothing: EACCES and EPERM are the directory's mode or the sticky bit,
+// which do not change while we wait, and the transient refusal of F-170 is a
+// Windows state (a name with a delete pending) that has no Unix counterpart. The
+// Windows half is in perms_windows.go.
+func transientRemoveDenial(error) bool { return false }
+
 // DirPermsAreLoose reports whether perm grants anything to group or other. Used
 // by the boot check (SC-7) to decide whether to warn and tighten. Exported
 // because that check lives in cmd/cab-bridge, and this is the one place the
