@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/mcp"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
@@ -41,9 +42,17 @@ var (
 	errReplyBadID       = mcp.Refuse("this is not a valid message id")
 	errRecipientClosed  = mcp.Refuse("the recipient's bridge is not open")
 	errReplyUnreadable  = mcp.Refuse("the ask could not be read")
+	errReplyNotUTF8     = mcp.Refuse("the reply was refused: the call carries text that is not valid UTF-8, so nothing was written or sent. Send it again as UTF-8")
 )
 
 func (a *mcpApp) toolReply(ctx context.Context, raw json.RawMessage) (mcp.Result, error) {
+	// The bytes are checked BEFORE they are decoded: the server hands the raw arguments over
+	// with an invalid byte still in them, and json.Unmarshal into a string would silently turn
+	// it into U+FFFD, so the check after DecodeArgs would see a text that is already valid and
+	// different from what the caller sent (F-176, the reason is in checkReplyText).
+	if !utf8.Valid(raw) {
+		return mcp.Result{}, errReplyNotUTF8
+	}
 	var args replyArgs
 	if err := mcp.DecodeArgs(raw, &args); err != nil {
 		return mcp.Result{}, err

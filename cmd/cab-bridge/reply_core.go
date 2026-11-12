@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"time"
+	"unicode/utf8"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/routing"
@@ -104,6 +105,35 @@ func beginReply(mgr *session.Manager, sid string, sel replySelector, gate replyG
 	return txn, nil
 }
 
+// checkReplyText refuses a text that is not valid UTF-8 (F-176). The journal is JSON, and
+// JSON turns every invalid byte into U+FFFD: the text a transaction holds in memory and the
+// text it reads back from disk would differ, so the identity check that protects the journal
+// (session.SameTransaction) would refuse the very journal this command had just written.
+// Refusing the text up front, before any effect, is the only way that cannot happen.
+//
+// `what` names where the text came from, so the error points at the argument or the stream
+// the caller has to fix. The offset is relative to that text.
+func checkReplyText(what, s string) error {
+	off := invalidUTF8Offset(s)
+	if off < 0 {
+		return nil
+	}
+	return fmt.Errorf("reply: %s is not valid UTF-8 (first invalid byte at offset %d): this call wrote and sent nothing — send the text as UTF-8", what, off)
+}
+
+// invalidUTF8Offset is the byte offset of the first byte of s that does not belong to a valid
+// UTF-8 sequence, or -1 when s is valid. A real U+FFFD is valid: it decodes with size 3.
+func invalidUTF8Offset(s string) int {
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size == 1 {
+			return i
+		}
+		i += size
+	}
+	return -1
+}
+
 func runGate(gate replyGate, txn *session.ReplyTxn) error {
 	if gate == nil {
 		return nil
@@ -168,6 +198,12 @@ func cliReplySelector(mgr *session.Manager, cfg config.Config, sid string, args 
 		target, content, rerr := resolveReplyTarget(args, asks, known, stdin)
 		if rerr != nil {
 			return nil, rerr
+		}
+		// The text of an ARGUMENT was already checked by replyRun, before this selector
+		// could be skipped by a journal in flight. This is the check of the text read from
+		// stdin, which only happens here: a recovery never reads stdin, so it never needs it.
+		if cerr := checkReplyText("the message", content); cerr != nil {
+			return nil, cerr
 		}
 
 		closeIDs := oldestPage(asks, target)

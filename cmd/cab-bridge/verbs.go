@@ -649,6 +649,15 @@ func replyRun(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if len(args) > 2 {
 		return errors.New("reply: too many arguments — quote the message as one argument")
 	}
+	// Every argument is checked, even when a journal in flight will make beginReply drop the
+	// text: an argument was passed, so it is read, and a text that is not UTF-8 is refused
+	// whatever happens next (F-176). Stdin is NOT checked here: it is read only by the
+	// selector, and only when a new reply is built.
+	for i, arg := range args {
+		if cerr := checkReplyText(fmt.Sprintf("argument %d", i+1), arg); cerr != nil {
+			return cerr
+		}
+	}
 
 	cfg, err := loadConfigOrFail()
 	if err != nil {
