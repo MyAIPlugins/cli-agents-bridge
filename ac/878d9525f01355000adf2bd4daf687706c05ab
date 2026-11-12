@@ -1,0 +1,27 @@
+CHANGELOG.md
+  s_f8849908940048::t_453908f3c99c65 10-13
+README.md
+  s_f8849908940048::t_8ff0db177faa77 5,194-195,197
+SECURITY.md
+  s_f8849908940048::t_98859bf2029a4f 3,100
+docs/agent-setup.md
+  s_f8849908940048::t_74b1fce1eee9a3 188
+plugins/cli-agents-bridge/.claude-plugin/plugin.json
+  s_f8849908940048::t_599bd0a83d2443 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ac878d9525f01355000adf2bd4daf687706c05ab",
+  "prompts": {},
+  "sessions": {
+    "s_f8849908940048": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "37bcf92a-1982-4e9a-a4d3-17eecb17eeb9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
