@@ -1,0 +1,27 @@
+cmd/cab-bridge/reply_journal_gone_test.go
+  s_d5e186cda02d82::t_f230add87065c2 5-6,50-56,58-62,64-68,70-72,74-90,92-115,117-126
+  s_d5e186cda02d82::t_7c3a137509a48b 57
+  s_d5e186cda02d82::t_80d09383dd6e27 63
+  s_d5e186cda02d82::t_bf38412cb8d84e 69
+  s_d5e186cda02d82::t_0dd1fd03e02958 73
+  s_d5e186cda02d82::t_e7e3c1b613aba4 91
+  s_d5e186cda02d82::t_7e5eafc30a7a10 116
+cmd/cab-bridge/reply_journal_stale_test.go
+  s_d5e186cda02d82::t_ea13ec4e8e7502 36-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ac5d6abf218910be0d3781d07073a2fcf7fef697",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
