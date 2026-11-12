@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **On Windows, closing the Claude Desktop grant no longer fails now and then with "Access is denied"** (F-170). A delete that crosses another operation on the same name (another delete in flight, or a replace that lands between the open and the disposition of the delete) was refused for a few milliseconds. `security.RemoveFile` retries only that error, with the budget F-154 chose (6 attempts, 155 ms of waiting), and returns the real error when the budget runs out; on macOS and Linux nothing changes. The retry deletes by name, so it is used only where removing a newer file under the same name is a valid outcome (today the grant); the reply journal keeps its single delete. Measured on a Windows runner: without the fix 21 and 72 denied closes in two passes, with it 0 errors in 8112 and 6899 closes.
+
 ## [0.12.0] — 2026-11-12
 
 **The session lock is held by the operating system, and the bridge is steadier on Windows.** The lock is now `flock` on Unix and `LockFileEx` on Windows (F-160), so two live processes can no longer hold one session; this version keeps its state in a new folder, `layout-2/`, and shares no session file with older ones, so after the upgrade every agent joins again. On Windows a read that crosses a deletion no longer fails with "Access is denied" (F-154), and Claude Desktop's `next` is no longer refused right after another one (F-153). The CI runs on macOS, Windows and Linux for every change. The README has a part for people and a part for agents.

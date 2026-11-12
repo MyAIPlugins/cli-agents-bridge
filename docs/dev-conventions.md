@@ -320,3 +320,7 @@ On Windows `os.Stat` and `os.Lstat` record the path and load the file identity l
 ### A retry loop that decides on a sentinel (F-160)
 
 When a retry loop decides with `errors.Is(err, sentinel)`, a failure that must be final is not joined to the sentinel with `errors.Join`: it would be retried, and a later success would discard it. The final failure goes in the chain (`%w`), the cause in the text (`%v`).
+
+### A delete that retries is blind (F-170)
+
+`security.RemoveFile` retries a transient ACCESS_DENIED on Windows. The retry deletes by NAME and cannot tell a delete in flight from a replace of the name, so in the second case it removes the newer file. Use it only for a name where losing the newest content is a valid outcome of the caller's own operation (today only the Claude Desktop grant). It is not for the reply journal: the plan gate of F-170 showed, on the real code with the Windows error injected, that a retry there deletes the journal of another reply (F-176). A new caller goes into `removeFileCallers` (`internal/security/remove_callers_test.go`) with its reason, and a bare `os.Remove` in `internal/session` is a named exception in `TestBareRemovalsInSessionAreNamedExceptions` (`internal/session/remove_sites_test.go`): both tests fail on one that is not listed.
