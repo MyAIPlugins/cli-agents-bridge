@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -1062,7 +1063,12 @@ func driveReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *ses
 	for txn.ArchivedIndex < len(txn.CloseIDs) {
 		id := txn.CloseIDs[txn.ArchivedIndex]
 		src := filepath.Join(inboxDir, id+".json")
-		if err := transportfs.MoveToProcessed(src, processedDir); err != nil && !os.IsNotExist(err) {
+		// An ask that is already out of the inbox is the end state this step wants (a crash
+		// between the move and the write of the index leaves exactly that, and so does an ask
+		// closed by ack or tidy). MoveToProcessed wraps what it gets with %w, so the test has to
+		// be errors.Is: os.IsNotExist does not look inside a wrapped error, and with it the
+		// journal could never complete (F-176).
+		if err := transportfs.MoveToProcessed(src, processedDir); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("reply: archive %s: %w", id, err)
 		}
 		txn.ArchivedIndex++
