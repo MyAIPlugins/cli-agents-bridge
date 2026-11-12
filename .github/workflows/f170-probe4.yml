@@ -1,0 +1,117 @@
+name: F-170 probe 4
+
+# MEASUREMENT ONLY. This workflow exists on probe/f170-windows-4 and is never merged.
+#
+# Criterion 4 of the BAR of F-170: the defect reproduced, and then gone. It runs
+# internal/session/zz_probe4_f170_windows_test.go on a real Windows runner, twice: with the race
+# detector (the CI's own configuration, where the denied delete was seen) and without it. Each
+# run has two sides in the shape probe 3b found the defect in (a real opener, a real reader and a
+# closer paced 1:1 with the opener): OFF closes with the bare os.Remove and MUST be denied at
+# least once, or the run fails with "PREMISE NOT REPRODUCED"; ON closes with
+# mgr.CloseDesktopGrant, the fixed call, and every closer error fails the run.
+#
+# Unlike probe 3b, the test's own exit code MEANS something here (premise held and ON clean), so
+# the step records it and the last step turns it into the job's result. The log is printed in
+# full either way: a green job is not the verdict, the VERDICT line and the tables are.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  probe4:
+    name: Probe 4 on Windows
+    runs-on: windows-latest
+    # Each run is two sides of 90 s of stress, plus the compile (the race build is the slow one).
+    # Two runs: about 10 minutes plus setup. 30 leaves room for a slow runner without hiding a hang.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false # nothing in this job pushes
+      - name: Set up Go (the toolchain line of go.mod)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      # Same step as in ci.yml.
+      - name: The Go that runs is the toolchain line of go.mod
+        run: |
+          want="$(awk '$1 == "toolchain" { print $2; exit }' go.mod | tr -d '\r')"
+          got="$(go env GOVERSION | tr -d '\r')"
+          if [ -z "${want}" ] || [ "${got}" != "${want}" ]; then
+            echo "::error title=wrong Go toolchain::go.mod asks for '${want:-<no toolchain line>}', this job runs '${got}'"
+            exit 1
+          fi
+          echo "Go ${got} is the toolchain line of go.mod"
+      - name: The probe file is there, and the fix under it
+        run: |
+          test -f internal/session/zz_probe4_f170_windows_test.go
+          test -f internal/security/remove.go
+      - name: Probe 4 with the race detector
+        id: race
+        env:
+          F170_PROBE: "1"
+        run: |
+          # No -e: the exit code of go test is recorded, and the last step decides.
+          set +e
+          go test -race -count=1 -timeout 20m -run '^TestProbe4FixOnOff$' -v ./internal/session/ > probe4-race.log 2>&1
+          echo "$?" > probe4-race.rc
+          cat probe4-race.log
+          echo "go test exit code: $(cat probe4-race.rc)"
+      - name: Probe 4 without the race detector
+        id: plain
+        if: ${{ !cancelled() }}
+        env:
+          F170_PROBE: "1"
+        run: |
+          set +e
+          go test -count=1 -timeout 20m -run '^TestProbe4FixOnOff$' -v ./internal/session/ > probe4-plain.log 2>&1
+          echo "$?" > probe4-plain.rc
+          cat probe4-plain.log
+          echo "go test exit code: $(cat probe4-plain.rc)"
+      - name: The probe ran, its premise held, and the fixed close returned no error
+        if: ${{ !cancelled() }}
+        run: |
+          status=0
+          for pass in race plain; do
+            log="probe4-${pass}.log"
+            rc="probe4-${pass}.rc"
+            if [ ! -f "${log}" ] || [ ! -f "${rc}" ]; then
+              echo "::error title=no log::${log} or ${rc} was not written"
+              status=1
+              continue
+            fi
+            if ! grep -q 'PROBE 4 fix off/on' "${log}"; then
+              echo "::error title=the probe did not print its tables::${log}"
+              status=1
+            fi
+            if grep -q -- '--- SKIP' "${log}"; then
+              echo "::error title=the probe was skipped::${log}"
+              status=1
+            fi
+            if grep -q 'PREMISE NOT REPRODUCED' "${log}"; then
+              echo "::error title=premise not reproduced (${pass})::the OFF side was never denied"
+              grep 'PREMISE NOT REPRODUCED' "${log}"
+              status=1
+            fi
+            if grep -q 'ON CLOSER ERRORS' "${log}"; then
+              echo "::error title=the fixed close returned an error (${pass})::see the table"
+              grep 'ON CLOSER ERRORS' "${log}"
+              status=1
+            fi
+            if [ "$(cat "${rc}")" != "0" ]; then
+              echo "::error title=go test did not pass (${pass})::exit code $(cat "${rc}")"
+              status=1
+            fi
+            echo "--- ${pass}: VERDICT and SIDE ERRORS lines"
+            grep -E 'VERDICT|SIDE ERRORS|CLOSER ERRORS' "${log}" || true
+          done
+          exit "${status}"
