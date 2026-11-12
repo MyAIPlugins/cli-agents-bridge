@@ -1,0 +1,20 @@
+cmd/cab-bridge/mcp_next_test.go
+  s_d5e186cda02d82::t_ca8294163caff0 95-101,108-109
+  s_d5e186cda02d82::t_33aaaaf028c7e0 50-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "315b9ce442b7a066217ff8889413b6ce6a24207e",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
