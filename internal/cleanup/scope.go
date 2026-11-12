@@ -407,8 +407,14 @@ func retireWithSeams(dataDir, sid string, now func() time.Time, seams retireSeam
 // retirement returns it at once, with the manifest, the lock file and every message that
 // was not moved still in place (archiveMessages says what a stop leaves behind).
 func retireSession(dataDir, sid, sessionDir, dateDir string, seams retireSeams) error {
-	if _, err := os.Stat(filepath.Join(sessionDir, "reply-txn.json")); err == nil {
+	// Only "it is not there" means no reply is in flight. Any other answer (a loop, a permission,
+	// an I/O error) is a journal that could not be examined, and a retirement that cannot know
+	// does not delete: it stops before touching anything, naming the file (F-176).
+	journal := filepath.Join(sessionDir, "reply-txn.json")
+	if _, err := os.Stat(journal); err == nil {
 		return fmt.Errorf("%w: session %q has a reply transaction in flight", ErrSessionBusy, sid)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("cleanup: session %q: cannot tell whether a reply is in flight (%s): %w", sid, journal, err)
 	}
 
 	if err := archiveMessages(sid, sessionDir, filepath.Join(dataDir, "archive", dateDir, sid), seams); err != nil {
