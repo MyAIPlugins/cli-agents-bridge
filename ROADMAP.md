@@ -5,7 +5,9 @@
 
 ---
 
-## Status corrente — 2026-11-11
+## Status corrente: 2026-11-12
+
+**v0.12.0 (12 nov): il lock di sessione e' del sistema operativo, e il bridge e' piu' stabile su Windows ✅ PUBBLICATA**. `[E]` commit di release `ac878d9` (PR #39), tag `v0.12.0`, Release GitHub pubblicata come Latest alle 09:34 UTC con sei asset (darwin amd64 e arm64, linux amd64 e arm64, windows amd64, `checksums.txt`); CI verde sulla PR e su `main` (9 job), run di release 43191738788 verde. Contenuto: F-153..F-164; il CHANGELOG `[0.12.0]` li descrive tutti tranne F-158, che tocca solo un test. F-160 (lock del kernel e stato in `layout-2/`) costa un nuovo `join` a chi aggiorna. Prima del rilascio, sempre il 12 nov: il README dice che "readable only by you" vale su macOS e Linux (PR #38), e `SECURITY.md` dice che SC-1, SC-2 e la meta' di SC-7 sui permessi non hanno controparte su Windows, con la nota di onesta' su cio' che e' stato verificato per questa versione. `[E]` provato solo l'asset darwin arm64: checksum uguale a quello pubblicato, `cab-bridge version` = `0.12.0`, installato sul Mac del VAL al posto del build `0.11.0-65-g5ee3510` (che non aveva F-153 e F-154), `peers` regolare. **Non provati**: gli asset Linux e Windows, e il prompt di `docs/agent-setup.md` su un Windows vero con PowerShell 5.1. F-170 non e' nella versione: gate chiusi, PR #40.
 
 **Il team ha un metodo nuovo (8 nov)**: BAR prima di ogni lotto, gate del piano per i lotti grandi, rubriche e regole comuni, SEC come revisore di sicurezza. I testi principali stanno fuori da git (versioni personali); nel repo arrivano le versioni inglesi e generiche. Lotti in corso:
 
