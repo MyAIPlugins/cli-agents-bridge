@@ -86,6 +86,11 @@ type mcpApp struct {
 	// poll_interval_ms the CLI's own wait uses, so there is one setting for it.
 	pollInterval time.Duration
 
+	// afterBeginReply is a test seam: it runs in `reply` between the moment the call holds its
+	// copy of the journal and the moment it drives it, which is where another driver can
+	// overtake it (F-176). Nil in production.
+	afterBeginReply func(*session.ReplyTxn)
+
 	joinMu   sync.Mutex // one join at a time: the identity lock is per open file
 	mu       sync.Mutex // guards projects
 	projects map[string]*mcpProject

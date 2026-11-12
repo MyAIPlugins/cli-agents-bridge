@@ -42,7 +42,14 @@ var (
 	errReplyBadID       = mcp.Refuse("this is not a valid message id")
 	errRecipientClosed  = mcp.Refuse("the recipient's bridge is not open")
 	errReplyUnreadable  = mcp.Refuse("the ask could not be read")
-	errReplyNotUTF8     = mcp.Refuse("the reply was refused: the call carries text that is not valid UTF-8, so nothing was written or sent. Send it again as UTF-8")
+	// The journal this call was completing is no longer the call's (it is gone, or it is another
+	// reply's). The words are about what the CHECK did: the call as a whole may already have
+	// delivered the response and archived some asks, so it does not say nothing happened, and
+	// it does not say who removed the file or show what any journal held.
+	errReplyJournalChanged = mcp.Refuse("the reply was not completed by this call: the journal on record is no longer the one this call was completing, " +
+		"and this check did not rewrite or delete the journal it found. The response may already have been delivered and the archiving may already have advanced: " +
+		"look at your asks with `next` before replying again")
+	errReplyNotUTF8 = mcp.Refuse("the reply was refused: the call carries text that is not valid UTF-8, so nothing was written or sent. Send it again as UTF-8")
 )
 
 func (a *mcpApp) toolReply(ctx context.Context, raw json.RawMessage) (mcp.Result, error) {
@@ -80,6 +87,9 @@ func (a *mcpApp) toolReply(ctx context.Context, raw json.RawMessage) (mcp.Result
 		return mcp.Result{}, a.explainReplyRefusal(err)
 	}
 
+	if a.afterBeginReply != nil {
+		a.afterBeginReply(txn)
+	}
 	resumed := !selected // a journal was already in flight: it outranked this call's arguments
 	wasSent := txn.State == session.ReplyTxnSent
 	// A fresh reply passed the gate, so its recipient is an open val and may be named.
@@ -96,6 +106,9 @@ func (a *mcpApp) toolReply(ctx context.Context, raw json.RawMessage) (mcp.Result
 	note := func(format string, v ...any) { a.logf(strings.TrimSuffix(format, "\n"), v...) }
 	if derr := driveReplyTxn(a.mgr, a.cfg, p.sid, txn, note); derr != nil {
 		a.logf("reply could not be completed: %v", derr)
+		if errors.Is(derr, session.ErrReplyTxnGone) || errors.Is(derr, session.ErrReplyTxnNotYours) {
+			return mcp.Result{}, errReplyJournalChanged
+		}
 		return mcp.Result{}, mcp.Refuse("the reply could not be completed. It is on record and the next `reply` finishes it without sending it twice")
 	}
 	return mcp.Result{Content: []mcp.Block{mcp.Text(describeReply(txn, args.AskID, toName, resumed, wasSent))}}, nil
