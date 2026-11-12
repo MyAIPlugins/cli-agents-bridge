@@ -16,7 +16,10 @@
 //     archive/<YYYY-MM-DD>/<sessionID>/<subdir>/ preserving filenames
 //     (rename(2) atomic same-fs). AUDIT-1: all three subdirs are archived,
 //     not just processed/, so unread inbox messages are never silently lost.
-//  2. RemoveAll session dir (sessions/<sessionID>/).
+//     F-171: if anything cannot be archived the pipeline stops HERE, nothing is
+//     removed, the error names the file and the next pass tries again.
+//  2. Retire the session: its manifest first, then everything else, then the lock
+//     file and the directory (archiveAndRemoveSession).
 //
 // After per-session pass, retention sweep removes archive/<YYYY-MM-DD>/
 // directories older than RetentionDays (default 7, GDPR-1 data
@@ -161,9 +164,10 @@ func scopeOfSession(dataDir, sessionID string) string {
 }
 
 // Run executes the cleanup pipeline. Returns a Result describing what was
-// removed plus any error that aborted the run. Best-effort: per-session
-// failures are skipped silently so a corrupt manifest cannot block cleanup
-// of the rest.
+// removed plus any error that aborted the run. A session that cannot be retired
+// does not abort a global sweep: it is reported in Result.SessionsFailed with
+// the reason, and one whose manifest cannot be read is skipped and announced. For
+// my-session the failure is the returned error.
 func Run(_ context.Context, opts Options) (*Result, error) {
 	if opts.Now == nil {
 		opts.Now = func() time.Time { return time.Now().UTC() }
@@ -275,8 +279,16 @@ var messageSubdirs = []string{"inbox", "outbox", "processed"}
 // archiveAndRemoveSession archives every message-bearing subdir (inbox/,
 // outbox/, processed/) into archive/<date>/<sid>/<subdir>/ and then retires the
 // session: its manifest goes first, then everything else, and last the lock file
-// and the directory, after the lock is released. Failures inside the archive copy
-// are silenced so a missing or empty subdir does not block delete (best-effort).
+// and the directory, after the lock is released.
+//
+// THE ARCHIVE IS NOT BEST-EFFORT (F-171). It used to be: a listing that failed, an archive
+// folder that could not be created and a rename that was refused were all skipped, and the
+// removal that followed deleted the message, so it was in neither the session nor the
+// archive and nothing said so. Now the first error of the archive stops the retirement
+// BEFORE the manifest: the session stays, nothing is deleted, the error names the file or
+// the folder and says what to do, and the next cleanup pass tries again (archiveMessages, in
+// archive.go, says what a stop leaves behind). A folder that does not exist, or is empty, is
+// not an error: there is nothing to archive.
 //
 // AUDIT-1 fix: previously only processed/ was archived, so RemoveAll silently
 // dropped any UNREAD inbox messages (and sent outbox copies) — reintroducing
@@ -345,6 +357,15 @@ type retireSeams struct {
 	// afterRelease runs after the lock is released and before the lock file and the
 	// directory are removed.
 	afterRelease func()
+	// readDir, mkdirAll and rename are the three calls the archive step makes on the disk
+	// (archiveMessages). nil means the production one: os.ReadDir, os.MkdirAll and
+	// transportfs.RenameAtomic. A test replaces one to make that call fail the way a
+	// transient refusal does, which a permission on a folder cannot do (it refuses the
+	// listing and the later removal together), and which on Windows has no permission to
+	// stand on at all.
+	readDir  func(string) ([]os.DirEntry, error)
+	mkdirAll func(string, os.FileMode) error
+	rename   func(oldpath, newpath string) error
 }
 
 func retireWithSeams(dataDir, sid string, now func() time.Time, seams retireSeams) error {
@@ -364,7 +385,7 @@ func retireWithSeams(dataDir, sid string, now func() time.Time, seams retireSeam
 		return fmt.Errorf("cleanup: session %q: acquire lock: %w", sid, lerr)
 	}
 
-	rerr := retireSession(dataDir, sid, sessionDir, dateDir, seams.underLock)
+	rerr := retireSession(dataDir, sid, sessionDir, dateDir, seams)
 	if uerr := release(); uerr != nil {
 		rerr = errors.Join(rerr, fmt.Errorf("cleanup: session %q: release lock: %w", sid, uerr))
 	}
@@ -381,29 +402,17 @@ func retireWithSeams(dataDir, sid string, now func() time.Time, seams retireSeam
 // retireSession is the part of the removal that runs under the session lock: the
 // reply-transaction check, the archive, the removal of the manifest and then of
 // every other entry except the lock file.
-func retireSession(dataDir, sid, sessionDir, dateDir string, underLock func()) error {
+//
+// The archive comes before the manifest and is not optional: if it returns an error the
+// retirement returns it at once, with the manifest, the lock file and every message that
+// was not moved still in place (archiveMessages says what a stop leaves behind).
+func retireSession(dataDir, sid, sessionDir, dateDir string, seams retireSeams) error {
 	if _, err := os.Stat(filepath.Join(sessionDir, "reply-txn.json")); err == nil {
 		return fmt.Errorf("%w: session %q has a reply transaction in flight", ErrSessionBusy, sid)
 	}
 
-	for _, sub := range messageSubdirs {
-		srcDir := filepath.Join(sessionDir, sub)
-		entries, err := os.ReadDir(srcDir)
-		if err != nil || len(entries) == 0 {
-			continue // missing or empty subdir — nothing to archive
-		}
-		archDir := filepath.Join(dataDir, "archive", dateDir, sid, sub)
-		if err := os.MkdirAll(archDir, 0o700); err != nil {
-			continue // best-effort: a failed archive must not block the rest
-		}
-		for _, e := range entries {
-			if e.IsDir() {
-				continue // message files only; no nested dirs expected
-			}
-			src := filepath.Join(srcDir, e.Name())
-			dst := filepath.Join(archDir, e.Name())
-			_ = os.Rename(src, dst) // best-effort, same-fs rename
-		}
+	if err := archiveMessages(sid, sessionDir, filepath.Join(dataDir, "archive", dateDir, sid), seams); err != nil {
+		return err
 	}
 
 	// The retirement itself: from here on every lock on this session is refused.
@@ -423,8 +432,8 @@ func retireSession(dataDir, sid, sessionDir, dateDir string, underLock func()) e
 			failures = append(failures, fmt.Errorf("cleanup: session %q: remove %s: %w", sid, e.Name(), err))
 		}
 	}
-	if underLock != nil {
-		underLock()
+	if seams.underLock != nil {
+		seams.underLock()
 	}
 	return errors.Join(failures...)
 }

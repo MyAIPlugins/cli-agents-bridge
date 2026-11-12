@@ -24,9 +24,9 @@ type Orphan struct {
 }
 
 // GCOrphans sweeps the CALLER'S SCOPE under DataDir/sessions/ and removes
-// sessions that are orphaned with certainty, archiving each one (processed/*
-// into archive/<date>/<id>/) before deletion exactly like cleanup.Run — no
-// silent data loss.
+// sessions that are orphaned with certainty, archiving each one (inbox/, outbox/
+// and processed/ into archive/<date>/<id>/) before deletion exactly like
+// cleanup.Run — no silent data loss.
 //
 // SCOPE, and why it is not optional. This runs on every `join` and every
 // `register`: nobody asks for it, it is part of saying hello. Without the filter
@@ -76,7 +76,10 @@ type Orphan struct {
 // archive/remove skips it WITHOUT aborting the sweep, mirroring globalSweep. A
 // failed remove is not silent any more (F-160): the sessions that were removed
 // are returned together with errors.Join of the ones that were not, so the
-// caller sees both. A busy session (lock held, reply in flight) is skipped
+// caller sees both. A failed ARCHIVE leaves the session as it is (F-171, see
+// archiveAndRemoveSession): it stays collectable, its error names the file, and
+// the next pass tries again, which for a failure that lasts means the same error
+// at every pass. A busy session (lock held, reply in flight) is skipped
 // without an error: the next pass finds it again. The returned slice is always
 // non-nil (empty, not nil) for clean JSON/length consumers, consistent with
 // cleanup.Run (BUG-B).
