@@ -257,3 +257,32 @@ func TestTransientRemoveDenial_IsFalseOnUnix(t *testing.T) {
 		assert.Empty(t, s.waits, errno.Error())
 	}
 }
+
+// F-170, the wiring of production. The tests above go through the seam (a scripted
+// remove, a fake sleep), and the seam is exactly where they stop: RemoveFile itself,
+// which is what the grant calls, passes os.Remove, time.Sleep and the platform predicate,
+// and a wrong predicate there would leave every one of them green. This is the oracle for
+// it on Unix: a directory without write permission refuses the unlink with EACCES, and
+// that does not change while we wait, so RemoveFile must return it on the first call. A
+// predicate that retried everything would go through the whole budget and say "attempts".
+// The test does not time anything: the message is the proof.
+func TestRemoveFile_AnUnlinkRefusedForGoodReturnsAtOnceOnUnix(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("running as root: a directory mode does not refuse root, so the refusal cannot be built")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "desktop-grant.json")
+	require.NoError(t, os.WriteFile(path, []byte("GRANT"), 0o600))
+	require.NoError(t, os.Chmod(dir, 0o500))
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	premise := os.Remove(path)
+	require.ErrorIs(t, premise, syscall.EACCES,
+		"premise not reproduced: os.Remove did not answer EACCES in a directory without write permission")
+
+	err := RemoveFile(path)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, syscall.EACCES, "the real error, not a generic one")
+	assert.NotContains(t, err.Error(), "attempts", "a refusal that does not pass is not asked again")
+	assert.FileExists(t, path, "nothing was removed")
+}
