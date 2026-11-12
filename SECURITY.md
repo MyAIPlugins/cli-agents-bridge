@@ -36,8 +36,9 @@ Explicitly NOT defended against, with rationale:
 
 ### P0 — required since v0.2.0, active
 
-- **SC-1 umask 077**: `syscall.Umask(0o077)` set in `cmd/cab-bridge/main.go init()` before any file/dir creation. Every file created by the binary is 0o600, every directory 0o700.
+- **SC-1 umask 077**: `syscall.Umask(0o077)` set in `cmd/cab-bridge/main.go init()` before any file/dir creation. Every file created by the binary is 0o600, every directory 0o700 (macOS and Linux; for Windows see below).
 - **SC-2 dir perms 700**: `internal/session/manager.go::Register` enforces `os.MkdirAll(sessionDir, 0o700)` plus explicit `os.Chmod` for pre-existing dirs. Same enforcement in `internal/transport/fs/process.go::MoveToProcessed` for `processed/` and in cleanup archive paths.
+- **SC-1, SC-2 and the permission half of SC-7 on Windows: no counterpart.** Windows has no process umask, and `os.Chmod` only toggles the read-only bit, so the 0o600/0o700 modes above are not applied there (`internal/security/perms_windows.go::enforceMode` is a no-op, and `DirPermsAreLoose` always reports false, so SC-7 never warns or tightens). Files and directories take the ACL inherited from `%USERPROFILE%`, which by default grants the user, SYSTEM and Administrators. The protection is inherited, not enforced: a data dir placed under a more permissive ACL is not tightened. The symlink and owner checks (SC-3, SC-7) still apply, with the owner SID in place of the uid. Sources: `cmd/cab-bridge/umask_windows.go`, `internal/security/perms_windows.go`.
 - **SC-4 session-ID regex**: `internal/security/perms.go::ValidateSessionID` enforces `^[a-z0-9]{6,32}$`. Applied on every field that becomes a path component (`sessionId`, `from`, `to`, `inReplyTo`) at the message validation gateway and on every session-resolution path (`resolveSessionID`, `receive.go`, `migrate-from-patil`).
 - **SC-5 atomic write**: `internal/transport/fs/atomic.go::AtomicWriteBytes` uses `os.CreateTemp(filepath.Dir(target), ...)` (same-filesystem guarantee) + `f.Sync()` + `os.Rename`. EXDEV surfaces as explicit error (no silent copy-fallback).
 
