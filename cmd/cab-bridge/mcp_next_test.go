@@ -47,6 +47,22 @@ func (j *joinedDemo) put(id, from, typ, content string) {
 	plantInboxAt(j.e.t, j.e.dataDir, j.arcSID, id, from, typ, content, j.e.clock.now().Add(-time.Minute))
 }
 
+// stopHeartbeats ends the heartbeat of every identity the app holds and waits until its
+// goroutine has returned, so no write of it is in flight afterwards. The identity itself
+// stays as it is (the session is not marked done and its lock is kept): that is what
+// app.close does at the end of the test, and it copes with a heartbeat already stopped.
+func (j *joinedDemo) stopHeartbeats() {
+	j.e.t.Helper()
+	for _, p := range j.app.joinedProjects() {
+		p.stopBeats()
+		select {
+		case <-p.beatsDone:
+		case <-time.After(10 * time.Second):
+			j.e.t.Fatalf("the heartbeat of %s did not stop", p.sid)
+		}
+	}
+}
+
 func (j *joinedDemo) next(wait int) toolResult {
 	j.e.t.Helper()
 	return j.c.call("next", map[string]any{"wait_seconds": wait})
@@ -76,16 +92,21 @@ func TestMCPNext_ChangesNothingOnDisk(t *testing.T) {
 	j.put("msg-aaaaaaaaaaaa", j.valSID, message.TypeQuery, "an ask")
 	j.put("msg-bbbbbbbbbbbb", j.valSID, message.TypeNotify, "a tell")
 	sessionDir := filepath.Join(j.e.dataDir, "sessions", j.arcSID)
+	// F-175. The heartbeat of the architect rewrites manifest.json every tick through a
+	// temp file in this very directory, so a snapshot taken while it runs can catch that
+	// file half way, or list it and lose it before reading it. It is stopped, and waited
+	// for, before the first snapshot: from then on nothing but `next` could write here,
+	// which is exactly what the test asks. Ignoring .tmp.* instead would hide the leftover
+	// of a `next` that wrote and did not clean up, the defect this test exists to catch.
+	j.stopHeartbeats()
 	before := snapshotDir(t, sessionDir)
 
 	require.False(t, j.next(0).IsError)
 	require.False(t, j.next(0).IsError)
 
 	after := snapshotDir(t, sessionDir)
-	// The heartbeat rewrites the manifest while the process lives; everything else is
-	// compared byte for byte, and nothing may have appeared (wake cursor, listener).
-	delete(before, "manifest.json")
-	delete(after, "manifest.json")
+	// Everything is compared byte for byte, the manifest included, and nothing may have
+	// appeared (wake cursor, listener).
 	assert.Equal(t, before, after, "next must not move, mark or create anything in the session")
 	assert.NoFileExists(t, filepath.Join(sessionDir, "wake-cursor.json"))
 	assert.NoFileExists(t, filepath.Join(sessionDir, "listener.json"))
