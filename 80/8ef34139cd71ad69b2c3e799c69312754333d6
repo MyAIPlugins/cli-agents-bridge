@@ -1,0 +1,31 @@
+internal/security/remove.go
+  s_d5e186cda02d82::t_2fc820019aa0c2 12-13
+  s_d5e186cda02d82::t_084ab9db808fee 22-26,40-42
+  s_d5e186cda02d82::t_b75f21fd1da78d 43
+internal/security/remove_callers_test.go
+  s_d5e186cda02d82::t_968bd3ee26a394 1-108,114-116,118,120-123,125-131
+  s_d5e186cda02d82::t_f88a5ae7121271 109-113,117,119,124
+internal/security/remove_windows_test.go
+  s_d5e186cda02d82::t_c255660d984ff7 83-104
+internal/session/remove_sites_test.go
+  s_d5e186cda02d82::t_37d0d8ca4c7277 7-8,10,23-28,30-41,43-53,55-57,59-68,72,80-89,91-93,95-97,99-108,110-117
+  s_d5e186cda02d82::t_b208ab19723441 73-77,79,90
+internal/security/perms_unix_test.go
+  s_d5e186cda02d82::t_c255660d984ff7 260-288
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "808ef34139cd71ad69b2c3e799c69312754333d6",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
