@@ -1,0 +1,48 @@
+internal/cleanup/archive_real_test.go
+  s_d5e186cda02d82::t_8d2dab22bd42fd 165-167
+  s_d5e186cda02d82::t_b578ce77ab8ccc 148-150
+  s_d5e186cda02d82::t_c9cdf13ab3505b 15
+  s_d5e186cda02d82::t_e7299b7d16de0a 128-130
+  s_d5e186cda02d82::t_506a89d419e297 127,147,164
+  s_d5e186cda02d82::t_d0d7c591c0e6b4 1-14,16-126,131-146,151-163,168-173
+internal/cleanup/archive_windows_test.go
+  s_d5e186cda02d82::t_2dd293067573a8 1-47
+internal/cleanup/archive.go
+  s_d5e186cda02d82::t_cc8a3e343522b5 1-121
+internal/cleanup/archive_seam_test.go
+  s_d5e186cda02d82::t_c5bb08378cb1ce 32,34
+  s_d5e186cda02d82::t_1eb87a07284273 1-27,31,33,35-36,38-184
+  s_d5e186cda02d82::t_e99ecf609d1c08 28-30,37
+cmd/cab-bridge/autogc_archive_test.go
+  s_d5e186cda02d82::t_00812914a19372 1-113
+internal/cleanup/structure_test.go
+  s_d5e186cda02d82::t_581fa4f45a7492 1-114
+internal/cleanup/scope.go
+  s_d5e186cda02d82::t_b4fd75f67c1a18 405-409,414-415
+  s_d5e186cda02d82::t_fb588e86785dd2 435-436
+  s_d5e186cda02d82::t_6972d738689410 19-22,167-170,282-291
+  s_d5e186cda02d82::t_09cc1a8d6efc7f 388
+  s_d5e186cda02d82::t_f281da081673a3 360-368
+internal/cleanup/archive_unix_test.go
+  s_d5e186cda02d82::t_506a89d419e297 47-49,66-68,87-90
+  s_d5e186cda02d82::t_9dce53892de459 1-46,50-65,69-86,91-94
+internal/cleanup/gc.go
+  s_d5e186cda02d82::t_616d2ce9040627 79-82
+  s_d5e186cda02d82::t_c8886bb87dcafc 27-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bda46d8aabede834af2a488d4c70c8e48264d8f6",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
