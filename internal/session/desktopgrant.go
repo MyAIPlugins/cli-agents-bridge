@@ -124,11 +124,25 @@ func (m *Manager) OpenDesktopGrant(sessionID string, ttl time.Duration) (Desktop
 
 // CloseDesktopGrant removes the grant. Closing a grant that is not open is not an
 // error: the end state is the one that was asked for.
+//
+// F-170: on Windows a delete that crosses another delete of this name, or an open
+// that replaces the file under it, is sometimes answered ACCESS_DENIED for a few
+// milliseconds and then gets the true answer. The removal goes through
+// security.RemoveFile, which asks again, within the bound of F-154, and reports the
+// real error if the refusal outlasts it. It runs outside every session lock
+// (desktop.go), so the wait holds nobody up.
+//
+// The retry is blind, by name (see RemoveFile). Two operations that overlap, an
+// open and this close, have two valid orders: if the open published a new grant
+// while the close was running, the retry may remove that one too, and that is the
+// order "open, then close". What this call reports is the outcome of its own
+// operation, that the grant it found is gone; it does not promise that nobody opens
+// another one afterwards, and a close does not "win" over a concurrent open.
 func (m *Manager) CloseDesktopGrant(sessionID string) error {
 	if err := security.ValidateSessionID(sessionID); err != nil {
 		return fmt.Errorf("desktop grant: %w", err)
 	}
-	if err := os.Remove(m.desktopGrantPath(sessionID)); err != nil && !os.IsNotExist(err) {
+	if err := security.RemoveFile(m.desktopGrantPath(sessionID)); err != nil {
 		return fmt.Errorf("desktop grant: remove: %w", err)
 	}
 	return nil
