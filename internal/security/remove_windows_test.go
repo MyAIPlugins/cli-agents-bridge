@@ -80,3 +80,25 @@ func TestRemoveFile_ADeleteHeldForeverReportsAccessDeniedAfterTheBudget(t *testi
 		5 * time.Millisecond, 10 * time.Millisecond, 20 * time.Millisecond, 40 * time.Millisecond, 80 * time.Millisecond,
 	}, s.waits)
 }
+
+// TestRemoveFile_AHeldDeleteReportsAccessDeniedThroughTheProductionWiring calls RemoveFile
+// itself, not the seam: the tests above pass os.Remove, a fake sleep and the predicate by
+// hand, so the cablaggio of production (os.Remove, time.Sleep, transientRemoveDenial) had
+// no oracle on the platform of the defect, and a predicate that said "never" there would
+// have left them green (CRI2, M1). The delete is held forever, so the call goes through
+// the whole budget with the REAL clock; what is asserted is deterministic: the error is
+// the real ACCESS_DENIED, the message says six attempts, and the call took at least the
+// requested backoff (time.Sleep never returns early). A predicate that did not retry
+// would return at once, with no "attempts" and no wait.
+func TestRemoveFile_AHeldDeleteReportsAccessDeniedThroughTheProductionWiring(t *testing.T) {
+	path, _ := deleteInFlight(t, t.TempDir(), "desktop-grant.json")
+
+	start := time.Now()
+	err := RemoveFile(path)
+	elapsed := time.Since(start)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, windows.ERROR_ACCESS_DENIED, "the real cause, not a generic one")
+	assert.Contains(t, err.Error(), "6 attempts")
+	assert.GreaterOrEqual(t, elapsed, backoffTotal(deniedAttempts, deniedFirstDelay), "the waits were real")
+}

@@ -9,8 +9,8 @@ import (
 
 // F-170: on Windows a delete that crosses another operation on the same name is
 // sometimes answered "Access is denied", and a few milliseconds later the name
-// gives the true answer. Probes 3 and 3b (referti/f170-probe3.log and
-// f170-probe3b.log) found two ways in, and they look the same from the caller:
+// gives the true answer. Two probes on a Windows runner (F-170 in ROADMAP.md) found
+// two ways in, and they look the same from the caller:
 //
 //   - another delete of the same name is in flight (the name answers
 //     STATUS_DELETE_PENDING until that deleter's handle closes);
@@ -19,9 +19,11 @@ import (
 //     file is the one now standing under the name.
 //
 // RemoveFile asks again, briefly, with the budget F-154 already chose (see
-// denied_retry.go: there is no second budget). NotExist is the success it always
-// was for a delete: the end state is the one that was asked for. Any other error,
-// and an ACCESS_DENIED that outlasts the budget, comes back as the real error.
+// denied_retry.go): it adds no budget of its own. The rename has its own, F-133
+// (rename_windows.go), and unifying the three is a design of its own. NotExist is
+// the success it always was for a delete: the end state is the one that was asked
+// for. Any other error, and an ACCESS_DENIED that outlasts the budget, comes back
+// as the real error.
 //
 // THE CONTRACT A CALLER MUST ACCEPT. The retry is BLIND: it deletes by NAME, and
 // it cannot tell the two ways in apart. In the second one it removes the newer
@@ -34,6 +36,10 @@ import (
 // examined and refused in the F-170 plan gate: the name is reused by a different
 // transaction, and the retry would delete the journal that transaction just
 // created (an executed interleaving, not a hypothesis).
+//
+// WHO MAY CALL IT is a list that fails: remove_callers_test.go enumerates every
+// caller in the repository and goes red on a new one, so adding a caller is a
+// decision made in a diff, with the reason written next to the name.
 //
 // Which errors are worth asking again about is decided per platform:
 // transientRemoveDenial in perms_windows.go says ACCESS_DENIED, the one in
