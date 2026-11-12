@@ -2,7 +2,7 @@
 
 Let your AI coding agents talk to each other. Run Claude Code, Codex CLI or any agent with a shell in separate terminal windows on the same computer, and they can hand each other work, ask questions and report back, without you copying text between windows.
 
-**Status**: v0.11.0 (shipped). See [CHANGELOG.md](./CHANGELOG.md) and [Releases](https://github.com/MyAIPlugins/cli-agents-bridge/releases).
+**Status**: v0.12.0 (shipped). See [CHANGELOG.md](./CHANGELOG.md) and [Releases](https://github.com/MyAIPlugins/cli-agents-bridge/releases).
 
 **Setting it up with an agent?** Skip to [For agents](#for-agents).
 
@@ -191,9 +191,10 @@ For a person: copy the prompt at the top of that page into your agent, and it do
 
 ## Versions
 
-- **v0.11.0** (current): Claude Desktop joins the bridge, through `cab-bridge mcp`.
+- **v0.12.0** (current): the session lock is held by the operating system, and fixes that matter on Windows. State moves to a new folder, so agents join again after the upgrade (details in [CHANGELOG.md](./CHANGELOG.md)).
+- **v0.11.0**: Claude Desktop joins the bridge, through `cab-bridge mcp`.
 
-`main` is ahead of the latest release: the changes, including fixes that matter on Windows, are under Unreleased in [CHANGELOG.md](./CHANGELOG.md), with every earlier release. To use `main` now, build from source with Go 1.25 or later: `make build` on macOS and Linux puts the binary in `bin/`; on Windows, `go build -o bin\cab-bridge.exe ./cmd/cab-bridge`.
+`main` can be ahead of the latest release: what is not released yet is under Unreleased in [CHANGELOG.md](./CHANGELOG.md), with every earlier release. To use `main`, build from source with Go 1.25 or later: `make build` on macOS and Linux puts the binary in `bin/`; on Windows, `go build -o bin\cab-bridge.exe ./cmd/cab-bridge`.
 
 ## Contributing
 

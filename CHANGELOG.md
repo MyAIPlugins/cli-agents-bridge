@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-11-12
+
+**The session lock is held by the operating system, and the bridge is steadier on Windows.** The lock is now `flock` on Unix and `LockFileEx` on Windows (F-160), so two live processes can no longer hold one session; this version keeps its state in a new folder, `layout-2/`, and shares no session file with older ones, so after the upgrade every agent joins again. On Windows a read that crosses a deletion no longer fails with "Access is denied" (F-154), and Claude Desktop's `next` is no longer refused right after another one (F-153). The CI runs on macOS, Windows and Linux for every change. The README has a part for people and a part for agents.
+
 ### Added
 - **`cab-bridge findings add|stale`, a registry of the findings a team of agents raises on plans and diffs** (F-156). `add` reads one JSON row on stdin and appends it to `<repository root>/.handover/findings.tsv`, one registry for all the worktrees of a repository; `stale` lists the findings still open after `findings_stale_days` (7 by default, `CAB_FINDINGS_STALE_DAYS`). A finding is identified by its key, and its last row is its state. The registry is replaced whole with one atomic rename under a kernel lock, so two agents adding at once never lose a row and a crash never leaves half of one. A value that looks like a secret is refused without writing anything and without being repeated in the output. The rules, their known false positives and what they do not catch are in `--help` and in SECURITY.md (*Findings registry*).
 - **Two skills that Claude Code and Codex both load**: `security-expert`, the role of a security reviewer (SEC) that reports only vulnerabilities it can show, with their proof, and gives a verdict (GO, GO with fixes, NO-GO); and `team-rubrics`, the rubrics and common rules the roles use to write and judge a plan, a diff or a report (severity, triage, evidence markers, the vocabulary for what was not verified). The SEC role reads the same on either runtime; what differs between them is in two runtime references.

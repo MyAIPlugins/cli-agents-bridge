@@ -185,7 +185,7 @@ Roles are free-form. Built in: `val` (orchestrator), `esc` (executor), `critic`,
 ```
 ~/.claude/cli-agents-bridge/          base; CAB_DATA_DIR points here, never at layout-2
 ├── config.json                       optional; CAB_* variables override it
-└── layout-2/sessions/<id>/           since the release after v0.11.0; v0.11.0 and earlier use sessions/<id>/
+└── layout-2/sessions/<id>/           since v0.12.0; v0.11.0 and earlier use sessions/<id>/
     ├── manifest.json
     ├── inbox/  outbox/  processed/
     └── lock                          empty file, held with a kernel lock
