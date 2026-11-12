@@ -33,6 +33,12 @@ const (
 	j2Payload  = "J2 original frozen payload"
 )
 
+// replyJournalPath is where the journal of replySelf lives; data is the state directory. It is
+// here, and not in a later file, so that this file compiles on its own on the tree before the fix.
+func replyJournalPath(data string) string {
+	return filepath.Join(data, "sessions", replySelf, "reply-txn.json")
+}
+
 // staleScene is the state after the first three steps: B holds J1 and has not run yet.
 type staleScene struct {
 	mgr   *session.Manager

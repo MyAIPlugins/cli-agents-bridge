@@ -46,11 +46,6 @@ func (c *countingReader) Read(p []byte) (int, error) {
 	return c.r.Read(p)
 }
 
-// replyJournalPath is where the journal of replySelf lives; data is the state directory.
-func replyJournalPath(data string) string {
-	return filepath.Join(data, "sessions", replySelf, "reply-txn.json")
-}
-
 // openAskNoJournal is the scene of a first creation: one open ask, no journal.
 func openAskNoJournal(t *testing.T) (data string) {
 	t.Helper()
