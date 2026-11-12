@@ -1,0 +1,21 @@
+internal/session/remove_sites_test.go
+  s_d5e186cda02d82::t_a2b16e2ed7c633 1-92
+internal/session/desktopgrant.go
+  s_d5e186cda02d82::t_f8283c130b59e7 127-140,145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "57b7cec93e81507e713c273d1e85ba9be79938fd",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}

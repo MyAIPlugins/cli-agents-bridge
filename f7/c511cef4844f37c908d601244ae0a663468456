@@ -1,0 +1,31 @@
+internal/security/perms_unix.go
+  s_d5e186cda02d82::t_9cdac93bb140a5 81,86-87
+  s_d5e186cda02d82::t_60b5dd614d069b 82-85
+internal/security/remove_windows_test.go
+  s_d5e186cda02d82::t_18f37ae89cd5cf 1-82
+internal/security/remove.go
+  s_d5e186cda02d82::t_1994aab963e1fb 1-33,37,41-59
+  s_d5e186cda02d82::t_c2548294aefb76 34-36,38-40
+internal/security/perms_windows.go
+  s_d5e186cda02d82::t_b28d57e63dd95c 333-340
+internal/security/perms_unix_test.go
+  s_d5e186cda02d82::t_18f37ae89cd5cf 242-259
+internal/security/remove_test.go
+  s_d5e186cda02d82::t_900bcd50be5957 1-164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f7c511cef4844f37c908d601244ae0a663468456",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
