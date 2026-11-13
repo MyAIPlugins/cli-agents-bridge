@@ -1,0 +1,63 @@
+cmd/cab-bridge/f177_ack_test.go
+  s_d5e186cda02d82::t_7bb10a7919e647 6,34
+  s_d5e186cda02d82::t_6a89254f314f5b 1-5,7-33,35-80
+internal/cleanup/f177_retire_test.go
+  s_d5e186cda02d82::t_721783ba907aa6 1-98
+internal/session/replytxn.go
+  s_d5e186cda02d82::t_54854dcff0e643 44-47
+  s_d5e186cda02d82::t_82c3f7b4964e38 247-267
+  s_d5e186cda02d82::t_3503cff8f75cf5 268-270
+cmd/cab-bridge/inbox_test.go
+  s_d5e186cda02d82::t_ac42a2d78f307c 227-232
+cmd/cab-bridge/f177_helper_test.go
+  s_d5e186cda02d82::t_42c5586072342a 134-135,160
+  s_d5e186cda02d82::t_2f6c64769a9337 35-36,53-56
+  s_d5e186cda02d82::t_9326641dcb88dd 37
+  s_d5e186cda02d82::t_bc6e87c1a0d0ea 1-34,38-52,57-133,136-159,161-236
+cmd/cab-bridge/mcp_ack.go
+  s_d5e186cda02d82::t_fd3c23a30f8563 54-58,67-71,73-81,85-103
+  s_d5e186cda02d82::t_b4406e73d7df3a 104-105
+cmd/cab-bridge/f177_tidy_test.go
+  s_d5e186cda02d82::t_ff5fdb4af682ea 1-3,6-175,177-197,241
+  s_d5e186cda02d82::t_0487e306fcc400 4-5,198-240
+  s_d5e186cda02d82::t_175d74c23381a9 176
+cmd/cab-bridge/f177_reply_test.go
+  s_d5e186cda02d82::t_459fa544f55ee1 1-17,19-116
+  s_d5e186cda02d82::t_1371bf1d20aab7 18
+cmd/cab-bridge/verbs.go
+  s_d5e186cda02d82::t_1371bf1d20aab7 1302
+  s_d5e186cda02d82::t_ed3959f37db120 1382-1385
+cmd/cab-bridge/reply_recovery_test.go
+  s_d5e186cda02d82::t_ed3959f37db120 23-25
+cmd/cab-bridge/reply_archive.go
+  s_d5e186cda02d82::t_17fba4ea61d098 16-22,29-44
+cmd/cab-bridge/reply_journal_gone_test.go
+  s_d5e186cda02d82::t_ac42a2d78f307c 103-108,124-128
+cmd/cab-bridge/lock_not_taken.go
+  s_d5e186cda02d82::t_3297c548b908ea 1-77
+cmd/cab-bridge/inbox.go
+  s_d5e186cda02d82::t_7e8ea270df19ed 77-80,230-235,237-243
+internal/session/replytxn_section_test.go
+  s_d5e186cda02d82::t_82c3f7b4964e38 28-30
+cmd/cab-bridge/f177_between_test.go
+  s_d5e186cda02d82::t_bb6c5f7cb23f2a 1-6,8-86,88-113,115,117-170
+  s_d5e186cda02d82::t_3249c03287147b 7,87,114,116
+internal/session/replytxn_with_test.go
+  s_d5e186cda02d82::t_ae2845025f632b 1-142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b5514f21cf7fa5a06daed9a7592c71de15d519fe",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
