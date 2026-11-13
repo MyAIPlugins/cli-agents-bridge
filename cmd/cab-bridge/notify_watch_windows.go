@@ -14,7 +14,9 @@ import "errors"
 var errNotifyWatchUnsupported = errors.New(
 	"notify-watch is not supported on windows: the watcher runs its hook in its own process group " +
 		"(setpgid + kill(-pgid)), which has no equivalent here — a Job Object rewrite is the port, not a flag. " +
-		"Peers that need it: Claude Code has native push and does not; Codex CLI on Windows has no external wake yet")
+		"Peers that would want it: Claude Code does not (it has native push); a Codex CLI agent is woken from outside with " +
+		"`codex queue --thread <its CODEX_THREAD_ID> --message <text>`, which works on Windows, but you run it yourself " +
+		"after sending the message, because nothing does it for you here")
 
 // runNotifyWatch keeps the symbol main.go dispatches to. Everything else in
 // notify_watch.go and notify_watch_state.go is tagged !windows, so this file is
