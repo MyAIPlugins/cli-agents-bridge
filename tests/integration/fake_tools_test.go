@@ -35,8 +35,8 @@ import (
 //	staticcheck -ver  "staticcheck 2026.2.1 (<FAKE_STATICCHECK_PIN>)"
 //	staticcheck       "STATICCHECK_SAW [<GOTOOLCHAIN>]"
 //
-// and any other `go` command (the Makefile asks `go env` at parse time) is
-// answered with silence and exit 0.
+// and any other `go` command (the Makefile asks `go env` when a recipe needs its
+// answer, F-174) is answered with silence and exit 0.
 const fakeToolSource = `package main
 
 import (

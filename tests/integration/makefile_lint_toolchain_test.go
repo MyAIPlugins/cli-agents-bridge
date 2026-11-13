@@ -105,8 +105,8 @@ func (s lintSandbox) calls(t *testing.T) []string {
 // has the lines only the fakes print, AND the fakes were the ones called. The
 // first alone can be true while a real go answered half of the commands, which is
 // what Windows did (see fake_tools_test.go): the log is what says it did not.
-// The `go env` of the Makefile's parse time must have reached the fake too; the
-// toolchain is checked only on the three calls that run inside the target.
+// The `go env` the Makefile asks while it expands the recipe must have reached the
+// fake too; the toolchain is checked only on the three calls that run inside the target.
 func (s lintSandbox) assertRanUnder(t *testing.T, out, toolchain string) {
 	t.Helper()
 	for _, want := range sees(toolchain) {
@@ -119,7 +119,7 @@ func (s lintSandbox) assertRanUnder(t *testing.T, out, toolchain string) {
 			parseTime++
 		}
 	}
-	assert.Positive(t, parseTime, "the go the Makefile asks at parse time must be the fake: %v", calls)
+	assert.Positive(t, parseTime, "the go the Makefile asks while it expands the recipe must be the fake: %v", calls)
 	for _, want := range []string{
 		"go version [" + toolchain + "]",
 		"go vet ./... [" + toolchain + "]",
@@ -214,10 +214,10 @@ func TestMakefile_LintWithoutAToolchainLineRefuses(t *testing.T) {
 		assert.NotContains(t, out, ran, "nothing may have run before the refusal")
 	}
 	// The log says it with no dependence on what a command prints: the only calls
-	// that may precede the refusal are the Makefile's own questions to go at parse
-	// time.
+	// that may precede the refusal are the Makefile's own questions to go, asked when
+	// the recipe is expanded, before its first line runs.
 	for _, call := range sb.calls(t) {
-		assert.True(t, strings.HasPrefix(call, "go env "), "only the parse-time `go env` may have run before the refusal, not: %s", call)
+		assert.True(t, strings.HasPrefix(call, "go env "), "only the Makefile's own `go env` may have run before the refusal, not: %s", call)
 	}
 
 	// The command it prints is a claim like any other: run it, with the real go,

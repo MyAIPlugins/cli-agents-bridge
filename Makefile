@@ -18,8 +18,16 @@ BINARY_BASE := cab-bridge
 # BINARY_BASE stays suffix-free because cross-compile-all names its outputs per
 # GOOS: `cab-bridge.exe-darwin-arm64` would be the one-line fix producing four
 # nonsense filenames, which is the branch next door to this one.
-EXE         := $(shell go env GOEXE)
-BINARY      := $(BINARY_BASE)$(EXE)
+# WHEN go IS ASKED (F-174). `go env` is asked the first time a recipe needs its
+# answer, not at every `make`: with `:=` it ran while the Makefile was read, so
+# with Go off the PATH even `make skills-check`, which has no use for Go, printed
+# `make: go: Command not found` three times, and a fresh agent read that as a
+# broken environment and skipped the step. `X = $(eval X := <answer>)$(X)` is the
+# recursive variable that replaces itself with its value on first use: asked once,
+# not once per line that uses it. It works from GNU make 3.81, the one macOS ships.
+# A target that does need Go and finds none still fails, at its own `go` command.
+EXE         = $(eval EXE := $(shell go env GOEXE))$(EXE)
+BINARY      = $(BINARY_BASE)$(EXE)
 PKG         := github.com/myAIPlugins/cli-agents-bridge/cmd/cab-bridge
 BIN_DIR     := bin
 PLUGIN_DIR  := plugins/cli-agents-bridge
@@ -208,10 +216,8 @@ skills-check: ## Compare the repo's skills with the installed copies (ok/missing
 # that would put it there again. A refusal with a remediation that cannot fix it
 # is worse than a refusal: it sends the reader in a loop (CRI, third instance of
 # this class today).
-STATICCHECK_DIR := $(shell go env GOBIN)
-ifeq ($(STATICCHECK_DIR),)
-STATICCHECK_DIR := $(shell go env GOPATH)/bin
-endif
+# Asked on first use like EXE (F-174, see there); $(or) asks GOPATH only when GOBIN is empty.
+STATICCHECK_DIR = $(eval STATICCHECK_DIR := $(or $(shell go env GOBIN),$(shell go env GOPATH)/bin))$(STATICCHECK_DIR)
 # Single source for the pinned version, shared with .github/workflows/ci.yml, so
 # the local gate and the gate that authorises merges cannot drift onto two
 # different linters.

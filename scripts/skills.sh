@@ -55,13 +55,17 @@
 #     (macOS and Linux; also not in POSIX.1-2018) to say where the link leads. The identity
 #     is a local one: device and inode, as the filesystem gives them;
 #   - a runtime that is not on this machine is skipped, with a line. Whether it is here is
-#     decided by its configuration folder (~/.claude, ~/.codex, ~/.gemini/config), not by
-#     the folder its copies go to: Codex is here if ~/.codex exists, and its copies go to
-#     ~/.agents/skills, which is created if it is not there.
+#     decided by its configuration folder (~/.claude, Codex's home, ~/.gemini/config), not by
+#     the folder its copies go to: Codex is here if its home exists, and its copies go to
+#     ~/.agents/skills, which is created if it is not there. Codex's home is CODEX_HOME when
+#     that is set and not empty, ~/.codex otherwise (Codex's own rule, F-174), and the old
+#     folder above is the `skills` folder inside it: wherever ~/.codex appears in this
+#     comment, it is that folder. ~/.agents/skills is under HOME whatever CODEX_HOME says.
 #
 # Environment: SKILLS_DIR (default skills), BIN_DIR (default bin, where the zips for
-# Claude Desktop go), FORCE (1 to overwrite), HOME. File names with a newline in them are
-# not supported.
+# Claude Desktop go), FORCE (1 to overwrite), HOME, CODEX_HOME (where Codex keeps its
+# configuration; ~/.codex when it is not set or empty). File names with a newline in them
+# are not supported.
 set -eu
 
 mode=${1:-}
@@ -94,15 +98,21 @@ RECORD=.cab-installed
 runtime_root() {
 	case $1 in
 	claude) echo "$home/.claude" ;;
-	codex) echo "$home/.codex" ;;
+	codex) codex_home ;;
 	antigravity) echo "$home/.gemini/config" ;;
 	esac
 }
 
+# Where Codex keeps its configuration: CODEX_HOME when it is set and not empty, ~/.codex
+# otherwise (Codex's own rule). It decides that Codex is here and where its old skills folder is.
+codex_home() {
+	echo "${CODEX_HOME:-$home/.codex}"
+}
+
 # The folder a runtime loads the user's skills from, and so where the installed copies
-# go. For Codex it is not under its runtime_root: it keeps its configuration in ~/.codex
-# and loads skills from ~/.agents/skills (~/.codex/skills is the old folder, which it
-# still reads).
+# go. For Codex it is not under its runtime_root: it keeps its configuration in
+# codex_home and loads skills from ~/.agents/skills, under HOME whatever CODEX_HOME says
+# (the `skills` folder of codex_home is the old folder, which it still reads).
 skills_root() {
 	case $1 in
 	claude) echo "$home/.claude/skills" ;;
@@ -119,7 +129,13 @@ installed_copy() {
 # Where Codex used to look for the user's skills, and where the installed copies used to
 # go: $1 is the name of a skill. Codex still reads it, next to ~/.agents/skills.
 old_codex_copy() {
-	echo "$home/.codex/skills/$1"
+	echo "$(codex_home)/skills/$1"
+}
+
+# The old folder as a message names it: ~/.codex/skills by default, its real path when
+# CODEX_HOME moved it, so that the user is told to clean the folder Codex reads.
+old_codex_folder_name() {
+	if [ -n "${CODEX_HOME:-}" ]; then echo "$CODEX_HOME/skills"; else echo "~/.codex/skills"; fi
 }
 
 # What the old folder holds under the name of a skill the install writes ($1 is the old
@@ -490,7 +506,8 @@ plan() {
 	duplicate | deadlink)
 		oldcopies=$((oldcopies + 1))
 		if [ "$oldcopies" -eq 1 ]; then
-			echo "refused: a skill is also in the old folder Codex still reads, ~/.codex/skills, and a name found in both folders is loaded twice. FORCE does not change that, and nothing there is moved or deleted by this: remove each of these by hand, or move it out of ~/.codex/skills, then run again. A symbolic link is removed as itself, never with a / at the end of its path: that reaches the folder it leads to. Nothing was copied." >&2
+			old_folder=$(old_codex_folder_name)
+			echo "refused: a skill is also in the old folder Codex still reads, $old_folder, and a name found in both folders is loaded twice. FORCE does not change that, and nothing there is moved or deleted by this: remove each of these by hand, or move it out of $old_folder, then run again. A symbolic link is removed as itself, never with a / at the end of its path: that reaches the folder it leads to. Nothing was copied." >&2
 		fi
 		printf '  %s/%s\n' "$2" "$3" >&2
 		printf '    %s\n' "$6" >&2

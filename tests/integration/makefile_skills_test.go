@@ -72,7 +72,7 @@ func (fx skillsFixture) env(extra ...string) []string {
 	var env []string
 	for _, kv := range os.Environ() {
 		switch strings.SplitN(kv, "=", 2)[0] {
-		case "HOME", "SKILLS_DIR", "BIN_DIR", "FORCE", "GOFLAGS":
+		case "HOME", "SKILLS_DIR", "BIN_DIR", "FORCE", "GOFLAGS", "CODEX_HOME":
 		default:
 			env = append(env, kv)
 		}
@@ -115,9 +115,11 @@ func exitCode(t *testing.T, err error) int {
 }
 
 // runtimeTree is every file under the three runtimes' folders with its content: what
-// "touches nothing" is measured on. Not the whole HOME: the Makefile runs `go env` while
-// it is parsed, and the go command writes its telemetry counters under HOME (Library/ on
-// a Mac, .config/ elsewhere) on any run, so a count there changes whatever the target.
+// "touches nothing" is measured on. Not the whole HOME: the go command writes its
+// telemetry counters under HOME (Library/ on a Mac, .config/ elsewhere) on any run, so
+// a count there changes whatever the target. These targets no longer run go at all
+// (F-174, TestMakefile_TargetsThatDoNotUseGoDoNotCallIt), so the narrow measure is no
+// longer needed for them; it is what this test has always measured, and it stays.
 func (fx skillsFixture) runtimeTree(t *testing.T) map[string]string {
 	t.Helper()
 	all := map[string]string{}
