@@ -93,11 +93,11 @@ func TestScanInboxWithin_ASecondScanWhileOneIsRunningIsRefusedNotStacked(t *test
 // blockingRead is a read the test controls: it signals that it started and waits to be
 // released, so two scans can be made to overlap for real instead of by planting the
 // guard flag.
-func blockingRead(started chan<- struct{}, release <-chan struct{}) func(string, int) ([]mailboxEntry, []string, []string, error) {
-	return func(string, int) ([]mailboxEntry, []string, []string, error) {
+func blockingRead(started chan<- struct{}, release <-chan struct{}) func(string, int) (mailboxScan, error) {
+	return func(string, int) (mailboxScan, error) {
 		started <- struct{}{}
 		<-release
-		return nil, nil, nil, nil
+		return mailboxScan{}, nil
 	}
 }
 

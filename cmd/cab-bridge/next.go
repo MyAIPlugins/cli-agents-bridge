@@ -479,10 +479,11 @@ func collectNextPage(mgr *session.Manager, cfg config.Config, sid, inboxDir stri
 		myScope = session.EffectiveScope(mf)
 	}
 
-	entries, corrupt, foreign, err := readMailbox(inboxDir, cfg.MaxMessageBytes)
+	scan, err := readMailbox(inboxDir, cfg.MaxMessageBytes)
 	if err != nil {
 		return pageResult{}, false, fmt.Errorf("next: read mailbox: %w", err)
 	}
+	entries, corrupt, foreign := scan.entries, scan.corrupt, scan.foreign
 	// The delivery path refuses: handing over a page from a mailbox holding a
 	// file we cannot vouch for is the one outcome worth stopping for.
 	if len(foreign) > 0 {
@@ -717,22 +718,29 @@ func newNextMessage(e mailboxEntry, oversize bool, myScope string) nextMessage {
 // readMailbox decodes every message still in inbox/ and reports the files it
 // could not decode instead of skipping them silently (collectInbox does skip —
 // inbox.go:131-143 — which is exactly the behaviour §2.7 rules out).
-// readMailbox returns the decoded entries, the unreadable ones, and — kept
-// SEPARATE — the ones that do not belong to this user.
+// readMailbox returns the decoded entries and, kept SEPARATE in a mailboxScan
+// (mailbox_scan.go), the files that did not decode and the ones that do not
+// belong to this user.
 //
-// Three buckets and not two, because the second version of this function decided
+// Separate buckets and not one, because the second version of this function decided
 // the policy itself (hard-fail on a foreign file) and the decision then depended
 // on which helper a command happened to call rather than on what the command
 // does. `status.countUnread` swallowed that hard error and returned 0, turning a
 // security anomaly back into "empty inbox" — the very defect it had just fixed,
 // one caller downstream. A scanner reports; the command decides.
-func readMailbox(inboxDir string, maxContentBytes int) ([]mailboxEntry, []string, []string, error) {
+func readMailbox(inboxDir string, maxContentBytes int) (mailboxScan, error) {
+	return readMailboxWith(inboxDir, maxContentBytes, security.ReadOwnedFile)
+}
+
+// readMailboxWith is readMailbox with the read of ONE file injected, so a test can
+// make a file vanish between the listing and the read (F-172).
+func readMailboxWith(inboxDir string, maxContentBytes int, read func(path string) ([]byte, error)) (mailboxScan, error) {
 	dir, err := os.ReadDir(inboxDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil, nil, nil
+			return mailboxScan{}, nil
 		}
-		return nil, nil, nil, err
+		return mailboxScan{}, err
 	}
 
 	var (
@@ -749,7 +757,7 @@ func readMailbox(inboxDir string, maxContentBytes int) ([]mailboxEntry, []string
 			continue
 		}
 		full := filepath.Join(inboxDir, name)
-		data, err := security.ReadOwnedFile(full)
+		data, err := read(full)
 		if err != nil {
 			// An ownership violation is NOT a corrupt file: it goes in its own
 			// bucket so the caller can treat it as what it is.
@@ -782,7 +790,7 @@ func readMailbox(inboxDir string, maxContentBytes int) ([]mailboxEntry, []string
 	}
 	sort.Strings(corrupt)
 	sort.Strings(foreign)
-	return entries, corrupt, foreign, nil
+	return mailboxScan{entries: entries, corrupt: corrupt, foreign: foreign}, nil
 }
 
 // parseMessageTime decodes the RFC3339 timestamp. An unparsable one sorts to

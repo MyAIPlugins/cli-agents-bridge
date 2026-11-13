@@ -41,7 +41,7 @@ type scanGuard struct{ busy atomic.Bool }
 // was handed over where a test can park the worker to observe the guard at that very
 // moment. Production passes only `read`.
 type scanSeams struct {
-	read         func(inboxDir string, maxContentBytes int) ([]mailboxEntry, []string, []string, error)
+	read         func(inboxDir string, maxContentBytes int) (mailboxScan, error)
 	afterHandOff func()
 }
 
@@ -69,7 +69,7 @@ func scanInboxWithSeams(ctx context.Context, guard *scanGuard, inboxDir string, 
 	}
 	done := make(chan outcome, 1)
 	go func() {
-		entries, corrupt, foreign, err := seams.read(inboxDir, maxContentBytes)
+		found, err := seams.read(inboxDir, maxContentBytes)
 		// The guard is freed BEFORE the result is handed over, never after. The
 		// caller that receives it may ask again at once, and a guard still held by a
 		// worker that has already delivered refuses that call with a busy error that
@@ -80,10 +80,10 @@ func scanInboxWithSeams(ctx context.Context, guard *scanGuard, inboxDir string, 
 		switch {
 		case err != nil:
 			done <- outcome{err: err}
-		case len(foreign) > 0:
-			done <- outcome{err: fmt.Errorf("refusing to read an inbox that holds files not owned by this user: %w (%d file(s); inspect them with the CLI)", security.ErrOwnershipMismatch, len(foreign))}
+		case len(found.foreign) > 0:
+			done <- outcome{err: fmt.Errorf("refusing to read an inbox that holds files not owned by this user: %w (%d file(s); inspect them with the CLI)", security.ErrOwnershipMismatch, len(found.foreign))}
 		default:
-			done <- outcome{scan: inboxScan{entries: entries, corrupt: corrupt}}
+			done <- outcome{scan: inboxScan{entries: found.entries, corrupt: found.corrupt}}
 		}
 		if seams.afterHandOff != nil {
 			seams.afterHandOff()

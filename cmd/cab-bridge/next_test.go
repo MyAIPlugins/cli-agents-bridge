@@ -879,11 +879,11 @@ func TestNext_RefusesToDeliverFromAnInboxHoldingAPlantedFile(t *testing.T) {
 
 	// The scanner REPORTS: three buckets, and the foreign file lands in its own
 	// rather than being called corrupt or deciding the policy for every caller.
-	entries, corrupt, foreign, err := readMailbox(inbox, cfg.MaxMessageBytes)
+	scan, err := readMailbox(inbox, cfg.MaxMessageBytes)
 	require.NoError(t, err, "scanning is not where the refusal belongs")
-	assert.Len(t, entries, 1, "the genuine message is still readable")
-	assert.Empty(t, corrupt, "a file that is not ours is not a corrupt file")
-	assert.Equal(t, []string{"msg-bbbbbbbbbbbb.json"}, foreign)
+	assert.Len(t, scan.entries, 1, "the genuine message is still readable")
+	assert.Empty(t, scan.corrupt, "a file that is not ours is not a corrupt file")
+	assert.Equal(t, []string{"msg-bbbbbbbbbbbb.json"}, scan.foreign)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()

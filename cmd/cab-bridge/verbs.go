@@ -371,10 +371,11 @@ func collectOpenAsks(mgr *session.Manager, cfg config.Config, sid string) ([]ope
 		return nil, err
 	}
 	inboxDir := filepath.Join(cfg.DataDir, "sessions", sid, "inbox")
-	entries, _, _, err := readMailbox(inboxDir, cfg.MaxMessageBytes)
+	scan, err := readMailbox(inboxDir, cfg.MaxMessageBytes)
 	if err != nil {
 		return nil, err
 	}
+	entries := scan.entries
 
 	// One manifest read per distinct sender, not per ask: a batch from one peer
 	// is the common shape, and this runs on the working loop.
@@ -1272,12 +1273,12 @@ func countUnseenInbound(mgr *session.Manager, cfg config.Config, sid string) int
 	if err != nil {
 		return 0
 	}
-	entries, _, _, err := readMailbox(filepath.Join(cfg.DataDir, "sessions", sid, "inbox"), cfg.MaxMessageBytes)
+	scan, err := readMailbox(filepath.Join(cfg.DataDir, "sessions", sid, "inbox"), cfg.MaxMessageBytes)
 	if err != nil {
 		return 0
 	}
 	n := 0
-	for _, e := range entries {
+	for _, e := range scan.entries {
 		if !cursor.IsNotified(e.msg.ID) {
 			n++
 		}

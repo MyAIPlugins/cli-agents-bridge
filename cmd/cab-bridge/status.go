@@ -107,11 +107,12 @@ func runStatus(args []string) error {
 // An unreadable cursor counts everything as unread. The model is at-least-once,
 // and overstating waiting work costs a look while understating it hides mail.
 func countUnread(mgr *session.Manager, sid, sessionDir string, maxContentBytes int) int {
-	entries, _, foreign, err := readMailbox(filepath.Join(sessionDir, "inbox"), maxContentBytes)
+	scan, err := readMailbox(filepath.Join(sessionDir, "inbox"), maxContentBytes)
+	entries := scan.entries
 	// NEVER a silent zero: returning 0 here turned "there is a file I cannot
 	// vouch for" into "your inbox is empty", which is the shape of the defect
 	// this whole control exists to remove.
-	for _, name := range foreign {
+	for _, name := range scan.foreign {
 		fmt.Fprintf(os.Stderr, "cab-bridge: %s in this inbox does not belong to this user and was not counted\n", name)
 	}
 	if err != nil {

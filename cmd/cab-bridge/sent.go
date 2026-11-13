@@ -232,10 +232,11 @@ func buildMailboxIndex(cfg config.Config, mgr *session.Manager, to string) (map[
 	}
 
 	index := map[string]string{}
-	inbox, corrupt, _, err := readMailbox(filepath.Join(sessionDir, "inbox"), cfg.MaxMessageBytes)
+	scan, err := readMailbox(filepath.Join(sessionDir, "inbox"), cfg.MaxMessageBytes)
 	if err != nil {
 		return nil, fmt.Errorf("sent: read %s inbox: %w", to, err)
 	}
+	inbox, corrupt := scan.entries, scan.corrupt
 	// An unreadable file is PRESENT. Dropping it from the index made the message
 	// fall through to "expired" — declaring a retention event that never
 	// happened (LL-18 family). It is in the mailbox and it cannot be read: say

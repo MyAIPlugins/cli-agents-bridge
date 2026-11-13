@@ -400,12 +400,12 @@ func replayOpenAsks(mgr *session.Manager, cfg config.Config, sid string) (int, e
 	if err != nil {
 		return 0, err
 	}
-	entries, _, _, err := readMailbox(filepath.Join(cfg.DataDir, "sessions", sid, "inbox"), cfg.MaxMessageBytes)
+	scan, err := readMailbox(filepath.Join(cfg.DataDir, "sessions", sid, "inbox"), cfg.MaxMessageBytes)
 	if err != nil {
 		return 0, err
 	}
 	var ids []string
-	for _, e := range entries {
+	for _, e := range scan.entries {
 		if e.msg.Type == message.TypeQuery && cursor.IsNotified(e.msg.ID) {
 			ids = append(ids, e.msg.ID)
 		}
