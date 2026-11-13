@@ -9,6 +9,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 )
 
 // The cost of looking, as the BAR declares it: a delivery that cannot read the recipient's
@@ -58,4 +60,53 @@ func TestDeliverResponse_AProcessedFolderThatCannotBeReadRefusesToDeliver(t *tes
 		require.NoError(t, rerr)
 		assert.True(t, found, "the journal stays, to be resumed")
 	})
+}
+
+// The same refusal when the folder CAN be listed but the copy that is there cannot be opened (found
+// in the gate of the diff, Nit 2). The tests above make the whole folder unreadable, which the
+// permissive look also fails on; this one tells the two apart: a delivery that skipped the entry
+// ("not ours", as the readers do) would find nothing and write a second copy of a response that was
+// delivered and archived. It must refuse, and leave the journal and the recipient's inbox as they
+// were. The second case puts the unopenable copy AFTER an identical one: every copy is looked at,
+// not only the first.
+func TestDeliverResponse_AnArchivedCopyThatCannotBeOpenedRefusesToDeliver(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root opens a file with no permission")
+	}
+	for _, tc := range []struct {
+		name        string
+		extraCopyOK bool // a second, identical copy sits before the unopenable one
+	}{
+		{"the only archived copy", false},
+		{"a later copy, after an identical one", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mgr, cfg, data, j, archived := deliveredThenArchived(t)
+			target := archived
+			if tc.extraCopyOK {
+				good, err := os.ReadFile(archived)
+				require.NoError(t, err)
+				archivedCopies(t, archived, j.ResponseID, good, good)
+				target = filepath.Join(filepath.Dir(archived), "20260102T000000.000000000Z-"+j.ResponseID+".json")
+			}
+			before, err := os.ReadFile(replyJournalPath(data))
+			require.NoError(t, err)
+			require.NoError(t, os.Chmod(target, 0o000))
+			t.Cleanup(func() { _ = os.Chmod(target, 0o600) })
+			_, premise := security.ReadOwnedFile(target)
+			require.ErrorIs(t, premise, os.ErrPermission, "premise: the refusal is the real permission one")
+			_, listing := os.ReadDir(filepath.Dir(target))
+			require.NoError(t, listing, "premise: the folder itself can be listed")
+
+			created, derr := deliverResponse(cfg, mgr, replySelf, j)
+
+			require.Error(t, derr)
+			assert.False(t, created)
+			assert.ErrorIs(t, derr, os.ErrPermission)
+			assert.Empty(t, peerInbox(t, data), "no second copy was delivered")
+			after, err := os.ReadFile(replyJournalPath(data))
+			require.NoError(t, err)
+			assert.Equal(t, string(before), string(after), "the journal is as it was")
+		})
+	}
 }
