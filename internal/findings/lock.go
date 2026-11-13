@@ -29,10 +29,10 @@ func TryLockFile(path string) (release func() error, err error) {
 		return release, nil
 	case err == fslock.ErrBusy:
 		// The bare sentinel: the ordinary contention, with the message callers know.
+		// Compared by identity and not with errors.Is on purpose: fslock returns ErrBusy
+		// bare, and an error that merely wraps it (a close that failed too) is a failure
+		// that this retry must not repeat.
 		return nil, ErrBusy
-	case errors.Is(err, fslock.ErrBusy):
-		// Busy, and closing the descriptor failed as well: both are reported.
-		return nil, fmt.Errorf("%w: %w", ErrBusy, err)
 	default:
 		return nil, fmt.Errorf("findings: %w", err)
 	}

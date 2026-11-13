@@ -100,16 +100,27 @@ func Unlock(f *os.File) error { return unlockFile(f) }
 // function must stay reachable until the work is done: the caller defers it. If
 // the file were closed early, by a finalizer for instance, the lock would drop.
 //
-// The release is idempotent. When the lock is busy and closing the descriptor also
-// fails, the error carries both; when only the lock is busy it is ErrBusy itself.
+// The release is idempotent. ErrBusy comes back as itself, and only when the lock
+// was busy and the descriptor closed cleanly. If closing it fails as well, the
+// result is a failure, never ErrBusy: the close error is in the chain and the lock
+// error in the text, so a caller that retries on errors.Is(err, ErrBusy) does not
+// retry a descriptor that will not close (the convention of F-160 for a retry loop
+// that decides on a sentinel).
 func TryLock(path string) (release func() error, err error) {
+	return tryLockWith(path, Lock, (*os.File).Close)
+}
+
+// tryLockWith is TryLock with the two calls that can fail once the file is open
+// passed in, so a test can make the lock busy and the close fail at the same time:
+// a descriptor that will not close cannot be produced on demand otherwise.
+func tryLockWith(path string, lock, closeFile func(*os.File) error) (release func() error, err error) {
 	f, err := Open(path)
 	if err != nil {
 		return nil, err
 	}
-	if err := Lock(f); err != nil {
-		if cerr := f.Close(); cerr != nil {
-			return nil, errors.Join(err, fmt.Errorf("fslock: closing lock file %s: %w", path, cerr))
+	if err := lock(f); err != nil {
+		if cerr := closeFile(f); cerr != nil {
+			return nil, fmt.Errorf("fslock: closing lock file %s after %v: %w", path, err, cerr)
 		}
 		return nil, err
 	}

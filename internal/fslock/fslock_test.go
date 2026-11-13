@@ -105,6 +105,66 @@ func TestLock_AFailingCallIsNotBusy(t *testing.T) {
 	assert.Contains(t, err.Error(), f.Name(), "the error names the file")
 }
 
+// The three ways the lock can fail to be taken, crossed with a close that works or
+// does not (F-166). The lock and the close are injected: a descriptor that will not
+// close cannot be had from a real file.
+//
+// What the callers rely on is that ErrBusy means "someone else has it, ask again":
+// findings.TryLockFile maps it to the sentinel its retry loop repeats on. A close
+// that failed is a failure of the descriptor, and a failure goes out as one: the
+// first version joined it to the busy error, errors.Is(err, ErrBusy) stayed true,
+// and the loop retried an error that was never going to pass.
+func TestTryLock_CloseOutcomeNeverTurnsAFailureIntoBusyOrBusyIntoAFailure(t *testing.T) {
+	closeErr := errors.New("close: input/output error")
+	lockErr := errors.New("lock: invalid argument")
+	busy := func(*os.File) error { return ErrBusy }
+	broken := func(*os.File) error { return lockErr }
+
+	cases := []struct {
+		name     string
+		lock     func(*os.File) error
+		closeErr error
+		check    func(t *testing.T, err error)
+	}{
+		{"busy and the close works: ErrBusy itself", busy, nil, func(t *testing.T, err error) {
+			assert.Equal(t, ErrBusy, err, "the bare sentinel, as before")
+		}},
+		{"busy and the close fails: a failure, not busy", busy, closeErr, func(t *testing.T, err error) {
+			assert.NotErrorIs(t, err, ErrBusy, "a caller that retries on busy would retry this")
+			assert.ErrorIs(t, err, closeErr, "the close failure is the one in the chain")
+			assert.Contains(t, err.Error(), ErrBusy.Error(), "and the text still says the lock was busy")
+		}},
+		{"another failure and the close fails: both reported", broken, closeErr, func(t *testing.T, err error) {
+			assert.ErrorIs(t, err, closeErr)
+			assert.NotErrorIs(t, err, ErrBusy)
+			assert.Contains(t, err.Error(), lockErr.Error())
+		}},
+		{"another failure and the close works: that failure", broken, nil, func(t *testing.T, err error) {
+			assert.Equal(t, lockErr, err)
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "x.lock")
+			closeCalls := 0
+			closeFile := func(f *os.File) error {
+				closeCalls++
+				// The descriptor is closed for real either way: the test must not leak one.
+				require.NoError(t, f.Close())
+				return tc.closeErr
+			}
+
+			release, err := tryLockWith(path, tc.lock, closeFile)
+
+			// The premise, asserted: the lock did fail and the close was attempted once.
+			require.Error(t, err)
+			require.Nil(t, release)
+			require.Equal(t, 1, closeCalls, "a lock that was not taken leaves one descriptor to close")
+			tc.check(t, err)
+		})
+	}
+}
+
 func TestUnlock_ReleasesAndClosesTheDescriptor(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "x.lock")
 	f, err := Open(path)
