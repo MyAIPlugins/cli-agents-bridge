@@ -25,6 +25,18 @@ import (
 // we reply). Routing is therefore always evaluated against the real, current
 // roles of the two sessions.
 func sendMessage(cfg config.Config, mgr *session.Manager, fromSID, to, msgType, content string, inReplyTo *string, allowMesh bool) (string, error) {
+	return sendMessageWith(cfg, mgr, fromSID, to, msgType, content, inReplyTo, allowMesh, sendSeams{})
+}
+
+// sendSeams are the points where a test steps into a send. All nil in production.
+type sendSeams struct {
+	// beforeOutbox runs after the delivery section is over (the recipient's lock is let go of) and
+	// right before the copy asks for the sender's lock. It gets the id of the message.
+	beforeOutbox func(msgID string)
+}
+
+// sendMessageWith is sendMessage with the seams passed in.
+func sendMessageWith(cfg config.Config, mgr *session.Manager, fromSID, to, msgType, content string, inReplyTo *string, allowMesh bool, seams sendSeams) (string, error) {
 	if err := security.ValidateSessionID(to); err != nil {
 		return "", fmt.Errorf("send: to: %w", err)
 	}
@@ -113,10 +125,14 @@ func sendMessage(cfg config.Config, mgr *session.Manager, fromSID, to, msgType, 
 	// delivery (target inbox above) has already succeeded — a failed outbox copy
 	// must NOT fail the send, so errors are logged and swallowed, same posture as
 	// the auto-ack and heartbeat goroutine. msgID is returned regardless.
-	senderOutbox := filepath.Join(cfg.DataDir, "sessions", fromSID, "outbox")
-	if mkErr := os.MkdirAll(senderOutbox, 0o700); mkErr != nil {
-		fmt.Fprintf(os.Stderr, "cab-bridge: send: mkdir sender outbox (non-fatal): %v\n", mkErr)
-	} else if cpErr := transportfs.AtomicWriteBytes(filepath.Join(senderOutbox, msgID+".json"), data, 0o600); cpErr != nil {
+	//
+	// The copy is made under the sender's own session lock (F-177), after the recipient's was let
+	// go of: copyToOutbox says why.
+	var beforeOutbox func()
+	if seams.beforeOutbox != nil {
+		beforeOutbox = func() { seams.beforeOutbox(msgID) }
+	}
+	if cpErr := copyToOutbox(mgr, cfg, fromSID, msgID, data, writeOutboxOverwrite, beforeOutbox); cpErr != nil {
 		fmt.Fprintf(os.Stderr, "cab-bridge: send: outbox copy for %s (non-fatal): %v\n", msgID, cpErr)
 	}
 	return msgID, nil

@@ -1301,6 +1301,9 @@ type deliverSeams struct {
 	// among what the recipient has (inbox and archive) found nothing, and before the write: the
 	// instant between "not there" and "there" that F-178 declared and F-177 closed.
 	afterLook func()
+	// beforeOutbox runs after the delivery section is over (the recipient's lock is let go of) and
+	// right before the copy asks for the sender's lock.
+	beforeOutbox func()
 }
 
 // deliverResponseWith is deliverResponse with the seams passed in.
@@ -1400,9 +1403,12 @@ func deliverResponseWith(cfg config.Config, mgr *session.Manager, sid string, tx
 		return false, fmt.Errorf("deliver response: %w", err)
 	}
 
-	senderOutbox := filepath.Join(cfg.DataDir, "sessions", sid, "outbox")
-	if mkErr := os.MkdirAll(senderOutbox, 0o700); mkErr == nil {
-		_, _ = transportfs.WriteIfAbsentBytes(filepath.Join(senderOutbox, txn.ResponseID+".json"), data, 0o600)
+	// The courtesy copy in the sender's outbox, under the sender's own lock and after the
+	// recipient's was let go of (F-177, copyToOutbox). The delivery is done: a copy that is not
+	// written is said on stderr, as `send` does, and does not undo it. Before F-177 this error was
+	// dropped without a word.
+	if cpErr := copyToOutbox(mgr, cfg, sid, txn.ResponseID, data, writeOutboxIfAbsent, seams.beforeOutbox); cpErr != nil {
+		fmt.Fprintf(os.Stderr, "cab-bridge: reply: outbox copy for %s (non-fatal): %v\n", txn.ResponseID, cpErr)
 	}
 	return created, nil
 }
