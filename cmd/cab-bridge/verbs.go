@@ -1299,7 +1299,7 @@ func deliverResponse(cfg config.Config, mgr *session.Manager, sid string, txn *s
 type deliverSeams struct {
 	// afterLook runs inside the recipient's session lock, right after the look for the response
 	// among what the recipient has (inbox and archive) found nothing, and before the write: the
-	// instant between "not there" and "there" that F-178 declared and F-177 closes.
+	// instant between "not there" and "there" that F-178 declared and F-177 closed.
 	afterLook func()
 }
 
@@ -1379,9 +1379,10 @@ func deliverResponseWith(cfg config.Config, mgr *session.Manager, sid string, tx
 		// listing of the recipient's processed/, under the lock this delivery already holds. Every
 		// copy under the id is judged, not the first one found: see responseArchivedByRecipient.
 		//
-		// The lock does not exclude whoever archives: tidy and ack move files without taking
-		// it. If the recipient archives the response between the look and the link below, a
-		// second copy is written. That window is declared (F-177 closes it), not closed here.
+		// Whoever archives from this session takes this same lock to do it (F-177: tidy, ack and
+		// the archiving step of the recipient's own reply), so the recipient cannot archive the
+		// response between the look and the link below. A mover that does not take the lock is a
+		// defect of that mover: f177_between_test.go fixes the three that exist.
 		archived, aerr := responseArchivedByRecipient(recipientDir, txn.ResponseID, data)
 		if aerr != nil {
 			return aerr

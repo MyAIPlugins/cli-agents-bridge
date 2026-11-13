@@ -224,6 +224,12 @@ func TestTidyInbox_MissingInbox_ZeroNoCrash(t *testing.T) {
 	t.Parallel()
 	dataDir := t.TempDir()
 	cfg := fixtureConfig(t, dataDir)
+	// A LIVE session whose inbox folder was never created. The test used to plant no session at
+	// all, and a session that does not exist is another case (F-177: tidy says it no longer
+	// exists, see TestTidyInbox_OnARetiredSessionSaysSoAndMovesNothing); this one is about the
+	// folder.
+	plantLiveSession(t, dataDir, "tidyts4")
+	require.NoDirExists(t, filepath.Join(dataDir, "sessions", "tidyts4", "inbox"), "premise: there is no inbox folder")
 	res, err := tidyInbox(newSessionManager(cfg), "tidyts4", filepath.Join(dataDir, "sessions", "tidyts4"), 65536)
 	require.NoError(t, err)
 	assert.Equal(t, 0, res.moved)

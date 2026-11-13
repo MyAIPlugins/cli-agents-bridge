@@ -20,8 +20,9 @@ import (
 // second copy is a separate question, answered by the last test of this file and by
 // reply_delivery_archived_test.go (F-178): the delivery looks for the response in the recipient's
 // inbox and in what the recipient has archived, so a recovery after the recipient archived it
-// delivers nothing. What is NOT excluded is a recipient that archives at the very instant of the
-// write: tidy and ack move files without the session lock (F-177).
+// delivers nothing. A recipient that archives at the very instant of the write cannot make it
+// deliver twice either: tidy, ack and the archiving step of reply take the recipient's session
+// lock to move (F-177), and the delivery holds it from the look to the write.
 
 const (
 	rcvAskA    = "msg-aaaaaaaaaaaa"

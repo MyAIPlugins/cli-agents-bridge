@@ -41,9 +41,10 @@ const (
 // recipient's messages (in the inbox and in what the recipient archived), so it does not send
 // it again.
 //
-// That look runs under the recipient's session lock, which does not exclude `inbox --tidy` and
-// the `ack` tool of Claude Desktop: they move files without taking it. A recipient that archives
-// the response between the look and the write gets a second copy. F-177 closes that window.
+// That look runs under the recipient's session lock, and so do the three operations that archive
+// from a session's own inbox into its processed/ (`inbox --tidy`, the `ack` tool of Claude Desktop
+// and the archiving step of `reply`): a recipient that uses them cannot archive the response
+// between the look and the write.
 //
 // Everything needed to rebuild the exact same response is frozen here —
 // including Timestamp and Content. Without them a retry would produce a
@@ -240,6 +241,30 @@ func (m *Manager) CompleteReplyTxn(sessionID string, mine *ReplyTxn) error {
 			return fmt.Errorf("reply journal: remove: %w", err)
 		}
 		return nil
+	})
+}
+
+// WithReplyTxn runs act under the session lock of sessionID, and only if the journal on disk is
+// still the transaction the caller carries: the check and act share ONE critical section, the way
+// UpdateReplyTxn and CompleteReplyTxn do, which is what keeps a driver that is behind (a second
+// copy of the same reply, a session that was retired meanwhile) from acting on a state it no
+// longer has the right to. When the journal is gone, is another reply's, or the session no longer
+// exists, act does not run and the error says which.
+//
+// It is for an act that has an effect outside the journal and has to be decided on the journal as
+// it is NOW: the archiving of an ask of the reply. It does not make the progress of two copies of
+// the same reply monotonic: state and index are not part of the identity the check compares
+// (differences), so a copy that is behind passes the check. What it guarantees is the order the
+// check and the act have to each other, and that nobody takes the lock of this session in between.
+//
+// act may call UpdateReplyTxn to record its progress: the lock is re-entrant inside one process.
+// act is not undone if it fails halfway, and neither is anything it did before it failed.
+func (m *Manager) WithReplyTxn(sessionID string, mine *ReplyTxn, act func() error) error {
+	return m.WithSessionLock(sessionID, func() error {
+		if err := m.checkJournalIsMine(sessionID, mine); err != nil {
+			return err
+		}
+		return act()
 	})
 }
 

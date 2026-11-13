@@ -74,6 +74,10 @@ func runInbox(args []string) error {
 
 	if *tidy {
 		res, err := tidyInbox(mgr, sid, sessionDir, cfg.MaxMessageBytes)
+		var notRun *lockNotTaken
+		if errors.As(err, &notRun) {
+			return tidyNotRun(notRun)
+		}
 		if err != nil {
 			return err
 		}
@@ -223,8 +227,20 @@ func tidyInbox(mgr *session.Manager, sid, sessionDir string, maxContentBytes int
 
 // tidyWith is tidyInbox with the move passed in, so that a test can step into the middle of the
 // sweep, between two moves, exactly where the session lock has to still be held.
+//
+// The whole sweep runs under the lock of the session it sweeps (F-177). A retirement (cleanup) and
+// the delivery of a response that looks for it among what this session archived both take that
+// lock; a tidy that moved files without it could cross either: the retirement failing on a file
+// that was not there any more, or the delivery writing a second copy of a response that had just
+// been archived. When the lock is not taken the sweep does not start: *lockNotTaken, nothing moved.
 func tidyWith(mgr *session.Manager, sid, sessionDir string, maxContentBytes int, move func(src, processedDir string) error) (tidyResult, error) {
-	return sweepInbox(mgr, sid, sessionDir, maxContentBytes, move)
+	var res tidyResult
+	err := underSessionLock(mgr, sid, func() error {
+		var serr error
+		res, serr = sweepInbox(mgr, sid, sessionDir, maxContentBytes, move)
+		return serr
+	})
+	return res, err
 }
 
 // sweepInbox is the sweep itself: what tidyInbox does once it is allowed to.

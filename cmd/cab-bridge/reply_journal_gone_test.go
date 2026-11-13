@@ -100,9 +100,12 @@ func TestReplyJournal_AnOvertakenDriverStopsAtTheFirstWriteAndArchivesNothing(t 
 	}
 }
 
-// At the write that records the archiving: the first ask was archived (that step ran before
-// the check), the check failed, and the second is not touched.
-func TestReplyJournal_AnOvertakenDriverStopsAtTheArchiveWriteAndDoesNotGoOn(t *testing.T) {
+// At the archiving step, with the journal already SENT: a driver that was overtaken (its journal is
+// gone, or another reply's) archives NOTHING. Before F-177 the step moved the ask first and looked
+// at the journal afterwards, so the first ask was archived by a driver that had no right to and only
+// the second was spared; this test said so ("the step that ran before the check is done"). The move
+// now runs inside the check (Manager.WithReplyTxn), so neither ask moves and neither is lost.
+func TestReplyJournal_AnOvertakenDriverStopsBeforeTheFirstArchiveMoveAndArchivesNothing(t *testing.T) {
 	for _, how := range []string{"gone", "another reply's"} {
 		t.Run(how, func(t *testing.T) {
 			mgr, cfg, data := newReplyPair(t)
@@ -118,9 +121,11 @@ func TestReplyJournal_AnOvertakenDriverStopsAtTheArchiveWriteAndDoesNotGoOn(t *t
 
 			require.Error(t, err)
 			assert.True(t, errors.Is(err, wantErr), "got: %v", err)
-			assert.Equal(t, 1, askArchivedCount(t, data, "msg-aaaaaaaaaaaa"), "the step that ran before the check is done")
-			assert.FileExists(t, filepath.Join(data, "sessions", replySelf, "inbox", "msg-bbbbbbbbbbbb.json"), "and the driver did not go on to the second ask")
-			check()
+			assert.Equal(t, 0, askArchivedCount(t, data, "msg-aaaaaaaaaaaa"), "the move did not run: the check comes first")
+			assert.Equal(t, 0, askArchivedCount(t, data, "msg-bbbbbbbbbbbb"))
+			assert.FileExists(t, filepath.Join(data, "sessions", replySelf, "inbox", "msg-aaaaaaaaaaaa.json"), "the first ask is still in the inbox")
+			assert.FileExists(t, filepath.Join(data, "sessions", replySelf, "inbox", "msg-bbbbbbbbbbbb.json"), "and so is the second")
+			check() // the journal of the other reply, or its absence, is exactly what it was
 		})
 	}
 }

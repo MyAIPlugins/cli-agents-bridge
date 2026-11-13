@@ -25,6 +25,9 @@ import (
 var journalOperations = map[string]string{
 	"UpdateReplyTxn":   "WriteReplyTxn",
 	"CompleteReplyTxn": "RemoveFile",
+	// WithReplyTxn does not write the journal itself: its action is the caller's, passed in as act
+	// (F-177). The shape it has to have is the same: the check first, then act, in one section.
+	"WithReplyTxn": "act",
 }
 
 const journalCheck = "checkJournalIsMine"

@@ -51,7 +51,11 @@ func (a *mcpApp) toolAck(ctx context.Context, raw json.RawMessage) (mcp.Result, 
 	}
 	results, ok, lerr := ackArchive(a.mgr, p.sid, filepath.Join(a.cfg.DataDir, "sessions", p.sid), args.IDs, a.cfg.MaxMessageBytes, check, moveToProcessed)
 	if lerr != nil {
-		return mcp.Result{}, lerr
+		var notRun *lockNotTaken
+		if !errors.As(lerr, &notRun) {
+			return mcp.Result{}, lerr // ackArchive has no other error; one that appears is not swallowed
+		}
+		return mcp.ErrorResult(renderAckNotRun(args.IDs, notRun)), nil
 	}
 	text := renderAck(results, ok)
 	if !ok {
@@ -60,12 +64,43 @@ func (a *mcpApp) toolAck(ctx context.Context, raw json.RawMessage) (mcp.Result, 
 	return mcp.Result{Content: []mcp.Block{mcp.Text(text)}}, nil
 }
 
-// ackArchive archives ids from the inbox of session sid. The error is only ever the one of not
-// getting to do it at all; archiveBatch has none of its own, it reports an outcome per id. The
-// move is passed in so a test can step into the middle of the batch.
+// ackArchive archives ids from the inbox of session sid, under the lock of that session (F-177):
+// both phases of archiveBatch, the validation and the moves, so that what was validated is what is
+// moved. The error is only ever the one of not getting to do it at all (*lockNotTaken, nothing
+// moved); archiveBatch has none of its own, it reports an outcome per id. The move is passed in so
+// a test can step into the middle of the batch.
 func ackArchive(mgr *session.Manager, sid, sessionDir string, ids []string, maxContentBytes int, check ackCheck, move func(src, processedDir string) error) ([]ackResult, bool, error) {
-	results, ok := archiveBatch(sessionDir, ids, maxContentBytes, check, move)
+	var results []ackResult
+	var ok bool
+	err := underSessionLock(mgr, sid, func() error {
+		results, ok = archiveBatch(sessionDir, ids, maxContentBytes, check, move)
+		return nil
+	})
+	if err != nil {
+		return nil, false, err
+	}
 	return results, ok, nil
+}
+
+// renderAckNotRun is the result of an ack that did not run because the session lock was not taken.
+// Same shape as every other refusal of ack (a line per id), and the first line says which of the
+// three it is, because what the agent does next differs: ack again, stop, or look at the folder.
+func renderAckNotRun(ids []string, e *lockNotTaken) string {
+	var head string
+	switch e.outcome() {
+	case lockBusy:
+		head = fmt.Sprintf("Not done. The session lock was still held by another operation after %s. Nothing was moved and nothing was lost; ack again.", e.wait)
+	case lockGone:
+		head = "Not done. This session no longer exists (it was retired): there is nothing to acknowledge."
+	default:
+		head = fmt.Sprintf("Not done. The session lock could not be taken (%v). Nothing was moved. This is not a wait that will pass: look at the session folder.", e.err)
+	}
+	var b strings.Builder
+	b.WriteString(head)
+	for _, id := range dedupe(ids) {
+		fmt.Fprintf(&b, "\n- %s: %s", id, ackNotAttempted)
+	}
+	return b.String()
 }
 
 // renderAck states the outcome of every id. A reason never quotes a message.
