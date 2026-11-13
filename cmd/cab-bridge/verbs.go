@@ -1383,9 +1383,18 @@ func deliverResponseWith(cfg config.Config, mgr *session.Manager, sid string, tx
 		// copy under the id is judged, not the first one found: see responseArchivedByRecipient.
 		//
 		// Whoever archives from this session takes this same lock to do it (F-177: tidy, ack and
-		// the archiving step of the recipient's own reply), so the recipient cannot archive the
+		// the archiving step of the recipient's own reply), so another PROCESS cannot archive the
 		// response between the look and the link below. A mover that does not take the lock is a
 		// defect of that mover: f177_between_test.go fixes the three that exist.
+		//
+		// "Process" is the whole of the guarantee: the lock is re-entrant per process, not per
+		// goroutine (internal/session/lock.go), so a delivery and an ack in the SAME process would
+		// not exclude each other. Today that pair cannot happen. The MCP server is the one process
+		// that serves several sessions, and its sessions are architects (mcp_join.go); the only
+		// delivery it makes in-process is `reply` (mcp_reply.go), and an architect answers only a
+		// val (internal/routing/role.go), while `ask` and `tell` from Desktop run as a child
+		// process (mcp_send.go). If the server ever hosts a val, or toolSend stops using the child,
+		// that exclusion is gone and no test says so.
 		archived, aerr := responseArchivedByRecipient(recipientDir, txn.ResponseID, data)
 		if aerr != nil {
 			return aerr

@@ -30,8 +30,12 @@ const (
 // failed with the lock held) can never be read as one: both reach the caller as an error, and only
 // this one means "nothing was done and nothing was lost".
 type lockNotTaken struct {
-	wait time.Duration // how long the operation was willing to wait, for the message
-	err  error         // what the session package said, wrapped so errors.Is sees the sentinels
+	// wait is how long the operation was willing to wait, and it belongs to the lockBusy text ONLY:
+	// acquisition refuses at once when the session is gone, and fails at once on a lock file it cannot
+	// open, so a "retired" or "look at the folder" text that quoted it would claim a wait that never
+	// happened.
+	wait time.Duration
+	err  error // what the session package said, wrapped so errors.Is sees the sentinels
 }
 
 func (e *lockNotTaken) Error() string { return e.err.Error() }
@@ -63,8 +67,19 @@ func underSessionLock(mgr *session.Manager, sid string, work func() error) error
 	return workErr
 }
 
+// notRunError is an error whose text is written once and whose cause stays in the chain. With
+// fmt.Errorf("...(%v)...: %w", err, e) the same cause would print twice in one line (CRI2, F-177 N1):
+// the reason in the sentence, and again at the end as the wrapped error.
+type notRunError struct {
+	msg   string
+	cause error
+}
+
+func (e *notRunError) Error() string { return e.msg }
+func (e *notRunError) Unwrap() error { return e.cause }
+
 // tidyNotRun is the error of `inbox --tidy` for a lock that was not taken. The original error stays
-// in the chain (%w), so a caller that tests for ErrLockHeld or ErrSessionGone still can.
+// in the chain, so a caller that tests for ErrLockHeld or ErrSessionGone still can.
 func tidyNotRun(e *lockNotTaken) error {
 	switch e.outcome() {
 	case lockBusy:
@@ -72,6 +87,28 @@ func tidyNotRun(e *lockNotTaken) error {
 	case lockGone:
 		return fmt.Errorf("inbox: --tidy did not run: this session no longer exists (it was retired); nothing was moved: %w", e)
 	default:
-		return fmt.Errorf("inbox: --tidy did not run: the session lock could not be taken (%v); nothing was moved. This is not a wait that will pass: look at the session folder: %w", e.err, e)
+		return &notRunError{
+			msg:   fmt.Sprintf("inbox: --tidy did not run: the session lock could not be taken (%v); nothing was moved. This is not a wait that will pass: look at the session folder", e.err),
+			cause: e,
+		}
+	}
+}
+
+// replyArchiveNotRun is the error of the archiving step of `reply` for a lock that was not taken.
+// The step runs after the response is delivered, and the lock is asked for once per ask, so what it
+// can truthfully say is where it stopped: `archived` asks of `total` are in processed/, and nothing
+// more was moved. It carries two counts and nothing of any message (the MCP server logs this text).
+func replyArchiveNotRun(e *lockNotTaken, archived, total int) error {
+	stopped := fmt.Sprintf("reply: the response is already delivered, but the archive of the asks it closes stopped at %d of %d and nothing more was moved: ", archived, total)
+	switch e.outcome() {
+	case lockBusy:
+		return fmt.Errorf("%sthe session lock was still held by another operation after %s. Run `reply` again: it resumes this reply and finishes the archive, without sending the response again: %w", stopped, e.wait, e)
+	case lockGone:
+		return fmt.Errorf("%sthis session no longer exists (it was retired), so there is nothing left to archive: %w", stopped, e)
+	default:
+		return &notRunError{
+			msg:   fmt.Sprintf("%sthe session lock could not be taken (%v). This is not a wait that will pass: look at the session folder", stopped, e.err),
+			cause: e,
+		}
 	}
 }

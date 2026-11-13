@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/myAIPlugins/cli-agents-bridge/internal/cleanup"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/config"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
+	transportfs "github.com/myAIPlugins/cli-agents-bridge/internal/transport/fs"
 )
 
 // F-177, the archive step of `reply`. The ask a reply closes is moved into processed/ by the
@@ -66,6 +69,8 @@ func TestDriveReplyTxn_AStaleDriverDoesNotRecreateARetiredSession(t *testing.T) 
 
 	require.ErrorIs(t, err, session.ErrSessionGone)
 	assert.NoDirExists(t, sessionDir, "the stale driver did not bring the retired session back")
+	assert.Contains(t, err.Error(), "no longer exists (it was retired)")
+	assert.NotContains(t, strings.ToLower(err.Error()), "again", "a retired session does not come back: asking again is not the advice")
 }
 
 // A8: a lock that cannot be opened is not "busy" and not "gone", and the ask does not move.
@@ -81,6 +86,12 @@ func TestDriveReplyTxn_ALockThatCannotBeOpenedMovesNoAsk(t *testing.T) {
 	assert.NotErrorIs(t, err, session.ErrSessionGone)
 	assert.True(t, f177AskInInbox(data), "the ask stays in the inbox: the step did not get to run")
 	assert.Equal(t, 0, askArchivedCount(t, data, f177Ask))
+	// What the agent reads (CRI2 N2): a fault of the folder, not a wait, and not "busy".
+	assert.Contains(t, err.Error(), "the response is already delivered")
+	assert.Contains(t, err.Error(), "could not be taken")
+	assert.Contains(t, err.Error(), "not a wait that will pass")
+	assert.NotContains(t, err.Error(), "still held")
+	assert.NotContains(t, strings.ToLower(err.Error()), "again", "a fault of the folder is not repaired by asking again")
 }
 
 // A9: the lock is another process's. The step says so, moves nothing, leaves the journal at the
@@ -96,6 +107,13 @@ func TestDriveReplyTxn_WhileAnotherProcessHoldsTheLockNothingMovesAndTheNextOneF
 	require.ErrorIs(t, err, session.ErrLockHeld)
 	assert.True(t, f177AskInInbox(data), "the ask did not move while the lock was somebody else's")
 	assert.Equal(t, 0, askArchivedCount(t, data, f177Ask))
+	// What the agent reads (CRI2 N2): it is delivered, the archive got nowhere, it is a wait that
+	// passes, and the next `reply` finishes it without sending again.
+	assert.Contains(t, err.Error(), "the response is already delivered")
+	assert.Contains(t, err.Error(), "stopped at 0 of 1 and nothing more was moved")
+	assert.Contains(t, err.Error(), "still held by another operation after 150ms")
+	assert.Contains(t, err.Error(), "Run `reply` again")
+	assert.Contains(t, err.Error(), "without sending the response again")
 
 	h.release()
 	// Read back from the disk what a restarted `reply` would find: the journal, as it was left.
@@ -113,4 +131,37 @@ func TestDriveReplyTxn_WhileAnotherProcessHoldsTheLockNothingMovesAndTheNextOneF
 	_, found, err = mgr.ReadReplyTxn(replySelf)
 	require.NoError(t, err)
 	assert.False(t, found, "the journal is gone: the reply is complete")
+}
+
+// A9b: the lock does not come at the SECOND ask. The first is already in processed/ and the journal
+// says so, and the text says how far it got instead of "nothing was moved", which would be false of
+// the step before. The disk is the one a crash between two asks leaves: the move done and the index
+// recorded for the first, nothing for the second.
+func TestDriveReplyTxn_WhenTheLockDoesNotComeAtTheSecondAskTheTextSaysHowFarItGot(t *testing.T) {
+	const second = "msg-bbbbbbbbbbbb"
+	mgr, cfg, data := newReplyPair(t)
+	deliverAndNotify(t, mgr, data, f177Ask, "brief", time.Now().UTC())
+	deliverAndNotify(t, mgr, data, second, "another brief", time.Now().UTC())
+	txn, err := beginReply(mgr, replySelf, staticSelector(new(bool), newTxn(replySelf, []string{f177Ask, second}, "the answer")), nil)
+	require.NoError(t, err)
+	delivered, err := deliverResponse(cfg, mgr, replySelf, txn)
+	require.NoError(t, err)
+	require.True(t, delivered, "premise: the response was delivered")
+	sessionDir := f177SessionDir(data, replySelf)
+	require.NoError(t, transportfs.MoveToProcessed(filepath.Join(sessionDir, "inbox", f177Ask+".json"), filepath.Join(sessionDir, "processed")))
+	txn.State = session.ReplyTxnSent
+	txn.ArchivedIndex = 1
+	require.NoError(t, mgr.UpdateReplyTxn(replySelf, txn))
+	require.Equal(t, 1, askArchivedCount(t, data, f177Ask), "premise: the first ask is archived")
+	require.True(t, f177InInbox(data, replySelf, second), "premise: the second is still in the inbox")
+	mgr.LockWait = 150 * time.Millisecond
+	holdLock(t, data, replySelf)
+	requireHeldByAnother(t, data, replySelf)
+
+	err = driveReplyTxn(mgr, cfg, replySelf, txn, func(string, ...any) {})
+
+	require.ErrorIs(t, err, session.ErrLockHeld)
+	assert.Contains(t, err.Error(), "stopped at 1 of 2 and nothing more was moved")
+	assert.True(t, f177InInbox(data, replySelf, second), "the second ask did not move")
+	assert.Equal(t, 1, txn.ArchivedIndex, "and the driver did not claim progress that did not happen")
 }

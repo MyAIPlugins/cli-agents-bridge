@@ -26,21 +26,31 @@ func archiveCloseIDs(mgr *session.Manager, cfg config.Config, sid string, txn *s
 	for txn.ArchivedIndex < len(txn.CloseIDs) {
 		id := txn.CloseIDs[txn.ArchivedIndex]
 		src := filepath.Join(inboxDir, id+".json")
-		err := mgr.WithReplyTxn(sid, txn, func() error {
-			// An ask that is already out of the inbox is the end state this step wants (a crash
-			// between the move and the write of the index leaves exactly that, and so does an ask
-			// closed by ack or tidy). MoveToProcessed wraps what it gets with %w, so the test has to
-			// be errors.Is: os.IsNotExist does not look inside a wrapped error, and with it the
-			// journal could never complete (F-176).
-			if merr := move(src, processedDir); merr != nil && !errors.Is(merr, fs.ErrNotExist) {
-				return fmt.Errorf("archive %s: %w", id, merr)
-			}
-			txn.ArchivedIndex++
-			// The lock is re-entrant inside the process, so this is the same critical section; it
-			// checks the journal once more, which is the cost of going through the one operation
-			// that is allowed to write it.
-			return mgr.UpdateReplyTxn(sid, txn)
+		// underSessionLock is the outer layer only to tell a lock that did not come (*lockNotTaken:
+		// nothing ran, and the text says which of three cases it is) from a failure of the step
+		// itself, which WithReplyTxn alone cannot do: its error is the acquisition, the check of the
+		// journal and the step in one. The lock it takes inside is the same one, held already.
+		err := underSessionLock(mgr, sid, func() error {
+			return mgr.WithReplyTxn(sid, txn, func() error {
+				// An ask that is already out of the inbox is the end state this step wants (a crash
+				// between the move and the write of the index leaves exactly that, and so does an ask
+				// closed by ack or tidy). MoveToProcessed wraps what it gets with %w, so the test has to
+				// be errors.Is: os.IsNotExist does not look inside a wrapped error, and with it the
+				// journal could never complete (F-176).
+				if merr := move(src, processedDir); merr != nil && !errors.Is(merr, fs.ErrNotExist) {
+					return fmt.Errorf("archive %s: %w", id, merr)
+				}
+				txn.ArchivedIndex++
+				// The lock is re-entrant inside the process, so this is the same critical section; it
+				// checks the journal once more, which is the cost of going through the one operation
+				// that is allowed to write it.
+				return mgr.UpdateReplyTxn(sid, txn)
+			})
 		})
+		var notRun *lockNotTaken
+		if errors.As(err, &notRun) {
+			return replyArchiveNotRun(notRun, txn.ArchivedIndex, len(txn.CloseIDs))
+		}
 		if err != nil {
 			return fmt.Errorf("reply: %w", err)
 		}
