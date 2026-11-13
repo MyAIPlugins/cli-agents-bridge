@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,15 +61,23 @@ func TestLegacyHints_NothingToSayWhenThereIsNothing(t *testing.T) {
 }
 
 func TestLegacyHints_TheCountIsCapped(t *testing.T) {
-	base := t.TempDir()
+	// The message names the old tree's path, and the cap plus one must be absent from the
+	// SENTENCE, not from the path (F-180). The assertion looked at the whole text, so a
+	// temp dir that happened to contain "1001" made it red by chance: on macOS the path
+	// held 2100132232. The digits are planted in the directory name here, so the mistake
+	// of not telling the sentence from the path is red every time instead of one run in
+	// some thousands.
+	base := filepath.Join(t.TempDir(), "cap-"+strconv.Itoa(legacyCountCap+1))
 	root := filepath.Join(base, "sessions")
 	require.NoError(t, os.MkdirAll(root, 0o700))
 	for i := 0; i < legacyCountCap+1; i++ {
 		require.NoError(t, os.Mkdir(filepath.Join(root, "s"+strconv.Itoa(i)), 0o700))
 	}
 	got := legacyRecipientHint(legacyCfg(t, base))
-	assert.Contains(t, got, "more than "+strconv.Itoa(legacyCountCap), "the number is a hint, not an inventory")
-	assert.NotContains(t, got, strconv.Itoa(legacyCountCap+1))
+	require.Contains(t, got, root, "premise: the message names the path, which is what carries the digits")
+	sentence := strings.ReplaceAll(got, root, "<root>")
+	assert.Contains(t, sentence, "more than "+strconv.Itoa(legacyCountCap), "the number is a hint, not an inventory")
+	assert.NotContains(t, sentence, strconv.Itoa(legacyCountCap+1))
 }
 
 // SEC-A: three ways the old tree's root can be something other than a real
