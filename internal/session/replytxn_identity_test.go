@@ -31,9 +31,12 @@ func frozenTxn() *ReplyTxn {
 	}
 }
 
-func TestSameTransaction_EveryFrozenFieldIsPartOfTheIdentity(t *testing.T) {
-	require.True(t, frozenTxn().SameTransaction(frozenTxn()), "premise: two identical transactions are the same")
-	cases := map[string]func(*ReplyTxn){
+// frozenFieldChanges is one change per frozen field of frozenTxn (and per way a list can differ):
+// each one, applied alone, makes another transaction. It is shared by the test of the identity
+// and by the two operations that use it, so that a field cannot be in one and forgotten in the
+// other.
+func frozenFieldChanges() map[string]func(*ReplyTxn) {
+	return map[string]func(*ReplyTxn){
 		"ResponseID": func(x *ReplyTxn) { x.ResponseID = "msg-ffffffffffff" },
 		"To":         func(x *ReplyTxn) { x.To = "valother1" },
 		"Anchor":     func(x *ReplyTxn) { x.Anchor = "msg-bbbbbbbbbbbb" },
@@ -48,6 +51,11 @@ func TestSameTransaction_EveryFrozenFieldIsPartOfTheIdentity(t *testing.T) {
 		"Timestamp":         func(x *ReplyTxn) { x.Timestamp = x.Timestamp.Add(time.Nanosecond) },
 		"Content":           func(x *ReplyTxn) { x.Content = "another answer" },
 	}
+}
+
+func TestSameTransaction_EveryFrozenFieldIsPartOfTheIdentity(t *testing.T) {
+	require.True(t, frozenTxn().SameTransaction(frozenTxn()), "premise: two identical transactions are the same")
+	cases := frozenFieldChanges()
 	for name, change := range cases {
 		t.Run(name, func(t *testing.T) {
 			other := frozenTxn()
@@ -247,12 +255,10 @@ func TestReplyTxnOperations_RefuseAJournalThatIsNotTheirsAndTouchNothing(t *test
 			assert.True(t, errors.Is(err, ErrReplyTxnGone), "got: %v", err)
 			assert.NoFileExists(t, mgr.replyTxnPath(sid), "the journal was not recreated")
 		})
-		t.Run(opName+"/another transaction", func(t *testing.T) {
+		// refusesAJournalOnDisk writes `other` as the journal on disk, asks the operation to act
+		// as the owner of frozenTxn(), and checks it is refused and the file is untouched.
+		refusesAJournalOnDisk := func(t *testing.T, other *ReplyTxn) {
 			mgr, sid := registeredSession(t)
-			other := frozenTxn()
-			other.ResponseID = "msg-ffffffffffff"
-			other.Anchor = "msg-cccccccccccc"
-			other.CloseIDs = []string{"msg-cccccccccccc"}
 			require.NoError(t, mgr.WriteReplyTxn(sid, other))
 			before, rerr := os.ReadFile(mgr.replyTxnPath(sid))
 			require.NoError(t, rerr)
@@ -265,7 +271,24 @@ func TestReplyTxnOperations_RefuseAJournalThatIsNotTheirsAndTouchNothing(t *test
 			after, rerr := os.ReadFile(mgr.replyTxnPath(sid))
 			require.NoError(t, rerr, "the other transaction's journal is still there")
 			assert.Equal(t, string(before), string(after), "and byte for byte what it was")
+		}
+		t.Run(opName+"/another transaction", func(t *testing.T) {
+			other := frozenTxn()
+			other.ResponseID = "msg-ffffffffffff"
+			other.Anchor = "msg-cccccccccccc"
+			other.CloseIDs = []string{"msg-cccccccccccc"}
+			refusesAJournalOnDisk(t, other)
 		})
+		// F-176 (CRI2, N1): the BAR says two journals for the same question have the same id, so
+		// the id alone is not the identity. A journal that differs from the caller's in ONE
+		// frozen field, whichever, is another transaction: the operation must see it.
+		for field, change := range frozenFieldChanges() {
+			t.Run(opName+"/another transaction, differing only in "+field, func(t *testing.T) {
+				other := frozenTxn()
+				change(other)
+				refusesAJournalOnDisk(t, other)
+			})
+		}
 		t.Run(opName+"/unreadable", func(t *testing.T) {
 			mgr, sid := registeredSession(t)
 			require.NoError(t, os.WriteFile(mgr.replyTxnPath(sid), []byte("{not json"), 0o600))

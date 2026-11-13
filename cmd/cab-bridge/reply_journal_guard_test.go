@@ -22,7 +22,9 @@ import (
 // The two permitted callers are the CREATION of a journal (beginReply, reply_core.go) and the
 // write inside UpdateReplyTxn, after its check. Both run inside the session lock: beginReply
 // inside the function it hands to WithSessionLock, UpdateReplyTxn inside the one it hands to
-// the same method; a write that slipped outside would be a check followed by a gamble.
+// the same method; a write that slipped outside would be a check followed by a gamble. That the
+// check and the write share ONE section is fixed next to the code, in
+// internal/session/replytxn_section_test.go.
 var writeReplyTxnCallers = map[string]string{
 	"cmd/cab-bridge/reply_core.go:beginReply":     "creates the journal of a new reply, under the session lock, after the selection",
 	"internal/session/replytxn.go:UpdateReplyTxn": "records progress, under the session lock, after checking that the journal is still the caller's",
