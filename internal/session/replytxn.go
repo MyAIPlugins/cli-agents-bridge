@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
@@ -36,7 +37,13 @@ const (
 // inbox/→processed/ — and there is no filesystem transaction spanning both
 // (atomic.go guarantees one rename, not a pair). The journal closes the gap:
 // the set is frozen ONCE, the response id is derived deterministically, and a
-// retry completes what is missing WITHOUT sending again.
+// retry completes what is missing: before it delivers, it looks for the response among the
+// recipient's messages (in the inbox and in what the recipient archived), so it does not send
+// it again.
+//
+// That look runs under the recipient's session lock, which does not exclude `inbox --tidy` and
+// the `ack` tool of Claude Desktop: they move files without taking it. A recipient that archives
+// the response between the look and the write gets a second copy. F-177 closes that window.
 //
 // Everything needed to rebuild the exact same response is frozen here —
 // including Timestamp and Content. Without them a retry would produce a
@@ -126,17 +133,40 @@ func (m *Manager) WriteReplyTxn(sessionID string, txn *ReplyTxn) error {
 // deliverResponse also reads the current manifests when it builds the message, and the journal
 // does not freeze those.
 //
-// Timestamp is compared as an instant: a zone or a monotonic reading is not a different
-// transaction. Content is compared as a string, which is only sound because a text that is not
+// The comparison is in differences. Timestamp is compared as an instant: a zone or a monotonic
+// reading is not a different transaction. Content is compared as a string, which is only sound because a text that is not
 // valid UTF-8 never reaches a journal (the writers refuse it): JSON would store it as U+FFFD and
 // the copy in memory would differ from the copy on disk.
 func (t *ReplyTxn) SameTransaction(o *ReplyTxn) bool {
-	return t.ResponseID == o.ResponseID &&
-		t.To == o.To &&
-		t.Anchor == o.Anchor &&
-		slices.Equal(t.CloseIDs, o.CloseIDs) &&
-		t.Timestamp.Equal(o.Timestamp) &&
-		t.Content == o.Content
+	return len(t.differences(o)) == 0
+}
+
+// differences names the frozen fields on which o is not t, in the words the errors use. It is the
+// one list behind both SameTransaction and the text of ErrReplyTxnNotYours, so what makes two
+// transactions different and what the error says differs in cannot drift apart. It names fields and
+// never shows their values: an error goes to a log and, on the command line, to a terminal, and
+// the text of a response may be sensitive.
+func (t *ReplyTxn) differences(o *ReplyTxn) []string {
+	var d []string
+	if t.ResponseID != o.ResponseID {
+		d = append(d, "response id")
+	}
+	if t.To != o.To {
+		d = append(d, "recipient")
+	}
+	if t.Anchor != o.Anchor {
+		d = append(d, "anchor")
+	}
+	if !slices.Equal(t.CloseIDs, o.CloseIDs) {
+		d = append(d, "asks to close")
+	}
+	if !t.Timestamp.Equal(o.Timestamp) {
+		d = append(d, "instant")
+	}
+	if t.Content != o.Content {
+		d = append(d, "text")
+	}
+	return d
 }
 
 var (
@@ -166,10 +196,18 @@ func (m *Manager) checkJournalIsMine(sessionID string, mine *ReplyTxn) error {
 	if !found {
 		return ErrReplyTxnGone
 	}
-	if !mine.SameTransaction(onDisk) {
+	diff := mine.differences(onDisk)
+	switch {
+	case len(diff) == 0:
+		return nil
+	case mine.ResponseID != onDisk.ResponseID:
 		return fmt.Errorf("%w (the journal on disk is for response %s)", ErrReplyTxnNotYours, onDisk.ResponseID)
+	default:
+		// The same response id: what differs is what was frozen under it, and saying "for response
+		// <your own id>" would send the reader looking for another reply that is not there.
+		return fmt.Errorf("%w (the journal on disk has the same response id %s and differs in: %s)",
+			ErrReplyTxnNotYours, onDisk.ResponseID, strings.Join(diff, ", "))
 	}
-	return nil
 }
 
 // UpdateReplyTxn records the progress of the transaction the caller carries, under the session

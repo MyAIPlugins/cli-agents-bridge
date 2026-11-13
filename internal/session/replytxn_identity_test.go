@@ -381,3 +381,64 @@ func TestReplyTxnOperations_WaitForTheSessionLockAndChangeNothingWithoutIt(t *te
 	require.NoError(t, mgr.CompleteReplyTxn(sid, progressed))
 	assert.NoFileExists(t, mgr.replyTxnPath(sid))
 }
+
+// F-178: the error of a journal that is not the caller's says WHAT differs. When the response id is
+// the caller's own, "the journal on disk is for response <that id>" pointed at nothing: the id was
+// the same. Now it says the id is the same and names the fields that were frozen differently under
+// it, and never shows what they hold: an error goes to a log and, on the command line, to a
+// terminal, and a response text may be sensitive.
+func TestChecksOfTheJournal_TheErrorNamesWhatDiffersAndNeverShowsIt(t *testing.T) {
+	label := map[string]string{
+		"To":                      "recipient",
+		"Anchor":                  "anchor",
+		"CloseIDs, one id":        "asks to close",
+		"CloseIDs, another order": "asks to close",
+		"CloseIDs, shorter":       "asks to close",
+		"CloseIDs, longer":        "asks to close",
+		"Timestamp":               "instant",
+		"Content":                 "text",
+	}
+	for name, change := range frozenFieldChanges() {
+		t.Run(name, func(t *testing.T) {
+			mgr, sid := registeredSession(t)
+			onDisk := frozenTxn()
+			change(onDisk)
+			require.NoError(t, mgr.WriteReplyTxn(sid, onDisk))
+
+			for op, run := range map[string]func() error{
+				"UpdateReplyTxn":   func() error { return mgr.UpdateReplyTxn(sid, frozenTxn()) },
+				"CompleteReplyTxn": func() error { return mgr.CompleteReplyTxn(sid, frozenTxn()) },
+			} {
+				err := run()
+				require.ErrorIs(t, err, ErrReplyTxnNotYours, op)
+				text := err.Error()
+				if name == "ResponseID" {
+					assert.Contains(t, text, "the journal on disk is for response msg-ffffffffffff", "%s: another id is said as it always was", op)
+					continue
+				}
+				want, ok := label[name]
+				require.True(t, ok, "a change in frozenFieldChanges with no label here: %q", name)
+				assert.Contains(t, text, "has the same response id "+frozenTxn().ResponseID, "%s", op)
+				assert.Contains(t, text, "differs in: "+want, "%s: it names the field that differs", op)
+				assert.NotContains(t, text, "is for response", "%s: that line sends the reader looking for another reply", op)
+				for _, value := range []string{onDisk.Content, onDisk.To, onDisk.Anchor, "msg-cccccccccccc"} {
+					assert.NotContains(t, text, value, "%s: a field is named, its value is never shown", op)
+				}
+			}
+		})
+	}
+}
+
+// More than one field can differ; the error lists them all, once each, in a fixed order.
+func TestChecksOfTheJournal_TheErrorListsEveryFieldThatDiffers(t *testing.T) {
+	mgr, sid := registeredSession(t)
+	onDisk := frozenTxn()
+	onDisk.Content = "another answer"
+	onDisk.Timestamp = onDisk.Timestamp.Add(time.Second)
+	onDisk.To = "valother1"
+	require.NoError(t, mgr.WriteReplyTxn(sid, onDisk))
+
+	err := mgr.UpdateReplyTxn(sid, frozenTxn())
+	require.ErrorIs(t, err, ErrReplyTxnNotYours)
+	assert.Contains(t, err.Error(), "differs in: recipient, instant, text")
+}
