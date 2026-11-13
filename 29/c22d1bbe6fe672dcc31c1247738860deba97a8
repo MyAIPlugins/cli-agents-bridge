@@ -1,0 +1,42 @@
+cmd/cab-bridge/sent.go
+  s_d5e186cda02d82::t_ccf26a67b46a20 235,239
+cmd/cab-bridge/status.go
+  s_d5e186cda02d82::t_1e8b1241bededf 110-111,115
+cmd/cab-bridge/mcp_inbox_test.go
+  s_d5e186cda02d82::t_bb94409087f6d1 96-97,100
+cmd/cab-bridge/mailbox_scan.go
+  s_d5e186cda02d82::t_da872c73a1c224 1-7,11-13,15-18
+  s_d5e186cda02d82::t_717c2dd9f69437 8-10,14
+cmd/cab-bridge/join.go
+  s_d5e186cda02d82::t_f5826e7c26f4cf 403,408
+cmd/cab-bridge/next_test.go
+  s_d5e186cda02d82::t_620e4943eefe19 882,884-886
+cmd/cab-bridge/verbs.go
+  s_d5e186cda02d82::t_b9b349fe541768 374,378
+  s_d5e186cda02d82::t_a81cb18869915c 1276,1281
+cmd/cab-bridge/next.go
+  s_d5e186cda02d82::t_2e2f4c8872eb1e 721-723,725,731-737,741,743
+  s_d5e186cda02d82::t_2d2900608eea37 760
+  s_d5e186cda02d82::t_584ea6c6e43a00 482,486
+  s_d5e186cda02d82::t_9be14ef5a9087f 793
+cmd/cab-bridge/mcp_inbox.go
+  s_d5e186cda02d82::t_a87017152429bf 83-84,86
+  s_d5e186cda02d82::t_4f36a6a69b714b 72
+  s_d5e186cda02d82::t_054e03e1eec5e5 44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "29c22d1bbe6fe672dcc31c1247738860deba97a8",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
