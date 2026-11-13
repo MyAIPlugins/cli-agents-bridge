@@ -74,6 +74,7 @@ func TestReplyRun_ARecoveryAfterTheRecipientArchivedTheResponseDeliversNothing(t
 	assert.Equal(t, 1, askArchivedCount(t, data, rcvAskA), "the ask was closed")
 	assert.NoFileExists(t, replyJournalPath(data), "the journal is complete and gone")
 	assert.Contains(t, stderr.String(), "was already delivered", "it says why nothing was sent")
+	assert.Contains(t, stderr.String(), "the recipient has already archived it", "and that it is the recipient's archive that has it, not only its inbox")
 }
 
 // Criterion 3 on the recovery: the response is archived under its id, but with other bytes. It is

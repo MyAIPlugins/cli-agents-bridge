@@ -1064,7 +1064,7 @@ func driveReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *ses
 			return fmt.Errorf("reply: %w", err)
 		}
 		if !delivered {
-			note("reply: response %s was already delivered — completing the archiving without sending again\n", txn.ResponseID)
+			note("reply: response %s was already delivered (it is in the recipient's inbox, or the recipient has already archived it) — completing the archiving without sending again\n", txn.ResponseID)
 		}
 	}
 

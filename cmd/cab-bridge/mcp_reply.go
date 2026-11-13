@@ -109,7 +109,11 @@ func (a *mcpApp) toolReply(ctx context.Context, raw json.RawMessage) (mcp.Result
 		if errors.Is(derr, session.ErrReplyTxnGone) || errors.Is(derr, session.ErrReplyTxnNotYours) {
 			return mcp.Result{}, errReplyJournalChanged
 		}
-		return mcp.Result{}, mcp.Refuse("the reply could not be completed. It is on record and the next `reply` finishes it without sending it twice")
+		// Not a promise that the next call solves it: a cause that repeats (a recipient folder that
+		// cannot be read, a message archived under the same id with other bytes) fails the same way
+		// at every attempt. The text says what the next call does and when to stop asking it.
+		return mcp.Result{}, mcp.Refuse("the reply could not be completed. It is on record: the next `reply` resumes it from where it stopped, " +
+			"after checking whether the recipient already has the response. If the same failure comes back, asking again will not clear it: tell the person you work with")
 	}
 	return mcp.Result{Content: []mcp.Block{mcp.Text(describeReply(txn, args.AskID, toName, resumed, wasSent))}}, nil
 }
