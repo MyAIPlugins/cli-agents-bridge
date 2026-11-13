@@ -332,3 +332,7 @@ When an operation must check something and act on it with nothing in between ("t
 ### Text that goes into a JSON file is valid UTF-8 first (F-176)
 
 `encoding/json` replaces invalid UTF-8 with U+FFFD when it writes, so the copy in memory and the one on disk stop being equal. A text that is frozen into a file and later compared with it (the reply journal) is checked with `utf8.Valid` before any effect, and refused with an explicit error; in the MCP server the check runs on the raw arguments, before `DecodeArgs`, which would convert them by itself. No silent conversion.
+
+### A lock that was not taken is not a failure of the work (F-177)
+
+When an operation needs the session lock, the error of not getting it is told apart from the error of the work done under it, with a type (`lockNotTaken` in `cmd/cab-bridge`), because the advice is opposite: busy means run it again, a retired session means there is nothing to do, any other error of the lock means look at the session folder and do not retry. The work error comes back intact. The text says the cause once: `fmt.Errorf("...(%v)...: %w", err, err)` prints it twice in one line, so a type with its own message and the cause in `Unwrap` is used instead.
