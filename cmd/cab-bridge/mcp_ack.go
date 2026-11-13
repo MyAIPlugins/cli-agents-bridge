@@ -10,6 +10,7 @@ import (
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/mcp"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
+	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
 )
 
 // The `ack` tool: how a tell or a response leaves the inbox.
@@ -48,12 +49,23 @@ func (a *mcpApp) toolAck(ctx context.Context, raw json.RawMessage) (mcp.Result, 
 		}
 		return nil
 	}
-	results, ok := archiveBatch(filepath.Join(a.cfg.DataDir, "sessions", p.sid), args.IDs, a.cfg.MaxMessageBytes, check, moveToProcessed)
+	results, ok, lerr := ackArchive(a.mgr, p.sid, filepath.Join(a.cfg.DataDir, "sessions", p.sid), args.IDs, a.cfg.MaxMessageBytes, check, moveToProcessed)
+	if lerr != nil {
+		return mcp.Result{}, lerr
+	}
 	text := renderAck(results, ok)
 	if !ok {
 		return mcp.ErrorResult(text), nil
 	}
 	return mcp.Result{Content: []mcp.Block{mcp.Text(text)}}, nil
+}
+
+// ackArchive archives ids from the inbox of session sid. The error is only ever the one of not
+// getting to do it at all; archiveBatch has none of its own, it reports an outcome per id. The
+// move is passed in so a test can step into the middle of the batch.
+func ackArchive(mgr *session.Manager, sid, sessionDir string, ids []string, maxContentBytes int, check ackCheck, move func(src, processedDir string) error) ([]ackResult, bool, error) {
+	results, ok := archiveBatch(sessionDir, ids, maxContentBytes, check, move)
+	return results, ok, nil
 }
 
 // renderAck states the outcome of every id. A reason never quotes a message.

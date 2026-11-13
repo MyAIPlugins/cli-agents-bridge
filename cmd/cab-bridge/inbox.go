@@ -218,6 +218,17 @@ func (r tidyResult) leftBehind() string {
 // surfaced — never silently swallowed — with the count moved so far; a second
 // --tidy retries the rest.
 func tidyInbox(mgr *session.Manager, sid, sessionDir string, maxContentBytes int) (tidyResult, error) {
+	return tidyWith(mgr, sid, sessionDir, maxContentBytes, transportfs.MoveToProcessed)
+}
+
+// tidyWith is tidyInbox with the move passed in, so that a test can step into the middle of the
+// sweep, between two moves, exactly where the session lock has to still be held.
+func tidyWith(mgr *session.Manager, sid, sessionDir string, maxContentBytes int, move func(src, processedDir string) error) (tidyResult, error) {
+	return sweepInbox(mgr, sid, sessionDir, maxContentBytes, move)
+}
+
+// sweepInbox is the sweep itself: what tidyInbox does once it is allowed to.
+func sweepInbox(mgr *session.Manager, sid, sessionDir string, maxContentBytes int, move func(src, processedDir string) error) (tidyResult, error) {
 	var res tidyResult
 	cursor, _, cerr := mgr.ReadWakeCursor(sid)
 	if cerr != nil {
@@ -260,7 +271,7 @@ func tidyInbox(mgr *session.Manager, sid, sessionDir string, maxContentBytes int
 			res.openAsks++
 			continue
 		}
-		if err := transportfs.MoveToProcessed(full, processedDir); err != nil {
+		if err := move(full, processedDir); err != nil {
 			return res, fmt.Errorf("inbox: tidy move %q (moved %d before failure): %w", full, res.moved, err)
 		}
 		res.moved++

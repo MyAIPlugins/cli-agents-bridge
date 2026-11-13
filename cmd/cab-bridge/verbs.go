@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -1043,6 +1042,12 @@ func finishReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *se
 // say its own words. The CLI passes a note that writes to stderr, so its output is the
 // one it always had.
 func driveReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *session.ReplyTxn, note func(format string, args ...any)) error {
+	return driveReplyTxnWith(mgr, cfg, sid, txn, note, transportfs.MoveToProcessed)
+}
+
+// driveReplyTxnWith is driveReplyTxn with the move of an ask into processed/ passed in, so a
+// test can step into the middle of the archiving.
+func driveReplyTxnWith(mgr *session.Manager, cfg config.Config, sid string, txn *session.ReplyTxn, note func(format string, args ...any), move func(src, processedDir string) error) error {
 	// Entering already SENT means we are resuming after a crash in the gap.
 	// Say so: completing a recovery in silence would look identical to having
 	// just sent the text of THIS invocation, which is not what happened — the
@@ -1068,26 +1073,8 @@ func driveReplyTxn(mgr *session.Manager, cfg config.Config, sid string, txn *ses
 		}
 	}
 
-	// Archive exactly and only the frozen closeIDs, resuming from the index. By
-	// id, never by re-scanning the directory: a message that arrived after the
-	// snapshot must not be swept away unseen (§2.3 invariant).
-	processedDir := filepath.Join(cfg.DataDir, "sessions", sid, "processed")
-	inboxDir := filepath.Join(cfg.DataDir, "sessions", sid, "inbox")
-	for txn.ArchivedIndex < len(txn.CloseIDs) {
-		id := txn.CloseIDs[txn.ArchivedIndex]
-		src := filepath.Join(inboxDir, id+".json")
-		// An ask that is already out of the inbox is the end state this step wants (a crash
-		// between the move and the write of the index leaves exactly that, and so does an ask
-		// closed by ack or tidy). MoveToProcessed wraps what it gets with %w, so the test has to
-		// be errors.Is: os.IsNotExist does not look inside a wrapped error, and with it the
-		// journal could never complete (F-176).
-		if err := transportfs.MoveToProcessed(src, processedDir); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("reply: archive %s: %w", id, err)
-		}
-		txn.ArchivedIndex++
-		if err := mgr.UpdateReplyTxn(sid, txn); err != nil {
-			return fmt.Errorf("reply: %w", err)
-		}
+	if err := archiveCloseIDs(mgr, cfg, sid, txn, move); err != nil {
+		return err
 	}
 
 	return completeJournal(mgr, sid, txn, note)
@@ -1305,6 +1292,19 @@ func countUnseenInbound(mgr *session.Manager, cfg config.Config, sid string) int
 // It is not a promise of one copy against someone who moves the file at the very instant of the
 // write: see the comment at the check below.
 func deliverResponse(cfg config.Config, mgr *session.Manager, sid string, txn *session.ReplyTxn) (bool, error) {
+	return deliverResponseWith(cfg, mgr, sid, txn, deliverSeams{})
+}
+
+// deliverSeams are the points where a test steps into the delivery. All nil in production.
+type deliverSeams struct {
+	// afterLook runs inside the recipient's session lock, right after the look for the response
+	// among what the recipient has (inbox and archive) found nothing, and before the write: the
+	// instant between "not there" and "there" that F-178 declared and F-177 closes.
+	afterLook func()
+}
+
+// deliverResponseWith is deliverResponse with the seams passed in.
+func deliverResponseWith(cfg config.Config, mgr *session.Manager, sid string, txn *session.ReplyTxn, seams deliverSeams) (bool, error) {
 	senderManifest, err := mgr.LoadManifest(sid)
 	if err != nil {
 		return false, fmt.Errorf("load sender manifest: %w", err)
@@ -1388,6 +1388,9 @@ func deliverResponse(cfg config.Config, mgr *session.Manager, sid string, txn *s
 		}
 		if archived {
 			return nil // created stays false: already delivered, nothing to write
+		}
+		if seams.afterLook != nil {
+			seams.afterLook()
 		}
 		var werr error
 		created, werr = transportfs.WriteIfAbsentBytes(filepath.Join(targetInbox, txn.ResponseID+".json"), data, 0o600)
