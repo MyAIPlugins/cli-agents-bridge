@@ -24,42 +24,67 @@ func plantProcessedFile(t *testing.T, dir, stamp, id, content string) string {
 	return path
 }
 
-// The order is inbox/ first. A message that is in both places answers "in the inbox": that is the
-// answer that sends the delivery to the create-if-absent, which judges the bytes. The reverse order
-// would answer "archived" and skip it. This pins the order for the one caller that can be hurt by
-// it: a message only moves from inbox/ to processed/, so inbox/ then processed/ cannot see it in
-// neither while a rename is in progress, and processed/ then inbox/ can.
-func TestLocateMessage_TheInboxIsLookedAtBeforeProcessed(t *testing.T) {
+// The order is inbox/ first. A message that is in both places answers "in the inbox" first: for the
+// readers that is the whole answer, for the delivery it is the first of the copies and the one that
+// sends it to the create-if-absent, which judges the bytes. This pins the order for the one caller
+// that can be hurt by it: a message only moves from inbox/ to processed/, so inbox/ then processed/
+// cannot see it in neither while a rename is in progress, and processed/ then inbox/ can.
+func TestLocate_TheInboxIsLookedAtBeforeProcessed(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "inbox"), 0o700))
 	inboxPath := filepath.Join(dir, "inbox", locateID+".json")
 	require.NoError(t, os.WriteFile(inboxPath, []byte("in the inbox"), 0o600))
-	plantProcessedFile(t, dir, "20260101T000000.000000000Z", locateID, "in processed")
+	archived := plantProcessedFile(t, dir, "20260101T000000.000000000Z", locateID, "in processed")
 
-	for name, locate := range map[string]func(string, string) (located, error){"locateMessage": locateMessage, "locateMessageStrict": locateMessageStrict} {
-		loc, err := locate(dir, locateID)
-		require.NoError(t, err, name)
-		assert.False(t, loc.archived, "%s: in the inbox wins", name)
-		assert.Equal(t, inboxPath, loc.path, name)
-	}
+	loc, err := locateMessage(dir, locateID)
+	require.NoError(t, err)
+	assert.False(t, loc.archived, "the readers: in the inbox wins")
+	assert.Equal(t, inboxPath, loc.path)
+
+	copies, err := locateCopiesStrict(dir, locateID)
+	require.NoError(t, err)
+	require.Len(t, copies, 2, "the delivery sees both")
+	assert.Equal(t, located{path: inboxPath}, copies[0], "inbox/ first")
+	assert.Equal(t, located{path: archived, archived: true}, copies[1])
 }
 
-// Two entries of processed/ under one id: the first by name, which starts with the instant of the
-// archiving, so the oldest. What the delivery makes of it is in responseArchivedByRecipient: the
-// oldest decides. Same bytes first: already delivered. Other bytes first: an error, even if a
-// later copy is the same, because the first one is a different message under this id and that is a
-// collision, severe on purpose.
-func TestResponseArchivedByRecipient_TwoEntriesUnderOneIdAreJudgedByTheOldest(t *testing.T) {
-	data := []byte("the response")
+// Two entries of processed/ under one id. The readers keep the choice they always had, the first by
+// name (which starts with the instant of the archiving, so the oldest); the delivery gets both, in
+// that order. What the delivery makes of them is the next test.
+func TestLocate_TwoEntriesUnderOneIdReadersTakeTheFirstDeliveryGetsBoth(t *testing.T) {
+	dir := t.TempDir()
+	// planted newest first: the order of the names decides, not the order of creation
+	later := plantProcessedFile(t, dir, "20260102T000000.000000000Z", locateID, "later")
+	first := plantProcessedFile(t, dir, "20260101T000000.000000000Z", locateID, "first")
+
+	loc, err := locateMessage(dir, locateID)
+	require.NoError(t, err)
+	assert.Equal(t, first, loc.path, "the readers: the oldest")
+
+	copies, err := locateCopiesStrict(dir, locateID)
+	require.NoError(t, err)
+	require.Len(t, copies, 2)
+	assert.Equal(t, first, copies[0].path)
+	assert.Equal(t, later, copies[1].path)
+}
+
+// F-178, criterion 3 on copies that are SEVERAL: whether a response is "already delivered" does not
+// depend on how its copies are named. One archived copy with other bytes, wherever it sorts, is a
+// collision and an error; the same two contents with the names swapped answer the same. Found in
+// the gate of the diff: with the identical copy first the delivery used to close the ask and say
+// nothing about the other one.
+func TestResponseArchivedByRecipient_EveryCopyIsJudgedWhateverTheOrderOfTheNames(t *testing.T) {
+	const same, other = "the response", "other"
 	for _, tc := range []struct {
 		name         string
 		first, later string
 		delivered    bool
 		wantErr      bool
 	}{
-		{"oldest is the same, later is the same", "the response", "the response", true, false},
-		{"oldest is the same, later differs", "the response", "other", true, false},
-		{"oldest differs, later is the same", "other", "the response", false, true},
+		{"oldest is the same, later is the same", same, same, true, false},
+		{"oldest is the same, later differs", same, other, false, true},
+		{"oldest differs, later is the same", other, same, false, true},
+		{"oldest differs, later differs", other, other, false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -67,7 +92,7 @@ func TestResponseArchivedByRecipient_TwoEntriesUnderOneIdAreJudgedByTheOldest(t 
 			plantProcessedFile(t, dir, "20260102T000000.000000000Z", locateID, tc.later)
 			plantProcessedFile(t, dir, "20260101T000000.000000000Z", locateID, tc.first)
 
-			archived, err := responseArchivedByRecipient(dir, locateID, data)
+			archived, err := responseArchivedByRecipient(dir, locateID, []byte(same))
 			if tc.wantErr {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), "different content")
@@ -75,6 +100,41 @@ func TestResponseArchivedByRecipient_TwoEntriesUnderOneIdAreJudgedByTheOldest(t 
 				return
 			}
 			require.NoError(t, err)
+			assert.Equal(t, tc.delivered, archived)
+		})
+	}
+}
+
+// The copy in inbox/ and the copy archived are the same pair of places: an archived copy with other
+// bytes is an error whether the copy in inbox/ is the same or not, and an archived copy with the
+// same bytes beside one in inbox/ leaves the judgement to the create-if-absent (false), which
+// refuses an inbox/ copy with other bytes itself. Skipping that step when something is archived
+// would let a different copy in inbox/ pass.
+func TestResponseArchivedByRecipient_AnInboxCopyAndAnArchivedOne(t *testing.T) {
+	const same, other = "the response", "other"
+	for _, tc := range []struct {
+		name            string
+		inbox, archived string
+		delivered       bool
+		wantErr         bool
+	}{
+		{"inbox the same, archived the same: the create-if-absent decides", same, same, false, false},
+		{"inbox the same, archived differs: an error", same, other, false, true},
+		{"inbox differs, archived the same: false, the create-if-absent refuses it", other, same, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			require.NoError(t, os.MkdirAll(filepath.Join(dir, "inbox"), 0o700))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "inbox", locateID+".json"), []byte(tc.inbox), 0o600))
+			plantProcessedFile(t, dir, "20260101T000000.000000000Z", locateID, tc.archived)
+
+			archived, err := responseArchivedByRecipient(dir, locateID, []byte(same))
+			if tc.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "different content")
+			} else {
+				require.NoError(t, err)
+			}
 			assert.Equal(t, tc.delivered, archived)
 		})
 	}

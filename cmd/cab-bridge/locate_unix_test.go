@@ -13,10 +13,10 @@ import (
 )
 
 // F-178 / N1: an entry of processed/ whose ownership check fails. Not ours (a symlink: the same
-// refusal as another owner, security.ErrOwnershipMismatch) is skipped by both finders: a name
+// refusal as another owner, security.ErrOwnershipMismatch) is skipped by both looks: a name
 // alone does not forge "archived". An entry that cannot be OPENED is skipped by the readers and is
-// an error for the delivery, which acts on "not found".
-func TestLocateMessage_AnEntryThatCannotBeCheckedIsSkippedByReadersAndRefusedByTheDelivery(t *testing.T) {
+// an error for the delivery, which acts on "nothing found".
+func TestLocate_AnEntryThatCannotBeCheckedIsSkippedByReadersAndRefusedByTheDelivery(t *testing.T) {
 	t.Run("not ours: a symlink is skipped by both", func(t *testing.T) {
 		dir := t.TempDir()
 		target := filepath.Join(t.TempDir(), "elsewhere.json")
@@ -26,8 +26,9 @@ func TestLocateMessage_AnEntryThatCannotBeCheckedIsSkippedByReadersAndRefusedByT
 
 		_, err := locateMessage(dir, locateID)
 		require.ErrorIs(t, err, errMessageNotFound)
-		_, err = locateMessageStrict(dir, locateID)
-		require.ErrorIs(t, err, errMessageNotFound, "a symlink is not ours: the same answer as no entry")
+		copies, err := locateCopiesStrict(dir, locateID)
+		require.NoError(t, err)
+		assert.Empty(t, copies, "a symlink is not ours: the same answer as no entry")
 	})
 
 	t.Run("cannot be opened: skipped by the readers, an error for the delivery", func(t *testing.T) {
@@ -42,9 +43,8 @@ func TestLocateMessage_AnEntryThatCannotBeCheckedIsSkippedByReadersAndRefusedByT
 		_, err := locateMessage(dir, locateID)
 		require.ErrorIs(t, err, errMessageNotFound, "the readers skip it, as before")
 
-		_, err = locateMessageStrict(dir, locateID)
-		require.Error(t, err)
-		assert.NotErrorIs(t, err, errMessageNotFound, "it is NOT 'not found': it may be the copy that was delivered")
+		_, err = locateCopiesStrict(dir, locateID)
+		require.Error(t, err, "it is NOT 'nothing found': it may be the copy that was delivered")
 		assert.ErrorIs(t, err, fs.ErrPermission)
 	})
 }

@@ -1376,7 +1376,8 @@ func deliverResponse(cfg config.Config, mgr *session.Manager, sid string, txn *s
 		// This runs on EVERY delivery, not only on a retry: whether a journal was just created
 		// says who wrote the journal, not that nobody delivered before (a second driver of the
 		// same transaction, a journal lost after the delivery). The cost is one Lstat and the
-		// listing of the recipient's processed/, under the lock this delivery already holds.
+		// listing of the recipient's processed/, under the lock this delivery already holds. Every
+		// copy under the id is judged, not the first one found: see responseArchivedByRecipient.
 		//
 		// The lock does not exclude whoever archives: tidy and ack move files without taking
 		// it. If the recipient archives the response between the look and the link below, a
@@ -1405,28 +1406,34 @@ func deliverResponse(cfg config.Config, mgr *session.Manager, sid string, txn *s
 // responseArchivedByRecipient says whether the response with this id is already among the
 // messages the recipient archived, byte-identical to the one about to be written.
 //
-// Where it is looked for, and in which order, is locateMessageStrict's business: the order
-// inbox/ then processed/ is what makes "not found" mean "not delivered". A response still in
-// inbox/ answers false: the create-if-absent that follows judges it, as it always did (same
-// bytes: delivered, other bytes: error). Found archived with other bytes, or impossible to
-// read, is an error and writes nothing: two messages under one id must never pass silently, and
-// a delivery that cannot look refuses instead of guessing "not delivered".
+// It looks at EVERY copy under the id (locateCopiesStrict), not at the first: two copies can sit
+// under one id (the artifact of the defect F-178 closes), and judging only the one that sorts
+// first would let a copy with other bytes pass whenever an identical one has the earlier name. An
+// archived copy with other bytes, wherever it sorts, is an error and writes nothing: two messages
+// under one id must never pass silently. So is a copy that cannot be read, and so is a look that
+// cannot be done: a delivery that cannot look refuses instead of guessing "not delivered".
+//
+// A response still in inbox/ answers false even when it is also archived: the create-if-absent
+// that follows judges that copy, as it always did (same bytes: delivered, other bytes: error).
 func responseArchivedByRecipient(recipientDir, id string, data []byte) (bool, error) {
-	loc, err := locateMessageStrict(recipientDir, id)
-	switch {
-	case errors.Is(err, errMessageNotFound):
-		return false, nil
-	case err != nil:
-		return false, fmt.Errorf("look for the response among the recipient's messages: %w", err)
-	case !loc.archived:
-		return false, nil
-	}
-	existing, err := security.ReadOwnedFile(loc.path)
+	copies, err := locateCopiesStrict(recipientDir, id)
 	if err != nil {
-		return false, fmt.Errorf("read the archived response %q: %w", loc.path, err)
+		return false, fmt.Errorf("look for the response among the recipient's messages: %w", err)
 	}
-	if !bytes.Equal(existing, data) {
-		return false, fmt.Errorf("%q is the response already archived by the recipient, with different content under the same id: refusing to deliver another", loc.path)
+	inInbox, archived := false, false
+	for _, c := range copies {
+		if !c.archived {
+			inInbox = true
+			continue
+		}
+		existing, err := security.ReadOwnedFile(c.path)
+		if err != nil {
+			return false, fmt.Errorf("read the archived response %q: %w", c.path, err)
+		}
+		if !bytes.Equal(existing, data) {
+			return false, fmt.Errorf("%q is a response already archived by the recipient, with different content under the same id: refusing to deliver another", c.path)
+		}
+		archived = true
 	}
-	return true, nil
+	return archived && !inInbox, nil
 }
