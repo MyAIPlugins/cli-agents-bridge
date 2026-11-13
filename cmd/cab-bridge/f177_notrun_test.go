@@ -8,8 +8,11 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	"github.com/myAIPlugins/cli-agents-bridge/internal/message"
 	"github.com/myAIPlugins/cli-agents-bridge/internal/session"
+	transportfs "github.com/myAIPlugins/cli-agents-bridge/internal/transport/fs"
 )
 
 // F-177: what is said when the lock was not taken. This file needs the types of the fix, so it is
@@ -87,4 +90,69 @@ func TestNotRun_SaysWhichOfTheThreeItIs(t *testing.T) {
 			assert.Equal(t, 1, strings.Count(text, "msg-bbbbbbbbbbbb: not-attempted"), name)
 		}
 	})
+}
+
+// assertAFailureOfTheStep is the other half of "the lock was not taken": an error of the work itself,
+// with the lock held, must NOT read as one. Both reach the caller as an error and both keep their
+// cause in the chain, so `ErrorIs` cannot tell them apart; what tells them apart is the type and
+// the words. A step that failed halfway and was presented as "could not be taken, nothing was
+// moved" would send the reader to look at a lock that was fine, and say nothing was moved when
+// something was (CRI2, the delta gate of F-177: a mutant that did exactly this survived every test).
+func assertAFailureOfTheStep(t *testing.T, err error) {
+	t.Helper()
+	require.Error(t, err)
+	var notRun *lockNotTaken
+	assert.False(t, errors.As(err, &notRun), "a failure of the step is not a lock that was not taken: %v", err)
+	assert.NotContains(t, err.Error(), "could not be taken", "the lock was fine")
+	assert.NotContains(t, err.Error(), "did not run", "the step ran")
+	assert.NotContains(t, err.Error(), "still held", "nobody held the lock")
+}
+
+// A tidy whose second move fails: the first file is in processed/, the error says how many moved
+// before the failure, and it is the error of the sweep and not of the lock.
+func TestTidyWith_AMoveThatFailsIsAFailureOfTheSweepAndNotALockThatWasNotTaken(t *testing.T) {
+	t.Parallel()
+	data := t.TempDir()
+	const sid = "f177nt01"
+	mgr := f177Session(t, data, sid)
+	const second = "msg-bbbbbbbbbbbb"
+	plantMsg(t, data, sid, "inbox", second, "val12345", "VAL-x", message.TypeNotify, "another shown tell")
+	_, err := mgr.CommitWakeCursor(sid, []string{second}, time.Now().UTC(), nil, nil)
+	require.NoError(t, err)
+	boom := errors.New("the disk said no")
+	moves := 0
+	move := func(src, processedDir string) error {
+		moves++
+		if moves == 2 {
+			return boom
+		}
+		return transportfs.MoveToProcessed(src, processedDir)
+	}
+
+	res, err := tidyWith(mgr, sid, f177SessionDir(data, sid), 65536, move)
+
+	require.Equal(t, 2, moves, "premise: the sweep reached the second move")
+	require.ErrorIs(t, err, boom)
+	assertAFailureOfTheStep(t, err)
+	assert.Contains(t, err.Error(), "moved 1 before failure")
+	assert.Equal(t, 1, res.moved)
+	assert.Equal(t, 1, f177Archived(t, data, sid, f177Tell), "the first file did move, which is why 'nothing was moved' would have been false")
+}
+
+// The same for the archive step of `reply`: a move that fails is "archive <id>: ...", the journal
+// keeps the index it had, and the words are not those of a lock.
+func TestDriveReplyTxnWith_AMoveThatFailsIsAFailureOfTheStepAndNotALockThatWasNotTaken(t *testing.T) {
+	mgr, cfg, data, txn := f177SentReply(t)
+	boom := errors.New("the disk said no")
+
+	err := driveReplyTxnWith(mgr, cfg, replySelf, txn, func(string, ...any) {}, func(string, string) error { return boom })
+
+	require.ErrorIs(t, err, boom)
+	assertAFailureOfTheStep(t, err)
+	assert.Contains(t, err.Error(), "archive "+f177Ask)
+	assert.True(t, f177AskInInbox(data), "premise: the ask did not move")
+	left, found, rerr := mgr.ReadReplyTxn(replySelf)
+	require.NoError(t, rerr)
+	require.True(t, found, "the journal stays: the reply is not done")
+	assert.Zero(t, left.ArchivedIndex, "and it did not claim progress that did not happen")
 }

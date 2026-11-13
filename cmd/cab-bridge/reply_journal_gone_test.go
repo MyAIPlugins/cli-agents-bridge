@@ -121,6 +121,9 @@ func TestReplyJournal_AnOvertakenDriverStopsBeforeTheFirstArchiveMoveAndArchives
 
 			require.Error(t, err)
 			assert.True(t, errors.Is(err, wantErr), "got: %v", err)
+			// The journal that is not mine is a failure of the step with the lock held, not a lock
+			// that was not taken: the text must not send the reader to look at a lock that was fine.
+			assertAFailureOfTheStep(t, err)
 			assert.Equal(t, 0, askArchivedCount(t, data, "msg-aaaaaaaaaaaa"), "the move did not run: the check comes first")
 			assert.Equal(t, 0, askArchivedCount(t, data, "msg-bbbbbbbbbbbb"))
 			assert.FileExists(t, filepath.Join(data, "sessions", replySelf, "inbox", "msg-aaaaaaaaaaaa.json"), "the first ask is still in the inbox")
