@@ -1,0 +1,25 @@
+internal/fslock/fslock_test.go
+  s_d5e186cda02d82::t_ce279f55f5b735 108-167
+internal/findings/lock.go
+  s_d5e186cda02d82::t_eb24de7e0e34c0 32-34
+internal/fslock/fslock.go
+  s_d5e186cda02d82::t_3cd0064858910d 123
+  s_d5e186cda02d82::t_f91726de131801 110-116,121-122
+  s_d5e186cda02d82::t_8ee69f84357ad0 103-108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c50b3d32b72b608fbc2b30d38d7d3f4ded3e8e46",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
