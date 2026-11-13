@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
-	"strings"
 	"sync/atomic"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/mcp"
@@ -29,10 +27,6 @@ var errInboxScanTimeout = mcp.Refuse("the inbox could not be read within the tim
 // call did not start to read, and the agent that asks again in a moment loses nothing
 // (`next` over MCP only reads).
 var errInboxScanBusy = mcp.Refuse("an earlier read of this inbox is still running and only one runs at a time, so this call did not read it: ask again in a moment")
-
-// errMessageNotFound is returned by locateMessage for an id that is in neither the
-// inbox nor processed/.
-var errMessageNotFound = errors.New("no such message in the inbox or in processed/")
 
 // maxAckBatch bounds one ack: a batch is validated as a whole before the first
 // message moves, so its size is bounded.
@@ -101,48 +95,6 @@ func scanInboxWithSeams(ctx context.Context, guard *scanGuard, inboxDir string, 
 	case <-ctx.Done():
 		return inboxScan{}, errInboxScanTimeout
 	}
-}
-
-// located says where a message was found.
-type located struct {
-	path     string
-	archived bool
-}
-
-// locateMessage finds a message by id WITHOUT decoding every file: in inbox/ the file
-// is named <id>.json, in processed/ it is <timestamp>-<id>.json. The id is validated
-// against the wire format before it is used to build any path.
-func locateMessage(sessionDir, id string) (located, error) {
-	if err := message.ValidateMessageID(id); err != nil {
-		return located{}, err
-	}
-	inboxPath := filepath.Join(sessionDir, "inbox", id+".json")
-	if _, err := os.Lstat(inboxPath); err == nil {
-		return located{path: inboxPath}, nil
-	} else if !os.IsNotExist(err) {
-		return located{}, fmt.Errorf("look for %s in the inbox: %w", id, err)
-	}
-	processedDir := filepath.Join(sessionDir, "processed")
-	entries, err := os.ReadDir(processedDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return located{}, errMessageNotFound
-		}
-		return located{}, fmt.Errorf("look for %s in processed/: %w", id, err)
-	}
-	suffix := "-" + id + ".json"
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), suffix) {
-			continue
-		}
-		path := filepath.Join(processedDir, e.Name())
-		// A name alone must not forge "archived": the entry has to be ours.
-		if cerr := security.CheckOwnedFile(path); cerr != nil {
-			continue
-		}
-		return located{path: path, archived: true}, nil
-	}
-	return located{}, errMessageNotFound
 }
 
 // loadMessageAt reads and decodes one message file, verifying it belongs to this user.
