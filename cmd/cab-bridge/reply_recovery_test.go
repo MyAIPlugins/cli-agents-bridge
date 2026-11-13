@@ -16,12 +16,12 @@ import (
 
 // F-176, the recovery half: a `reply` interrupted at any point is completed by the next one.
 //
-// What these tests prove is COMPLETION, and they are named for it. They do not prove
-// exactly-once delivery: while the response is still in the recipient's inbox a recovery does
-// not deliver it again (the copies counted below stay at one), but once the recipient has
-// archived it, a recovery from a journal that is still pending delivers it a second time.
-// That is a defect that F-176 does not cause and does not close (F-178), and
-// TestReply_KnownDefectDeferredToF178_... pins it, on purpose and by name.
+// What these tests prove is COMPLETION, and they are named for it. Whether a recovery delivers a
+// second copy is a separate question, answered by the last test of this file and by
+// reply_delivery_archived_test.go (F-178): the delivery looks for the response in the recipient's
+// inbox and in what the recipient has archived, so a recovery after the recipient archived it
+// delivers nothing. What is NOT excluded is a recipient that archives at the very instant of the
+// write: tidy and ack move files without the session lock (F-177).
 
 const (
 	rcvAskA    = "msg-aaaaaaaaaaaa"
@@ -221,17 +221,13 @@ func TestDriveReplyTxn_AnAskThatIsAlreadyOutOfTheInboxIsNotAFailure(t *testing.T
 	assert.False(t, found, "the journal is still on disk: the reply cannot complete")
 }
 
-// TestReply_KnownDefectDeferredToF178_RecoveryAfterTheRecipientArchivedItDeliversASecondCopy
-// PINS A DEFECT, deliberately. The sender dies after delivering and before recording SENT, the
-// recipient reads the response and archives it, and the sender recovers the journal that is
-// still pending: WriteIfAbsentBytes looks at the inbox only, finds nothing, and delivers the
-// response again. It is not caused by F-176 (it needs no second driver) and F-176 does not
-// close it: it is F-178, a lot of its own. The recovery returns nil and there are TWO copies,
-// one in processed/ and a new one in the inbox, which is what this test asserts today.
-//
-// WHEN F-178 CLOSES: this test must change to assert ONE copy and be renamed, and its fixture
-// stays as it is. A pass here is not evidence of exactly-once: it is the record of a defect.
-func TestReply_KnownDefectDeferredToF178_RecoveryAfterTheRecipientArchivedItDeliversASecondCopy(t *testing.T) {
+// TestReply_RecoveryAfterTheRecipientArchivedItDoesNotDeliverASecondCopy is F-178. The sender
+// dies after delivering and before recording SENT, the recipient reads the response and
+// archives it, and the sender recovers the journal that is still pending: the recovery must
+// see that the recipient already has the response (in processed/) and deliver nothing, so
+// there is ONE copy, the archived one. Before F-178 this test asserted TWO copies and carried
+// the name of the defect; the fixture is the same.
+func TestReply_RecoveryAfterTheRecipientArchivedItDoesNotDeliverASecondCopy(t *testing.T) {
 	mgr, cfg, data := newReplyPair(t)
 	deliverAndNotify(t, mgr, data, rcvAskA, "ask", newTxn(replySelf, []string{rcvAskA}, "x").Timestamp)
 	selected := false
@@ -258,8 +254,9 @@ func TestReply_KnownDefectDeferredToF178_RecoveryAfterTheRecipientArchivedItDeli
 	resumed, err := beginReply(mgr, replySelf, staticSelector(&selected, nil), nil)
 	require.NoError(t, err)
 	assert.NoError(t, driveReplyTxn(mgr, cfg, replySelf, resumed, func(string, ...any) {}),
-		"the recovery returns nil: nothing tells the sender that the response was consumed")
+		"the recovery completes: the response is already where the recipient wanted it")
 
 	inbox, processed = responseCopies(t, data, j.ResponseID)
-	assert.Equal(t, 2, inbox+processed, "the DEFECT of F-178: a second copy of the same response (inbox %d, processed %d)", inbox, processed)
+	assert.Equal(t, 1, inbox+processed, "one copy of the response, not a second one (inbox %d, processed %d)", inbox, processed)
+	assert.Equal(t, 0, inbox, "and it is the archived one: the recipient's inbox is not given the response again")
 }

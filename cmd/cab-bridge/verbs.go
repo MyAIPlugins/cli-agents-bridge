@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -1298,8 +1299,11 @@ func countUnseenInbound(mgr *session.Manager, cfg config.Config, sid string) int
 }
 
 // deliverResponse writes the response into the recipient's inbox under the
-// deterministic id, create-if-absent. delivered=false means it was already
-// there byte-identical, i.e. a retry after a crash in the gap.
+// deterministic id, create-if-absent. delivered=false means the recipient already has it,
+// byte-identical: in its inbox, or already archived by it (F-178). That is what a retry after
+// a crash in the gap finds, and what a reply whose journal was lost after the delivery finds.
+// It is not a promise of one copy against someone who moves the file at the very instant of the
+// write: see the comment at the check below.
 func deliverResponse(cfg config.Config, mgr *session.Manager, sid string, txn *session.ReplyTxn) (bool, error) {
 	senderManifest, err := mgr.LoadManifest(sid)
 	if err != nil {
@@ -1353,7 +1357,8 @@ func deliverResponse(cfg config.Config, mgr *session.Manager, sid string, txn *s
 	//
 	// Only ONE lock is held at a time: the responder's own was released before
 	// this point, so there is no ordering to get wrong.
-	targetInbox := filepath.Join(cfg.DataDir, "sessions", txn.To, "inbox")
+	recipientDir := filepath.Join(cfg.DataDir, "sessions", txn.To)
+	targetInbox := filepath.Join(recipientDir, "inbox")
 	var created bool
 	if err := mgr.WithSessionLock(txn.To, func() error {
 		if _, rerr := mgr.LoadManifest(txn.To); rerr != nil {
@@ -1361,6 +1366,27 @@ func deliverResponse(cfg config.Config, mgr *session.Manager, sid string, txn *s
 		}
 		if merr := os.MkdirAll(targetInbox, 0o700); merr != nil {
 			return fmt.Errorf("mkdir target inbox: %w", merr)
+		}
+		// F-178: "already delivered" is judged on the recipient's inbox AND on what the
+		// recipient has archived. The create-if-absent below only sees the inbox, and the
+		// recipient may have archived the response (inbox --tidy, ack) before a retry came
+		// back for it: the retry would then deliver a second copy. A response is archived
+		// only after it was delivered, so finding it there is the proof.
+		//
+		// This runs on EVERY delivery, not only on a retry: whether a journal was just created
+		// says who wrote the journal, not that nobody delivered before (a second driver of the
+		// same transaction, a journal lost after the delivery). The cost is one Lstat and the
+		// listing of the recipient's processed/, under the lock this delivery already holds.
+		//
+		// The lock does not exclude whoever archives: tidy and ack move files without taking
+		// it. If the recipient archives the response between the look and the link below, a
+		// second copy is written. That window is declared (F-177 closes it), not closed here.
+		archived, aerr := responseArchivedByRecipient(recipientDir, txn.ResponseID, data)
+		if aerr != nil {
+			return aerr
+		}
+		if archived {
+			return nil // created stays false: already delivered, nothing to write
 		}
 		var werr error
 		created, werr = transportfs.WriteIfAbsentBytes(filepath.Join(targetInbox, txn.ResponseID+".json"), data, 0o600)
@@ -1374,4 +1400,33 @@ func deliverResponse(cfg config.Config, mgr *session.Manager, sid string, txn *s
 		_, _ = transportfs.WriteIfAbsentBytes(filepath.Join(senderOutbox, txn.ResponseID+".json"), data, 0o600)
 	}
 	return created, nil
+}
+
+// responseArchivedByRecipient says whether the response with this id is already among the
+// messages the recipient archived, byte-identical to the one about to be written.
+//
+// Where it is looked for, and in which order, is locateMessageStrict's business: the order
+// inbox/ then processed/ is what makes "not found" mean "not delivered". A response still in
+// inbox/ answers false: the create-if-absent that follows judges it, as it always did (same
+// bytes: delivered, other bytes: error). Found archived with other bytes, or impossible to
+// read, is an error and writes nothing: two messages under one id must never pass silently, and
+// a delivery that cannot look refuses instead of guessing "not delivered".
+func responseArchivedByRecipient(recipientDir, id string, data []byte) (bool, error) {
+	loc, err := locateMessageStrict(recipientDir, id)
+	switch {
+	case errors.Is(err, errMessageNotFound):
+		return false, nil
+	case err != nil:
+		return false, fmt.Errorf("look for the response among the recipient's messages: %w", err)
+	case !loc.archived:
+		return false, nil
+	}
+	existing, err := security.ReadOwnedFile(loc.path)
+	if err != nil {
+		return false, fmt.Errorf("read the archived response %q: %w", loc.path, err)
+	}
+	if !bytes.Equal(existing, data) {
+		return false, fmt.Errorf("%q is the response already archived by the recipient, with different content under the same id: refusing to deliver another", loc.path)
+	}
+	return true, nil
 }
