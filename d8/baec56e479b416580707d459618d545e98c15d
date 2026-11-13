@@ -1,0 +1,69 @@
+cmd/cab-bridge/next.go
+  s_d5e186cda02d82::t_c4962c7dc128ad 199
+  s_d5e186cda02d82::t_355f9c3aa51642 546
+  s_d5e186cda02d82::t_ff6b31fad14122 549-550,554-557
+  s_d5e186cda02d82::t_7e8920387c5965 780,786-789
+  s_d5e186cda02d82::t_9fe02fa156c4ef 489,491,494,496,504,507-510,514-517
+  s_d5e186cda02d82::t_9c1423ed4ea133 748,760-763,768
+  s_d5e186cda02d82::t_9a08e10d351a93 196-198
+  s_d5e186cda02d82::t_ba0346eb18466d 200-201
+  s_d5e186cda02d82::t_69dc227e9e1eac 192-195
+cmd/cab-bridge/mailbox_scan.go
+  s_d5e186cda02d82::t_cb63eeeed245a1 3-7,9-11,18-21,23-25,28,34,36-38,44,46-48,50-140,143-158
+  s_d5e186cda02d82::t_5e9f8ab7e2b8e4 8,17,22,26-27,39,43,45,49,141-142
+cmd/cab-bridge/mcp_render.go
+  s_d5e186cda02d82::t_ee9dfc161427f6 77
+  s_d5e186cda02d82::t_88acd379353ee8 265-267
+  s_d5e186cda02d82::t_63941a4effcea1 75-76
+  s_d5e186cda02d82::t_c24d705bcb6f29 159
+  s_d5e186cda02d82::t_868353e711cc8a 291-293,295
+cmd/cab-bridge/sent_unreadable_test.go
+  s_d5e186cda02d82::t_8deb59437d25f1 1-52
+cmd/cab-bridge/mcp_unreadable_next_test.go
+  s_d5e186cda02d82::t_75345eb24c7582 1-34
+cmd/cab-bridge/mcp_next.go
+  s_d5e186cda02d82::t_42826732a0fc42 129
+  s_d5e186cda02d82::t_ee108f709fc675 36-38
+  s_d5e186cda02d82::t_bad7016641c6d0 104
+cmd/cab-bridge/mcp_inbox.go
+  s_d5e186cda02d82::t_4b50327c74d837 87
+  s_d5e186cda02d82::t_ddd30266a3454e 50-52
+cmd/cab-bridge/mcp_render_test.go
+  s_d5e186cda02d82::t_d895b4974764ed 100
+cmd/cab-bridge/join.go
+  s_d5e186cda02d82::t_e568ab536021bf 398-399
+cmd/cab-bridge/next_unreadable_test.go
+  s_d5e186cda02d82::t_b15dd02178575b 154,156
+  s_d5e186cda02d82::t_8e44f73bcf3bac 133-134
+  s_d5e186cda02d82::t_af92b78b54164b 161,165
+  s_d5e186cda02d82::t_d829c514710720 18,20
+  s_d5e186cda02d82::t_234fd0b31c886f 1-17,19,21-132,135-153,155,157-160,162-164,166-179
+cmd/cab-bridge/status.go
+  s_d5e186cda02d82::t_88fc2329311fee 109-114
+cmd/cab-bridge/verbs.go
+  s_d5e186cda02d82::t_81a91b4eaaa205 1276-1277
+  s_d5e186cda02d82::t_758bc9aa4ddd78 368-373
+cmd/cab-bridge/mcp_unreadable_test.go
+  s_d5e186cda02d82::t_f57c676695b027 1-100
+cmd/cab-bridge/mailbox_scan_test.go
+  s_d5e186cda02d82::t_00b57ecc228de3 1-184
+cmd/cab-bridge/sent.go
+  s_d5e186cda02d82::t_b4b7a1ecd0264e 65-67
+  s_d5e186cda02d82::t_cb99daab5f50ee 241-252,257
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d8baec56e479b416580707d459618d545e98c15d",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
