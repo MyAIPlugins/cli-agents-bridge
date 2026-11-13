@@ -319,7 +319,7 @@ On Windows `os.Stat` and `os.Lstat` record the path and load the file identity l
 
 ### A retry loop that decides on a sentinel (F-160)
 
-When a retry loop decides with `errors.Is(err, sentinel)`, a failure that must be final is not joined to the sentinel with `errors.Join`: it would be retried, and a later success would discard it. The final failure goes in the chain (`%w`), the cause in the text (`%v`).
+When a retry loop decides with `errors.Is(err, sentinel)`, a failure that must be final is not joined to the sentinel with `errors.Join`: it would be retried, and a later success would discard it. The final failure goes in the chain (`%w`), the cause in the text (`%v`). A second example, F-166: when `fslock.TryLock` failed to take the lock and the close failed too, it joined the close error to `ErrBusy`, and a caller that retries on busy retried a close failure; now the close failure is the error, and `ErrBusy` comes back bare only when the lock is busy and the close succeeded.
 
 ### A delete that retries is blind (F-170)
 
@@ -336,3 +336,7 @@ When an operation must check something and act on it with nothing in between ("t
 ### A lock that was not taken is not a failure of the work (F-177)
 
 When an operation needs the session lock, the error of not getting it is told apart from the error of the work done under it, with a type (`lockNotTaken` in `cmd/cab-bridge`), because the advice is opposite: busy means run it again, a retired session means there is nothing to do, any other error of the lock means look at the session folder and do not retry. The work error comes back intact. The text says the cause once: `fmt.Errorf("...(%v)...: %w", err, err)` prints it twice in one line, so a type with its own message and the cause in `Unwrap` is used instead.
+
+### A Makefile variable that runs a tool is asked at first use, and its answer is data (F-174)
+
+A variable that runs a tool (`go env GOEXE`, `go env GOBIN`) is not evaluated while the Makefile is read: a target that does not use the tool must not be able to name it (without Go in the PATH, every `make` used to print `go: Command not found`). The form is `X = $(eval X := $$(shell ...))$(X)`: the first use replaces the recursive variable with its value, so the tool runs once and only if a recipe needs it. The `$$` matters: with a single `$` Make expands the shell output before `eval` reads it, and the answer is parsed again as Makefile source, so a `#` in a path starts a comment and a `$` expands a variable (CRI measured `make lint` refusing a staticcheck that was there, with `GOBIN=.../bin#suffix`). A probe of such a variable includes the characters that are syntax in the layer it crosses (`#`, `$`, a space), not only ordinary paths. Still open, F-181: the recipe of `lint` pastes the path into a double-quoted shell string, so a `$` in it breaks at the shell layer, also before F-174.
