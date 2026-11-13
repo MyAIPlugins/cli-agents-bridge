@@ -35,8 +35,12 @@ import (
 //	staticcheck -ver  "staticcheck 2026.2.1 (<FAKE_STATICCHECK_PIN>)"
 //	staticcheck       "STATICCHECK_SAW [<GOTOOLCHAIN>]"
 //
-// and any other `go` command (the Makefile asks `go env` when a recipe needs its
-// answer, F-174) is answered with silence and exit 0.
+//	go env <NAME>     the value of FAKE_GOENV_<NAME> when the test set it (F-174: a path
+//	                  with a `#` in it is what the Makefile must not read as syntax)
+//
+// and any other `go` command, or a `go env` the test gave no answer for, is
+// answered with silence and exit 0 (the Makefile asks `go env` when a recipe needs
+// its answer, F-174).
 const fakeToolSource = `package main
 
 import (
@@ -68,6 +72,10 @@ func main() {
 		fmt.Printf("go version fake %s\n", toolchain)
 	case tool == "go" && first == "vet":
 		fmt.Printf("VET_SAW [%s]\n", toolchain)
+	case tool == "go" && first == "env" && len(args) == 2:
+		if answer := os.Getenv("FAKE_GOENV_" + args[1]); answer != "" {
+			fmt.Println(answer)
+		}
 	case tool == "staticcheck" && first == "--version":
 		fmt.Printf("staticcheck 2026.2.1 (%s)\n", os.Getenv("FAKE_STATICCHECK_PIN"))
 	case tool == "staticcheck":

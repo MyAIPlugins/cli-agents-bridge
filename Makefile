@@ -22,11 +22,18 @@ BINARY_BASE := cab-bridge
 # answer, not at every `make`: with `:=` it ran while the Makefile was read, so
 # with Go off the PATH even `make skills-check`, which has no use for Go, printed
 # `make: go: Command not found` three times, and a fresh agent read that as a
-# broken environment and skipped the step. `X = $(eval X := <answer>)$(X)` is the
+# broken environment and skipped the step. `X = $(eval X := $$(shell ...))$(X)` is the
 # recursive variable that replaces itself with its value on first use: asked once,
 # not once per line that uses it. It works from GNU make 3.81, the one macOS ships.
 # A target that does need Go and finds none still fails, at its own `go` command.
-EXE         = $(eval EXE := $(shell go env GOEXE))$(EXE)
+#
+# THE `$$(shell` IS NOT A TYPO. make expands the argument of eval before eval reads it
+# as Makefile source, so `eval X := $(shell ...)` pasted what Go printed into the text
+# of the assignment and then PARSED it: a `#` in a GOBIN began a comment and cut the
+# path, a `$` was expanded as a variable. Escaped, the shell runs when eval performs the
+# assignment, and `:=` stores the output as it is, which is what the eager `:=` did
+# before F-174. Every variable of this kind is written this way: an answer of Go is data.
+EXE         = $(eval EXE := $$(shell go env GOEXE))$(EXE)
 BINARY      = $(BINARY_BASE)$(EXE)
 PKG         := github.com/myAIPlugins/cli-agents-bridge/cmd/cab-bridge
 BIN_DIR     := bin
@@ -216,8 +223,9 @@ skills-check: ## Compare the repo's skills with the installed copies (ok/missing
 # that would put it there again. A refusal with a remediation that cannot fix it
 # is worse than a refusal: it sends the reader in a loop (CRI, third instance of
 # this class today).
-# Asked on first use like EXE (F-174, see there); $(or) asks GOPATH only when GOBIN is empty.
-STATICCHECK_DIR = $(eval STATICCHECK_DIR := $(or $(shell go env GOBIN),$(shell go env GOPATH)/bin))$(STATICCHECK_DIR)
+# Asked on first use like EXE (F-174, see there, `$$(` included); $(or) asks GOPATH only
+# when GOBIN is empty.
+STATICCHECK_DIR = $(eval STATICCHECK_DIR := $$(or $$(shell go env GOBIN),$$(shell go env GOPATH)/bin))$(STATICCHECK_DIR)
 # Single source for the pinned version, shared with .github/workflows/ci.yml, so
 # the local gate and the gate that authorises merges cannot drift onto two
 # different linters.
