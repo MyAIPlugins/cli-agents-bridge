@@ -1,0 +1,25 @@
+tests/integration/makefile_goanswer_test.go
+  s_d5e186cda02d82::t_a3be7b1231840b 1-42,47-151
+  s_d5e186cda02d82::t_324ec3066d3adb 43-46
+tests/integration/fake_tools_test.go
+  s_d5e186cda02d82::t_c4c3aaf35a4af7 75-78
+  s_d5e186cda02d82::t_2e83bf9a42083a 38-43
+Makefile
+  s_d5e186cda02d82::t_fb23084d809a7d 25,29-36,226-228
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "555675d873d3ba83ff7b18b341023b7f733f7f8d",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
