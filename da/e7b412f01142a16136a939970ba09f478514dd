@@ -1,0 +1,33 @@
+cmd/cab-bridge/lock_not_taken.go
+  s_d5e186cda02d82::t_cc641681435084 33-38
+  s_d5e186cda02d82::t_6c30e962d4a01d 100
+  s_d5e186cda02d82::t_d1c3fd0837eab5 70-80,82,90-99,101-112
+cmd/cab-bridge/verbs.go
+  s_d5e186cda02d82::t_872c5009887928 1386,1389-1397
+cmd/cab-bridge/reply_archive.go
+  s_d5e186cda02d82::t_bd41d2694c7a63 29-48,50-53
+cmd/cab-bridge/f177_notrun_test.go
+  s_d5e186cda02d82::t_b74859c497ef7c 44-62,65-67,69-71
+  s_d5e186cda02d82::t_16d2d76e3c6b78 33-35,63-64,68,79-80
+cmd/cab-bridge/f177_reply_test.go
+  s_d5e186cda02d82::t_16d2d76e3c6b78 6,73,94
+  s_d5e186cda02d82::t_773bfba75ba48b 5,16,138-139,150-151,153-166
+  s_d5e186cda02d82::t_84b46c58eaeaa5 167
+  s_d5e186cda02d82::t_b74859c497ef7c 72,89-93,110-116,135-137,140-149,152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dae7b412f01142a16136a939970ba09f478514dd",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
