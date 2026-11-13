@@ -1,0 +1,41 @@
+tests/integration/makefile_nogo_test.go
+  s_d5e186cda02d82::t_b4b54e23e54e82 1-99
+tests/integration/makefile_skills_test.go
+  s_d5e186cda02d82::t_295501c9445d49 118-122
+  s_d5e186cda02d82::t_e39e96791419fb 75
+tests/integration/makefile_lint_toolchain_test.go
+  s_d5e186cda02d82::t_7a135bcc72060f 217-218,220
+  s_d5e186cda02d82::t_4650e6dfa11d45 108-109
+  s_d5e186cda02d82::t_d2528cd415b9ec 122
+tests/integration/makefile_skills_codexhome_test.go
+  s_d5e186cda02d82::t_8d6b4192e8d749 103-114
+  s_d5e186cda02d82::t_cdf19b2bc096fe 1-102,115-125
+scripts/skills.sh
+  s_d5e186cda02d82::t_fbb9a04bfd0477 515-516
+  s_d5e186cda02d82::t_d8e2f09c3c297c 114-116
+  s_d5e186cda02d82::t_012568a5c52d42 58-63,66-68
+  s_d5e186cda02d82::t_2dd9cf79057979 101,106-110
+  s_d5e186cda02d82::t_7b774009af723a 111,133-144
+  s_d5e186cda02d82::t_431557de5d1771 112
+Makefile
+  s_d5e186cda02d82::t_d1bd4260f5f724 219-220
+  s_d5e186cda02d82::t_cb55baf90ca306 21-30
+tests/integration/fake_tools_test.go
+  s_d5e186cda02d82::t_30e9203e2f3dc2 38-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a46fcc03987ec1adae51f8ec353f6007beb4d350",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
