@@ -33,6 +33,9 @@ type pass struct {
 	visible []visibleMessage
 	held    []withheld
 	corrupt int
+	// unreadable are the files the system would not let be read: named in the notice
+	// with their cause, which a bare count would lose (F-172).
+	unreadable []unreadableFile
 }
 
 func (a *mcpApp) toolNext(ctx context.Context, raw json.RawMessage) (mcp.Result, error) {
@@ -98,7 +101,7 @@ func (a *mcpApp) look(ctx context.Context, p *mcpProject) (pass, error) {
 		return pass{}, fmt.Errorf("could not read the inbox: %w", err)
 	}
 	visible, held := newAuthorizer(a.mgr, p.scope, a.mgr.NowUTC()).authorizeEntries(scan.entries)
-	return pass{visible: visible, held: held, corrupt: len(scan.corrupt)}, nil
+	return pass{visible: visible, held: held, corrupt: len(scan.corrupt), unreadable: scan.unreadable}, nil
 }
 
 // hasNew says whether this look found a visible message no result has shown yet. A
@@ -123,6 +126,7 @@ func (a *mcpApp) renderPass(p *mcpProject, cur pass) (mcp.Result, error) {
 		visible:      cur.visible,
 		held:         cur.held,
 		corrupt:      cur.corrupt,
+		unreadable:   cur.unreadable,
 		bridgeClosed: len(vals) == 0,
 		now:          a.mgr.NowUTC(),
 		budget:       a.cfg.MCPMaxResultBytes,

@@ -365,6 +365,12 @@ type openAsk struct {
 //
 // Only NOTIFIED ones count: replying to something never shown would mean the
 // tool's state and the agent's state disagree, which §2.2 rules out.
+//
+// A corrupt or unreadable file is not an ask here, because there is no message to
+// read (F-172): an ask that was shown and later became unreadable cannot be replied to
+// until the cause is fixed. The limit is temporary: the zero-message page of `next`
+// prunes from the cursor the ids it did not find, so once the file can be read again
+// it is delivered again as UNREAD.
 func collectOpenAsks(mgr *session.Manager, cfg config.Config, sid string) ([]openAsk, error) {
 	cursor, _, err := mgr.ReadWakeCursor(sid)
 	if err != nil {
@@ -1267,7 +1273,8 @@ func describeOpen(asks []openAsk) []string {
 
 // countUnseenInbound counts messages sitting in inbox/ that no next has emitted
 // yet (UNREAD). They are untouched by reply; this is purely so the agent knows
-// they exist.
+// they exist. Corrupt and unreadable files are not messages here and are not counted
+// (F-172): it is a courtesy count after `reply`, and `next` is where they are reported.
 func countUnseenInbound(mgr *session.Manager, cfg config.Config, sid string) int {
 	cursor, _, err := mgr.ReadWakeCursor(sid)
 	if err != nil {

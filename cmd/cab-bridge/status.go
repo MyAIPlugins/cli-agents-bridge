@@ -106,6 +106,12 @@ func runStatus(args []string) error {
 //
 // An unreadable cursor counts everything as unread. The model is at-least-once,
 // and overstating waiting work costs a look while understating it hides mail.
+//
+// Corrupt and unreadable files are NOT counted (F-172): this is what `next` would hand
+// over, and a file it cannot deliver is not that. It is also called for the inbox of
+// every other session (peers), where a line on stderr per blocked file would be noise.
+// The cost is that `status` of one's OWN session shows 0 waiting while a file is
+// blocked; `next` is the command that says it, with the file and the cause.
 func countUnread(mgr *session.Manager, sid, sessionDir string, maxContentBytes int) int {
 	scan, err := readMailbox(filepath.Join(sessionDir, "inbox"), maxContentBytes)
 	entries := scan.entries

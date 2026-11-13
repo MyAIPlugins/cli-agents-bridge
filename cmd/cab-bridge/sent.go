@@ -62,7 +62,9 @@ const (
 	sentStateRequeued = "requeued"
 	sentStateUnknown  = "unknown" // that session no longer exists
 	sentStateExpired  = "expired" // session is there, the message is not — retention took it
-	// sentStateUnreadable: the file IS in their mailbox and cannot be decoded.
+	// sentStateUnreadable: the file IS in their mailbox and will not arrive, because it
+	// was read and is not a message, or because the system would not let it be read.
+	// The one word covers both on purpose (F-172): for the sender it is the same fact.
 	// Not "expired" — nothing pruned it — and not an I/O error of ours either.
 	sentStateUnreadable = "unreadable"
 )
@@ -236,17 +238,23 @@ func buildMailboxIndex(cfg config.Config, mgr *session.Manager, to string) (map[
 	if err != nil {
 		return nil, fmt.Errorf("sent: read %s inbox: %w", to, err)
 	}
-	inbox, corrupt := scan.entries, scan.corrupt
-	// An unreadable file is PRESENT. Dropping it from the index made the message
-	// fall through to "expired" — declaring a retention event that never
-	// happened (LL-18 family). It is in the mailbox and it cannot be read: say
-	// exactly that.
-	for _, name := range corrupt {
+	// A file that cannot be delivered is PRESENT. Dropping it from the index made the
+	// message fall through to "expired" — declaring a retention event that never
+	// happened (LL-18 family). It is in the mailbox and it will not arrive: say exactly
+	// that. For the sender the two ways of not arriving are one state: the file was read
+	// and is not a message (corrupt), or the system would not let it be read (unreadable).
+	// A file that was GONE when the scan came to read it is in neither list: it is looked
+	// for in processed/ below and, found nowhere, it is expired, as it always was.
+	undeliverable := append([]string(nil), scan.corrupt...)
+	for _, f := range scan.unreadable {
+		undeliverable = append(undeliverable, f.File)
+	}
+	for _, name := range undeliverable {
 		if id := archivedID(name); id != "" {
 			index[id] = sentStateUnreadable
 		}
 	}
-	for _, e := range inbox {
+	for _, e := range scan.entries {
 		switch {
 		// Checked FIRST: the two are mutually exclusive in the cursor, and the
 		// order states which one is the more specific fact.

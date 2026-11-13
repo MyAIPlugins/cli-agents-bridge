@@ -395,6 +395,8 @@ func runJoin(args []string) error {
 }
 
 // replayOpenAsks moves every still-open ask back to UNREAD and reports how many.
+// It names asks by id, and a corrupt or unreadable file has none to name (F-172): those
+// are not replayed here, `next` reports them.
 func replayOpenAsks(mgr *session.Manager, cfg config.Config, sid string) (int, error) {
 	cursor, _, err := mgr.ReadWakeCursor(sid)
 	if err != nil {

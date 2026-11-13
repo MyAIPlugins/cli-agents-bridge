@@ -189,15 +189,16 @@ type nextPayload struct {
 	// wrong session without noticing: `679b7060` said nothing, `ESC-bridge`
 	// would have stopped it at the first. It is not a flag and not a choice —
 	// one more word on an output the agent reads anyway.
-	AgentName    string        `json:"agentName,omitempty"`
-	Generation   int           `json:"generation"`
-	Total        int           `json:"total"`
-	Returned     int           `json:"returned"`
-	HasMore      bool          `json:"hasMore"`
-	CorruptCount int           `json:"corruptCount"`
-	Corrupt      []string      `json:"corrupt,omitempty"`
-	Messages     []nextMessage `json:"messages"`
-	Warnings     []string      `json:"warnings,omitempty"`
+	AgentName    string           `json:"agentName,omitempty"`
+	Generation   int              `json:"generation"`
+	Total        int              `json:"total"`
+	Returned     int              `json:"returned"`
+	HasMore      bool             `json:"hasMore"`
+	CorruptCount int              `json:"corruptCount"`
+	Corrupt      []string         `json:"corrupt,omitempty"`
+	Unreadable   []unreadableFile `json:"unreadable,omitempty"`
+	Messages     []nextMessage    `json:"messages"`
+	Warnings     []string         `json:"warnings,omitempty"`
 	// Outbound and OpenAsks are the summary §2.2 asks for, and they are here
 	// rather than in a command of their own on purpose: `next` is run anyway, so
 	// this is information at zero cost instead of one more thing to choose.
@@ -483,17 +484,16 @@ func collectNextPage(mgr *session.Manager, cfg config.Config, sid, inboxDir stri
 	if err != nil {
 		return pageResult{}, false, fmt.Errorf("next: read mailbox: %w", err)
 	}
-	entries, corrupt, foreign := scan.entries, scan.corrupt, scan.foreign
 	// The delivery path refuses: handing over a page from a mailbox holding a
 	// file we cannot vouch for is the one outcome worth stopping for.
-	if len(foreign) > 0 {
+	if len(scan.foreign) > 0 {
 		return pageResult{}, false, fmt.Errorf("next: refusing to deliver from this inbox: %w (%s)",
-			security.ErrOwnershipMismatch, strings.Join(foreign, ", "))
+			security.ErrOwnershipMismatch, strings.Join(scan.foreign, ", "))
 	}
 
-	present := make(map[string]bool, len(entries))
+	present := make(map[string]bool, len(scan.entries))
 	var unread []mailboxEntry
-	for _, e := range entries {
+	for _, e := range scan.entries {
 		present[e.msg.ID] = true
 		if !cursor.IsNotified(e.msg.ID) {
 			e.replayed = cursor.WasReplayed(e.msg.ID)
@@ -501,18 +501,20 @@ func collectNextPage(mgr *session.Manager, cfg config.Config, sid, inboxDir stri
 		}
 	}
 	if len(unread) == 0 {
-		if len(corrupt) == 0 {
+		if len(scan.corrupt) == 0 && len(scan.unreadable) == 0 {
 			return pageResult{}, false, nil
 		}
-		// An inbox holding ONLY unreadable files is not an idle inbox: staying
-		// asleep for 24h would hide a broken mailbox behind a normal timeout.
-		// Report it with zero messages and mark nothing.
+		// An inbox holding ONLY files that cannot be delivered is not an idle inbox:
+		// staying asleep for 24h would hide a broken mailbox behind a normal timeout.
+		// Report it with zero messages and mark nothing. The page does not wait on
+		// the next call either, and the hint says so (hintNothingDeliverable).
 		return pageResult{
 			page: nextPayload{
 				Status: nextStatusEmitted, Session: sid, Generation: generation,
-				CorruptCount: len(corrupt), Corrupt: corrupt, Messages: []nextMessage{},
-				Warnings: []string{fmt.Sprintf("%d unreadable file(s) in inbox and nothing else — no action needed from you; they are left in place", len(corrupt))},
-				Hint:     "nothing readable arrived; run next again",
+				CorruptCount: len(scan.corrupt), Corrupt: scan.corrupt, Unreadable: scan.unreadable,
+				Messages: []nextMessage{},
+				Warnings: undeliverableWarnings(scan),
+				Hint:     hintNothingDeliverable,
 			},
 			present: present,
 		}, true, nil
@@ -541,18 +543,18 @@ func collectNextPage(mgr *session.Manager, cfg config.Config, sid, inboxDir stri
 		Session:      sid,
 		Generation:   generation,
 		Total:        len(unread),
-		CorruptCount: len(corrupt),
+		CorruptCount: len(scan.corrupt),
 		Messages:     []nextMessage{},
 	}
-	page.Corrupt = append(page.Corrupt, corrupt...)
+	page.Corrupt = append(page.Corrupt, scan.corrupt...)
+	page.Unreadable = append(page.Unreadable, scan.unreadable...)
 	if cursorWarn != "" {
 		page.Warnings = append(page.Warnings, cursorWarn)
 	}
-	if len(corrupt) > 0 {
-		// Declared, never silently skipped (§2.7): a corrupt file must neither
-		// block next forever nor vanish without a trace.
-		page.Warnings = append(page.Warnings, fmt.Sprintf("%d unreadable file(s) left in inbox — no action needed from you", len(corrupt)))
-	}
+	// Declared, never silently skipped (§2.7): a file that cannot be delivered must
+	// neither block next forever nor vanish without a trace, and the warning says that
+	// the message will not arrive until somebody does something about it.
+	page.Warnings = append(page.Warnings, undeliverableWarnings(scan)...)
 
 	var (
 		emitted []string
@@ -743,11 +745,7 @@ func readMailboxWith(inboxDir string, maxContentBytes int, read func(path string
 		return mailboxScan{}, err
 	}
 
-	var (
-		entries []mailboxEntry
-		corrupt []string
-		foreign []string
-	)
+	var scan mailboxScan
 	for _, de := range dir {
 		if de.IsDir() {
 			continue
@@ -759,18 +757,15 @@ func readMailboxWith(inboxDir string, maxContentBytes int, read func(path string
 		full := filepath.Join(inboxDir, name)
 		data, err := read(full)
 		if err != nil {
-			// An ownership violation is NOT a corrupt file: it goes in its own
-			// bucket so the caller can treat it as what it is.
-			if errors.Is(err, security.ErrOwnershipMismatch) {
-				foreign = append(foreign, name)
-				continue
-			}
-			corrupt = append(corrupt, name)
+			// A failed read is not a corrupt file: it is foreign, gone, or refused by
+			// the system, three different facts (recordReadError). Corrupt is what was
+			// READ and does not decode, just below.
+			scan.recordReadError(name, err)
 			continue
 		}
 		m, err := message.DecodeLenient(data, maxContentBytes)
 		if err != nil {
-			corrupt = append(corrupt, name)
+			scan.corrupt = append(scan.corrupt, name)
 			continue
 		}
 		// Legacy delivery receipts must never wake anyone. The ack type is on
@@ -782,15 +777,16 @@ func readMailboxWith(inboxDir string, maxContentBytes int, read func(path string
 		if m.Type == message.TypeAck {
 			continue
 		}
-		entries = append(entries, mailboxEntry{
+		scan.entries = append(scan.entries, mailboxEntry{
 			msg:  m,
 			path: full,
 			when: parseMessageTime(m.Timestamp),
 		})
 	}
-	sort.Strings(corrupt)
-	sort.Strings(foreign)
-	return mailboxScan{entries: entries, corrupt: corrupt, foreign: foreign}, nil
+	sort.Strings(scan.corrupt)
+	sort.Strings(scan.foreign)
+	sort.Slice(scan.unreadable, func(i, j int) bool { return scan.unreadable[i].File < scan.unreadable[j].File })
+	return scan, nil
 }
 
 // parseMessageTime decodes the RFC3339 timestamp. An unparsable one sorts to

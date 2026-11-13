@@ -47,8 +47,9 @@ type scanSeams struct {
 
 // inboxScan is one read of the inbox.
 type inboxScan struct {
-	entries []mailboxEntry
-	corrupt []string
+	entries    []mailboxEntry
+	corrupt    []string
+	unreadable []unreadableFile
 }
 
 // scanInboxWithin reads inbox/ with readMailbox, giving up when ctx ends. A file in
@@ -83,7 +84,7 @@ func scanInboxWithSeams(ctx context.Context, guard *scanGuard, inboxDir string, 
 		case len(found.foreign) > 0:
 			done <- outcome{err: fmt.Errorf("refusing to read an inbox that holds files not owned by this user: %w (%d file(s); inspect them with the CLI)", security.ErrOwnershipMismatch, len(found.foreign))}
 		default:
-			done <- outcome{scan: inboxScan{entries: found.entries, corrupt: found.corrupt}}
+			done <- outcome{scan: inboxScan{entries: found.entries, corrupt: found.corrupt, unreadable: found.unreadable}}
 		}
 		if seams.afterHandOff != nil {
 			seams.afterHandOff()

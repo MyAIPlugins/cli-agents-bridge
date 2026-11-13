@@ -97,7 +97,7 @@ func TestRenderNext_HeldMessagesAreDeclaredWithIdsAndReasonsOnly(t *testing.T) {
 	assert.Contains(t, out, "author-not-val x14")
 	assert.Contains(t, out, "author-not-open x1")
 	assert.Contains(t, out, "and 5 more", "ten ids are listed, the rest counted")
-	assert.Contains(t, out, "3 unreadable file(s)")
+	assert.Contains(t, out, "3 file(s) in the inbox are not valid messages", "the corrupt files are counted, in the words of F-172")
 	assert.NotContains(t, out, "msg-000000000012", "an id past the tenth is not listed")
 }
 

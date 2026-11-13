@@ -72,6 +72,9 @@ type nextView struct {
 	visible   []visibleMessage // oldest first
 	held      []withheld
 	corrupt   int
+	// unreadable are files the system would not let be read, named in the notice with the
+	// cause (F-172). corrupt is only a count: those were read and are not messages.
+	unreadable []unreadableFile
 	// bridgeClosed says that no val of the project has the bridge open now. An empty
 	// `next` would otherwise read as "the inbox is empty" when it is "you cannot see".
 	bridgeClosed bool
@@ -153,7 +156,7 @@ func renderNext(pl *mcp.Planner, v nextView) mcp.Result {
 	}
 
 	header := fmt.Sprintf("Bridge: project %s, you are %s. %d message(s) open for you.", v.project, v.agentName, len(v.visible))
-	notices := noticeBlock(v.held, v.corrupt)
+	notices := noticeBlock(v.held, v.corrupt, v.unreadable)
 	if v.bridgeClosed {
 		notices = strings.TrimSpace(bridgeClosedNotice + "\n" + notices)
 	}
@@ -259,9 +262,9 @@ func resultBytes(res mcp.Result) int {
 	return n
 }
 
-// noticeBlock says what was held back and what could not be read, with ids and
-// reasons only: no author name, no size, no preview.
-func noticeBlock(held []withheld, corrupt int) string {
+// noticeBlock says what was held back and what could not be delivered, with ids,
+// causes and counts only: no author name, no size, no preview.
+func noticeBlock(held []withheld, corrupt int, unreadable []unreadableFile) string {
 	var parts []string
 	if len(held) > 0 {
 		ids := make([]string, 0, maxHeldIDsListed)
@@ -285,8 +288,11 @@ func noticeBlock(held []withheld, corrupt int) string {
 		parts = append(parts, fmt.Sprintf("%d message(s) are held back and not shown (%s): %s%s. They stay on disk; a val decides what to do with them from the CLI.",
 			len(held), strings.Join(why, ", "), strings.Join(ids, ", "), more))
 	}
+	if len(unreadable) > 0 {
+		parts = append(parts, unreadableNotice(unreadable))
+	}
 	if corrupt > 0 {
-		parts = append(parts, fmt.Sprintf("%d unreadable file(s) in the inbox were left alone.", corrupt))
+		parts = append(parts, corruptNotice(corrupt))
 	}
 	return strings.Join(parts, "\n")
 }
