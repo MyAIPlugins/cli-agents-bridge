@@ -1,0 +1,29 @@
+cmd/cab-bridge/f177_notrun_test.go
+  s_d5e186cda02d82::t_719bde3ff18dfd 1-59
+cmd/cab-bridge/f177_outbox_lock_test.go
+  s_d5e186cda02d82::t_73d3c86e4d33b5 1-70
+cmd/cab-bridge/f177_outbox_test.go
+  s_d5e186cda02d82::t_3ecc1f57216b59 1-128
+cmd/cab-bridge/send.go
+  s_d5e186cda02d82::t_3ecc1f57216b59 28-39,128-135
+cmd/cab-bridge/verbs.go
+  s_d5e186cda02d82::t_3ecc1f57216b59 1304-1306,1406-1411
+cmd/cab-bridge/outbox_copy.go
+  s_d5e186cda02d82::t_3ecc1f57216b59 1-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "96984d13c43c99eab8b5d0b14bda6ad471c8edbb",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
