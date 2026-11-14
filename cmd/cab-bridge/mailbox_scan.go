@@ -162,8 +162,9 @@ const unreadableNoticeFormat = "%d file(s) in the inbox cannot be read and are N
 // min(count, maxUnreadableListed) down to 1, and last the one with no names, which still
 // says the count, the distinct causes and what to do, and says that the names are missing.
 // With one short name and a short cause the last form is the LONGER one, so nobody may
-// take it for the shortest because of its place: fittedNotices chooses by what each form
-// leaves the messages. A form is never dropped altogether: a message that will not arrive
+// take it for the shortest because of its place: fittedNotices takes the first form that
+// leaves room for a message and, when none does, the one with the smallest written size.
+// A form is never dropped altogether: a message that will not arrive
 // has to be said, and if even the shortest leaves no room the budget is too small for
 // anything else.
 func unreadableNotices(files []unreadableFile) []string {

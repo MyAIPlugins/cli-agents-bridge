@@ -263,117 +263,54 @@ func TestRenderNext_WhenNoFormLeavesRoomForEveryMessageTheNoticeTakesTheShortest
 	}
 }
 
-// presentedIn counts the messages of ids that the result names.
-func presentedIn(res mcp.Result, ids []string) int {
-	out := joined(res)
-	n := 0
-	for _, id := range ids {
-		if strings.Contains(out, id) {
-			n++
-		}
-	}
-	return n
-}
-
-// The form of the notice is the one that lets the MOST messages be presented, not the
-// first that leaves room for one: with the room the notice leaves, the plan presents the
-// messages oldest first and stops at the first that does not fit (CRI asked for "as many
-// readable messages as possible, at least the first"). The oracle is the renderer itself
-// written with each form in turn, on a fresh plan, and the rule it checks is the whole
-// choice: of the forms that present the most messages the FULLEST is written (more names
-// for the same messages), and when no form presents any, the SHORTEST. Across the range of
-// budgets, for notices of very different sizes (long names, one short name, short names
-// with long causes) and for the big message first as well as last; the notice is always there.
-func TestRenderNext_TheFormOfTheNoticeLetsTheMostMessagesBePresented(t *testing.T) {
+// When no form leaves room for a message the notice is the form with the smallest written
+// size, not the last one: the forms are ordered by how much they say, and with one short
+// name and a short cause the form with no names, which lists the causes and says the names
+// are missing, is the LONGER one. A budget below the fixed parts leaves room for nothing,
+// so this is the fallback alone, with and without messages to present.
+func TestRenderNext_WhenNoFormLeavesRoomTheNoticeIsTheShortestBySizeAndNotTheLast(t *testing.T) {
 	t.Parallel()
-	small := []visibleMessage{
-		vis("msg-aaaaaaaaaaaa", "query", "READABLE-CONTROL", 4),
-		vis("msg-bbbbbbbbbbbb", "query", "second readable", 3),
-		vis("msg-cccccccccccc", "query", "third readable", 2),
-	}
-	big := vis("msg-dddddddddddd", "query", strings.Repeat("\U0001F642", 100), 1)
-	bigFirst := vis("msg-dddddddddddd", "query", strings.Repeat("\U0001F642", 100), 9)
-	ids := []string{"msg-aaaaaaaaaaaa", "msg-bbbbbbbbbbbb", "msg-cccccccccccc", "msg-dddddddddddd"}
-	messageSets := map[string][]visibleMessage{
-		"big last":  append(append([]visibleMessage(nil), small...), big),
-		"big first": append([]visibleMessage{bigFirst}, small...),
-	}
-	var held []withheld
-	for i := 0; i < 12; i++ {
-		held = append(held, withheld{ID: fmt.Sprintf("msg-%012d", i), Reason: []withheldReason{reasonNotVal, reasonOtherScope, reasonNotOpen, reasonUnresolvable}[i%4]})
-	}
-	longCauses := []unreadableFile{
-		{File: "msg-eeeeeeeeeeee.json", Cause: "permission denied"},
-		{File: "msg-ffffffffffff.json", Cause: "The request could not be performed because of an I/O device error."},
-		{File: "msg-gggggggggggg.json", Cause: "The device is not connected."},
-	}
-	scenes := map[string][]unreadableFile{
-		"five long names":     longUnreadable(248, 5),
-		"one short name":      {{File: "msg-eeeeeeeeeeee.json", Cause: "permission denied"}},
-		"short names, causes": longCauses,
-	}
-	for setName, msgs := range messageSets {
-		for sceneName, files := range scenes {
-			for budget := 1000; budget <= 3000; budget += 3 { // a wrong form is wrong over tens of bytes, not one
-				v := view(msgs, held, 1, budget)
-				v.unreadable = files
-				got := renderNext(mcp.NewPlanner(), v)
-				forms := unreadableNotices(files)
-				presented := make([]int, len(forms))
-				best, shortest := 0, 0
-				for i, form := range forms {
-					presented[i] = presentedIn(renderWithNotices(mcp.NewPlanner(), v, noticesText(v, form)), ids)
-					best = max(best, presented[i])
-					if jsonLen(noticesText(v, form)) < jsonLen(noticesText(v, forms[shortest])) {
-						shortest = i
-					}
-				}
-				want := shortest
-				for i := range forms {
-					if best > 0 && presented[i] == best {
-						want = i // the first, which is the fullest
-						break
-					}
-				}
-				where := fmt.Sprintf("%s, %s, budget %d", setName, sceneName, budget)
-
-				require.GreaterOrEqual(t, presentedIn(got, ids), best, "no other form presents more messages: %s", where)
-				require.Contains(t, joined(got), noticesText(v, forms[want]), "the form is the fullest of those that present the most (the shortest when none presents): form %d of %d: %s", want, len(forms), where)
-				require.Contains(t, joined(got), fmt.Sprintf("%d file(s) in the inbox cannot be read", len(files)), "the notice is there: %s", where)
-			}
-		}
-	}
-}
-
-// With no message to present the notice is still fitted to the budget: the fullest form
-// that keeps the result within it, and the search does not stop at a form that does not
-// (zero messages are "all presented" by any form, over the budget or not).
-func TestRenderNext_WithNoMessageTheNoticeTakesTheFullestFormThatFitsTheBudget(t *testing.T) {
-	t.Parallel()
-	files := longUnreadable(248, 5)
-	forms := unreadableNotices(files)
-	for budget := 1000; budget <= 4200; budget++ {
-		v := view(nil, nil, 0, budget)
+	files := []unreadableFile{{File: "msg-cccccccccccc.json", Cause: "permission denied"}}
+	for name, msgs := range map[string][]visibleMessage{
+		"no message": nil,
+		"a message":  {vis("msg-aaaaaaaaaaaa", "query", "READABLE-CONTROL", 2)},
+	} {
+		v := view(msgs, nil, 0, 600)
 		v.unreadable = files
-		shortest := jsonLen(noticesText(v, forms[len(forms)-1]))
-		res := renderNext(mcp.NewPlanner(), v)
-		out := joined(res)
-		require.Contains(t, out, "5 file(s) in the inbox cannot be read", "budget %d", budget)
+		forms := unreadableNotices(files)
+		require.Len(t, forms, 2, "premise: one named form and the form with no names")
+		require.Less(t, jsonLen(noticesText(v, forms[0])), jsonLen(noticesText(v, forms[1])), "premise: the form with no names is the LONGER one: %s", name)
 
-		room := budget - fixedBytes(v)
-		if room < shortest {
-			continue // no form fits: the shortest is written and the server's own fit is the net
-		}
-		line, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1234567890, "result": res})
-		require.NoError(t, err)
-		require.LessOrEqual(t, len(line), budget, "a form fits, so the result fits: budget %d", budget)
-		for i, form := range forms {
-			if jsonLen(noticesText(v, form)) <= room {
-				require.Contains(t, out, noticesText(v, form), "the fullest form that fits is form %d: budget %d", i, budget)
-				break
-			}
-		}
+		out := joined(renderNext(mcp.NewPlanner(), v))
+
+		assert.Contains(t, out, noticesText(v, forms[0]), "the shorter form, the named one: %s", name)
+		assert.NotContains(t, out, "names not listed", "not the last form: %s", name)
 	}
+}
+
+// The size that decides the fallback is the one the text has once written into the result,
+// escapes included, not its length in bytes: a file name made of quotes is shorter in
+// bytes than the form with no names and longer as written, every quote costing two.
+func TestRenderNext_WhenNoFormLeavesRoomTheShortestIsMeasuredAsItIsWritten(t *testing.T) {
+	t.Parallel()
+	for quotes := 1; quotes <= 250; quotes++ {
+		files := []unreadableFile{{File: strings.Repeat(`"`, quotes), Cause: "permission denied"}}
+		v := view(nil, nil, 0, 600)
+		v.unreadable = files
+		forms := unreadableNotices(files)
+		require.Len(t, forms, 2, "premise: one named form and the form with no names")
+		named, noNames := noticesText(v, forms[0]), noticesText(v, forms[1])
+		if len(named) >= len(noNames) || jsonLen(named) <= jsonLen(noNames) {
+			continue
+		}
+
+		out := joined(renderNext(mcp.NewPlanner(), v))
+
+		assert.Contains(t, out, noNames, "the form that is shorter as written, with %d quotes in the name", quotes)
+		assert.NotContains(t, out, named, "not the one that is shorter in bytes, with %d quotes in the name", quotes)
+		return
+	}
+	t.Fatal("premise: no name of quotes is shorter in bytes and longer as written than the form with no names")
 }
 
 // The last form of the notice, the one with no names, has a size of its own: it does not
