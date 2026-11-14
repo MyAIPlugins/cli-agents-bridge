@@ -1,0 +1,29 @@
+internal/transport/fs/rename_windows.go
+  s_d5e186cda02d82::t_055f0e03cd1773 76-84,86-87
+  s_d5e186cda02d82::t_ac2644de99a55e 14-15
+  s_d5e186cda02d82::t_2d471ebeced8c2 160,162-171,173-177,179-185,187-196,198,200,203-204,206-253
+  s_d5e186cda02d82::t_9c2b8b3ff2effc 197
+  s_d5e186cda02d82::t_944c0991ef21ba 178
+internal/transport/fs/rename_retry_windows_test.go
+  s_d5e186cda02d82::t_5ec88a48514e77 1-74,79-80,86-121,128,130,132-153,155-174,176-187,191-194,197-227,229-234,236-261,263-286,288-291,293-300,302-315
+  s_d5e186cda02d82::t_1163b26033ae1c 81,122,131,154,175,262,287,292
+  s_d5e186cda02d82::t_d959cdc3cc8dac 75-78,82-85,123-127,129,188-190,195-196,228,235,301
+internal/transport/fs/rename_unix.go
+  s_d5e186cda02d82::t_a9ca888f485055 14-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "43cc9911a9e34b68ffabb0ce1b859e1147f37ba2",
+  "prompts": {},
+  "sessions": {
+    "s_d5e186cda02d82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d779fe29-8cce-47ee-af6f-3d78e5855f84",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
