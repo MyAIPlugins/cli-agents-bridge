@@ -23,40 +23,62 @@ import (
 // file holds the generic loop, perms_windows.go says WHICH error is worth asking
 // again about. The loop is untagged so that it is tested on every platform; on
 // Unix nothing calls it outside the tests, which is deliberate and not a leftover.
+//
+// THE BUDGETS, in one block and each with where it comes from. Both are the backoff
+// REQUESTED from the sleep function, not a deadline: the syscalls and the scheduler
+// add to it, and nothing here measures wall-clock time.
 const (
-	// Six attempts with FIVE waits between them: 5+10+20+40+80 = 155 ms of
-	// requested backoff. This is the backoff REQUESTED from the sleep function,
-	// not a deadline: the syscalls and the scheduler add to it, and nothing here
-	// measures wall-clock time.
+	// DENIED READS AND REMOVALS (F-154, F-170): ACCESS_DENIED only. Six attempts with
+	// FIVE waits between them: 5+10+20+40+80 = 155 ms. ORIGIN: a chosen figure, set
+	// against what the block above measured (the longest denial 11.84 ms, the longest
+	// delete call 18.9 ms) and with the limit that block states: one run on one image,
+	// the tail is not bounded by it.
 	deniedAttempts   = 6
 	deniedFirstDelay = 5 * time.Millisecond
+
+	// ATOMIC REPLACE (F-133): ACCESS_DENIED and SHARING_VIOLATION, which
+	// rename_windows.go decides. ORIGIN: the ratified design of F-133. No measure of
+	// how long the refusals it rides out last is cited for it, and none was made when
+	// the budget was moved here: the number is unchanged.
+	//
+	// Six attempts with FIVE waits between them: 10+20+40+80+160 = 310 ms of waiting
+	// at worst. The number is 310 and not 630: six attempts are separated by five
+	// gaps, so the sixth delay of the ratified backoff is never spent. The first
+	// version of the comment said 630, a comment asserting more than the code
+	// executes. The budget is SHARED by the whole operation: opening the source and
+	// replacing the target are retried together in ONE loop, so the two stages share
+	// at most 310 ms. Chosen so that an antivirus scan of a small file passes under
+	// it, while a real permissions error (an ACL that will never yield) costs that
+	// much delay before it is reported: the cost is declared, not hidden.
+	RenameAttempts   = 6
+	RenameFirstDelay = 10 * time.Millisecond
 )
 
-// retryWhile runs op up to attempts times, calling sleep between two runs with a
-// delay that starts at firstDelay and doubles each time.
+// RetryLoop runs op up to attempts times, calling sleep between two runs with a
+// delay that starts at firstDelay and doubles each time: attempts-1 waits.
 //
-// It returns nil on the first success. An error that retryable rejects comes
-// back at once and untouched, with no wait: a symlink, an ownership mismatch or a
-// file that is simply not there will not change in 155 ms, and repeating them
-// would only spend the budget to reach the same verdict. When every attempt ends
-// in an error retryable accepts, the last one is returned wrapped (%w) with how
-// many attempts were made and how much backoff was requested, so the real cause
-// is still reachable with errors.Is / errors.As and the message says that the
-// answer was not a first reaction.
+// It returns (nil, false) on the first success. An error that retryable rejects
+// comes back at once, untouched and with no wait, as (err, false): a symlink, an
+// ownership mismatch or a file that is simply not there will not change in a few
+// milliseconds, and repeating them would only spend the budget to reach the same
+// verdict. When every attempt ends in an error retryable accepts it returns
+// (last, true), where last is the error of the LAST attempt, the very value and
+// not a wrapper: each caller words its own message with the numbers it has
+// (attempts, backoff requested, time really spent), and the loop measures none of
+// them.
 //
-// attempts below 1 is a programming error and is reported as one: running op
-// zero times and returning nil would be a success nobody earned.
-func retryWhile(attempts int, firstDelay time.Duration, sleep func(time.Duration),
-	retryable func(error) bool, op func() error) error {
+// attempts below 1 is a programming error and is reported as one, as (err, false):
+// running op zero times and returning nil would be a success nobody earned.
+func RetryLoop(attempts int, firstDelay time.Duration, sleep func(time.Duration),
+	retryable func(error) bool, op func() error) (last error, exhausted bool) {
 	if attempts < 1 {
-		return fmt.Errorf("retryWhile: attempts must be at least 1, got %d", attempts)
+		return fmt.Errorf("RetryLoop: attempts must be at least 1, got %d", attempts), false
 	}
 	delay := firstDelay
-	var last error
 	for attempt := 1; attempt <= attempts; attempt++ {
 		last = op()
 		if last == nil || !retryable(last) {
-			return last
+			return last, false
 		}
 		if attempt == attempts {
 			break
@@ -64,11 +86,26 @@ func retryWhile(attempts int, firstDelay time.Duration, sleep func(time.Duration
 		sleep(delay)
 		delay *= 2
 	}
+	return last, true
+}
+
+// retryWhile is RetryLoop with the message of F-154 and F-170: when every attempt
+// ends in an error retryable accepts, the last one is returned wrapped (%w) with how
+// many attempts were made and how much backoff was requested, so the real cause is
+// still reachable with errors.Is / errors.As and the message says that the answer
+// was not a first reaction. Everything else comes back as RetryLoop gives it, an
+// attempts below 1 included: that error names RetryLoop, since the check lives there.
+func retryWhile(attempts int, firstDelay time.Duration, sleep func(time.Duration),
+	retryable func(error) bool, op func() error) error {
+	last, exhausted := RetryLoop(attempts, firstDelay, sleep, retryable, op)
+	if !exhausted {
+		return last
+	}
 	return fmt.Errorf("%w (still refused after %d attempts, %s of backoff requested)",
 		last, attempts, backoffTotal(attempts, firstDelay))
 }
 
-// backoffTotal is the sum of the waits retryWhile requests for the given number
+// backoffTotal is the sum of the waits RetryLoop requests for the given number
 // of attempts: attempts-1 of them, doubling from firstDelay. It exists so the
 // error message and the tests compute the figure from the same two inputs
 // instead of repeating a number that could drift from the constants.
