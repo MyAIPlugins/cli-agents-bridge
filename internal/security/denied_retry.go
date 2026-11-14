@@ -24,6 +24,13 @@ import (
 // again about. The loop is untagged so that it is tested on every platform; on
 // Unix nothing calls it outside the tests, which is deliberate and not a leftover.
 //
+// THE SAME LOOP SERVES THE ATOMIC REPLACE. The rename of F-133
+// (internal/transport/fs/rename_windows.go) repeats through RetryLoop below, with
+// its own budget and its own list of errors worth asking again about (ACCESS_DENIED
+// and SHARING_VIOLATION). What stays per operation is exactly that, the budget and
+// the predicate; what is shared is the loop, so a mistake of count, wait or doubling
+// has one place to be made and one place to be fixed.
+//
 // THE BUDGETS, in one block and each with where it comes from. Both are the backoff
 // REQUESTED from the sleep function, not a deadline: the syscalls and the scheduler
 // add to it, and nothing here measures wall-clock time.
@@ -55,7 +62,10 @@ const (
 )
 
 // RetryLoop runs op up to attempts times, calling sleep between two runs with a
-// delay that starts at firstDelay and doubles each time: attempts-1 waits.
+// delay that starts at firstDelay and doubles each time: attempts-1 waits. It is the
+// one loop of the repository that repeats an operation because a filesystem call was
+// refused. The polls of the session lock and of the findings lock are another thing:
+// they wait for another process to let go, they do not ask again about a refusal.
 //
 // It returns (nil, false) on the first success. An error that retryable rejects
 // comes back at once, untouched and with no wait, as (err, false): a symlink, an

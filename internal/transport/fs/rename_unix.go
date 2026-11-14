@@ -11,10 +11,10 @@ import "os"
 // here: rename(2) has always had the semantics the rest of this package assumes,
 // so the honest port of it is the call itself.
 //
-// Deliberately NOT symmetrical with rename_windows.go — no retry, no wrapping,
-// no shared helper. A file that looks like its counterpart but is not would
-// invite somebody to "unify" the two and give Unix a retry loop for a failure
-// mode it does not have.
+// Deliberately NOT symmetrical with rename_windows.go — no retry, no wrapping, and
+// it does not call security.RetryLoop, which the Windows half uses for its budget. A
+// file that looks like its counterpart but is not would invite somebody to "unify"
+// the two and give Unix a retry loop for a failure mode it does not have.
 func renameAtomic(oldpath, newpath string) error {
 	return os.Rename(oldpath, newpath)
 }

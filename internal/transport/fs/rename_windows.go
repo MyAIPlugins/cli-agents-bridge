@@ -11,6 +11,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 )
 
 // F-133 — atomic replace on Windows, and why it cannot be os.Rename.
@@ -71,34 +73,18 @@ import (
 // the target was survivable. And the source is the worse case of the two: at
 // atomic.go's call-site it is the temp file THIS process just finished writing,
 // which is exactly what an antivirus is scanning at that moment.
+//
+// THE LOOP IS NOT HERE. It is security.RetryLoop, the one loop of the repository, and
+// this file keeps what is specific to the replace: WHICH errors are worth asking again
+// about (isTransientReplaceError), the stage an error came from, the two diagnostics
+// and the message. The budget below is the one in internal/security/denied_retry.go,
+// where it sits next to the budget of reads and removals with the origin of each
+// written down; these two names are only how this package refers to it, and a number
+// written here instead would be a second budget that a test of the normal path never
+// notices.
 const (
-	// Six attempts with FIVE waits between them — 10+20+40+80+160 = 310ms of
-	// waiting at worst.
-	//
-	// The number is 310 and not 630, and the difference is worth a line because
-	// the first version of this comment said 630: six attempts are separated by
-	// five gaps, so the sixth delay in the ratified backoff is never spent. The
-	// design's bound was "at most 630ms" and this stays inside it; what was
-	// wrong was a comment asserting more than the code executes, which is the
-	// class this file exists to close. The test computes the figure from these
-	// two constants rather than repeating it, so neither can drift alone.
-	//
-	// The budget is SHARED by the whole operation — opening the source and
-	// replacing the target are retried together inside ONE loop, so the two
-	// stages share at most 310ms of REQUESTED BACKOFF.
-	//
-	// Syscall time and scheduling add to elapsed time; THIS IS NOT AN EXECUTION
-	// DEADLINE. The distinction is not pedantry: an earlier draft of this comment
-	// called it "the worst case of the function", which is the sort of figure
-	// somebody builds a timeout on — and it would have been a timeout on a
-	// promise neither the code nor its test can make. What the oracle proves is
-	// the backoff this loop asks for, not how long the call takes.
-	//
-	// Chosen so an antivirus scan of a small file passes under it while a real
-	// permissions error — an ACL that will never yield — costs that much delay
-	// before it is reported. The cost is declared rather than hidden.
-	renameAttempts   = 6
-	renameFirstDelay = 10 * time.Millisecond
+	renameAttempts   = security.RenameAttempts
+	renameFirstDelay = security.RenameFirstDelay
 )
 
 // fileRenameInfo mirrors the fixed part of FILE_RENAME_INFO. The FileName array
@@ -169,77 +155,103 @@ type renameTrace struct {
 }
 
 func renameAtomicTraced(oldpath, newpath string) (renameTrace, error) {
-	var trace renameTrace
-	fail := func(err error) error {
-		return &os.LinkError{Op: "rename", Old: oldpath, New: newpath, Err: err}
-	}
-
 	info, err := renameInfo(newpath)
 	if err != nil {
-		return trace, fail(err)
+		return renameTrace{}, renameLinkError(oldpath, newpath, err)
 	}
+	return renameRetrying(oldpath, newpath, func() (renameStage, error) {
+		return tryReplace(oldpath, info)
+	})
+}
 
+// renameLinkError gives an error the shape of os.Rename's: *os.LinkError, with the
+// platform error underneath so errors.Is and errors.As keep working through it.
+func renameLinkError(oldpath, newpath string, err error) error {
+	return &os.LinkError{Op: "rename", Old: oldpath, New: newpath, Err: err}
+}
+
+// renameRetrying is the whole of what this file decides about repeating: it hands ONE
+// attempt (open the source, replace the target) to the common loop with this operation's
+// budget and predicate, then says what the outcome means. The attempt arrives as an
+// argument and not as a call to tryReplace so that a test can inject the stage and the
+// error of every attempt and run THIS body, with its two diagnostic branches, without a
+// Windows syscall (rename_retry_windows_test.go).
+//
+// The elapsed time is measured here and not by the loop because the message of the
+// exhausted budget reports it (what the syscalls and the scheduler really added to the
+// backoff), and a loop that wrapped the error would take that text away from this file.
+func renameRetrying(oldpath, newpath string, attempt func() (renameStage, error)) (renameTrace, error) {
+	var trace renameTrace
+	var stage renameStage
 	started := time.Now()
-	delay := renameFirstDelay
-	var last error
-	for attempt := 1; attempt <= renameAttempts; attempt++ {
-		trace.attempts = attempt
-		stage, err := tryReplace(oldpath, info)
-		if err == nil {
-			return trace, nil
-		}
-		last = err
-		if stage == stageOpen {
+
+	wait := func(d time.Duration) {
+		trace.waits++
+		renameSleep(d)
+	}
+	last, exhausted := security.RetryLoop(renameAttempts, renameFirstDelay, wait, isTransientReplaceError, func() error {
+		trace.attempts++
+		var err error
+		stage, err = attempt()
+		switch {
+		case err == nil: // nothing to count
+		case stage == stageOpen:
 			trace.openFails++
-		} else {
+		default:
 			trace.replaceFails++
 		}
+		return err
+	})
 
-		if stage == stageReplace && errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
-			// The info class was refused. WHAT THAT MEANS IS NOT KNOWN HERE, and
-			// an earlier version of this message claimed it was: it said "this
-			// Windows does not support it", which is a diagnosis, not an
-			// observation. The same error also comes back from a filesystem that
-			// has no POSIX rename — an SMB share, FAT — so that sentence would
-			// have accused a perfectly up-to-date machine of being old. The
-			// stdlib makes the same distinction (at_windows.go).
-			//
-			// So the message states the REQUIREMENT and leaves the cause open.
-			// It is still refused rather than retried or worked around: falling
-			// back to MoveFileEx would reintroduce this very defect, with the
-			// aggravation of code claiming to have fixed it.
-			return trace, fail(fmt.Errorf("atomic replace refused by SetFileInformationByHandle(FileRenameInfoEx): "+
-				"POSIX rename semantics are a precondition of this bridge and something here does not provide them — "+
-				"they need Windows 10 1709 / Server 2019 or later AND a filesystem that implements them "+
-				"(NTFS does; SMB shares and FAT typically do not). Not a transient failure: %w", err))
-		}
-		if !isTransientReplaceError(err) {
-			return trace, fail(err)
-		}
-		if attempt < renameAttempts {
-			trace.waits++
-			renameSleep(delay)
-			delay *= 2
-		}
+	switch {
+	case last == nil:
+		return trace, nil
+
+	case exhausted:
+		// WHAT THIS DOES NOT KNOW, and the previous version of this sentence claimed
+		// to: it said another process was holding one of the files open. A critic's
+		// probe produced this exact error with NOBODY else involved — a read-only
+		// attribute on the target, reported as ACCESS_DENIED after the full budget,
+		// under a message accusing a process that did not exist.
+		//
+		// It is the same defect as the INVALID_PARAMETER message below, which had
+		// already been corrected: a cause DEDUCED from an error code. Fixing one and
+		// leaving its sibling is the branch next door in the narrowest possible form.
+		//
+		// So the possibilities are listed, none is asserted, and the platform errno
+		// is carried through for whoever can tell them apart.
+		return trace, renameLinkError(oldpath, newpath, fmt.Errorf("still refused after %d attempts over %s, and the cause is NOT established here: "+
+			"another process may be holding one of the two files open without sharing deletion "+
+			"(antivirus, editor, an open shell), or it may be permissions or a file attribute — "+
+			"a read-only target produces this same error with nobody else involved: %w",
+			renameAttempts, time.Since(started).Round(time.Millisecond), last))
+
+	case stage == stageReplace && errors.Is(last, windows.ERROR_INVALID_PARAMETER):
+		// The info class was refused. WHAT THAT MEANS IS NOT KNOWN HERE, and
+		// an earlier version of this message claimed it was: it said "this
+		// Windows does not support it", which is a diagnosis, not an
+		// observation. The same error also comes back from a filesystem that
+		// has no POSIX rename — an SMB share, FAT — so that sentence would
+		// have accused a perfectly up-to-date machine of being old. The
+		// stdlib makes the same distinction (at_windows.go).
+		//
+		// So the message states the REQUIREMENT and leaves the cause open.
+		// It is still refused rather than retried or worked around: falling
+		// back to MoveFileEx would reintroduce this very defect, with the
+		// aggravation of code claiming to have fixed it.
+		//
+		// Only at the replace stage: the same code from the open is an ordinary
+		// error and takes the default branch.
+		return trace, renameLinkError(oldpath, newpath, fmt.Errorf("atomic replace refused by SetFileInformationByHandle(FileRenameInfoEx): "+
+			"POSIX rename semantics are a precondition of this bridge and something here does not provide them — "+
+			"they need Windows 10 1709 / Server 2019 or later AND a filesystem that implements them "+
+			"(NTFS does; SMB shares and FAT typically do not). Not a transient failure: %w", last))
+
+	default:
+		// Not worth repeating (the loop already stopped at the attempt where it
+		// turned up): the error as it came, in os.Rename's shape.
+		return trace, renameLinkError(oldpath, newpath, last)
 	}
-	// WHAT THIS DOES NOT KNOW, and the previous version of this sentence claimed
-	// to: it said another process was holding one of the files open. A critic's
-	// probe produced this exact error with NOBODY else involved — a read-only
-	// attribute on the target, reported as ACCESS_DENIED after the full budget,
-	// under a message accusing a process that did not exist.
-	//
-	// It is the same defect as the INVALID_PARAMETER message one branch up,
-	// which had already been corrected: a cause DEDUCED from an error code.
-	// Fixing one and leaving its sibling is the branch next door in the narrowest
-	// possible form — the same function, twenty lines apart.
-	//
-	// So the possibilities are listed, none is asserted, and the platform errno
-	// is carried through for whoever can tell them apart.
-	return trace, fail(fmt.Errorf("still refused after %d attempts over %s, and the cause is NOT established here: "+
-		"another process may be holding one of the two files open without sharing deletion "+
-		"(antivirus, editor, an open shell), or it may be permissions or a file attribute — "+
-		"a read-only target produces this same error with nobody else involved: %w",
-		renameAttempts, time.Since(started).Round(time.Millisecond), last))
 }
 
 // tryReplace performs ONE attempt: open the source, then replace the target.
