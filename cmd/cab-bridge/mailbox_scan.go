@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/myAIPlugins/cli-agents-bridge/internal/security"
 )
@@ -18,8 +19,13 @@ const (
 	// maxUnreadableListed bounds the files a TEXT names (the JSON of `next` lists every
 	// one). It is half of maxHeldIDsListed, which sits in the same Desktop notice: a name
 	// with its cause ("msg-bbbbbbbbbbbb.json": permission denied, about 45 bytes) is twice
-	// as long as an id.
+	// as long as an id. It is a COUNT and not a size: a name can be 255 bytes, so the
+	// Desktop notice is also fitted to the budget of the result (fittedNotices).
 	maxUnreadableListed = 5
+	// maxCausesListed and maxCauseBytes give the compact Desktop notice, the one with no
+	// names, a size of its own whatever the system said.
+	maxCausesListed = 3
+	maxCauseBytes   = 80
 	// maxCauseDepth bounds the walk down a chain of errors. It is there against a cycle of
 	// Unwrap, not to change the answer: past it the text found at that level is returned.
 	maxCauseDepth = 16
@@ -93,11 +99,11 @@ func causeOf(err error) string {
 	return cause.Error()
 }
 
-// listed joins at most maxUnreadableListed items and counts the rest.
-func listed(items []string) string {
+// listed joins at most limit items and counts the rest.
+func listed(items []string, limit int) string {
 	shown := items
-	if len(items) > maxUnreadableListed {
-		shown = items[:maxUnreadableListed]
+	if len(items) > limit {
+		shown = items[:limit]
 	}
 	out := strings.Join(shown, "; ")
 	if more := len(items) - len(shown); more > 0 {
@@ -131,24 +137,87 @@ func undeliverableWarnings(scan mailboxScan) []string {
 			items[i] = fmt.Sprintf("%q: %s", f.File, f.Cause)
 		}
 		out = append(out, fmt.Sprintf("%d file(s) in the inbox cannot be read and are NOT delivered (%s). Fix the cause or move the file(s) out of the inbox: until then those messages will not arrive.",
-			len(scan.unreadable), listed(items)))
+			len(scan.unreadable), listed(items, maxUnreadableListed)))
 	}
 	if len(scan.corrupt) > 0 {
 		out = append(out, fmt.Sprintf("%d file(s) in the inbox were read but are not valid messages, and are NOT delivered (%s). Move the file(s) out of the inbox and ask the sender to send again.",
-			len(scan.corrupt), listed(quoted(scan.corrupt))))
+			len(scan.corrupt), listed(quoted(scan.corrupt), maxUnreadableListed)))
 	}
 	return out
 }
 
-// unreadableNotice is what the Claude Desktop notice says about files the system would
-// not let be read: ids, causes and counts, no path and no body.
-func unreadableNotice(files []unreadableFile) string {
+// unreadableNoticeFormat is the notice of files the system would not let be read: the
+// count, what names the budget allowed, and what a person has to do.
+const unreadableNoticeFormat = "%d file(s) in the inbox cannot be read and are NOT shown or delivered (%s). A person has to fix the cause on the machine or move the file(s) out of the inbox; until then those messages will not arrive."
+
+// unreadableNotices are the forms the Claude Desktop notice of files the system would not
+// let be read can take, the fullest first: ids, causes and counts, no path and no body.
+// Empty when there is no such file.
+//
+// It is the one notice with no size of its own. A name is up to 255 bytes and the scan
+// takes any name that ends in .json, so five names can take the whole budget of the
+// result, and the notice is subtracted from the budget BEFORE the messages are planned:
+// a readable message was then not presented at all, on every call (F-172, CRI). So the
+// notice has forms, and renderNext takes the fullest one that leaves room for a message:
+// k names for k from min(count, maxUnreadableListed) down to 1, and last the one with no
+// names, which still says the count, the distinct causes and what to do, and says that
+// the names are missing. The last form is never dropped: a message that will not arrive
+// has to be said, and if even it leaves no room the budget is too small for anything else.
+func unreadableNotices(files []unreadableFile) []string {
+	if len(files) == 0 {
+		return nil
+	}
 	items := make([]string, len(files))
 	for i, f := range files {
 		items[i] = fmt.Sprintf("%q (%s)", f.File, f.Cause)
 	}
-	return fmt.Sprintf("%d file(s) in the inbox cannot be read and are NOT shown or delivered (%s). A person has to fix the cause on the machine or move the file(s) out of the inbox; until then those messages will not arrive.",
-		len(files), listed(items))
+	var forms []string
+	for k := min(len(items), maxUnreadableListed); k >= 1; k-- {
+		forms = append(forms, fmt.Sprintf(unreadableNoticeFormat, len(files), listed(items, k)))
+	}
+	return append(forms, fmt.Sprintf(unreadableNoticeFormat, len(files), "names not listed, no room in this result; "+distinctCauses(files)))
+}
+
+// distinctCauses names each cause once, in order of first appearance: at most
+// maxCausesListed, each cut to maxCauseBytes, the rest counted. Thousands of files that
+// all say "permission denied" are one cause.
+func distinctCauses(files []unreadableFile) string {
+	var distinct []string
+	seen := map[string]bool{}
+	for _, f := range files {
+		if !seen[f.Cause] {
+			seen[f.Cause] = true
+			distinct = append(distinct, f.Cause)
+		}
+	}
+	shown := distinct
+	if len(shown) > maxCausesListed {
+		shown = shown[:maxCausesListed]
+	}
+	parts := make([]string, len(shown))
+	for i, c := range shown {
+		parts[i] = cutBytes(c, maxCauseBytes)
+	}
+	label := "cause: "
+	if len(distinct) > 1 {
+		label = "causes: "
+	}
+	out := label + strings.Join(parts, "; ")
+	if more := len(distinct) - len(shown); more > 0 {
+		out += fmt.Sprintf(" and %d more", more)
+	}
+	return out
+}
+
+// cutBytes shortens s to at most n bytes on a rune boundary, with "..." where it cut.
+func cutBytes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n] + "..."
 }
 
 // corruptNotice is the same for files that were read and are not messages: a count, as

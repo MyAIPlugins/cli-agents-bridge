@@ -156,16 +156,14 @@ func renderNext(pl *mcp.Planner, v nextView) mcp.Result {
 	}
 
 	header := fmt.Sprintf("Bridge: project %s, you are %s. %d message(s) open for you.", v.project, v.agentName, len(v.visible))
-	notices := noticeBlock(v.held, v.corrupt, v.unreadable)
-	if v.bridgeClosed {
-		notices = strings.TrimSpace(bridgeClosedNotice + "\n" + notices)
-	}
-	// Everything that is in the result whatever the messages are, counted from the
-	// texts themselves: five blocks at most (header, pointer block, "more" line,
-	// notices, footer), each with its own overhead, and the worst case of the "more" count.
 	footer := footerOf(v)
-	fixed := envelopeSlack + 5*blockOverhead + jsonLen(header) + jsonLen(footer) + jsonLen(notices) +
+	// Everything that is in the result whatever the messages and the notices are, counted
+	// from the texts themselves: five blocks at most (header, pointer block, "more" line,
+	// notices, footer), each with its own overhead, and the worst case of the "more" count.
+	bare := envelopeSlack + 5*blockOverhead + jsonLen(header) + jsonLen(footer) +
 		jsonLen(pointerTitle) + jsonLen(moreLine(len(v.visible)))
+	notices := fittedNotices(v, bare)
+	fixed := bare + jsonLen(notices)
 
 	budget := v.budget - fixed
 	if budget < 0 {
@@ -262,9 +260,57 @@ func resultBytes(res mcp.Result) int {
 	return n
 }
 
+// fittedNotices is every notice of the result in one text, with the notice of the
+// unreadable files in the fullest form that still leaves room for one message. That
+// notice is the one with no size of its own (its names are up to 255 bytes each); the
+// others are bounded by construction (ten ids at most, fixed sentences) and are counted
+// as they are. The notices must never be what keeps a readable message from being
+// presented (F-172, CRI), and the check is on the text that will be written, separators
+// included. bare is everything else in the result.
+func fittedNotices(v nextView, bare int) string {
+	forms := unreadableNotices(v.unreadable)
+	if len(forms) == 0 {
+		return noticesText(v, "")
+	}
+	reserve := oneMessageReserve(v)
+	text := ""
+	for _, form := range forms {
+		text = noticesText(v, form)
+		if v.budget-bare-jsonLen(text) >= reserve {
+			break
+		}
+	}
+	return text // the last form when none leaves room: the shortest there is
+}
+
+// noticesText joins the notices of a result: the bridge-closed one, then the held-back
+// one, then unreadable (already written, in one of its forms) and corrupt files.
+func noticesText(v nextView, unreadable string) string {
+	text := noticeBlock(v.held, v.corrupt, unreadable)
+	if v.bridgeClosed {
+		text = strings.TrimSpace(bridgeClosedNotice + "\n" + text)
+	}
+	return text
+}
+
+// oneMessageReserve is what the notices must leave free so that one message can still
+// be presented: the longest pointer line among the visible messages (a pointer is what
+// a message becomes when it does not fit in full), so whichever one the planner takes
+// first has room. Nothing when no message is visible.
+func oneMessageReserve(v nextView) int {
+	reserve := 0
+	for _, m := range v.visible {
+		if n := jsonLen(renderPointer(m, v.now, true)) + 3; n > reserve {
+			reserve = n
+		}
+	}
+	return reserve
+}
+
 // noticeBlock says what was held back and what could not be delivered, with ids,
-// causes and counts only: no author name, no size, no preview.
-func noticeBlock(held []withheld, corrupt int, unreadable []unreadableFile) string {
+// causes and counts only: no author name, no size, no preview. unreadable is the notice
+// of the unreadable files already written, or empty.
+func noticeBlock(held []withheld, corrupt int, unreadable string) string {
 	var parts []string
 	if len(held) > 0 {
 		ids := make([]string, 0, maxHeldIDsListed)
@@ -288,8 +334,8 @@ func noticeBlock(held []withheld, corrupt int, unreadable []unreadableFile) stri
 		parts = append(parts, fmt.Sprintf("%d message(s) are held back and not shown (%s): %s%s. They stay on disk; a val decides what to do with them from the CLI.",
 			len(held), strings.Join(why, ", "), strings.Join(ids, ", "), more))
 	}
-	if len(unreadable) > 0 {
-		parts = append(parts, unreadableNotice(unreadable))
+	if unreadable != "" {
+		parts = append(parts, unreadable)
 	}
 	if corrupt > 0 {
 		parts = append(parts, corruptNotice(corrupt))
