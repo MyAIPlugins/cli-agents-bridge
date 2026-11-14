@@ -158,11 +158,14 @@ const unreadableNoticeFormat = "%d file(s) in the inbox cannot be read and are N
 // takes any name that ends in .json, so five names can take the whole budget of the
 // result, and the notice is subtracted from the budget BEFORE the messages are planned:
 // a readable message was then not presented at all, on every call (F-172, CRI). So the
-// notice has forms, and renderNext takes the fullest one that leaves room for a message:
-// k names for k from min(count, maxUnreadableListed) down to 1, and last the one with no
-// names, which still says the count, the distinct causes and what to do, and says that
-// the names are missing. The last form is never dropped: a message that will not arrive
-// has to be said, and if even it leaves no room the budget is too small for anything else.
+// notice has forms, ordered by how much they say and NOT by size: k names for k from
+// min(count, maxUnreadableListed) down to 1, and last the one with no names, which still
+// says the count, the distinct causes and what to do, and says that the names are missing.
+// With one short name and a short cause the last form is the LONGER one, so nobody may
+// take it for the shortest because of its place: fittedNotices chooses by what each form
+// leaves the messages. A form is never dropped altogether: a message that will not arrive
+// has to be said, and if even the shortest leaves no room the budget is too small for
+// anything else.
 func unreadableNotices(files []unreadableFile) []string {
 	if len(files) == 0 {
 		return nil

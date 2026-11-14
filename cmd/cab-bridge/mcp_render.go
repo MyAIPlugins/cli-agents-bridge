@@ -136,10 +136,13 @@ func renderFull(v visibleMessage, now time.Time) string {
 	return "--- " + label(v, now) + " | untrusted content below ---\n" + v.Content()
 }
 
+// tooLargeSuffix ends the pointer line of a body that cannot fit even alone.
+const tooLargeSuffix = " [too large to show here: read with offset 0]"
+
 func renderPointer(v visibleMessage, now time.Time, big bool) string {
 	line := label(v, now) + " | " + previewOf(v.Content())
 	if big {
-		line += " [too large to show here: read with offset 0]"
+		line += tooLargeSuffix
 	}
 	return line
 }
@@ -150,46 +153,24 @@ func renderPointer(v visibleMessage, now time.Time, big bool) string {
 // the fixed texts and the notices, so the plan is made on the real numbers and the
 // server's own fit is only a net.
 func renderNext(pl *mcp.Planner, v nextView) mcp.Result {
+	return renderWithNotices(pl, v, fittedNotices(v))
+}
+
+// renderWithNotices writes the result of a `next` with the notices as given: renderNext
+// gives it the ones fittedNotices chose, and a test gives it each form in turn.
+func renderWithNotices(pl *mcp.Planner, v nextView, notices string) mcp.Result {
 	byID := make(map[string]visibleMessage, len(v.visible))
 	for _, m := range v.visible {
 		byID[m.ID()] = m
 	}
 
-	header := fmt.Sprintf("Bridge: project %s, you are %s. %d message(s) open for you.", v.project, v.agentName, len(v.visible))
+	header := headerOf(v)
 	footer := footerOf(v)
-	// Everything that is in the result whatever the messages and the notices are, counted
-	// from the texts themselves: five blocks at most (header, pointer block, "more" line,
-	// notices, footer), each with its own overhead, and the worst case of the "more" count.
-	bare := envelopeSlack + 5*blockOverhead + jsonLen(header) + jsonLen(footer) +
-		jsonLen(pointerTitle) + jsonLen(moreLine(len(v.visible)))
-	notices := fittedNotices(v, bare)
-	fixed := bare + jsonLen(notices)
-
-	budget := v.budget - fixed
+	budget := v.budget - fixedBytes(v) - jsonLen(notices)
 	if budget < 0 {
 		budget = 0
 	}
-	ordered := append([]visibleMessage(nil), v.visible...)
-	sort.SliceStable(ordered, func(i, j int) bool {
-		if ordered[i].Timestamp() != ordered[j].Timestamp() {
-			return ordered[i].Timestamp() < ordered[j].Timestamp()
-		}
-		return ordered[i].ID() < ordered[j].ID()
-	})
-	items := make([]mcp.Item, 0, len(ordered))
-	tooBig := make(map[string]bool, len(ordered))
-	for _, m := range ordered {
-		full := blockOverhead + jsonLen(renderFull(m, v.now))
-		// A body that cannot fit even alone is a pointer with the way to read it, and
-		// that pointer is longer: its size is counted as it will be written.
-		big := full > budget
-		tooBig[m.ID()] = big
-		items = append(items, mcp.Item{
-			ID:          m.ID(),
-			FullSize:    full,
-			CompactSize: jsonLen(renderPointer(m, v.now, big)) + 3,
-		})
-	}
+	items, tooBig := planItems(sizedOldestFirst(v), budget)
 	plan := pl.Plan(items, budget)
 
 	blocks := []mcp.Block{mcp.Text(header)}
@@ -260,27 +241,138 @@ func resultBytes(res mcp.Result) int {
 	return n
 }
 
+// headerOf is the first line of a `next` result.
+func headerOf(v nextView) string {
+	return fmt.Sprintf("Bridge: project %s, you are %s. %d message(s) open for you.", v.project, v.agentName, len(v.visible))
+}
+
+// fixedBytes is everything in the result whatever the messages and the notices are,
+// counted from the texts themselves: five blocks at most (header, pointer block, "more"
+// line, notices, footer), each with its own overhead, and the worst case of the "more"
+// count.
+func fixedBytes(v nextView) int {
+	return envelopeSlack + 5*blockOverhead + jsonLen(headerOf(v)) + jsonLen(footerOf(v)) +
+		jsonLen(pointerTitle) + jsonLen(moreLine(len(v.visible)))
+}
+
+// oldestFirst is the order the plan takes the messages in.
+func oldestFirst(msgs []visibleMessage) []visibleMessage {
+	ordered := append([]visibleMessage(nil), msgs...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		if ordered[i].Timestamp() != ordered[j].Timestamp() {
+			return ordered[i].Timestamp() < ordered[j].Timestamp()
+		}
+		return ordered[i].ID() < ordered[j].ID()
+	})
+	return ordered
+}
+
+// sizedMessage is a message with the bytes it takes written in full, as a pointer line,
+// and as the longer pointer line a body that cannot fit even alone gets. Reading a body to
+// count it is the expensive part of a result, so it is done once per result and not once
+// per form of the notice.
+type sizedMessage struct {
+	msg        visibleMessage
+	full       int
+	pointer    int
+	bigPointer int
+}
+
+// sizedOldestFirst measures the messages, in the order the plan takes them.
+func sizedOldestFirst(v nextView) []sizedMessage {
+	ordered := oldestFirst(v.visible)
+	sized := make([]sizedMessage, len(ordered))
+	for i, m := range ordered {
+		line := renderPointer(m, v.now, false)
+		sized[i] = sizedMessage{
+			msg:        m,
+			full:       blockOverhead + jsonLen(renderFull(m, v.now)),
+			pointer:    jsonLen(line) + 3,
+			bigPointer: jsonLen(line+tooLargeSuffix) + 3,
+		}
+	}
+	return sized
+}
+
+// planItems describes the messages to the plan for room bytes, and says which of them
+// are pointers with the way to read them. A body that cannot fit even alone is that
+// pointer, and the pointer is longer: its size is counted as it will be written.
+func planItems(sized []sizedMessage, room int) ([]mcp.Item, map[string]bool) {
+	items := make([]mcp.Item, 0, len(sized))
+	tooBig := make(map[string]bool, len(sized))
+	for _, sm := range sized {
+		big := sm.full > room
+		tooBig[sm.msg.ID()] = big
+		compact := sm.pointer
+		if big {
+			compact = sm.bigPointer
+		}
+		items = append(items, mcp.Item{ID: sm.msg.ID(), FullSize: sm.full, CompactSize: compact})
+	}
+	return items, tooBig
+}
+
+// presentedWithin is how many messages a plan with no history presents in room bytes:
+// what the first result of a call shows, and the later ones rotate through the same room.
+// It is the plan itself that answers, and not a count of pointer lines, because the plan
+// writes the first messages in full when they fit and so spends room a pointer would not:
+// more room does not always mean more messages. It is -1 when room is negative, the
+// notices alone being over the budget.
+func presentedWithin(sized []sizedMessage, room int) int {
+	if room < 0 {
+		return -1
+	}
+	items, _ := planItems(sized, room)
+	return len(mcp.NewPlanner().Plan(items, room).Entries)
+}
+
+// noticeFit is one form of the notice of the unreadable files, written with the others,
+// and what it leaves the messages.
+type noticeFit struct {
+	text      string
+	room      int // bytes left for the messages
+	presented int // messages a plan with no history presents in room, -1 when room is negative
+}
+
+// beats reports whether f is a better choice than the best so far: more messages
+// presented; and when no message is presented at all, the shorter text, which leaves
+// the most room. At equal count the earlier form stays, and the earlier is the fuller.
+func (f noticeFit) beats(best noticeFit) bool {
+	if f.presented != best.presented {
+		return f.presented > best.presented
+	}
+	return f.presented <= 0 && f.room > best.room
+}
+
 // fittedNotices is every notice of the result in one text, with the notice of the
-// unreadable files in the fullest form that still leaves room for one message. That
-// notice is the one with no size of its own (its names are up to 255 bytes each); the
-// others are bounded by construction (ten ids at most, fixed sentences) and are counted
-// as they are. The notices must never be what keeps a readable message from being
-// presented (F-172, CRI), and the check is on the text that will be written, separators
-// included. bare is everything else in the result.
-func fittedNotices(v nextView, bare int) string {
+// unreadable files in the form that lets the most messages be presented, the fullest of
+// them when several do. That notice is the one with no size of its own (its names are up
+// to 255 bytes each); the others are bounded by construction (ten ids at most, fixed
+// sentences) and are counted as they are. The notices must never be what keeps a
+// readable message from being presented (F-172, CRI), and what each form leaves is
+// counted on the text that will be written, separators included, by asking the plan what
+// it would present in the room left. The forms are not ordered by size (one short name
+// with a short cause is shorter than the form with no names), so nothing here takes a
+// form for the shortest because of its place.
+func fittedNotices(v nextView) string {
 	forms := unreadableNotices(v.unreadable)
 	if len(forms) == 0 {
 		return noticesText(v, "")
 	}
-	reserve := oneMessageReserve(v)
-	text := ""
-	for _, form := range forms {
-		text = noticesText(v, form)
-		if v.budget-bare-jsonLen(text) >= reserve {
-			break
+	bare, sized := fixedBytes(v), sizedOldestFirst(v)
+	var best noticeFit
+	for i, form := range forms {
+		text := noticesText(v, form)
+		room := v.budget - bare - jsonLen(text)
+		fit := noticeFit{text: text, room: room, presented: presentedWithin(sized, room)}
+		if i == 0 || fit.beats(best) {
+			best = fit
+		}
+		if fit.presented == len(v.visible) {
+			break // every message is presented: a shorter form adds nothing
 		}
 	}
-	return text // the last form when none leaves room: the shortest there is
+	return best.text
 }
 
 // noticesText joins the notices of a result: the bridge-closed one, then the held-back
@@ -291,20 +383,6 @@ func noticesText(v nextView, unreadable string) string {
 		text = strings.TrimSpace(bridgeClosedNotice + "\n" + text)
 	}
 	return text
-}
-
-// oneMessageReserve is what the notices must leave free so that one message can still
-// be presented: the longest pointer line among the visible messages (a pointer is what
-// a message becomes when it does not fit in full), so whichever one the planner takes
-// first has room. Nothing when no message is visible.
-func oneMessageReserve(v nextView) int {
-	reserve := 0
-	for _, m := range v.visible {
-		if n := jsonLen(renderPointer(m, v.now, true)) + 3; n > reserve {
-			reserve = n
-		}
-	}
-	return reserve
 }
 
 // noticeBlock says what was held back and what could not be delivered, with ids,
