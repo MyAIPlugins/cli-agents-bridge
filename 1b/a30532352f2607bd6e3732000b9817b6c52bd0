@@ -1,0 +1,21 @@
+ROADMAP.md
+  s_f8849908940048::t_11e75d857bcec4 8,12-13,40,68-73
+docs/dev-conventions.md
+  s_f8849908940048::t_e9a2502513db7a 324-331
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1ba30532352f2607bd6e3732000b9817b6c52bd0",
+  "prompts": {},
+  "sessions": {
+    "s_f8849908940048": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "37bcf92a-1982-4e9a-a4d3-17eecb17eeb9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
