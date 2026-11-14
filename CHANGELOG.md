@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-11-14
+
+**Messages are no longer lost, delivered twice or miscounted when two operations cross, and the binaries are built with Go 1.27.3.** Retiring a session stops instead of deleting a message it could not archive (F-171); a response the recipient already archived is not delivered again (F-178); two `reply` calls can no longer destroy the journal of a third (F-176); a session's own moves take its lock (F-177); and a file the bridge may not read is named with its cause instead of being counted as corrupt, in a new `unreadable` field of `next` (F-172). On Windows a delete that crosses another operation on the same file is retried instead of failing with "Access is denied" (F-170). Nothing on disk changed since v0.12.0, so agents do not join again after the upgrade; Claude Desktop runs the new version after it is restarted.
+
 ### Security
 - **The binaries are built with Go 1.27.3** (F-187) instead of 1.27.1, so they carry the security fixes of Go 1.27.2 and 1.27.3; the staticcheck the lint pins moves to v0.8.2, the first that reads what Go 1.27.2 and later compile. `govulncheck` (v1.9.0) finds no known vulnerability reachable from the `cab-bridge` binary, on macOS, Linux and Windows, with either toolchain: the one standard-library fix that v0.12.0 imported without it, GO-2026-6604 (`os.Root` on Windows), is in a function the bridge does not use. `make lint` now needs staticcheck v0.8.2: with an older one it stops and prints the install command.
 
