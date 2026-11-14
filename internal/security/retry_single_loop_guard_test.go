@@ -26,12 +26,43 @@ func copySources(in map[string]string) map[string]string {
 	return out
 }
 
+func toLF(s string) string { return strings.ReplaceAll(s, "\r\n", "\n") }
+
+func toCRLF(s string) string { return strings.ReplaceAll(toLF(s), "\n", "\r\n") }
+
 // replaceOnce edits one real file, and fails if the text to change is not there exactly once:
 // a fixture whose edit did not apply would be a green test about nothing.
+//
+// The text a fixture matches is written with \n, and a Windows runner checks the sources out with
+// \r\n (git's core.autocrlf): the CI of the lot was red on exactly that, a premise found 0 times
+// instead of once. So the file to edit is brought to \n first. Only the fixtures do this: the
+// guard on the real tree reads the bytes as they are on disk, and the test below says that its
+// verdict does not depend on them.
 func replaceOnce(t *testing.T, s map[string]string, file, old, repl string) {
 	t.Helper()
+	s[file] = toLF(s[file])
 	require.Equal(t, 1, strings.Count(s[file], old), "premise of the fixture: %q must appear once in %s", old, file)
 	s[file] = strings.Replace(s[file], old, repl, 1)
+}
+
+// TestRetry_TheInventoryDoesNotDependOnTheLineEndings: the real tree, once with \n and once with
+// \r\n, gives the same sites. The guard parses the sources and looks at names and numbers, never
+// at the text between lines, so a checkout with another line ending cannot turn its verdict; this
+// test keeps that true on every system and not only on the one that has \r\n on disk.
+func TestRetry_TheInventoryDoesNotDependOnTheLineEndings(t *testing.T) {
+	onDisk := loadRepoSources(t)
+	lf := make(map[string]string, len(onDisk))
+	crlf := make(map[string]string, len(onDisk))
+	for k, v := range onDisk {
+		lf[k] = toLF(v)
+		crlf[k] = toCRLF(v)
+	}
+	require.NotContains(t, lf[rwFile], "\r", "premise: the \\n copy has no carriage return")
+	require.Contains(t, crlf[rwFile], "\r\n", "premise: the \\r\\n copy really has them")
+
+	want := scanRetrySources(t, lf)
+	require.NotEmpty(t, want, "premise: an empty inventory would be equal to anything")
+	assert.Equal(t, want, scanRetrySources(t, crlf))
 }
 
 func TestRetry_TheGuardRefusesWhatItIsMeantToRefuse(t *testing.T) {
