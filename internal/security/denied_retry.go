@@ -29,7 +29,11 @@ import (
 // its own budget and its own list of errors worth asking again about (ACCESS_DENIED
 // and SHARING_VIOLATION). What stays per operation is exactly that, the budget and
 // the predicate; what is shared is the loop, so a mistake of count, wait or doubling
-// has one place to be made and one place to be fixed.
+// has one place to be made and one place to be fixed. That it stays one is not left to
+// the reader: retry_single_loop_test.go reads the whole tree and is red on a second
+// copy of the loop, on a budget written as a number at a call, and on a new place that
+// waits or that names the predicates, the budgets or the errnos of this retry. What it
+// does not see is declared at the top of that file.
 //
 // THE BUDGETS, in one block and each with where it comes from. Both are the backoff
 // REQUESTED from the sleep function, not a deadline: the syscalls and the scheduler
