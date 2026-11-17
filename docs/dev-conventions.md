@@ -120,6 +120,19 @@ Mandatory on every commit:
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ```
 
+### Verification trailer
+
+Since 17 Nov 2026 every commit says how it was verified, in a `Verified:` trailer on the line right above the co-author line, in the same block with no blank line between them. Git reads only the last block of a message as trailers, so a blank line in between makes the line invisible to `git log --format='%h %(trailers:key=Verified,valueonly)'`, which lists what was checked and what was not:
+
+```
+Verified: go1.27.3 gate (gofmt, vet and staticcheck for darwin/linux/windows, go test -race -count=1 ./... 16/16 ok, 0 cached)
+Co-Authored-By: ...
+```
+
+- Name what ran, with its outcome, not what should have run.
+- `Verified: none (<reason>)` when nothing ran, for example a commit of text that no test reads. A commit without the trailer counts as `none`.
+- The trailer says what was true when the commit was written, which is usually the author's local gate. The CI run and the critics' verdicts come after the commit, so they belong to the pull request, not here.
+
 ### Discipline rules
 
 - No emoji in commit messages, code, or docs (unless explicitly requested).
