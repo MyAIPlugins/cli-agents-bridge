@@ -7,7 +7,8 @@ The defects this repository has had more than once, each with the trigger that m
 - **Read it from the default branch** (`git show main:REVIEW.md`), never from the branch under review: a check the change can edit checks nothing.
 - **Apply only the items whose trigger appears in the diff.** Usually a handful do. In the verdict, list the items that triggered and the outcome of each: `holds`, or the finding it produced.
 - **Each item names where it comes from**: findings in `ROADMAP.md` (`F-nnn`, `BUG-x`) and sections of `docs/dev-conventions.md`. An item enters after the case happened at least twice and can be seen from a diff; it leaves when a test, a lint or a guard covers it.
-- **Already enforced, do not report**: gofmt, `go vet` and staticcheck for darwin, linux and windows, the test matrix on three systems (`.github/workflows/ci.yml`), action pinning and job permissions (`tests/integration/workflow_standards_test.go`), the single retry loop (`internal/security/retry_single_loop_test.go`), the Unix binary importing only the standard library (`tests/integration/unix_deps_test.go`). Report only what they miss.
+- **Already enforced, do not report**: gofmt, `go vet` and staticcheck for darwin, linux and windows, the test matrix on three systems (`.github/workflows/ci.yml`), action pinning and job permissions (`tests/integration/workflow_standards_test.go`), the Unix binary importing only the standard library (`tests/integration/unix_deps_test.go`), the tests of `cmd/cab-bridge` running on a temporary data dir (`TestMain` and `TestSuiteNeverTouchesTheRealDataDir`, `cmd/cab-bridge/main_test.go`).
+- **Enforced only in part, so the rest is yours**: the single retry loop (`internal/security/retry_single_loop_test.go`) is a syntactic guard, and its header says what it does not see: above all a loop that classifies the refusal in its own way and also waits in its own way (`time.After`, a timer, a context) instead of `time.Sleep` (F-185).
 
 ## Tests
 
@@ -26,6 +27,7 @@ The defects this repository has had more than once, each with the trigger that m
 **4. A test that touches the real environment or copies the wrong tree.** F-100, F-129, F-131, F-149, F-158.
 - Trigger: a test that runs the binary, `git`, `go` or `make`, sets `HOME` or `PATH`, or copies the repository into a fixture.
 - Check: data dir, `HOME`, `PATH`, the global git config and the module cache all belong to the test; reaching the real data dir is impossible, not "tolerated if it fails"; the copy holds the files the test means to prove (uncommitted ones included, when it proves an uncommitted fix).
+- Already covered: the data dir of the `cmd/cab-bridge` tests (`TestMain`, `TestSuiteNeverTouchesTheRealDataDir`). Still to check: a test that overrides it, tests in other packages, `HOME`, `PATH`, the git config, the module cache, what a fixture copies.
 
 **5. Fake tools on the `PATH`.** F-129, F-132, F-159.
 - Trigger: a fake `go`, `staticcheck` or other tool put on the `PATH` by a test.
@@ -47,15 +49,19 @@ The defects this repository has had more than once, each with the trigger that m
 
 **9. A second source for a decision that already has one.** F-112, F-128, F-139, F-152, F-172, F-184.
 - Trigger: the diff computes again a value or a decision that already has a function or a constant (listening, a budget, a retry loop, a version number).
-- Check: change the value at the source and look at what stays behind.
+- Check: change the value at the source and look at what stays behind. For a retry, the guard above catches a second loop that calls `time.Sleep`; one that both classifies the error on its own and waits with a timer is yours to find.
 
 **10. Check and act outside the session lock.** F-93, F-102, F-160, F-176, F-177, F-178; "Check and act in one critical section".
 - Trigger: a rename, remove or write in `inbox/`, `processed/`, `outbox/`, the manifest or the reply journal outside `WithSessionLock`, or split across two sections.
 - Check: the check and the action are in the same closure; a writer checks that it still owns what it writes; no path holds two session locks at once. Covered in part (`manifest_writers_test.go`, `internal/session/replytxn_section_test.go`); the moves in `cmd/cab-bridge` (`inbox --tidy`, `ack`, the copy into `outbox/`) have no structural guard.
 
 **11. Deleting or moving messages.** F-11, F-30, F-104, F-115, F-170, F-171, F-176; "A delete that retries is blind".
-- Trigger: `os.Remove`, `os.RemoveAll`, `security.RemoveFile`, an archive or a sweep.
-- Check: archive before delete, and the first error stops the whole operation; only what was shown, and is not an open ask, is moved; the command says which data dir it acts on; a blind retry by name is acceptable there (`internal/security/remove_callers_test.go` lists who may use it).
+- Trigger: `os.Remove`, `os.RemoveAll`, `security.RemoveFile`, an archive or a sweep. First find which of these operations the diff touches: each has its own contract, and applying one to another rejects behaviour the repository wants.
+- Check, by operation:
+  - archiving inside a live session: `inbox --tidy` moves only what was shown and is not an open ask (F-115); `inbox --tidy`, Claude Desktop's `ack` and the archive of the asks a `reply` closes hold the session's own lock for the whole move (F-177);
+  - retiring a session (`cleanup`, and the sweep that `join` and `register` run): every message, unread ones included, is archived before anything is deleted, and an error stops the retirement of that session (`internal/cleanup/scope.go`); the sweep then goes on with the other sessions and names the one it kept (`TestRunAutoGC_AnOrphanThatCannotBeArchivedStaysAndIsNamedAndTheSweepGoesOn`);
+  - a delete by name with `security.RemoveFile` (the Desktop grant, the reply journal): it archives nothing, and is acceptable only where losing a newer file under the same name is a valid outcome; `internal/security/remove_callers_test.go` lists who may call it;
+  - in every case: the command says which data dir it acts on.
 
 **12. The on-disk format and the previous binary.** F-124, F-160, F-168, F-177.
 - Trigger: a change to the schema of the manifest, a message, the reply journal or the Desktop grant, to a name under `layout-2/`, or to the lock protocol.
