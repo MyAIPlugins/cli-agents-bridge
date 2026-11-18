@@ -60,7 +60,7 @@ The defects this repository has had more than once, each with the trigger that m
 - Check, by operation:
   - archiving inside a live session: `inbox --tidy` moves only what was shown and is not an open ask (F-115); `inbox --tidy`, Claude Desktop's `ack` and the archive of the asks a `reply` closes hold the session's own lock for the whole move (F-177);
   - retiring a session (`cleanup`, and the sweep that `join` and `register` run): every message, unread ones included, is archived before anything is deleted, and an error stops the retirement of that session (`internal/cleanup/scope.go`); the sweep then goes on with the other sessions and names the one it kept (`TestRunAutoGC_AnOrphanThatCannotBeArchivedStaysAndIsNamedAndTheSweepGoesOn`);
-  - a delete by name with `security.RemoveFile` (the Desktop grant, the reply journal): it archives nothing, and is acceptable only where losing a newer file under the same name is a valid outcome; `internal/security/remove_callers_test.go` lists who may call it;
+  - a delete by name with `security.RemoveFile`: it archives nothing, and its retry can remove a newer file put under the same name. Each caller needs one of two reasons, written next to it ("A delete that retries is blind"): losing the newer file does not matter (the Desktop grant), or it cannot happen, because the removal runs under the session's exclusive lock right after checking that the file on disk is still the caller's own, in the same critical section (the reply journal, `CompleteReplyTxn`). `internal/security/remove_callers_test.go` lists who may call it;
   - in every case: the command says which data dir it acts on.
 
 **12. The on-disk format and the previous binary.** F-124, F-160, F-168, F-177.
