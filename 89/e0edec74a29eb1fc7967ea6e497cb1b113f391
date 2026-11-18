@@ -1,0 +1,21 @@
+ROADMAP.md
+  s_f8849908940048::t_87c3a648c2ccdc 8
+  s_f8849908940048::t_31735d24066966 79-82
+  s_f8849908940048::t_ae46465077be82 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "89e0edec74a29eb1fc7967ea6e497cb1b113f391",
+  "prompts": {},
+  "sessions": {
+    "s_f8849908940048": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "37bcf92a-1982-4e9a-a4d3-17eecb17eeb9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Alan <advertalis@gmail.com>"
+    }
+  }
+}
